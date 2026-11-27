@@ -418,6 +418,27 @@ try {
       return undefined; // stderr vide ou non JSON : le contrôle « D79 » échoue sous son propre nom
     }
   };
+  // personnalisation-1b (Q32, S4) : liste et recherche du pack, opération background sur des copies temporaires.
+  const fonds = cli(["backgrounds", "--search", "seyes"]);
+  verifie("backgrounds --search seyes : seyes-8mm listé", fonds.code === 0 && fonds.lignes[0]?.id === "seyes-8mm", fonds.brut);
+  const sectionKo = cli(["backgrounds", "--section", "bidule"]);
+  verifie("backgrounds --section inconnue : code 2", sectionKo.code === 2, sectionKo.brut);
+  const deux = join(dir, "fonds.roomboard");
+  const cree = cli(["run", "--new", "--out", deux, "--ops", "-"], '{"type":"AddPage","after":"$page:0"}\n');
+  verifie("fonds : tableau de deux pages", cree.code === 0, cree.brut);
+  const tous = join(dir, "fonds-tous.roomboard");
+  const ap = cli(["apply", deux, '{"op":"background","id":"seyes-8mm","pages":"all"}', "--out", tous]);
+  verifie("apply background seyes-8mm, toutes les pages : code 0", ap.code === 0, ap.brut);
+  const et = etat(tous);
+  verifie("state : grille seyes sur chaque page", et.pages.length === 2 && et.pages.every((p) => p.page.grid?.levels[0]?.kind === "seyes"));
+  const une = join(dir, "fonds-une.roomboard");
+  const ar = cli(["apply", tous, '{"op":"background","id":"ardoise","page":"$page:1"}', "--out", une]);
+  const eu = etat(une);
+  verifie("apply background ardoise sur $page:1 : seule la deuxième page change", ar.code === 0 && eu.pages[0].page.background === et.pages[0].page.background && eu.pages[0].page.grid?.levels[0]?.kind === "seyes" && eu.pages[1].page.background === "#2f3e46", ar.brut);
+  const ko = join(dir, "fonds-ko.roomboard");
+  const lesDeux = cli(["apply", deux, '{"op":"background","id":"ardoise","page":"$page:0","pages":"all"}', "--out", ko]);
+  verifie("background page et pages ensemble : code 2, rien écrit", lesDeux.code === 2 && !existsSync(ko), lesDeux.brut);
+
   // D79 — Ctrl-C pendant une conversion : transmis au binaire, sortie 130, une ligne {"error":…}
   const faux = join(dir, "faux-office");
   const marque = join(dir, "faux-office.pid");
