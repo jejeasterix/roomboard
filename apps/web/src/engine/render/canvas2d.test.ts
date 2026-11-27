@@ -1729,6 +1729,7 @@ class PathCtx extends FakeCtx {
   arc(x: number, y: number, r: number): void { this.arcs.push([x, y, r]); this.calls.push(`arc ${x},${y},${r}`); }
   override moveTo(x = 0, y = 0): void { super.moveTo(x, y); this.calls.push(`move ${x},${y}`); }
   override lineTo(x = 0, y = 0): void { super.lineTo(x, y); this.calls.push(`line ${x},${y}`); }
+  override rect(x = 0, y = 0, w = 0, h = 0): void { super.rect(); this.calls.push(`rect ${x},${y},${w},${h}`); }
   override fill(): void { super.fill(); this.calls.push("fill"); }
   override stroke(): void { super.stroke(); this.calls.push("stroke"); }
 }
@@ -1796,5 +1797,14 @@ describe("canvas2d : lignes à points, pointes neuves, calque d'édition (OG12 T
     expect(c.arcs.filter((a) => a[2] === 5)).toHaveLength(2);
     expect(c.arcs.filter((a) => a[2] === 4)).toHaveLength(1 + 4);
     expect(c.arcs.filter((a) => a[2] === 14)).toHaveLength(4);
+  });
+  it("calque : une image accrochable est surlignée par sa boîte d'accroche (OG12 C2)", () => {
+    const c = new PathCtx();
+    const el = { id: "i", kind: "image" as const, transform: [1, 0, 0, 1, 10, 20] as const };
+    const src = { element: (id: string) => (id === "i" ? el : null), outline: () => null, bounds: () => ({ x0: 10, y0: 20, x1: 110, y1: 80 }) } as unknown as SceneSource;
+    const r = new Canvas2DRenderer(asCtx(c), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D });
+    r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set(), { ...EMPTY_OVERLAY, bind: { id: "i", anchors: [[1, 2], [3, 4], [5, 6], [7, 8]] } });
+    expect(c.calls).toContain("rect 10,20,100,60");
+    expect(c.calls).toContain("stroke");
   });
 });

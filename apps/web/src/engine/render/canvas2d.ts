@@ -761,16 +761,21 @@ export class Canvas2DRenderer implements Renderer {
       const el = this.source.element(o.bind.id);
       if (el) {
         ctx.save();
-        const [a, b, c, d, e, f] = el.transform;
-        ctx.transform(a, b, c, d, e, f);
         ctx.strokeStyle = SELECTION_COLOR;
         ctx.lineWidth = 2 * px;
-        if (el.kind === "shape") traceShape(ctx, el.shape, el.style.width, roundnessOf(el.look) === "round", el.look);
-        else if (el.kind === "text") {
-          ctx.beginPath();
-          ctx.rect(0, 0, el.text.boxWidth, el.text.boxHeight);
+        if (el.kind === "shape" || el.kind === "text") {
+          const [a, b, c, d, e, f] = el.transform;
+          ctx.transform(a, b, c, d, e, f);
+          if (el.kind === "shape") traceShape(ctx, el.shape, el.style.width, roundnessOf(el.look) === "round", el.look);
+          else {
+            ctx.beginPath();
+            ctx.rect(0, 0, el.text.boxWidth, el.text.boxHeight);
+          }
         } else {
+          // Image, tableau, média, modèle 3D : la boîte d'accroche (cadre monde de l'élément).
+          const b = this.source.bounds?.([el.id]) ?? null;
           ctx.beginPath();
+          if (b !== null) ctx.rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
         }
         ctx.stroke();
         ctx.restore();
