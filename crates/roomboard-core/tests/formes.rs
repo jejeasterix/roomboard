@@ -316,10 +316,16 @@ fn polygon_fills_inside_like_the_rect() {
         (&v["shape"]["fill"], &v["style"]["color"]),
         (&serde_json::json!("#facc15"), &serde_json::json!("#000000"))
     );
-    let hits: Vec<bool> = [(103.0, 150.0), (200.0, 103.0), (297.0, 150.0), (200.0, 197.0), (200.0, 150.0)]
-        .iter()
-        .map(|&(x, y)| d.edge_hit(&id, x, y, 6.0))
-        .collect();
+    let hits: Vec<bool> = [
+        (103.0, 150.0),
+        (200.0, 103.0),
+        (297.0, 150.0),
+        (200.0, 197.0),
+        (200.0, 150.0),
+    ]
+    .iter()
+    .map(|&(x, y)| d.edge_hit(&id, x, y, 6.0))
+    .collect();
     assert_eq!(hits, [true, true, true, true, false]);
     fill(&mut d, inside(), None).expect("aucune");
     assert_eq!(view(&d, &id)["shape"]["fill"], serde_json::Value::Null);
@@ -329,13 +335,17 @@ fn polygon_fills_inside_like_the_rect() {
 #[cfg(feature = "zone")]
 #[test]
 fn zone_inside_polygon_fills_like_the_rect() {
-    let mut zone_in = |convert: bool| {
+    let zone_in = |convert: bool| {
         let mut d = Document::blank();
         let id = plain(&mut d, ShapeKind::Rect, [100.0, 100.0, 300.0, 200.0]);
         if convert {
             to_polygon(&mut d, &id).expect("conversion");
         }
-        let target = FillTarget::Zone { x: 200.0, y: 150.0, tol: 2.0 };
+        let target = FillTarget::Zone {
+            x: 200.0,
+            y: 150.0,
+            tol: 2.0,
+        };
         fill(&mut d, target, Some("#facc15")).expect("zone");
         d.element_ids(&page(&d)).len()
     };

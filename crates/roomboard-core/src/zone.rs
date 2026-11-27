@@ -14,7 +14,7 @@ use crate::document::Document;
 use crate::element::{out_string, out_transform};
 use crate::fill_element::read_fill;
 use crate::query::{world_outline, Bounds};
-use crate::shape::{shape_polygon, shape_ring};
+use crate::shape::{shape_polygon, shape_ring, ShapeGeom, ShapeKind};
 
 /// Plafond du masque (Q20) : 2²² cellules, 4 Mio.
 pub const MAX_CELLS: usize = 1 << 22;
@@ -787,6 +787,32 @@ pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
     })
 }
 
+/// C4a : mur d'une ligne fermée non remplie, comme l'anneau d'un rectangle : la bande de chaque arête (départ, points
+/// intérieurs, (w, h), retour au départ), tracée comme une ligne ouverte ; l'intérieur reste libre.
+fn polygon_band(t: &crate::element::Transform, s: &crate::commands::ShapeFields) -> Option<Wall> {
+    let mut v: Vec<(f64, f64)> = vec![(0.0, 0.0)];
+    v.extend(s.points.as_chunks::<2>().0.iter().map(|c| (c[0], c[1])));
+    v.push((s.w, s.h));
+    let rings: Vec<Vec<f32>> = (0..v.len())
+        .map(|i| (v[i], v[(i + 1) % v.len()]))
+        .filter(|(a, b)| a != b)
+        .map(|((x0, y0), (x1, y1))| {
+            let local = shape_polygon(
+                &ShapeGeom::plain(ShapeKind::Line, x1 - x0, y1 - y0),
+                s.style.width,
+            );
+            let moved: Vec<f32> = local
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .flat_map(|c| [c[0] + x0 as f32, c[1] + y0 as f32])
+                .collect();
+            world_outline(t, &moved)
+        })
+        .collect();
+    Wall::new(rings, false)
+}
+
 /// Morceaux d'un contour à séparateurs (sommets non finis).
 fn split_rings(flat: &[f32]) -> Vec<Vec<f32>> {
     let mut out: Vec<Vec<f32>> = vec![Vec::new()];
@@ -848,6 +874,9 @@ impl Document {
         }
         if let Some(s) = read_shape(txn, e) {
             let t = out_transform(e.get(txn, "transform"))?;
+            if s.fill.is_none() && s.polygon {
+                return polygon_band(&t, &s);
+            }
             if s.fill.is_none() {
                 if let Some((outer, inner)) = shape_ring(s.kind, s.w, s.h, s.style.width) {
                     return Wall::new(

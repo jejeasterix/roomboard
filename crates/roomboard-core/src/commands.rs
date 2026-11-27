@@ -495,6 +495,11 @@ pub(crate) struct ShapeFields {
 }
 
 impl ShapeFields {
+    /// C4a : intérieur remplissable (pot, murs de zone) : toute forme sauf un segment, et la ligne fermée (n° 34).
+    pub fn fillable(&self) -> bool {
+        !self.kind.is_segment() || self.polygon
+    }
+
     pub fn geom(&self) -> ShapeGeom<'_> {
         ShapeGeom {
             kind: self.kind,
