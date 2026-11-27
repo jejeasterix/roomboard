@@ -474,6 +474,24 @@ try {
   verifie("1a : MovePage to 99 : code 1, fichier inchangé", loin.code === 1 && empreinte(pm) === avant1a, loin.brut);
   const a4 = cli(["run", pm, "--save", "--ops", "-"], lignesOps({ type: "SetPageMode", page: "$page:0", mode: "a4" }));
   verifie("1a : SetPageMode a4 : code 1, fichier inchangé", a4.code === 1 && empreinte(pm) === avant1a, a4.brut);
+
+  // personnalisation-1a calques (T13, D15) : Restack, une étape, ids gardés ; refus code 1 pour deux pages mêlées.
+  const pc = join(dir, "calques-1a.roomboard");
+  const nc = cli(["new", pc]);
+  verifie("1a calques : new calques-1a.roomboard", nc.code === 0, nc.brut);
+  const idsPage = (st, i) => (st?.pages?.[i]?.elements ?? []).map((e) => e.id);
+  const rsk = cli(["run", pc, "--save", "--ops", "-"], lignesOps(carre1a("$page:0", 10), carre1a("$page:0", 200), carre1a("$page:0", 400), { op: "state" }, { type: "Restack", ids: ["$1"], to: 2 }, { op: "state" }, { op: "undo" }, { op: "state" }, { op: "redo" }));
+  const pile0 = idsPage(rsk.lignes[3]?.state, 0);
+  const pile1 = idsPage(rsk.lignes[5]?.state, 0);
+  verifie("1a calques : Restack $1 au premier plan, ids gardés", rsk.code === 0 && pile0.length === 3 && JSON.stringify(pile1) === JSON.stringify([pile0[1], pile0[2], pile0[0]]), rsk.brut);
+  egal("1a calques : undo, une étape : ordre d'origine", idsPage(rsk.lignes[7]?.state, 0), pile0);
+  egal("1a calques : réouverture identique (ordre des ids)", idsPage(etat(pc), 0), pile1);
+  const deux = cli(["run", pc, "--save", "--ops", "-"], lignesOps({ type: "AddPage", after: "$page:0" }, carre1a("$page:1", 10), { op: "state" }));
+  const autre = idsPage(deux.lignes[2]?.state, 1)[0];
+  verifie("1a calques : seconde page à un objet", deux.code === 0 && typeof autre === "string", deux.brut);
+  const avantC = empreinte(pc);
+  const mele = cli(["run", pc, "--save", "--ops", "-"], lignesOps({ type: "Restack", ids: [pile1[0], autre], to: 0 }));
+  verifie("1a calques : Restack de deux pages mêlées : code 1, fichier inchangé", mele.code === 1 && empreinte(pc) === avantC, mele.brut);
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);
