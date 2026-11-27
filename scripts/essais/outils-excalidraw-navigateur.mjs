@@ -161,6 +161,18 @@ async function flecheAB(page, cdp) {
 async function s2(browser, base, tmp) {
   const { ctx, page, cdp, errors, a, b } = await poseAB(browser, base, tmp, "s2-avant");
   await flecheAB(page, cdp);
+  // C3 : double toucher au milieu de la flèche sélectionnée, sur sa poignée du milieu (C2 : un relâché sans mouvement sur
+  // la poignée du milieu ou d'un bout compte pour le double toucher) ; aucun point ajouté.
+  await doubleTouch(page, cdp, MID);
+  await waitNonEmpty(page, "data-line-edit");
+  check(true, "S2 : double toucher au milieu de la flèche sélectionnée (poignée du milieu), « Modifier les points » s'ouvre");
+  const s0 = await saved(page, tmp, "s2-milieu.roomboard");
+  lire("S2.milieu.points", polyline(arrows(s0.elements)[0]).length);
+  check(polyline(arrows(s0.elements)[0]).length === 2, "S2 : le double toucher au milieu n'ajoute aucun point (2 points)");
+  await page.keyboard.press("Escape");
+  await waitAttr(page, "data-line-edit", "");
+  await waitAttr(page, "data-selection", "1");
+  await page.waitForTimeout(600);
   await doubleTouch(page, cdp, [630, 300]);
   await waitNonEmpty(page, "data-line-edit");
   check(true, "S2 : double toucher sur la flèche, « Modifier les points » s'ouvre (data-line-edit)");
@@ -470,8 +482,9 @@ async function cibles(browser, base, tmp) {
   await touchDrag(page, cdp, MID, [MID[0], MID[1] - 80]);
   await page.waitForTimeout(600);
   await tapStage(page, MID[0], MID[1] - 80);
-  if (await pointRemoveVisible(page)) await mesure(`${OPT} [data-option-value="point-remove"]`, "Retirer le point");
-  else console.log("ÉCART (app) — « Retirer le point » absent après le choix d'un point : data-line-points reste à 0 (état du moteur non republié)");
+  await waitAttr(page, "data-line-points", "1"); // C3 : le moteur republie l'état après chaque geste de l'éditeur
+  check(await pointRemoveVisible(page), "cibles : point choisi au doigt, « Retirer le point » apparaît (data-line-points = 1)");
+  await mesure(`${OPT} [data-option-value="point-remove"]`, "Retirer le point");
   lire("cibles", mesures.join(" ; "));
   check(errors.length === 0, "cibles : aucune erreur dans la page");
   await ctx.close();
@@ -553,8 +566,9 @@ async function nettete(browser, base, tmp) {
   await tapStage(page, MID[0], MID[1] - 80);
   await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
   await frames(page);
-  if (await pointRemoveVisible(page)) await mesurer(["point-remove", `${OPT} [data-option-value="point-remove"]`]);
-  else console.log("ÉCART (app) — netteté de point-remove non mesurée : bouton absent (data-line-points reste à 0)");
+  await waitAttr(page, "data-line-points", "1");
+  check(await pointRemoveVisible(page), "netteté : « Retirer le point » visible, un point choisi");
+  await mesurer(["point-remove", `${OPT} [data-option-value="point-remove"]`]);
   const bad = mesures.filter((m) => !m.endsWith(" 0"));
   check(bad.length === 0, `netteté § 10 : 0 frange colorée pour les icônes neuves (${mesures.join(" ; ")})`);
   await contreEpreuve(page);
