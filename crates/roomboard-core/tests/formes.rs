@@ -3,6 +3,7 @@
 use roomboard_core::commands::{Command, CommandError};
 use roomboard_core::document::Document;
 use roomboard_core::element::{Look, StrokeStyle};
+use roomboard_core::fill::FillTarget;
 use roomboard_core::linear::{BindInput, LineInit, LinkDir};
 use roomboard_core::shape::ShapeKind;
 use roomboard_core::style::StylePatch;
@@ -289,4 +290,54 @@ fn bound_arrow_reads_free_after_polygon() {
     assert!(view(&d, &a)["shape"]["end"].is_null(), "lue libre");
     assert!(d.undo());
     assert_eq!(view(&d, &a)["shape"]["end"]["id"], r.as_str());
+}
+
+fn fill(d: &mut Document, target: FillTarget, color: Option<&str>) -> Result<(), CommandError> {
+    let p = page(d);
+    d.apply(Command::Fill {
+        page: p,
+        target,
+        color: color.map(str::to_string),
+    })
+    .map(|_| ())
+}
+
+/// C4a : le pot remplit l'intérieur d'une ligne fermée comme celui du rectangle (prédicat « remplissable » :
+/// `!is_segment() || polygon`), son trait gardé ; `edge_hit` mesure son tracé fermé, arête de fermeture comprise.
+#[test]
+fn polygon_fills_inside_like_the_rect() {
+    let mut d = Document::blank();
+    let id = plain(&mut d, ShapeKind::Rect, [100.0, 100.0, 300.0, 200.0]);
+    to_polygon(&mut d, &id).expect("conversion");
+    let inside = || FillTarget::Inside { id: id.clone() };
+    fill(&mut d, inside(), Some("#facc15")).expect("intérieur");
+    let v = view(&d, &id);
+    assert_eq!(
+        (&v["shape"]["fill"], &v["style"]["color"]),
+        (&serde_json::json!("#facc15"), &serde_json::json!("#000000"))
+    );
+    let hits: Vec<bool> = [(103.0, 150.0), (200.0, 103.0), (297.0, 150.0), (200.0, 197.0), (200.0, 150.0)]
+        .iter()
+        .map(|&(x, y)| d.edge_hit(&id, x, y, 6.0))
+        .collect();
+    assert_eq!(hits, [true, true, true, true, false]);
+    fill(&mut d, inside(), None).expect("aucune");
+    assert_eq!(view(&d, &id)["shape"]["fill"], serde_json::Value::Null);
+}
+
+/// C4a : un clic de zone dans une ligne fermée non remplie se remplit comme dans le rectangle (anneau, jamais `OnWall`).
+#[cfg(feature = "zone")]
+#[test]
+fn zone_inside_polygon_fills_like_the_rect() {
+    let mut zone_in = |convert: bool| {
+        let mut d = Document::blank();
+        let id = plain(&mut d, ShapeKind::Rect, [100.0, 100.0, 300.0, 200.0]);
+        if convert {
+            to_polygon(&mut d, &id).expect("conversion");
+        }
+        let target = FillTarget::Zone { x: 200.0, y: 150.0, tol: 2.0 };
+        fill(&mut d, target, Some("#facc15")).expect("zone");
+        d.element_ids(&page(&d)).len()
+    };
+    assert_eq!((zone_in(false), zone_in(true)), (2, 2));
 }
