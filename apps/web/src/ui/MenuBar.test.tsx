@@ -48,7 +48,7 @@ describe("MenuBar (design-l2 L2-6)", () => {
   it("design-l2 L2-6 : lignes à icône et libellé ; séparateur en filet ; zone de dépôt non rendue ; état par itemState", () => {
     const { list, row } = setup();
     expect(row("file-new").querySelector("svg")?.getAttribute("data-icon")).toBe("file-new");
-    expect(row("file-new").textContent).toBe("Nouveau");
+    expect(row("file-new").querySelector("span:not([data-shortcut])")?.textContent).toBe("Nouveau");
     expect(row("rect").querySelector("svg")?.getAttribute("data-icon")).toBe("rect");
     expect(row("undo").disabled).toBe(true);
     expect(list().querySelectorAll('.rb-menu-sep[role="separator"]')).toHaveLength(1);

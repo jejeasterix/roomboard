@@ -5,13 +5,14 @@ import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import { iconFor } from "./icons";
 import { itemState, type ToolbarView } from "./item-state";
 import { ENGINE_KEYS } from "../app/table-picker";
+import { isMac, shortcutText } from "./shortcuts";
 import { TIP_GAP, createTip } from "./tooltip";
 
 /**
  * Rôle `menu` (design-l2, L2-6, D-DS1) : un bouton Menu ; la liste s'ouvre sous lui, lignes icône + libellé,
  * `button[role="menuitem"][data-item]` (état et libellé par `itemState`). La liste reste dans le DOM, `hidden` quand
  * elle est fermée. Clavier : focus sur la première ligne à l'ouverture, flèches (bouclage), Début, Fin, Entrée ou
- * Espace (bouton natif), Échap rend le focus au bouton. Même rendu en bande. Styles : `[data-menu-list]` dans rb.css.
+ * Espace (bouton natif), Échap rend le focus au bouton, Tab ferme sans le rendre. Même rendu en bande. Styles : `[data-menu-list]` dans rb.css.
  */
 export const MENU_LABEL = "Menu";
 
@@ -44,7 +45,7 @@ export interface MenuBarProps {
   readonly host: Pick<ToolbarHost, "setTool" | "runAction">;
 }
 
-function Row(props: { item: ToolItem; view: Accessor<ToolbarView>; press: () => void }): JSX.Element {
+function Row(props: { item: ToolItem; view: Accessor<ToolbarView>; shortcut: string | null; press: () => void }): JSX.Element {
   const st = createMemo(() => itemState(props.item, props.view()));
   const icon = (): string | null => iconFor(props.item, st().icon);
   return (
@@ -53,6 +54,7 @@ function Row(props: { item: ToolItem; view: Accessor<ToolbarView>; press: () => 
         {(name) => <Icon name={name()} />}
       </Show>
       <span>{st().label}</span>
+      <Show when={props.shortcut}>{(k) => <span class="rb-menu-key" data-shortcut aria-hidden="true">{k()}</span>}</Show>
     </button>
   );
 }
@@ -106,6 +108,10 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
     // Comme la grille du tableau : les touches du moteur restent au menu ; Ctrl ou Méta remontent.
     byPointer = false;
     if (!e.ctrlKey && !e.metaKey && ENGINE_KEYS.has(e.key)) e.stopPropagation();
+    if (e.key === "Tab") {
+      close(false); // pas de preventDefault : le focus suit Tab
+      return;
+    }
     if (e.key === "Escape") {
       e.preventDefault();
       close(true);
@@ -126,9 +132,9 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
   const RENDER: Readonly<Record<ToolItem["kind"], (it: ToolItem) => JSX.Element>> = {
     tool: (it) => {
       const preset = typeof it.options?.preset === "string" ? it.options.preset : undefined;
-      return <Row item={it} view={props.view} press={choose(() => (preset === undefined ? props.host.setTool(it.tool ?? "") : props.host.setTool(it.tool ?? "", preset)))} />;
+      return <Row item={it} view={props.view} shortcut={shortcutText(it.id, isMac())} press={choose(() => (preset === undefined ? props.host.setTool(it.tool ?? "") : props.host.setTool(it.tool ?? "", preset)))} />;
     },
-    action: (it) => <Row item={it} view={props.view} press={choose(() => props.host.runAction(it.action ?? ""))} />,
+    action: (it) => <Row item={it} view={props.view} shortcut={shortcutText(it.id, isMac())} press={choose(() => props.host.runAction(it.action ?? ""))} />,
     separator: () => <span class="rb-menu-sep" role="separator" />,
     dropzone: () => null,
   };

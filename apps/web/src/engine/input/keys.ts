@@ -34,6 +34,14 @@ export function keyAction(e: KeyLike): KeyAction | null {
   return null;
 }
 
+/** OG11 (DA-6) : raccourcis d'objet. Lot 1 : Ctrl+D (Dupliquer), pris au navigateur par preventDefault. */
+export type ObjectKey = "duplicate" | "link" | "stroke-picker" | "fill-picker" | "help";
+export function objectKey(e: KeyLike): ObjectKey | null {
+  if (e.isComposing || e.altKey || inEditable(e.target)) return null;
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "d") return "duplicate";
+  return null;
+}
+
 export type EditAction = "delete" | "escape";
 
 /** Suppr / Retour arrière (supprimer la sélection, D12) et Échap (la vider), hors champ, hors composition, sans modificateur. */
