@@ -1170,7 +1170,7 @@ fn lot2_out_of_domain_refused() {
             ..Default::default()
         },
         StylePatch {
-            start_arrowhead: s("circle"),
+            start_arrowhead: s("diamond"),
             ..Default::default()
         },
         StylePatch {
