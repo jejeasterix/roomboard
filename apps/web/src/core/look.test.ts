@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { newSeed, STROKE_STYLES, lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
+import { variabilityOf, VARIABILITY_CONSTANT } from "./look";
 import { ARROWHEADS, endArrowheadOf, FILL_STYLES, fillStyleOf, LINK_MAX_CHARS, startArrowheadOf, TEXT_ALIGNS, textAlignOf, validLink } from "./look";
 
 describe("look", () => {
@@ -69,5 +70,20 @@ describe("look — lot 2 (T12)", () => {
     expect(FILL_STYLES).toEqual(["hachure", "cross-hatch"]);
     expect(ARROWHEADS).toEqual(["none", "arrow", "triangle", "triangle_outline"]);
     expect(TEXT_ALIGNS).toEqual(["center", "right"]);
+  });
+});
+
+// OG23 : pression constante, seule valeur écrite (`VARIABILITY_CONSTANT` du cœur) ; absent = variable.
+describe("variability (OG23)", () => {
+  it("variability : toLook lit constant seul, variabilityOf, lookFrom n'écrit que constant", () => {
+    expect(toLook({ variability: "constant" })).toEqual({ variability: "constant" });
+    expect(toLook({ variability: "variable" })).toBeUndefined();
+    expect(toLook({ variability: 1, link: "https://a.b" })).toEqual({ link: "https://a.b" });
+    expect(variabilityOf(undefined)).toBe("variable");
+    expect(variabilityOf({ variability: VARIABILITY_CONSTANT })).toBe("constant");
+    const base = { strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100 } as const;
+    expect(lookFrom({ ...base, variability: "constant" }, null)).toEqual({ variability: "constant" });
+    expect(lookFrom({ ...base, variability: "variable" }, null)).toBeUndefined();
+    expect(lookFrom(base, null)).toBeUndefined();
   });
 });

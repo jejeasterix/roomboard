@@ -1146,3 +1146,32 @@ describe("fakeCore — personnalisation-1a (mode de page, MovePage, DuplicatePag
     expect(d.gridLinesOf(p, squaresGrid(100), wide, 4, 8)?.levels[0]?.segments.some((v, i) => i % 2 === 0 && v < 0)).toBe(true);
   });
 });
+
+// OG23 (Review Focus 1) : `Arrange` d'un seul membre d'un groupe : tout le groupe bouge en bloc ; `fill`, inconnu
+// jamais bougés ; style `variability` hors `constant` refusé.
+describe("Arrange (OG23)", () => {
+  const rect = (d: CoreDocument, p: string, x: number, y: number): string =>
+    d.apply({ type: "AddShape", page: p, shape: "rect", x0: x, y0: y, x1: x + 50, y1: y + 50, style, fill: null }).ids[0]!;
+  it("Arrange étend le groupe : un membre désigné, le groupe garde sa forme ; Change.ids triés, une étape", () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0]!;
+    const [a, b, c] = [rect(d, p, 300, 0), rect(d, p, 400, 100), rect(d, p, 100, 200)];
+    d.apply({ type: "Group", ids: [a, b] });
+    const v = d.version();
+    const ch = d.apply({ type: "Arrange", ids: [b, c, b], how: "align-left" });
+    expect(d.version()).toBe(v + 1);
+    expect(ch.ids).toEqual([a, b].sort());
+    expect(d.bounds([a])?.x0).toBeCloseTo((d.bounds([c])?.x0 ?? 0), 6);
+    expect((d.bounds([b])?.x0 ?? 0) - (d.bounds([a])?.x0 ?? 0)).toBeCloseTo(100, 6);
+    d.undo();
+    expect(d.bounds([b])?.x0).toBeCloseTo(400 - 2, 6);
+  });
+  it("Arrange : style variability hors constant refusé, rien d'écrit", () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0]!;
+    const s = commit(d, p, 10);
+    const v = d.version();
+    expect(() => d.apply({ type: "SetStyle", ids: [s], patch: { variability: "variable" as "constant" } })).toThrow("style invalide");
+    expect(d.version()).toBe(v);
+  });
+});
