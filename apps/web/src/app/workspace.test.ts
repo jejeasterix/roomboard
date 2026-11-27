@@ -811,6 +811,22 @@ describe("espace de travail : conteneur, repli et images (R7, R12, R30, S3, S4)"
     expect(tab.assets.has(tab.board.doc.citedAssets()[0]!.id)).toBe(true);
   });
 
+  it("dépôt d'une image large en Infini : la cible dit son cadre (null), l'image n'est pas réduite au cadre 1920 (T10)", async () => {
+    const wide = vi.fn(async (_b: Blob, _k: string) => ({ bitmap: { close() {} } as unknown as ImageBitmap, w: 3000, h: 100 }));
+    const ws = await setupWorkspace({ decode: wide });
+    const tab = ws.active();
+    tab.board.stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 4000, bottom: 800, width: 4000, height: 800, x: 0, y: 0, toJSON: () => ({}) });
+    const page = tab.board.doc.page.bind(tab.board.doc);
+    tab.board.doc.page = (id) => {
+      const p = page(id);
+      return p === null ? null : { ...p, mode: "infinite" };
+    };
+    const apply = vi.spyOn(tab.board.doc, "apply");
+    await ws.importFiles([plainFile("a.png", pngHead(3000, 100))], { x: 2000, y: 400 });
+    const add = apply.mock.calls.map((c) => c[0]).find((c) => c.type === "AddImage") as unknown as { matrix: number[] };
+    expect(add.matrix[0]).toBe(1);
+  });
+
   it("même image déposée deux fois : deux éléments, un seul asset écrit", async () => {
     const ws = await setupWorkspace({ decode: fakeDecode });
     await ws.importFiles([plainFile("a.png", pngHead(10, 10)), plainFile("b.png", pngHead(10, 10))], null);
