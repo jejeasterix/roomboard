@@ -313,6 +313,8 @@ sa requête large a rendu surtout du bruit (essais, `board.rs`) : la recherche t
   haut, la couleur de page fait le reste. Un `fit: "cover"` demanderait le cœur (K6) : plus tard.
 - **H1-7** (Q24) Icône Lucide `wallpaper` pour « Fonds » (porte visuelle).
 - **H1-9** (Q35) Une page PDF garde sa page sous « Toutes les pages » ; une capture du bureau (C11b) est remplacée.
+- **H1-10** (Q11, écart décidé à l'exécution par l'orchestrateur) 10 photos sur 43 ne tiennent pas sous 400 Ko en 2560 × 1440 même à q40 : elles passent en **1920 × 1080** plutôt que d'être écartées ou de relever le plafond par photo. Elles sont un peu moins nettes sur un écran de classe à 200 %. Repli : relever le plafond de ces 10 photos (le pack pèse 13 Mo sur 30). 5 photos restent écartées (trop lourdes même en 1920 × 1080).
+- **H1-11** (Q28, report) Le raccourci Ctrl+Maj+F n'est pas écrit dans l'infobulle du bouton « Fonds » : l'infobulle vient de `Toolbar.tsx` (`TipBubble label={props.item.label}`), que le chantier voisin personnalisation-1a modifie. Il est écrit au pied de la fenêtre. Suite : un champ de raccourci dans l'item de barre, une fois 1a fusionné.
 - **H1-8** (Q10) Fonds sombres (tableau noir, vert, bleu nuit) : l'encre noire des préréglages s'y voit mal ; aucun
   changement automatique de couleur d'encre.
 

@@ -592,7 +592,7 @@ chacune sont dans `apps/web/backgrounds/SOURCES.json`, hors de l'application con
 
 Sources retenues : Poly Haven (polyhaven.com, textures), Wikimedia Commons (fichiers au modèle CC0).
 
-Retouche : recadrage 16:9 centré, 2560 × 1440, WebP, métadonnées EXIF et XMP retirées ; miniatures 480 × 270.
+Retouche : recadrage 16:9 centré, 2560 × 1440 (ou 1920 × 1080 quand l'image ne tient pas sous 400 Ko), WebP, métadonnées EXIF et XMP retirées ; miniatures 480 × 270.
 
 Fonds dessinés (couleurs, dégradés, lignes et grilles, modèles de cours) : écrits pour RoomBoard
 (`apps/web/src/backgrounds/`), aucune source extérieure.

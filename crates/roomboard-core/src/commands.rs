@@ -566,7 +566,6 @@ pub(crate) fn check_backdrop(b: &BackdropInput) -> Result<(), CommandError> {
     Ok(())
 }
 
-/// Même fond (D38) : rien à retirer, ou même image (asset, genre `image`, taille, ajustement `width`).
 /// Écriture d'un fond décidée par `backdrop_plan`.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BackdropWrite {
@@ -574,6 +573,7 @@ pub(crate) enum BackdropWrite {
     Full,
 }
 
+/// Même fond (D38) : rien à retirer, ou même image (asset, genre `image`, taille, ajustement `width`).
 pub(crate) fn same_backdrop(input: Option<&BackdropInput>, current: Option<&RawBackdrop>) -> bool {
     match (input, current) {
         (None, None) => true,

@@ -13,7 +13,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, item, loadPlaywright, ROOT, serve, solidPng, zipEntries } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, item, loadPlaywright, ROOT, serve, solidPng, TAB, zipEntries } from "./commun.mjs";
 import { pdfPages } from "./fabriques/pdf.mjs";
 import { edgeRow, fringes, hex, pixelsOf } from "./nettete.mjs";
 
@@ -244,8 +244,11 @@ async function s4(page, tmp) {
   await (await dl).saveAs(file);
   const asset = l.split("|image:")[1];
   check([...zipEntries(readFileSync(file)).keys()].some((n) => n.startsWith(`assets/${asset}`)), "S4 : l'image du fond est dans assets/ du fichier enregistré");
-  await dropFile(page, "#stage", "fonds.roomboard", readFileSync(file), "");
-  await page.waitForFunction((k) => document.querySelector("#stage")?.dataset.look?.includes(k) ?? false, `|image:${asset}`, { timeout: 30000 }).catch(() => undefined);
+  const n0 = await page.locator(TAB).count();
+  await dropFile(page, "#stage", "fonds.roomboard", readFileSync(file), "application/x-roomboard");
+  await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length === n, [TAB, n0 + 1], { timeout: 30000 });
+  check(true, `S4 : le .roomboard rouvert dans un nouvel onglet (${n0 + 1} onglets)`);
+  await page.waitForFunction((k) => document.querySelector("#stage")?.dataset.look?.includes(k) ?? false, `|image:${asset}`, { timeout: 30000 });
   const reopened = await allLooks(page, 2);
   check(reopened[1].includes(`|image:${asset}`), "S4 : rouvert, la deuxième page montre toujours l'image");
   const list = cli(["backgrounds", "--search", "seyes"]);
