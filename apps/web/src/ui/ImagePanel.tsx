@@ -4,7 +4,7 @@
  * ensemble par « Valider » (une étape). Une écriture géométrique de la séance garde le brouillon ; toute autre écriture
  * (Valider, Rétablir, annuler, rétablir, ailleurs) le reprend du document. Démonté : la séance est fermée.
  */
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack, type Accessor, type JSX } from "solid-js";
 import type { ImageData, ImageParams } from "../core/api";
 import { clean, flipShown, paramsOf, turnShown } from "../core/image-params";
 import type { ImageEdit } from "../engine/tools/image-edit";
@@ -101,10 +101,14 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
       pipette();
     }
   });
+  let seen = untrack(props.version);
   createEffect(
     on(
       props.version,
       (v) => {
+        // Le moteur publie un état à chaque pipette armée ou aperçu sans que le document change : sans nouvelle version, le brouillon (mode, départ) reste.
+        if (v === seen) return;
+        seen = v;
         if (!props.edit.keepsDraft(v)) setDraft(draftOf(props.image()));
       },
       { defer: true },

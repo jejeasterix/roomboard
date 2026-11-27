@@ -104,13 +104,17 @@ export function ColorPicker(props: ColorPickerProps): JSX.Element {
   };
   return (
     <div ref={root} class="rb-color-picker" data-color-picker role="dialog" aria-label="Autres couleurs" onKeyDown={onKey}>
-      <Show when={props.transparent === true}>
-        <button type="button" class="rb-color-transparent" data-transparent data-color-transparent aria-label="Transparent" onClick={() => props.choose(null)}>
-          <span class="rb-pick-dot" />
-        </button>
-      </Show>
-      <Show when={props.pick !== undefined}>
-        <IconButton keepFocus icon="pipette" label="Pipette" shortcut={buttonShortcut("pipette")} attrs={{ "data-color-pipette": "", class: "rb-color-pipette" }} onPress={arm} />
+      <Show when={props.transparent === true || props.pick !== undefined}>
+        <div class="rb-color-tools">
+          <Show when={props.transparent === true}>
+            <button type="button" class="rb-color-transparent" data-transparent data-color-transparent aria-label="Transparent" title="Transparent" onClick={() => props.choose(null)}>
+              <span class="rb-pick-dot" />
+            </button>
+          </Show>
+          <Show when={props.pick !== undefined}>
+            <IconButton keepFocus icon="pipette" label="Pipette" shortcut={buttonShortcut("pipette")} attrs={{ "data-color-pipette": "", class: "rb-color-pipette" }} onPress={arm} />
+          </Show>
+        </div>
       </Show>
       <div class="rb-color-grid" role="grid" aria-label="Palette">
         <For each={OPEN_COLOR}>

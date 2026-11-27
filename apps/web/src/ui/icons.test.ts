@@ -169,3 +169,14 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     }
   });
 });
+
+describe("icônes de pression (OG23, T20)", () => {
+  it("pressure-variable : un chemin plein effilé (rempli, fermé), pas un anneau vide ; pressure-constant reste un trait", () => {
+    const [tag, attrs] = ICONS["pressure-variable"]![0]!;
+    expect(tag).toBe("path");
+    expect(attrs.fill).toBe("currentColor");
+    expect(attrs.d).toMatch(/Z$/i);
+    expect(ICONS["pressure-variable"]).toHaveLength(1);
+    expect(ICONS["pressure-constant"]![0]![1].fill).toBeUndefined();
+  });
+});

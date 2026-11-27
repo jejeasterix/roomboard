@@ -4671,6 +4671,19 @@ describe.each(factories)("contrat OG23 lot B : $name", ({ f }) => {
     d.free();
   });
 
+  it("SetStyle (T22) : tableau, média, objet 3D, vue dragCopy lu par `element().look`, annuler le retire", () => {
+    const d = f.blank();
+    const p = first(d);
+    const ids = [addTable(d, p), c14Add(d, p), c15Add(d, p)];
+    expect(ids.every((id) => id !== "")).toBe(true);
+    for (const id of ids) expect((d.element(id) as { look?: unknown } | null)?.look).toBeUndefined();
+    d.apply({ type: "SetStyle", ids, patch: { dragCopy: true } });
+    for (const id of ids) expect((d.element(id) as { look?: unknown } | null)?.look, id).toEqual({ dragCopy: true });
+    d.undo();
+    for (const id of ids) expect((d.element(id) as { look?: unknown } | null)?.look).toBeUndefined();
+    d.free();
+  });
+
   it("SetImageParams transparent x y : départ relu, hors image ou seul refusé du même message", () => {
     const d = f.blank();
     const p = first(d);

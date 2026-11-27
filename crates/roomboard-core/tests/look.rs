@@ -1625,3 +1625,86 @@ fn outline_cache_follows_variability_change() {
     set_style(&mut d, &[&s], patch(None)).expect("retrait");
     assert_eq!(bits(&d), variable);
 }
+
+/// OG23 (T22) : la vue d'un tableau, d'un média et d'un objet 3D porte `look.dragCopy` (décision 29) ; seul ce champ
+/// d'aspect y est exposé, un élément sans bascule garde la même vue (`look` omis).
+#[test]
+fn drag_copy_is_in_the_view_of_table_media_and_model3d() {
+    use roomboard_core::asset::AssetRef;
+    use roomboard_core::media::MediaType;
+    use roomboard_core::model3d::{Model3dFormat, DEFAULT_PITCH, DEFAULT_YAW};
+    let asset = |c: char, name: &str, mime: &str| AssetRef {
+        id: c.to_string().repeat(64),
+        name: name.into(),
+        mime: mime.into(),
+        size: 1000.0,
+    };
+    let mut d = blank();
+    let p = first_page(&d);
+    let table = d
+        .apply(Command::AddTable {
+            page: p.clone(),
+            x: 100.0,
+            y: 200.0,
+            cols: 2,
+            rows: 2,
+            col_width: 240.0,
+            row_height: 64.0,
+            color: "#000000".into(),
+            size: 36.0,
+        })
+        .expect("tableau")
+        .ids[0]
+        .clone();
+    let media = d
+        .apply(Command::AddMedia {
+            page: p.clone(),
+            asset: asset('a', "clip.webm", "video/webm"),
+            linked: None,
+            media_type: MediaType::Video,
+            w: 320.0,
+            h: 180.0,
+            duration: 2.5,
+            poster: None,
+            matrix: [1.0, 0.0, 0.0, 1.0, 100.0, 50.0],
+        })
+        .expect("média")
+        .ids[0]
+        .clone();
+    let model = d
+        .apply(Command::AddModel3d {
+            page: p,
+            asset: asset('b', "chaise.gltf", "model/gltf+json"),
+            format: Model3dFormat::Gltf,
+            files: vec![],
+            w: 640.0,
+            h: 480.0,
+            yaw: DEFAULT_YAW,
+            pitch: DEFAULT_PITCH,
+            snapshot: None,
+            matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        })
+        .expect("objet 3D")
+        .ids[0]
+        .clone();
+    let ids = [&table, &media, &model];
+    for id in ids {
+        assert_eq!(d.element(id).expect("vue").look, None, "neutre : omis");
+    }
+    set_style(&mut d, &ids, drag_copy(true)).expect("pose");
+    for id in ids {
+        let look = d.element(id).expect("vue").look.expect("look présent");
+        assert_eq!(look.drag_copy, Some(true));
+        assert_eq!(
+            look,
+            Look {
+                drag_copy: Some(true),
+                ..Look::default()
+            }
+        );
+    }
+    assert!(d.undo());
+    for id in ids {
+        assert_eq!(d.element(id).expect("vue").look, None);
+    }
+}

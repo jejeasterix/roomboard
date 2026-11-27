@@ -231,16 +231,24 @@ describe("arrangeKey (OG23, déc. 24)", () => {
     expect(arrangeKey(k("Ó", { code: "KeyH", altKey: true, shiftKey: true }))).toBe("align-center");
     expect(arrangeKey(k("h", { altKey: true }))).toBeNull();
   });
-  it("arrangeKey : un contrôle de l'interface ou un évènement déjà traité ne range rien (OG23, T19, comme nudgeKey)", () => {
+  it("arrangeKey : un champ de saisie ou un évènement déjà traité ne range rien ; un bouton, un radio, une case de grille focalisés ne bloquent pas (OG23, T21)", () => {
     const role = (r: string) => ({ tagName: "DIV", getAttribute: (n: string) => (n === "role" ? r : null) });
-    for (const target of [{ tagName: "BUTTON" }, { tagName: "SELECT" }, { tagName: "INPUT", type: "range" }, role("slider"), role("tab"), { tagName: "DIV", isContentEditable: true }]) {
+    for (const target of [{ tagName: "INPUT", type: "text" }, { tagName: "TEXTAREA" }, { tagName: "DIV", isContentEditable: true }]) {
       expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target })), JSON.stringify(target)).toBeNull();
       expect(arrangeKey(k("H", { shiftKey: true, target })), JSON.stringify(target)).toBeNull();
+    }
+    for (const target of [{ tagName: "BUTTON" }, { tagName: "INPUT", type: "range" }, { tagName: "INPUT", type: "radio" }, role("radio"), role("gridcell"), role("tab")]) {
+      expect(arrangeKey(k("H", { shiftKey: true, target })), JSON.stringify(target)).toBe("flip-h");
+      expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target })), JSON.stringify(target)).toBe("align-left");
     }
     expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, defaultPrevented: true }))).toBeNull();
     expect(arrangeKey(k("H", { shiftKey: true, defaultPrevented: true }))).toBeNull();
     expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: { tagName: "CANVAS" } }))).toBe("align-left");
     expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: null }))).toBe("align-left");
+  });
+  it("nudgeKey : une flèche seule sur un bouton ou un contrôle ne pousse rien (inchangé)", () => {
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "BUTTON" } }))).toBeNull();
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "DIV", getAttribute: (n: string) => (n === "role" ? "radio" : null) } }))).toBeNull();
   });
   it("arrangeKey refuse Ctrl, saisie, composition", () => {
     expect(arrangeKey(k("H", { shiftKey: true, ctrlKey: true }))).toBeNull();

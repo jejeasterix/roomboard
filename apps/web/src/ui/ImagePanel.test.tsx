@@ -31,7 +31,7 @@ function setup(initial: ImageData = { asset: A, w: 200, h: 150 }, edit = fakeEdi
   const [version, setVersion] = createSignal(0);
   const [tick, setTick] = createSignal(0);
   const close = vi.fn();
-  const r = render(() => <ImagePanel image={image} version={version} tick={tick} edit={edit} close={close} start={start} />);
+  const r = render(() => <ImagePanel image={image} version={() => (tick(), version())} tick={tick} edit={edit} close={close} start={start} />);
   const q = (sel: string) => r.container.querySelector<HTMLElement>(sel)!;
   const act = (id: string) => fireEvent.click(q(`[data-image-action="${id}"]`));
   const input = (id: string, v: string) => {
@@ -169,6 +169,20 @@ describe("panneau de retouche : pipette du mode point touché (OG23, T18)", () =
     fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "seed" } });
     act("pick");
     await a.tap("#111111", 1, 2);
+    expect(a.armed()).toBe(true);
+    await a.tap("#222222", 7, 8);
+    expect(a.armed()).toBe(true);
+    expect(edit.preview).toHaveBeenLastCalledWith({ transparent: { color: "#222222", tolerance: 10, soft: 0, contiguous: true, x: 7, y: 8 } });
+  });
+  it("T21 : toucher, aperçu, nouvel état du moteur à version inchangée, second toucher : mode et pipette tiennent", async () => {
+    const a = armable();
+    const { act, edit, q, setTick } = setup(undefined, a.edit as unknown as ReturnType<typeof fakeEdit>);
+    fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "seed" } });
+    act("pick");
+    await a.tap("#111111", 1, 2);
+    setTick(1); // le moteur publie un état (pickPoint, aperçu) : la version du document n'a pas bougé
+    await Promise.resolve();
+    expect((q('[data-image-input="mode"]') as HTMLSelectElement).value).toBe("seed");
     expect(a.armed()).toBe(true);
     await a.tap("#222222", 7, 8);
     expect(a.armed()).toBe(true);
