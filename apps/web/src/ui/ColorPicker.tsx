@@ -118,7 +118,8 @@ export function ColorPicker(props: ColorPickerProps): JSX.Element {
           value={props.value ?? ""}
           onInput={() => setInvalid(false)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(e.currentTarget); } }}
-          onBlur={(e) => { if (e.currentTarget.value.trim() !== "") commit(e.currentTarget); }}
+          // Comme Excalidraw (ColorInput.tsx) : la perte du focus ne valide rien, elle rétablit la couleur courante.
+          onBlur={(e) => { setInvalid(false); e.currentTarget.value = props.value ?? ""; }}
         />
       </label>
     </div>
