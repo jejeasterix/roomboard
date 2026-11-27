@@ -248,7 +248,7 @@ async function s4(page, tmp) {
   await dropFile(page, "#stage", "fonds.roomboard", readFileSync(file), "application/x-roomboard");
   await page.waitForFunction(([sel, n]) => document.querySelectorAll(sel).length === n, [TAB, n0 + 1], { timeout: 30000 });
   check(true, `S4 : le .roomboard rouvert dans un nouvel onglet (${n0 + 1} onglets)`);
-  await page.waitForFunction((k) => document.querySelector("#stage")?.dataset.look?.includes(k) ?? false, `|image:${asset}`, { timeout: 30000 });
+  await settle(page);
   const reopened = await allLooks(page, 2);
   check(reopened[1].includes(`|image:${asset}`), "S4 : rouvert, la deuxième page montre toujours l'image");
   const list = cli(["backgrounds", "--search", "seyes"]);
