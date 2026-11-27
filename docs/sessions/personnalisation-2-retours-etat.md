@@ -3,8 +3,8 @@
 Statut : en cours
 Gabarit : chantier (14 tâches, lots A T1-T9 et B T10-T14)
 Objectif : Le panneau d'options de RoomBoard range ses sections en accordéon et donne à Jérôme couleurs avancées et transparentes, pression du stylo, organiser, aligner, transformer, dupliquer, « Glisser une copie » et des options propres à chaque type d'objet (image : rogner, effacer le fond).
-Avancement : 3/14 tâches terminées
-Étage : 3 (vague 2) — depuis 2026-11-27 19:40
+Avancement : 8/14 tâches terminées
+Étage : 3 (vague 5 : T9, T10) — depuis 2026-11-27 20:57
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -22,16 +22,17 @@ contre-relecture cadrage 1/2 · relecture plan 1/3 · vagues sans progrès 0/2 �
 ## Tâches
 | id | dépend | état | essais | commit vert | preuve rejouée |
 |----|--------|------|--------|-------------|----------------|
-| T1 | — | preuve en rejeu | 2/3 (limite de tours) | 2c4089d6 | clippy 0 ; Wasm principal 1 464 837 o |
+| T1 | — | terminée | 2/3 (limite de tours) | 2c4089d6 | cargo arrange 15 ; clippy 0 ; Wasm 1 464 837 o |
 | T2 | — | terminée | 1/3 | 2246626c | vitest 47 (sectionOpen, 4 pastilles) |
 | T3 | — | terminée | 1/3 | cb7513b7 | vitest 44 (arrangeKey AZERTY et QWERTY) |
-| T4 | T1,T3 | à faire | | | |
+| T4 | T1,T3 | terminée | 1/3 (limite de tours, reprise) | 2f6a5f65 | vitest core 644 (Arrange 2 cœurs) ; cli 34 (how inconnu) ; CLI : OK |
 | T5 | T2 | terminée | 1/3 | 69980306 | vitest src/ui 802 (43 fichiers) |
-| T6 | T3,T4 | à faire | | | |
-| T7 | T5,T6 | à faire | | | |
-| T8 | T7 | à faire (coupée en premier si le temps manque) | | | |
-| T9 | T4,T8 | à faire | | | |
-| T10–T14 | lot B | à faire | | | |
+| T6 | T3,T4 | terminée | 1/3 | 187c8426 | vitest 209 (flèche une étape, transparent jamais gardé) |
+| T7 | T5,T6 | terminée | 1/3 | e929486e | vitest src/ui 810 (Aligner, Pression · Variable) |
+| T8 | T7 | terminée | 1/3 (implementeur-tdd au lieu de concepteur-critique, pour le temps) | 3866727b | vitest 374 (pipette, pickColor) |
+| T9 | T4,T8 | en cours | 1/3 | | |
+| T10 | (T9 : fichiers disjoints, lancée avant) | preuve en rejeu | 1/3 | e7e3789a | Wasm 1 467 381 o · formats 2 795 895 o |
+| T11–T14 | lot B | à faire | | | |
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · verifier.sh --e2e OK sans régression · scénarios réussis · captures 2x avant/après · PR fusionnée par merge --no-ff local, push sans --force
