@@ -6,6 +6,8 @@
 //! `element::unknown_view` (jamais invisible). C10b : fusion = `span` `[id de la dernière ligne, id de la dernière colonne]`
 //! (`Any::Array` de deux chaînes) sur l'ancre seule ; la couverture se déduit à la lecture par `merges_of` (F2), jamais
 //! écrite (aucun `mergedInto`) ; `shade` = couleur d'un ombrage opaque (F8). Aucune `Any::Map`.
+//! Objet logé (personnalisation-3) : champ `cell` de l'objet, `table_links.rs` ; les commandes qui bougent une ligne
+//! ou une colonne font suivre ses objets liés dans leur propre transaction (`follow_in`).
 use std::collections::{HashMap, HashSet};
 
 use yrs::{
@@ -45,6 +47,9 @@ pub struct TableCellView {
     pub text: String,
     pub fill: Option<String>,
     pub shade: Option<String>,
+    /// Image de fond de case (personnalisation-3, T9) : id d'asset ; omise quand il n'y en a pas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg: Option<String>,
     pub spans: Vec<TextSpanView>,
 }
 
@@ -67,6 +72,12 @@ pub struct TableView {
     pub rows: Vec<TableRowView>,
     pub cells: Vec<TableCellView>,
     pub merges: Vec<TableMergeView>,
+    /// personnalisation-3 (T7) : `"shrink"` seulement (absent = « agrandir »).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fit: Option<String>,
+    /// personnalisation-3 (T7) : en-tête de tableau (dessin : lot B) ; omis si faux.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub header: bool,
 }
 
 /// Ligne ou colonne lisible : id, taille, son `Y.Map` et son rang brut dans le `Y.Array` (entrées illisibles
@@ -88,6 +99,8 @@ pub(crate) struct RawTable {
     pub cells: Option<MapRef>,
     pub cols: Vec<Line>,
     pub rows: Vec<Line>,
+    pub fit: Option<String>,
+    pub header: bool,
 }
 
 /// Cellule lue ; `text` : son `Y.Text` s'il en est un (le `span` se lit par `read_cell_span`, F1).
@@ -97,6 +110,7 @@ pub(crate) struct RawCell {
     pub content: String,
     pub fill: Option<String>,
     pub shade: Option<String>,
+    pub bg: Option<String>,
 }
 
 pub(crate) fn cell_key(row: &str, col: &str) -> String {
@@ -165,6 +179,8 @@ pub(crate) fn read_raw<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<RawTable> {
         cells,
         cols,
         rows,
+        fit: out_string(e.get(txn, "fit")).filter(|f| f == "shrink"),
+        header: matches!(e.get(txn, "header"), Some(Out::Any(Any::Bool(true)))),
     })
 }
 
@@ -201,12 +217,14 @@ pub(crate) fn read_cell<T: ReadTxn>(
     let content = text.as_ref().map(|t| t.get_string(txn)).unwrap_or_default();
     let fill = out_string(map.get(txn, "fill")).filter(|c| valid_color(c));
     let shade = out_string(map.get(txn, "shade")).filter(|c| valid_color(c));
+    let bg = out_string(map.get(txn, "bg")).filter(|a| crate::asset::is_asset_id(a));
     Some(RawCell {
         map,
         text,
         content,
         fill,
         shade,
+        bg,
     })
 }
 
@@ -312,7 +330,11 @@ impl RawTable {
                 let Some(cell) = read_cell(txn, self.cells.as_ref(), &r.id, &c.id) else {
                     continue;
                 };
-                if cell.content.is_empty() && cell.fill.is_none() && cell.shade.is_none() {
+                if cell.content.is_empty()
+                    && cell.fill.is_none()
+                    && cell.shade.is_none()
+                    && cell.bg.is_none()
+                {
                     continue;
                 }
                 cells.push(TableCellView {
@@ -321,6 +343,7 @@ impl RawTable {
                     text: cell.content,
                     fill: cell.fill,
                     shade: cell.shade,
+                    bg: cell.bg,
                     spans: rich_text::cell_spans(txn, cell.text.as_ref()),
                 });
             }
@@ -335,6 +358,8 @@ impl RawTable {
             })
             .collect();
         TableView {
+            fit: self.fit.clone(),
+            header: self.header,
             color: self.color.clone(),
             size: self.size,
             cols: self
@@ -439,7 +464,7 @@ fn lines_ok(n: u32) -> bool {
     (1..=MAX_TABLE_LINES).contains(&n)
 }
 
-fn size_key(axis: TableAxis) -> &'static str {
+pub(crate) fn size_key(axis: TableAxis) -> &'static str {
     match axis {
         TableAxis::Row => "height",
         TableAxis::Col => "width",
@@ -459,7 +484,7 @@ fn in_line(key: &str, axis: TableAxis, line: &str) -> bool {
 }
 
 /// `cells` du tableau : le `Y.Map` lu, sinon un neuf posé sur l'élément (PC12 de C10a). Une fois par transaction.
-fn cells_map(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> MapRef {
+pub(crate) fn cells_map(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> MapRef {
     match cells {
         Some(m) => m.clone(),
         None => e.insert(txn, "cells", MapPrelim::default()),
@@ -467,7 +492,7 @@ fn cells_map(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> Ma
 }
 
 /// Cellule absente posée en `Y.Map{ text, …fields }`.
-fn insert_cell(
+pub(crate) fn insert_cell(
     txn: &mut TransactionMut,
     cells: &MapRef,
     key: String,
@@ -558,7 +583,7 @@ fn span_moves(
 }
 
 impl RawTable {
-    fn axis(&self, axis: TableAxis) -> (&[Line], &ArrayRef) {
+    pub(crate) fn axis(&self, axis: TableAxis) -> (&[Line], &ArrayRef) {
         match axis {
             TableAxis::Row => (&self.rows, &self.rows_arr),
             TableAxis::Col => (&self.cols, &self.cols_arr),
@@ -566,7 +591,7 @@ impl RawTable {
     }
 
     /// Rangs de la ligne `row` et de la colonne `col`, si elles sont lisibles.
-    fn ranks(&self, (row, col): (&str, &str)) -> Option<(usize, usize)> {
+    pub(crate) fn ranks(&self, (row, col): (&str, &str)) -> Option<(usize, usize)> {
         Some((
             self.rows.iter().position(|l| l.id == row)?,
             self.cols.iter().position(|l| l.id == col)?,
@@ -592,7 +617,7 @@ impl RawTable {
 
 impl Document {
     /// Tableau `id` : page, `Y.Map` de l'élément, lecture brute ; absent ou pas un tableau lisible : `UnknownElement`.
-    fn table_of(&self, id: &str) -> Result<(String, MapRef, RawTable), CommandError> {
+    pub(crate) fn table_of(&self, id: &str) -> Result<(String, MapRef, RawTable), CommandError> {
         let txn = self.read();
         let unknown = || CommandError::UnknownElement(id.to_string());
         let found = self.find_element(&txn, id).ok_or_else(unknown)?;
@@ -600,7 +625,7 @@ impl Document {
         Ok((found.page_id, found.element, raw))
     }
 
-    fn table_done(&mut self, page: String, id: &str) -> Change {
+    pub(crate) fn table_done(&mut self, page: String, id: &str) -> Change {
         self.done(Change {
             pages: vec![page],
             ids: vec![id.to_string()],
@@ -791,7 +816,8 @@ impl Document {
         if current == content && grow.is_none() && spans_same {
             return Ok(self.unchanged());
         }
-        {
+        let before = crate::table_links::offsets(&raw);
+        let moved = {
             let mut txn = self.transact_local();
             let text = if current != content {
                 match &cell {
@@ -818,11 +844,12 @@ impl Document {
             }
             if let Some(h) = grow {
                 last.map.insert(&mut txn, "height", In::Any(Any::from(h)));
-                // C3 : tableau agrandi, ses lignes liées suivent dans la même étape (comme `cmd_insert_table_line`).
-                crate::linear::follow(self, &mut txn, &[id.to_string()], None);
             }
-        }
-        Ok(self.table_done(page, id))
+            // C3 : tableau agrandi : ses objets logés, puis ses lignes liées et celles des objets déplacés suivent, même
+            // étape (`follow_in`, après la translation).
+            self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
+        };
+        Ok(self.table_done_with(page, id, moved))
     }
 
     /// `InsertTableLine` (T3, T15) : `at` ∈ 0..=n, plafond 64 ; inséré au rang brut de la `at`-ième ligne lisible ;
@@ -833,7 +860,7 @@ impl Document {
         axis: TableAxis,
         at: u32,
     ) -> Result<Change, CommandError> {
-        let (page, _, raw) = self.table_of(id)?;
+        let (page, e, raw) = self.table_of(id)?;
         let (lines, arr) = raw.axis(axis);
         let n = lines.len() as u32;
         if at > n || n >= MAX_TABLE_LINES {
@@ -851,13 +878,14 @@ impl Document {
             lines[at as usize].index
         };
         let line_id = yrs::uuid_v4().to_string();
-        {
+        let before = crate::table_links::offsets(&raw);
+        let moved = {
             let mut txn = self.transact_local();
             arr.insert(&mut txn, index, line_prelim(&line_id, size_key(axis), size));
-            // C1 : tableau élargi, ses lignes liées suivent dans la même étape.
-            crate::linear::follow(self, &mut txn, &[id.to_string()], None);
-        }
-        Ok(self.table_done(page, id))
+            // C1 : tableau élargi : ses objets logés, puis ses lignes liées et celles des objets déplacés suivent, même étape.
+            self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
+        };
+        Ok(self.table_done_with(page, id, moved))
     }
 
     /// `RemoveTableLine` (T3, F6) : les lignes `line..=to` et leurs cellules dans la même transaction que le report des
@@ -896,7 +924,8 @@ impl Document {
             (keys, merges_of(&raw, &txn))
         };
         let moves = span_moves(&raw, &merges, axis, a, b);
-        {
+        let before = crate::table_links::offsets(&raw);
+        let moved = {
             let mut txn = self.transact_local();
             for l in lines[a..=b].iter().rev() {
                 arr.remove(&mut txn, l.index);
@@ -933,10 +962,10 @@ impl Document {
                     }
                 }
             }
-            // C3 : tableau réduit, ses lignes liées suivent dans la même étape (comme `cmd_insert_table_line`).
-            crate::linear::follow(self, &mut txn, &[id.to_string()], None);
-        }
-        Ok(self.table_done(page, id))
+            // C3 : tableau réduit : ses objets logés, puis ses lignes liées et celles des objets déplacés suivent, même étape.
+            self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
+        };
+        Ok(self.table_done_with(page, id, moved))
     }
 
     /// `SetTableSizes` (T11) : largeur et hauteur totales bornées en f32 ; écrit seulement les tailles qui changent ;
@@ -950,7 +979,7 @@ impl Document {
         if !finite_positive(col_width) || !finite_positive(row_height) {
             return Err(CommandError::BadTable);
         }
-        let (page, _, raw) = self.table_of(id)?;
+        let (page, e, raw) = self.table_of(id)?;
         if !fits_f32(&[
             raw.cols.len() as f64 * col_width,
             raw.rows.len() as f64 * row_height,
@@ -962,7 +991,8 @@ impl Document {
         if cols.is_empty() && rows.is_empty() {
             return Ok(self.unchanged());
         }
-        {
+        let before = crate::table_links::offsets(&raw);
+        let moved = {
             let mut txn = self.transact_local();
             for l in cols {
                 l.map
@@ -972,10 +1002,10 @@ impl Document {
                 l.map
                     .insert(&mut txn, "height", In::Any(Any::from(row_height)));
             }
-            // C1 : taille du tableau changée, ses lignes liées suivent dans la même étape.
-            crate::linear::follow(self, &mut txn, &[id.to_string()], None);
-        }
-        Ok(self.table_done(page, id))
+            // C1 : taille du tableau changée : ses objets logés, puis ses lignes liées et celles des objets déplacés suivent, même étape.
+            self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
+        };
+        Ok(self.table_done_with(page, id, moved))
     }
 
     /// `key` (`fill` ou `shade`) posé ou retiré sur les ancres et cellules simples du rectangle (F9, F15) ; rien à
@@ -1277,6 +1307,7 @@ pub(crate) mod tests {
                     text: "Lundi".into(),
                     fill: None,
                     shade: None,
+                    bg: None,
                     spans: plain_spans("Lundi")
                 },
                 TableCellView {
@@ -1285,6 +1316,7 @@ pub(crate) mod tests {
                     text: String::new(),
                     fill: Some("#fef08a".into()),
                     shade: None,
+                    bg: None,
                     spans: plain_spans("")
                 },
             ]
@@ -2151,6 +2183,7 @@ pub(crate) mod tests {
                     width: 4.0,
                 },
                 look: Look::default(),
+                cell: None,
             })
             .expect("trait")
             .ids[0]
@@ -2352,6 +2385,7 @@ pub(crate) mod tests {
                 text: String::new(),
                 fill: Some("#fef08a".into()),
                 shade: None,
+                bg: None,
                 spans: plain_spans("")
             }]
         );

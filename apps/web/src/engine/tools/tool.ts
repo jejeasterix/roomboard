@@ -65,6 +65,8 @@ export interface SelectionTool extends GestureTool {
   setSelection(ids: readonly string[]): void;
   /** Retire les ids absents de la page montrée (après annuler, rétablir, suppression). */
   prune(): void;
+  /** personnalisation-3 : loge la sélection dans la case sous son centre (out : la sort) ; false si rien à faire. */
+  placeInCell?(out: boolean): boolean;
 }
 
 /** Outil Tableau (C10a) : cellule active tenue par ids, retirée par prune quand elle disparaît (I1). */

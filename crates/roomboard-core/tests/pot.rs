@@ -56,6 +56,7 @@ fn stroke(d: &mut Document, p: &str) -> String {
         points,
         style: pen(),
         look: Look::default(),
+        cell: None,
     })
     .expect("trait")
     .ids[0]

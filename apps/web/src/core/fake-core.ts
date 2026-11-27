@@ -46,6 +46,7 @@ import type {
   BackdropView,
   Bounds,
   CellIds,
+  CellLink,
   Change,
   Command,
   CoreDocument,
@@ -171,6 +172,9 @@ interface FakeElement {
   readonly group?: readonly string[];
   /** OG11 : aspect écrit (assaini, jamais neutre) ; lu sur les traits, formes, textes et images, comme le cœur. */
   readonly look?: Look;
+  /** personnalisation-3 (D1) : case qui loge l'objet, valeur gardée telle quelle ; publiée par element() seulement vers
+   *  une case existante, jamais sur un tableau (comme la vue du cœur). */
+  readonly cell?: CellLink;
 }
 type RawRecord = Readonly<Record<string, unknown>>;
 /** Cellule de la fausse liaison ; absente du Map = vide ; `spans` = segments du texte (C7b) ; `span` = [dernière ligne,
@@ -180,6 +184,8 @@ interface FakeCell {
   readonly spans: readonly TextSpan[];
   readonly fill: string | null;
   readonly shade: string | null;
+  /** personnalisation-3 (T9) : asset de l'image de fond. */
+  readonly bg: string | null;
   readonly span: readonly [string, string] | null;
 }
 /** Tableau (C10a) : objets repris tels quels d'une étape à l'autre, sauf ceux qu'une commande change. */
@@ -190,6 +196,9 @@ interface FakeTable {
   readonly rows: readonly TableRow[];
   /** Clé `<rowId>:<colId>`. */
   readonly cells: ReadonlyMap<string, FakeCell>;
+  /** personnalisation-3 (T7) : "shrink" seulement ; `header` vrai seulement. */
+  readonly fit?: "shrink";
+  readonly header?: boolean;
 }
 /** `grid` : valeur brute lue ou écrite (G13), null sans grille ; vue par `gridView`. `mode` : valeur brute (null absent,
  *  inconnue gardée, U3) ; `height` : hauteur lue (PAGE_HEIGHT si illisible). */
@@ -406,7 +415,7 @@ function inLine(key: string, axis: TableAxis, line: string): boolean {
 }
 /** Zone retenue (F2), en rangs, bornes comprises. */
 interface FakeMerge { readonly r0: number; readonly c0: number; readonly r1: number; readonly c1: number }
-const EMPTY_CELL: FakeCell = { text: "", spans: plainSpans(""), fill: null, shade: null, span: null };
+const EMPTY_CELL: FakeCell = { text: "", spans: plainSpans(""), fill: null, shade: null, bg: null, span: null };
 const overlaps = (a: FakeMerge, b: FakeMerge): boolean => a.r0 <= b.r1 && b.r0 <= a.r1 && a.c0 <= b.c1 && b.c0 <= a.c1;
 const inside = (a: FakeMerge, b: FakeMerge): boolean => b.r0 <= a.r0 && a.r1 <= b.r1 && b.c0 <= a.c0 && a.c1 <= b.c1;
 const contains = (m: FakeMerge, r: number, c: number): boolean => r >= m.r0 && r <= m.r1 && c >= m.c0 && c <= m.c1;
@@ -473,13 +482,22 @@ function tableView(t: FakeTable): TableData {
   for (const r of t.rows) {
     for (const c of t.cols) {
       const cell = t.cells.get(cellKey(r.id, c.id));
-      if (cell && (cell.text !== "" || cell.fill !== null || cell.shade !== null)) {
-        cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill, shade: cell.shade, spans: cell.spans });
+      if (cell && (cell.text !== "" || cell.fill !== null || cell.shade !== null || cell.bg !== null)) {
+        cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill, shade: cell.shade, spans: cell.spans, ...(cell.bg === null ? {} : { bg: cell.bg }) });
       }
     }
   }
   const merges = mergesOf(t).map((m) => ({ row: rowId(t, m.r0), col: colId(t, m.c0), rows: m.r1 - m.r0 + 1, cols: m.c1 - m.c0 + 1 }));
-  return { color: t.color, size: t.size, cols: t.cols, rows: t.rows, cells, merges };
+  return {
+    color: t.color,
+    size: t.size,
+    cols: t.cols,
+    rows: t.rows,
+    cells,
+    merges,
+    ...(t.fit === "shrink" ? { fit: "shrink" as const } : {}),
+    ...(t.header === true ? { header: true } : {}),
+  };
 }
 /** Écrite seulement si absente (K3). */
 const putMeta = (assets: Map<string, unknown>, a: AssetRef, linked: string | null = null): void => {
@@ -616,8 +634,9 @@ function scanAssets(v: unknown, acc: Set<string>): void {
 let counter = 0;
 const newId = (): string => `fake-${++counter}`;
 
-/** Recopie (Z4) : id neuf, chemin renuméroté par `groups` (commun à l'insertion), translation si le transform est lu. */
-function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy: number, id: string = newId()): FakeElement {
+/** Recopie (Z4) : id neuf, chemin renuméroté par `groups` (commun à l'insertion), lien de case relié au tableau copié
+ *  (`ids` : table ancien → neuf du lot), translation si le transform est lu. */
+function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy: number, id: string = newId(), ids?: ReadonlyMap<string, string>): FakeElement {
   const group = e.group?.map((g) => {
     let n = groups.get(g);
     if (n === undefined) {
@@ -626,12 +645,100 @@ function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy
     }
     return n;
   });
-  const { group: _old, ...rest } = e;
+  // personnalisation-3 (T5) : `cell[0]` remplacé par l'id neuf du tableau copié ; tableau absent de la copie : lien retiré.
+  const { group: _old, cell: _c, ...rest } = e;
+  const table = e.cell === undefined ? undefined : ids?.get(e.cell[0]);
+  const cell: { cell?: CellLink } = e.cell !== undefined && table !== undefined ? { cell: [table, e.cell[1], e.cell[2]] } : {};
   const moves = (dx !== 0 || dy !== 0) && e.unknown?.hasTransform !== false && e.malformed === undefined;
   const t = e.transform;
   const transform: Matrix = moves ? [t[0], t[1], t[2], t[3], t[4] + dx, t[5] + dy] : t;
-  return { ...rest, id, transform, ...withGroup(group) };
+  return { ...rest, id, transform, ...withGroup(group), ...cell };
 }
+/** personnalisation-3 : élément de nature tableau, lisible ou non (`kind` brut du cœur : un tableau mal formé aussi). */
+const isTableKind = (e: FakeElement): boolean => e.table !== undefined || e.unknown?.sourceKind === "table";
+/** Élément dont le transform est lu (cibles de `Transform`, comme `out_transform` du cœur). */
+const movable = (e: FakeElement): boolean => e.unknown?.hasTransform !== false && e.malformed === undefined;
+const withoutCell = ({ cell: _c, ...rest }: FakeElement): FakeElement => rest;
+/** personnalisation-3 (D5) : décalage de chaque ligne et colonne depuis le coin, comme `offsets` du cœur. */
+interface Offsets { readonly cols: ReadonlyMap<string, number>; readonly rows: ReadonlyMap<string, number> }
+function offsetsOf(t: FakeTable): Offsets {
+  const run = (lines: readonly { readonly id: string; readonly size: number }[]): Map<string, number> => {
+    const m = new Map<string, number>();
+    let acc = 0;
+    for (const l of lines) {
+      m.set(l.id, acc);
+      acc += l.size;
+    }
+    return m;
+  };
+  return { cols: run(t.cols.map((c) => ({ id: c.id, size: c.width }))), rows: run(t.rows.map((r) => ({ id: r.id, size: r.height }))) };
+}
+/** Suivi (D5), comme `move_linked` : translation du coin de la case (partie linéaire de `m`, matrice du tableau), lien
+ *  retiré si sa ligne ou sa colonne a disparu (H22), lien déjà sans case avant laissé tel quel ; ids touchés, ordre de la
+ *  pile ; les seuls translatés sont aussi poussés dans `translated`. */
+function followCells(p: FakePage, tableId: string, m: Matrix, before: Offsets, after: Offsets, skip: ReadonlySet<string>, translated?: string[]): string[] {
+  const out: string[] = [];
+  p.elements.forEach((e, i) => {
+    const l = e.cell;
+    if (l === undefined || l[0] !== tableId || skip.has(e.id) || isTableKind(e)) return;
+    const c0 = before.cols.get(l[2]);
+    const r0 = before.rows.get(l[1]);
+    if (c0 === undefined || r0 === undefined) return;
+    const c1 = after.cols.get(l[2]);
+    const r1 = after.rows.get(l[1]);
+    if (c1 === undefined || r1 === undefined) {
+      p.elements[i] = withoutCell(e);
+      out.push(e.id);
+      return;
+    }
+    const dx = c1 - c0;
+    const dy = r1 - r0;
+    if (!movable(e) || (dx === 0 && dy === 0)) return;
+    const [a, b, c, d, tx, ty] = e.transform;
+    p.elements[i] = { ...e, transform: [a, b, c, d, tx + m[0] * dx + m[2] * dy, ty + m[1] * dx + m[3] * dy] };
+    translated?.push(e.id);
+    out.push(e.id);
+  });
+  return out;
+}
+/** Rectangle local d'une case (sa zone si elle en couvre une), comme `cell_rect`. */
+function cellRectOf(t: FakeTable, row: string, col: string): Bounds | null {
+  const r = t.rows.findIndex((x) => x.id === row);
+  const c = t.cols.findIndex((x) => x.id === col);
+  if (r < 0 || c < 0) return null;
+  const z = mergesOf(t).find((m) => m.r0 <= r && r <= m.r1 && m.c0 <= c && c <= m.c1) ?? { r0: r, c0: c, r1: r, c1: c };
+  const at = (sizes: readonly number[], i: number): number => sum(sizes.slice(0, i));
+  const w = t.cols.map((x) => x.width);
+  const h = t.rows.map((x) => x.height);
+  return { x0: at(w, z.c0), y0: at(h, z.r0), x1: at(w, z.c1 + 1), y1: at(h, z.r1 + 1) };
+}
+/** Tailles par id, comme `line_sizes_ok` puis `write_line_sizes` du cœur : contrôle sur la dernière taille demandée de
+ *  chaque ligne (finie > 0, ligne connue, totaux bornés en f32) ; écriture de chaque taille qui diffère de la taille lue,
+ *  la dernière l'emportant. null : refus. */
+function resizedLines(t: FakeTable, list: readonly (readonly [TableAxis, string, number])[]): FakeTable | null {
+  const lines = (a: TableAxis): { readonly id: string; readonly size: number }[] =>
+    a === "row" ? t.rows.map((r) => ({ id: r.id, size: r.height })) : t.cols.map((c) => ({ id: c.id, size: c.width }));
+  // Comme `line_sizes_ok` du cœur, entrée unique des deux commandes : une ligne citée deux fois est refusée (le contrôle
+  // lirait la dernière taille, l'écriture la première différente).
+  if (new Set(list.map(([a, id]) => `${a}:${id}`)).size !== list.length) return null;
+  const known = list.every(([a, id, size]) => positive(size) && lines(a).some((l) => l.id === id));
+  const total = (a: TableAxis): number =>
+    sum(lines(a).map((l) => [...list].reverse().find(([b, id]) => b === a && id === l.id)?.[2] ?? l.size));
+  if (!known || !fitsF32([total("row"), total("col")])) return null;
+  const written = (a: TableAxis, id: string, cur: number): number =>
+    [...list].reverse().find(([b, i, size]) => b === a && i === id && size !== cur)?.[2] ?? cur;
+  const cols = t.cols.map((c) => {
+    const w = written("col", c.id, c.width);
+    return w === c.width ? c : { ...c, width: w };
+  });
+  const rows = t.rows.map((r) => {
+    const h = written("row", r.id, r.height);
+    return h === r.height ? r : { ...r, height: h };
+  });
+  return { ...t, cols, rows };
+}
+const sameLines = (a: FakeTable, b: FakeTable): boolean =>
+  a.cols.length === b.cols.length && a.rows.length === b.rows.length && a.cols.every((c, i) => c === b.cols[i]) && a.rows.every((r, i) => r === b.rows[i]);
 
 /** OG12 (n° 10) : liaisons renvoyées vers la copie de leur cible (`fresh`), retirées si la cible n'est pas du lot. */
 function rebound(e: FakeElement, fresh: ReadonlyMap<string, string>): FakeElement {
@@ -648,7 +755,8 @@ function rebound(e: FakeElement, fresh: ReadonlyMap<string, string>): FakeElemen
 }
 
 /** Recopie d'un lot (`copy_prelims` du cœur) : table ancien → neuf du lot tirée d'abord (première occurrence d'un id
- *  répété), puis chaque recopie, liaisons renvoyées vers les copies ou retirées. Seul chemin de recopie d'`extract`,
+ *  répété ; un objet passé sous son tableau est recopié avant lui), puis chaque recopie, lien de case relié au tableau
+ *  copié (personnalisation-3, T5), liaisons renvoyées vers les copies ou retirées. Seul chemin de recopie d'`extract`,
  *  `insertFragment`, `insertPages`, `DuplicatePage` et `AddLinked`. */
 function copyElements(list: readonly FakeElement[], groups: Map<string, string>, dx: number, dy: number): FakeElement[] {
   const fresh = new Map<string, string>();
@@ -657,7 +765,7 @@ function copyElements(list: readonly FakeElement[], groups: Map<string, string>,
     if (!fresh.has(e.id)) fresh.set(e.id, id);
     return id;
   });
-  return list.map((e, i) => rebound(copyElement(e, groups, dx, dy, own[i]!), fresh));
+  return list.map((e, i) => rebound(copyElement(e, groups, dx, dy, own[i]!, fresh), fresh));
 }
 
 type Pt2 = [number, number];
@@ -958,18 +1066,40 @@ class FakeDocument implements CoreDocument {
   }
 
   /** Une étape : le tableau `id` remplacé par `next` (les autres éléments repris tels quels). */
-  private writeTable(found: Found, id: string, next: FakeTable, follow = false): Change {
+  private writeTable(found: Found, id: string, next: FakeTable): Change {
     const pageId = found.page.id;
     return this.step((s) => {
       const p = s.pages.find((q) => q.id === pageId);
       const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
       const old = p?.elements[i];
       if (p && old) p.elements[i] = { ...old, table: next };
-      // C1, C3 : taille changée (`cmd_insert_table_line`, `cmd_set_table_sizes`, `cmd_remove_table_line`, `cmd_set_table_cell`
-      // qui agrandit une ligne) : les lignes liées suivent, même étape.
-      if (follow) this.follow(s, new Set([id]), null);
-      return { pages: [pageId], ids: [id], removed: [] };
+      // personnalisation-3 (D5) puis OG12 (C1, C3), comme `follow_in` puis `table_done_with` du cœur : le suivi vit ici,
+      // seul passage de toutes les écritures de tableau ; le tableau d'abord, puis les objets suivis.
+      const moved = p && old ? this.followTable(s, p, id, old.transform, old.table, next, new Set()).filter((x) => x !== id) : [];
+      return { pages: [pageId], ids: [id, ...moved], removed: [] };
     });
+  }
+
+  /** personnalisation-3 (D1) : la case visée existe (tableau lisible, ligne et colonne présentes). */
+  private cellTargetOk(l: CellLink): boolean {
+    const t = this.find(l[0])?.element.table;
+    return t !== undefined && t.rows.some((r) => r.id === l[1]) && t.cols.some((c) => c.id === l[2]);
+  }
+
+  /** personnalisation-3 (D6), comme `leaving_cells` : l'objet lié, déplacé par `m` sans son tableau, sort de sa case si
+   *  le centre de sa boîte en sort (bord compris dedans) ; tableau absent ou illisible : lien gardé ; case disparue : retiré. */
+  private leavesCell(id: string, moving: ReadonlySet<string>, m: Matrix): boolean {
+    const l = this.find(id)?.element.cell;
+    if (l === undefined || moving.has(l[0])) return false;
+    const b = this.bounds([id]);
+    const tf = this.find(l[0]);
+    const t = tf?.element.table;
+    const inv = tf ? invertMatrix(tf.element.transform) : null;
+    if (b === null || t === undefined || inv === null) return false;
+    const [nx, ny] = applyMatrix(m, (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+    const [lx, ly] = applyMatrix(inv, nx, ny);
+    const r = cellRectOf(t, l[1], l[2]);
+    return r === null || lx < r.x0 || lx > r.x1 || ly < r.y0 || ly > r.y1;
   }
 
   /** Une étape : un nouveau tableau (id tiré avant ses lignes et colonnes) posé en dernier sur la page. */
@@ -1030,6 +1160,19 @@ class FakeDocument implements CoreDocument {
 
   /** OG12 : suivi et rupture (`linear::follow`, n° 7, 8), sur l'état `s` de l'étape de la commande qui a bougé `moved` ;
    *  `m` : matrice du `Transform` (null : boîte d'un texte changée). Rend les ids réécrits. */
+  /** Comme `follow_in` du cœur, dans l'étape ouverte : objets logés au tableau `tableId` translatés d'abord (D5), puis les
+   *  lignes liées (OG12) au tableau si sa boîte a changé et aux objets translatés, relus à leur place neuve ; jamais un
+   *  objet seulement délié. Rend les ids touchés par le suivi des objets, ordre de la pile. */
+  private followTable(s: State, p: FakePage, tableId: string, m: Matrix, before: FakeTable | undefined, next: FakeTable, skip: ReadonlySet<string>): string[] {
+    if (before === undefined) return [];
+    const translated: string[] = [];
+    const touched = followCells(p, tableId, m, offsetsOf(before), offsetsOf(next), skip, translated);
+    const resized = tableWidth(before) !== tableWidth(next) || tableHeight(before) !== tableHeight(next);
+    const lines = resized ? [tableId, ...translated] : translated;
+    if (lines.length > 0) this.follow(s, new Set(lines), null);
+    return touched;
+  }
+
   private follow(s: State, moved: ReadonlySet<string>, m: Matrix | null): string[] {
     // C1 (`bound_target`) : cible cherchée sur la page de la ligne seulement ; d'une autre page, bout libre.
     const boxIn = (p: FakePage, b: LineBinding | null): BindBox | null => {
@@ -1337,10 +1480,18 @@ class FakeDocument implements CoreDocument {
         }
         if (!positive(cmd.style.width)) throw new Error(MESSAGES.badWidth);
         this.pageOf(cmd.page);
+        // T8 (D10), comme `check_cell_target` du cœur : contrôles de la case avant toute écriture.
+        const target = cmd.cell;
+        if (target !== undefined) {
+          const { found, t } = this.tableOf(target[0]);
+          if (found.page.id !== cmd.page) throw new Error(MESSAGES.badTable);
+          if (!t.rows.some((r) => r.id === target[1]) || !t.cols.some((c) => c.id === target[2])) throw new Error(MESSAGES.badTable);
+          if ((t.cells.get(cellKey(target[1], target[2]))?.shade ?? null) !== null) throw new Error(MESSAGES.badTable);
+        }
         return this.step((s) => {
           const id = newId();
           const { x0, y0, local } = toLocal(cmd.points);
-          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(x0, y0), local, style: cmd.style, ...(look ? { look } : {}) });
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(x0, y0), local, style: cmd.style, ...(look ? { look } : {}), ...(target ? { cell: target } : {}) });
           return { pages: [cmd.page], ids: [id], removed: [] };
         });
       }
@@ -1465,21 +1616,171 @@ class FakeDocument implements CoreDocument {
             return found !== undefined && found.element.unknown?.hasTransform !== false && found.element.malformed === undefined;
           })
           .sort();
-        if (ids.length === 0 || isIdentity(m)) return this.unchanged();
+        // personnalisation-3 (D6), comme `with_linked` et `leaving_cells` du cœur : un tableau emporte ses objets liés ;
+        // un objet lié déplacé sans son tableau quitte sa case si son centre en sort, dans la même étape.
+        const asked = new Set(ids);
+        for (const id of ids) {
+          const f = this.find(id);
+          if (f === undefined || !isTableKind(f.element)) continue;
+          for (const e of f.page.elements) if (e.cell?.[0] === id && !isTableKind(e) && movable(e)) asked.add(e.id);
+        }
+        const all = [...asked].sort();
+        const unlink = new Set(all.filter((id) => this.leavesCell(id, asked, m)));
+        if (all.length === 0 || isIdentity(m)) return this.unchanged();
         // Comme le cœur (constat 2 de T60) : chaque matrice composée suit la règle de `m`, avant toute étape.
-        const composed = new Map(ids.map((id) => [id, composeMatrix(m, this.find(id)?.element.transform ?? m)]));
+        const composed = new Map(all.map((id) => [id, composeMatrix(m, this.find(id)?.element.transform ?? m)]));
         if (![...composed.values()].every(validMatrix)) throw new Error(MESSAGES.badMatrix);
-        const pages = [...new Set(ids.map((id) => this.find(id)?.page.id ?? ""))].sort();
+        const pages = [...new Set(all.map((id) => this.find(id)?.page.id ?? ""))].sort();
         return this.step((s) => {
           for (const p of s.pages) {
             p.elements.forEach((e, i) => {
               const t = composed.get(e.id);
-              if (t) p.elements[i] = { ...e, transform: t };
+              if (t) p.elements[i] = unlink.has(e.id) ? withoutCell({ ...e, transform: t }) : { ...e, transform: t };
             });
           }
-          // OG12 (n° 7, 8) : suivi et rupture dans la même étape.
-          const followed = this.follow(s, new Set(ids), m);
-          return { pages, ids: [...ids, ...followed.filter((x) => !ids.includes(x))], removed: [] };
+          // OG12 (n° 7, 8) : suivi et rupture dans la même étape, cibles élargies comprises.
+          const followed = this.follow(s, new Set(all), m);
+          return { pages, ids: [...all, ...followed.filter((x) => !all.includes(x))], removed: [] };
+        });
+      }
+      case "SetTableLineSizes": {
+        // personnalisation-3 (D4), comme `cmd_set_table_line_sizes` : tableau, tailles, mêmes tailles (aucune étape).
+        const { found, t } = this.tableOf(cmd.id);
+        // Défaut T2a : une ligne ou une colonne citée deux fois est refusée, par `resizedLines`.
+        const next = resizedLines(t, [
+          ...cmd.cols.map(([l, size]): readonly [TableAxis, string, number] => ["col", l, size]),
+          ...cmd.rows.map(([l, size]): readonly [TableAxis, string, number] => ["row", l, size]),
+        ]);
+        if (next === null) throw new Error(MESSAGES.badTable);
+        if (sameLines(t, next)) return this.unchanged();
+        return this.writeTable(found, cmd.id, next);
+      }
+      case "SetTableOptions": {
+        // personnalisation-3 (T7), comme `cmd_set_table_options` : `fit` contrôlé, seulement ce qui change, sinon aucune étape.
+        const { found, t } = this.tableOf(cmd.id);
+        if (cmd.fit !== undefined && cmd.fit !== "grow" && cmd.fit !== "shrink") throw new Error(MESSAGES.badTable);
+        const fit = cmd.fit === undefined ? t.fit : cmd.fit === "shrink" ? ("shrink" as const) : undefined;
+        const header = cmd.header === undefined ? t.header : cmd.header ? true : undefined;
+        if (fit === t.fit && header === t.header) return this.unchanged();
+        const { fit: _f, header: _h, ...rest } = t;
+        return this.writeTable(found, cmd.id, { ...rest, ...(fit ? { fit } : {}), ...(header ? { header } : {}) });
+      }
+      case "SetCellImage": {
+        // personnalisation-3 (T9), comme `cmd_set_cell_image` : case connue ; `null` retire le fond (aucune étape sans fond) ;
+        // sinon l'image doit être logée dans cette case (BadTable), son asset passe en `bg`, l'image quitte la page.
+        const { found, t } = this.tableOf(cmd.id);
+        if (!t.rows.some((r) => r.id === cmd.row) || !t.cols.some((c) => c.id === cmd.col)) throw new Error(MESSAGES.badTable);
+        const key = cellKey(cmd.row, cmd.col);
+        const cell = t.cells.get(key);
+        if (cmd.from === null) {
+          if (!cell || cell.bg === null) return this.unchanged();
+          const cells = new Map(t.cells);
+          cells.set(key, { ...cell, bg: null });
+          return this.writeTable(found, cmd.id, { ...t, cells });
+        }
+        const img = this.find(cmd.from);
+        if (!img) throw new Error(`élément inconnu : ${cmd.from}`);
+        const link = img.element.cell;
+        const asset = img.element.image?.asset;
+        if (!asset || img.page.id !== found.page.id || link?.[0] !== cmd.id || link[1] !== cmd.row || link[2] !== cmd.col || !isAssetId(asset)) {
+          throw new Error(MESSAGES.badTable);
+        }
+        const cells = new Map(t.cells);
+        cells.set(key, { ...(cell ?? EMPTY_CELL), bg: asset });
+        const pageId = found.page.id;
+        const image = cmd.from;
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === pageId);
+          if (p) {
+            const i = p.elements.findIndex((e) => e.id === cmd.id);
+            const old = p.elements[i];
+            if (old) p.elements[i] = { ...old, table: { ...t, cells } };
+            p.elements.splice(0, p.elements.length, ...p.elements.filter((e) => e.id !== image));
+          }
+          return { pages: [pageId], ids: [cmd.id], removed: [image] };
+        });
+      }
+      case "PlaceInCell": {
+        // personnalisation-3 (D3), refus dans l'ordre de `cmd_place_in_cell` (section T1a) : 1 matrice, 2 tableau parmi les
+        // ids (D36), 3 aucun id (aucune étape), 4 plusieurs pages, 5 case visée (D35), 6 tableaux des tailles puis
+        // tailles, 7 matrice composée, 8 rien ne change (aucune étape).
+        if (!validMatrix(cmd.matrix)) throw new Error(MESSAGES.badMatrix);
+        const all = [...new Set(cmd.ids)]
+          .map((id) => this.find(id))
+          .filter((x): x is Found => x !== undefined && x.element.malformed === undefined);
+        if (all.some((x) => isTableKind(x.element))) throw new Error(MESSAGES.badTable);
+        // Comme `Transform` : un élément sans transform lisible est écarté, ni matrice ni lien écrits.
+        const hits = all.filter((x) => movable(x.element));
+        const pageId = hits[0]?.page.id;
+        if (pageId === undefined) return this.unchanged();
+        if (hits.some((x) => x.page.id !== pageId)) throw new Error(MESSAGES.badTable);
+        const target = cmd.cell;
+        if (target !== null) {
+          const { found, t } = this.tableOf(target[0]);
+          if (found.page.id !== pageId) throw new Error(MESSAGES.badTable);
+          if (!t.rows.some((r) => r.id === target[1]) || !t.cols.some((c) => c.id === target[2])) throw new Error(MESSAGES.badTable);
+          if ((t.cells.get(cellKey(target[1], target[2]))?.shade ?? null) !== null) throw new Error(MESSAGES.badTable);
+        }
+        const tables: { readonly id: string; readonly t: FakeTable; readonly list: (readonly [TableAxis, string, number])[] }[] = [];
+        for (const [tid, a, l, size] of cmd.sizes) {
+          let entry = tables.find((x) => x.id === tid);
+          if (entry === undefined) {
+            const { found, t } = this.tableOf(tid);
+            if (found.page.id !== pageId) throw new Error(MESSAGES.badTable);
+            entry = { id: tid, t, list: [] };
+            tables.push(entry);
+          }
+          entry.list.push([a, l, size]);
+        }
+        const next = new Map<string, FakeTable>();
+        for (const x of tables) {
+          const n = resizedLines(x.t, x.list);
+          if (n === null) throw new Error(MESSAGES.badTable);
+          next.set(x.id, n);
+        }
+        const composed = new Map(hits.map((x) => [x.element.id, composeMatrix(cmd.matrix, x.element.transform)]));
+        if (![...composed.values()].every(validMatrix)) throw new Error(MESSAGES.badMatrix);
+        const sameLink = (l: CellLink | undefined): boolean => (target === null ? l === undefined : l !== undefined && l.every((v, i) => v === target[i]));
+        const sameSizes = tables.every((x) => {
+          const n = next.get(x.id);
+          return n !== undefined && sameLines(x.t, n);
+        });
+        if (isIdentity(cmd.matrix) && sameSizes && hits.every((x) => sameLink(x.element.cell))) return this.unchanged();
+        const skip = new Set(hits.map((x) => x.element.id));
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === pageId);
+          const touched = new Set<string>(skip);
+          if (p) {
+            for (const x of tables) {
+              const i = p.elements.findIndex((e) => e.id === x.id);
+              const old = p.elements[i];
+              const t = next.get(x.id);
+              if (!old?.table || !t) continue;
+              p.elements[i] = { ...old, table: t };
+              touched.add(x.id);
+              for (const id of this.followTable(s, p, x.id, old.transform, old.table, t, skip)) touched.add(id);
+            }
+            p.elements.forEach((e, i) => {
+              if (!skip.has(e.id)) return;
+              const transform = isIdentity(cmd.matrix) ? e.transform : (composed.get(e.id) ?? e.transform);
+              const free = withoutCell(e);
+              p.elements[i] = target === null ? { ...free, transform } : { ...free, transform, cell: target };
+            });
+            // T5, comme `lift_above` du cœur : les placés situés sous le tableau visé montent juste au-dessus, ordre gardé.
+            if (target !== null) {
+              const ti = p.elements.findIndex((e) => e.id === target[0]);
+              const below = (e: FakeElement, i: number): boolean => i < ti && skip.has(e.id);
+              const lifted = p.elements.filter(below);
+              if (lifted.length > 0) {
+                const rest = p.elements.filter((e, i) => !below(e, i));
+                rest.splice(rest.findIndex((e) => e.id === target[0]) + 1, 0, ...lifted);
+                p.elements.splice(0, p.elements.length, ...rest);
+              }
+            }
+            // OG12 (n° 7, 8), comme `cmd_place_in_cell` : placés déplacés par `m`, leurs lignes liées suivent après eux.
+            if (!isIdentity(cmd.matrix)) for (const id of this.follow(s, skip, cmd.matrix)) touched.add(id);
+          }
+          return { pages: [pageId], ids: [...touched].sort(), removed: [] };
         });
       }
       case "AddImage": {
@@ -1726,7 +2027,7 @@ class FakeDocument implements CoreDocument {
           cells.set(key, { ...(cell ?? EMPTY_CELL), text: cmd.content, spans: want ?? editSpans(spans, cmd.content) });
         }
         const rows = grow === null ? t.rows : t.rows.map((l, i) => (i === z1 ? { ...l, height: grow } : l));
-        return this.writeTable(found, cmd.id, { ...t, rows, cells }, grow !== null); // C3 : ligne agrandie, liaisons suivies
+        return this.writeTable(found, cmd.id, { ...t, rows, cells }); // C3 : ligne agrandie, liaisons suivies (`followTable`)
       }
       case "InsertTableLine": {
         const { found, t } = this.tableOf(cmd.id);
@@ -1738,10 +2039,10 @@ class FakeDocument implements CoreDocument {
         if (!fitsF32([sum(sizes) + (sizes[near] ?? 0)])) throw new Error(MESSAGES.badTable);
         if (cmd.axis === "row") {
           const height = t.rows[near]?.height ?? 0;
-          return this.writeTable(found, cmd.id, { ...t, rows: [...t.rows.slice(0, at), { id: newId(), height }, ...t.rows.slice(at)] }, true);
+          return this.writeTable(found, cmd.id, { ...t, rows: [...t.rows.slice(0, at), { id: newId(), height }, ...t.rows.slice(at)] });
         }
         const width = t.cols[near]?.width ?? 0;
-        return this.writeTable(found, cmd.id, { ...t, cols: [...t.cols.slice(0, at), { id: newId(), width }, ...t.cols.slice(at)] }, true);
+        return this.writeTable(found, cmd.id, { ...t, cols: [...t.cols.slice(0, at), { id: newId(), width }, ...t.cols.slice(at)] });
       }
       case "RemoveTableLine": {
         const { found, t } = this.tableOf(cmd.id);
@@ -1784,8 +2085,8 @@ class FakeDocument implements CoreDocument {
         return this.writeTable(
           found,
           cmd.id,
+          // C3 : tableau réduit, liaisons suivies (`followTable`).
           cmd.axis === "row" ? { ...t, rows: t.rows.filter((l) => !gone.has(l.id)), cells } : { ...t, cols: t.cols.filter((l) => !gone.has(l.id)), cells },
-          true, // C3 : tableau réduit, liaisons suivies
         );
       }
       case "SetTableSizes": {
@@ -1797,7 +2098,7 @@ class FakeDocument implements CoreDocument {
           ...t,
           cols: t.cols.map((c) => (c.width === cmd.colWidth ? c : { ...c, width: cmd.colWidth })),
           rows: t.rows.map((r) => (r.height === cmd.rowHeight ? r : { ...r, height: cmd.rowHeight })),
-        }, true);
+        });
       }
       case "SetTableFill": {
         if (cmd.fill !== null && !validColor(cmd.fill)) throw new Error(MESSAGES.badTable);
@@ -1910,7 +2211,7 @@ class FakeDocument implements CoreDocument {
           cmd.cells.forEach((text, i) => {
             const span = spans.get(i) ?? null;
             if (covered.has(i) || (text === "" && span === null)) return;
-            cells.set(cellKey(rows[Math.floor(i / cmd.cols)]?.id ?? "", cols[i % cmd.cols]?.id ?? ""), { text, spans: plainSpans(text), fill: null, shade: null, span });
+            cells.set(cellKey(rows[Math.floor(i / cmd.cols)]?.id ?? "", cols[i % cmd.cols]?.id ?? ""), { text, spans: plainSpans(text), fill: null, shade: null, bg: null, span });
           });
           
           return { color: cmd.color, size: cmd.size, cols, rows, cells };
@@ -2055,7 +2356,9 @@ class FakeDocument implements CoreDocument {
     const found = this.find(id);
     const e = found?.element;
     if (!found || !e || e.malformed) return null;
-    const base = { id, transform: e.transform, ...withGroup(e.group) };
+    // personnalisation-3 (D1, D36) : lien publié seulement vers une case existante, jamais sur un tableau.
+    const linked = e.cell !== undefined && !isTableKind(e) && this.cellTargetOk(e.cell) ? { cell: e.cell } : {};
+    const base = { id, transform: e.transform, ...withGroup(e.group), ...linked };
     const looked = e.look ? { look: e.look } : {};
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
     if (e.image) return { ...base, ...looked, kind: "image", image: e.image };
@@ -2089,7 +2392,10 @@ class FakeDocument implements CoreDocument {
       scanAssets(p.id, acc);
       scanAssets(p.backdrop, acc);
       scanAssets(p.grid, acc);
-      for (const e of p.elements) scanAssets({ ...e, text: undefined, local: undefined }, acc);
+      for (const e of p.elements) {
+        scanAssets({ ...e, text: undefined, local: undefined }, acc);
+        if (e.table) for (const c of e.table.cells.values()) if (c.bg !== null) acc.add(c.bg);
+      }
     }
     return [...acc].sort().map((id) => assetInfo(this.state.assets, id));
   }
@@ -2415,8 +2721,16 @@ interface SavedElement {
   raw?: Record<string, unknown>;
   /** C3 : lu par `readGroup` ; illisible : retiré (PC6). */
   group?: unknown;
+  /** personnalisation-3 : écrit par `cellField` ; lu par `readCell` (illisible : aucun lien). */
+  cell?: unknown;
 }
 interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown; grid?: unknown; background?: unknown; mode?: unknown; height?: unknown }
+
+/** personnalisation-3 : `cell` écrit tel quel (trois chaînes) ; absent sans lien. */
+const cellField = (e: FakeElement): { cell?: readonly string[] } => (e.cell === undefined ? {} : { cell: [...e.cell] });
+/** Lecture tolérante (U3), comme `read_cell_link` : trois chaînes non vides, sinon aucun lien. */
+const readCell = (v: unknown): { cell?: CellLink } =>
+  Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "string" && x !== "") ? { cell: [v[0], v[1], v[2]] as CellLink } : {};
 
 function savedElement(e: FakeElement): SavedElement {
   const group = withGroup(e.group);
@@ -2425,13 +2739,13 @@ function savedElement(e: FakeElement): SavedElement {
     return { id: e.id, ...rest, ...group } as SavedElement;
   }
   if (e.unknown) {
-    return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw }, ...group };
+    return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw }, ...group, ...cellField(e) };
   }
-  if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...(e.look ? { look: e.look } : {}), ...group };
-  if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: { ...e.imageRaw, ...e.image }, ...(e.look ? { look: e.look } : {}), ...group };
-  if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...(e.look ? { look: e.look } : {}), ...group };
-  if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...(e.look ? { look: e.look } : {}), ...group };
-  if (e.fill) return { id: e.id, kind: "fill", transform: [...e.transform], fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h, contours: e.fill.contours.map((r) => [...r]) }, ...group };
+  if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...(e.look ? { look: e.look } : {}), ...group, ...cellField(e) };
+  if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: { ...e.imageRaw, ...e.image }, ...(e.look ? { look: e.look } : {}), ...group, ...cellField(e) };
+  if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...(e.look ? { look: e.look } : {}), ...group, ...cellField(e) };
+  if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...(e.look ? { look: e.look } : {}), ...group, ...cellField(e) };
+  if (e.fill) return { id: e.id, kind: "fill", transform: [...e.transform], fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h, contours: e.fill.contours.map((r) => [...r]) }, ...group, ...cellField(e) };
   return {
     id: e.id,
     transform: [...e.transform],
@@ -2441,6 +2755,7 @@ function savedElement(e: FakeElement): SavedElement {
     ...(e.text ? { text: e.text } : {}),
     ...(e.look ? { look: e.look } : {}),
     ...group,
+    ...cellField(e),
   };
 }
 
@@ -2475,6 +2790,7 @@ function loadTable(v: unknown): FakeTable | null {
       const text = typeof c["text"] === "string" ? c["text"] : "";
       const fill = c["fill"];
       const shade = c["shade"];
+      const bg = c["bg"];
       const span = c["span"];
       const s = c["spans"];
       // C7b : segments lisibles normalisés ; JSON d'avant C7b ou segments illisibles : un segment (R16).
@@ -2484,6 +2800,7 @@ function loadTable(v: unknown): FakeTable | null {
         spans,
         fill: typeof fill === "string" && validColor(fill) ? fill : null,
         shade: typeof shade === "string" && validColor(shade) ? shade : null,
+        bg: typeof bg === "string" && isAssetId(bg) ? bg : null,
         span: Array.isArray(span) && span.length === 2 && typeof span[0] === "string" && typeof span[1] === "string" ? [span[0], span[1]] : null,
       });
     }
@@ -2496,6 +2813,8 @@ function loadTable(v: unknown): FakeTable | null {
     cols,
     rows,
     cells,
+    ...(v["fit"] === "shrink" ? { fit: "shrink" as const } : {}),
+    ...(v["header"] === true ? { header: true } : {}),
   };
 }
 
@@ -2510,6 +2829,8 @@ const lookField = (e: SavedElement): { look?: Look } => {
 
 function loadElement(e: SavedElement): FakeElement {
   const group = withGroup(readGroup(e.group));
+  // personnalisation-3 : lien de case relu (U3, lecture tolérante) ; un mal formé garde le sien dans son brut.
+  const cell = readCell(e.cell);
   if (e.kind !== undefined && !KNOWN_KINDS.has(e.kind)) {
     const t = toMatrix6(e.transform);
     const raw = e.raw ?? {};
@@ -2520,14 +2841,14 @@ function loadElement(e: SavedElement): FakeElement {
       hasTransform: t !== null,
       ...(t === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };
-    return { id: e.id, transform: t ?? IDENTITY, style: NO_STYLE, unknown, ...group };
+    return { id: e.id, transform: t ?? IDENTITY, style: NO_STYLE, unknown, ...group, ...cell };
   }
   if (e.kind === "table") {
     // Repli d'un tableau mal formé (T2) : cadre inconnu, jamais invisible ; brut gardé sous `raw.table`, réécrit tel quel.
     const source = e.table ?? e.raw?.["table"];
     const t = loadTable(source);
     const m = toMatrix6(e.transform);
-    if (t !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, table: t, ...lookField(e), ...group };
+    if (t !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, table: t, ...lookField(e), ...group, ...cell };
     const raw = { table: source };
     const unknown: FakeUnknown = {
       sourceKind: "table",
@@ -2536,7 +2857,7 @@ function loadElement(e: SavedElement): FakeElement {
       hasTransform: m !== null,
       ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };
-    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group };
+    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group, ...cell };
   }
   if (e.kind === "media") {
     // Repli du tableau, pas celui de l'image (C14, M7) : un média mal formé est un cadre inconnu, jamais invisible ;
@@ -2544,7 +2865,7 @@ function loadElement(e: SavedElement): FakeElement {
     const source = e.media ?? e.raw?.["media"];
     const media = readMedia(source);
     const m = toMatrix6(e.transform);
-    if (media !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, media, ...lookField(e), ...group };
+    if (media !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, media, ...lookField(e), ...group, ...cell };
     const unknown: FakeUnknown = {
       sourceKind: "media",
       raw: { media: source },
@@ -2552,7 +2873,7 @@ function loadElement(e: SavedElement): FakeElement {
       hasTransform: m !== null,
       ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };
-    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group };
+    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group, ...cell };
   }
   if (e.kind === "model3d") {
     // Repli du média, pas celui de l'image (C15, X8) : un objet 3D mal formé est un cadre inconnu, jamais invisible ;
@@ -2560,7 +2881,7 @@ function loadElement(e: SavedElement): FakeElement {
     const source = e.model3d ?? e.raw?.["model3d"];
     const model3d = readModel3d(source);
     const m = toMatrix6(e.transform);
-    if (model3d !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, model3d, ...lookField(e), ...group };
+    if (model3d !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, model3d, ...lookField(e), ...group, ...cell };
     const unknown: FakeUnknown = {
       sourceKind: "model3d",
       raw: { model3d: source },
@@ -2568,7 +2889,7 @@ function loadElement(e: SavedElement): FakeElement {
       hasTransform: m !== null,
       ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };
-    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group };
+    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group, ...cell };
   }
   if (e.kind === "fill") {
     // C8 (Q11) : repli du média, pas celui de l'image : un `fill` mal formé est un cadre inconnu de sa boîte, brut gardé
@@ -2576,7 +2897,7 @@ function loadElement(e: SavedElement): FakeElement {
     const source = e.fill ?? e.raw?.["fill"];
     const fill = readFill(source);
     const m = toMatrix6(e.transform);
-    if (fill !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, fill, ...group };
+    if (fill !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, fill, ...group, ...cell };
     const unknown: FakeUnknown = {
       sourceKind: "fill",
       raw: { fill: source },
@@ -2584,7 +2905,7 @@ function loadElement(e: SavedElement): FakeElement {
       hasTransform: m !== null,
       ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };
-    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group };
+    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group, ...cell };
   }
   if (e.kind === "image") {
     const im: unknown = e.image;
@@ -2611,7 +2932,7 @@ function loadElement(e: SavedElement): FakeElement {
     const kept = image as unknown as Readonly<Record<string, unknown>>;
     const imageRaw = Object.fromEntries([...IMAGE_PARAM_KEYS, "sourceAsset"].filter((k) => all[k] !== undefined && kept[k] === undefined).map((k) => [k, all[k]]));
     const rawField = Object.keys(imageRaw).length > 0 ? { imageRaw } : {};
-    return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image, ...rawField, ...lookField(e), ...group };
+    return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image, ...rawField, ...lookField(e), ...group, ...cell };
   }
   return {
     id: e.id,
@@ -2622,6 +2943,7 @@ function loadElement(e: SavedElement): FakeElement {
     ...(e.text ? { text: withSpans(e.text) } : {}),
     ...lookField(e),
     ...group,
+    ...cell,
   };
 }
 

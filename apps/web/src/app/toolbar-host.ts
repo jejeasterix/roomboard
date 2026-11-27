@@ -127,6 +127,7 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "table-split": (t) => t.engine().tableAction("split"),
   "table-shade": (t) => t.engine().tableAction("shade"),
   "table-unshade": (t) => t.engine().tableAction("unshade"),
+  "table-header": (t) => t.engine().tableAction("header-toggle"),
 };
 
 export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): ToolbarHost {

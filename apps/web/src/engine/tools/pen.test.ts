@@ -10,7 +10,7 @@ import type { ToolContext } from "./tool";
 const s = (x: number, y: number, pressure = 0.5): InputSample => ({ x, y, pressure, tiltX: 0, tiltY: 0, t: 0 });
 const PEN: StrokeStyle = { color: "#000000", width: 4 };
 
-function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse = false) {
+function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse: boolean | "cell" = false) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
@@ -40,7 +40,7 @@ function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse = false) {
     camera: () => cam,
     run: (c) => {
       runs.push(c);
-      return refuse ? null : doc.apply(c);
+      return refuse === true || (refuse === "cell" && c.type === "CommitStroke" && c.cell !== undefined) ? null : doc.apply(c);
     },
   };
   const tool = createPenTool(ctx, () => style);
@@ -230,5 +230,40 @@ describe("outil Stylo : transparence (OG11 T9b)", () => {
     tool.close(1, "end");
     expect(builders.constants).toEqual([false]);
     expect(commitOf(runs).look?.variability).toBeUndefined();
+  });
+});
+
+describe("outil Stylo : trait lié à sa case (T8)", () => {
+  const drag = (t: ReturnType<typeof setup>["tool"], x1: number, y1: number): void => {
+    t.begin(1, [s(20, 90)]);
+    t.extend(1, [s(100, 100), s(x1, y1)], []);
+    t.close(1, "end");
+  };
+  it("D10 : un trait écrit dans la case (1, 0) porte `cell` ; un trait sur deux cases n'en porte pas", () => {
+    const { doc, page, runs, tool } = setup();
+    const id = doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const v = doc.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    drag(tool, 180, 95);
+    const first = runs.at(-1);
+    expect(first?.type === "CommitStroke" ? first.cell : "autre").toEqual([id, v.table.rows[1]?.id, v.table.cols[0]?.id]);
+    drag(tool, 300, 95);
+    const second = runs.at(-1);
+    expect(second?.type === "CommitStroke" && "cell" in second).toBe(false);
+  });
+  it("D10 : si le cœur refuse le lien de case, le trait est commité sans lien (jamais perdu)", () => {
+    const { doc, page, runs, tool } = setup({ zoom: 1, tx: 0, ty: 0 }, "cell");
+    doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 });
+    drag(tool, 180, 95);
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toHaveProperty("cell");
+    expect(runs[1]?.type).toBe("CommitStroke");
+    expect(runs[1]).not.toHaveProperty("cell");
+    expect(doc.elementIdsOfKind(page, "stroke")).toHaveLength(1);
+  });
+  it("D10 : hors de tout tableau, la commande reste sans `cell`", () => {
+    const { runs, tool } = setup();
+    drag(tool, 180, 95);
+    expect(runs.at(-1)).not.toHaveProperty("cell");
   });
 });

@@ -2,6 +2,7 @@
 // une dérive de forme entre Rust et TS lève une erreur au lieu de passer sous un `as`, sauf un `kind` d'une version
 // plus récente, rendu comme cadre inconnu (voir la branche `default`).
 import type {
+  CellLink,
   AssetInfo,
   LinkedAsset,
   AssetRef,
@@ -127,6 +128,9 @@ const toU32 = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 0xff
 export function toTable(v: unknown): TableData {
   if (!isRecord(v)) throw new Error(ELEMENT);
   const { color, size, cols, rows, cells, merges } = v;
+  // personnalisation-3 (T7) : `fit` ("shrink" seulement) et `header` (vrai seulement), absents sinon.
+  const fit = v["fit"] === "shrink" ? { fit: "shrink" as const } : {};
+  const header = v["header"] === true ? { header: true } : {};
   if (
     typeof color !== "string" || typeof size !== "number" || !Array.isArray(cols) || !Array.isArray(rows) || !Array.isArray(cells) ||
     !Array.isArray(merges)
@@ -139,6 +143,8 @@ export function toTable(v: unknown): TableData {
   };
   const extent = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && x >= 1;
   return {
+    ...fit,
+    ...header,
     color,
     size,
     cols: cols.map((c: unknown) => {
@@ -155,9 +161,10 @@ export function toTable(v: unknown): TableData {
     }),
     cells: cells.map((c: unknown) => {
       if (!isRecord(c)) throw new Error(ELEMENT);
-      const { row, col, text, fill, shade, spans } = c;
+      const { row, col, text, fill, shade, spans, bg } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
-      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text) };
+      const asset = optString(bg);
+      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text), ...(asset === null ? {} : { bg: asset }) };
     }),
     merges: merges.map((m: unknown) => {
       if (!isRecord(m)) throw new Error(ELEMENT);
@@ -194,9 +201,19 @@ export function toElementView(v: unknown): ElementView | null {
   // C3 (Z1) : chemin de groupes, chaînes non vide ; absent (Option::None → undefined) laissé absent.
   const group = v["group"];
   if (group !== undefined && group !== null && (!isStrings(group) || group.length === 0)) throw new Error(ELEMENT);
+  // personnalisation-3 (D1) : lien de case, trois chaînes ; absent laissé absent.
+  const cell = v["cell"];
+  if (cell !== undefined && cell !== null && !(isStrings(cell) && cell.length === 3)) throw new Error(ELEMENT);
+  const link: CellLink | null = isStrings(cell) && cell.length === 3 ? [cell[0] ?? "", cell[1] ?? "", cell[2] ?? ""] : null;
   // OG11 : aspect lu défensivement (`toLook`), omis s'il est neutre.
   const look = toLook(v["look"]);
-  const base = { id, transform: toMatrix(v["transform"]), ...(isStrings(group) ? { group } : {}), ...(look ? { look } : {}) };
+  const base = {
+    id,
+    transform: toMatrix(v["transform"]),
+    ...(isStrings(group) ? { group } : {}),
+    ...(look ? { look } : {}),
+    ...(link ? { cell: link } : {}),
+  };
   switch (kind) {
     case "stroke":
       return { ...base, kind, style: toStyle(v["style"]) };
@@ -582,7 +599,7 @@ class WasmCoreDocument implements CoreDocument {
       case "Arrange": return toChange(this.d.arrange([...cmd.ids], cmd.how));
       case "CommitStroke": {
         const l = cmd.look;
-        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, ...lookArgs(l)));
+        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, ...lookArgs(l), cmd.cell?.[0], cmd.cell?.[1], cmd.cell?.[2]));
       }
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
@@ -712,6 +729,32 @@ class WasmCoreDocument implements CoreDocument {
         return toChange(this.d.split_table_cell(cmd.id, cmd.row, cmd.col));
       case "SetTableShade":
         return toChange(this.d.set_table_shade(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col, cmd.shade ?? undefined));
+      case "PlaceInCell":
+        return toChange(
+          this.d.place_in_cell(
+            [...cmd.ids],
+            new Float64Array(cmd.matrix),
+            cmd.cell?.[0],
+            cmd.cell?.[1],
+            cmd.cell?.[2],
+            cmd.sizes.flatMap(([t, a, l]) => [t, a, l]),
+            new Float64Array(cmd.sizes.map((s) => s[3])),
+          ),
+        );
+      case "SetTableLineSizes":
+        return toChange(
+          this.d.set_table_line_sizes(
+            cmd.id,
+            cmd.cols.map((c) => c[0]),
+            new Float64Array(cmd.cols.map((c) => c[1])),
+            cmd.rows.map((r) => r[0]),
+            new Float64Array(cmd.rows.map((r) => r[1])),
+          ),
+        );
+      case "SetTableOptions":
+        return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header));
+      case "SetCellImage":
+        return toChange(this.d.set_cell_image(cmd.id, cmd.row, cmd.col, cmd.from ?? undefined));
       case "ImportTable":
         return toChange(
           this.d.import_table(

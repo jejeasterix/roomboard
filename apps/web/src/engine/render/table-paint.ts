@@ -5,12 +5,15 @@
  * (fond à sa couleur, hachures à 45°), découpé à la cellule ou à la zone, dessiné quel que soit l'outil, sous les
  * traits ; le texte d'une cellule ombrée ou couverte n'est jamais dessiné (F11).
  */
+import type { ImageSource } from "./image-cache";
 import type { Bounds, TableCell, TableData, TextSpan } from "../../core/api";
 import {
   cellInnerBox,
   cellOf,
   cellRect,
   mergeRanges,
+  rangeRect,
+  TABLE_HEADER_FILL,
   TABLE_LINE_WIDTH,
   TABLE_SHADE_HATCH,
   TABLE_SHADE_HATCH_STEP,
@@ -72,12 +75,42 @@ function paintShade(ctx: CanvasRenderingContext2D, b: Bounds, color: string): vo
   ctx.restore();
 }
 
-export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData): void {
+/** Image de fond (personnalisation-3, T9) : « couvrir », centrée, découpée au rectangle de la case ; image pas encore
+ *  chargée (ou taille nulle) : rien, le cache la redemandera. Taille absente (jeton du PDF vectoriel à l'en-tête
+ *  illisible, C1) : l'image remplit la case, plutôt qu'un fond absent. */
+function paintCellImage(ctx: CanvasRenderingContext2D, b: Bounds, asset: string, images: ImageSource): void {
+  const bmp = images.bitmap(asset) as (CanvasImageSource & { width?: unknown; height?: unknown }) | null;
+  if (bmp === null) return;
+  const w = b.x1 - b.x0;
+  const h = b.y1 - b.y0;
+  const unsized = bmp.width === undefined && bmp.height === undefined;
+  const iw = unsized ? w : bmp.width;
+  const ih = unsized ? h : bmp.height;
+  if (typeof iw !== "number" || typeof ih !== "number" || !(iw > 0) || !(ih > 0)) return;
+  const k = Math.max(w / iw, h / ih);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(b.x0, b.y0, w, h);
+  ctx.clip();
+  ctx.drawImage(bmp, b.x0 + (w - iw * k) / 2, b.y0 + (h - ih * k) / 2, iw * k, ih * k);
+  ctx.restore();
+}
+
+export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData, images: ImageSource | null = null): void {
   const zones = mergeRanges(t);
+  // personnalisation-3 (D17) : fond d'en-tête sous les remplissages de case (un remplissage passe au-dessus).
+  if (t.header === true && t.rows.length > 0 && t.cols.length > 0) fillBox(ctx, rangeRect(t, { r0: 0, c0: 0, r1: 0, c1: t.cols.length - 1 }), TABLE_HEADER_FILL);
   for (const cell of t.cells) {
     if (cell.fill === null) continue;
     const at = visibleCell(t, zones, cell);
     if (at !== null) fillBox(ctx, cellRect(t, at), cell.fill);
+  }
+  if (images !== null) {
+    for (const cell of t.cells) {
+      if (cell.bg === undefined) continue;
+      const at = visibleCell(t, zones, cell);
+      if (at !== null) paintCellImage(ctx, cellRect(t, at), cell.bg, images);
+    }
   }
   for (const cell of t.cells) {
     if (cell.shade === null) continue;
@@ -131,7 +164,7 @@ export function cellTextBoxes(t: TableData): CellTextBox[] {
     if (cell.text === "" || cell.shade !== null) continue;
     const at = visibleCell(t, zones, cell);
     if (at === null) continue;
-    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: cell.spans });
+    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: t.header === true && at.row === 0 ? cell.spans.map((s) => ({ text: s.text, attrs: { ...s.attrs, bold: true as const } })) : cell.spans });
   }
   return out;
 }

@@ -509,6 +509,7 @@ mod tests {
                 points: a,
                 style: pen(),
                 look: Look::default(),
+                cell: None,
             })
             .expect("a")
             .ids[0]
@@ -519,6 +520,7 @@ mod tests {
                 points: b,
                 style: pen(),
                 look: Look::default(),
+                cell: None,
             })
             .expect("b")
             .ids[0]
@@ -797,6 +799,7 @@ mod tests {
                 points: pts,
                 style: pen(),
                 look: Look::default(),
+                cell: None,
             })
             .expect("commit");
         }
@@ -935,6 +938,7 @@ mod tests {
                 points: pts,
                 style: pen(),
                 look: Look::default(),
+                cell: None,
             })
             .expect("trait")
             .ids[0]
@@ -1186,6 +1190,7 @@ mod tests {
                 points: pts,
                 style: pen(),
                 look: Look::default(),
+                cell: None,
             })
             .expect("trait")
             .ids[0]

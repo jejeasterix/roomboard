@@ -665,7 +665,7 @@ export class Canvas2DRenderer implements Renderer {
     } else if (el.kind === "model3d") {
       paintModel3d(ctx, el.model3d, this.models?.frame(el.id) ?? null, this.images, this.assetName?.(el.model3d.asset) ?? null);
     } else if (el.kind === "table") {
-      paintTableGrid(ctx, el.table);
+      paintTableGrid(ctx, el.table, this.images ?? null);
       const boxes = cellTextBoxes(el.table);
       const lines = this.cellLinesOf(ctx, el.id, el.table, boxes);
       boxes.forEach((b, i) => {
@@ -773,6 +773,16 @@ export class Canvas2DRenderer implements Renderer {
       ctx.stroke();
       ctx.restore();
     }
+    if (o.target) {
+      // personnalisation-3 (D32) : case visée, cadre plein de 2 px écran, couleur d'accent.
+      ctx.save();
+      ctx.strokeStyle = SELECTION_COLOR;
+      ctx.lineWidth = 2 * px;
+      ctx.setLineDash([]);
+      box(o.target);
+      ctx.stroke();
+      ctx.restore();
+    }
     if (o.frame) {
       ctx.save();
       ctx.strokeStyle = SELECTION_COLOR;
@@ -783,6 +793,21 @@ export class Canvas2DRenderer implements Renderer {
       if (o.handles) {
         ctx.setLineDash([]);
         paintHandles(ctx, o.frame, px);
+      }
+      ctx.restore();
+    }
+    if (o.grips && o.grips.length > 0) {
+      // personnalisation-3 (D13) : disque blanc de 16 px écran cerclé d'accent (la cible tactile, 44 px, est dans l'outil).
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.fillStyle = HANDLE_FILL;
+      ctx.strokeStyle = SELECTION_COLOR;
+      ctx.lineWidth = 1.5 * px;
+      for (const g of o.grips) {
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, 8 * px, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
       }
       ctx.restore();
     }

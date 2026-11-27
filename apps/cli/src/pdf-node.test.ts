@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { deflateSync } from "node:zlib";
 import { GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { pdfPages } from "../../../scripts/essais/fabriques/pdf.mjs";
 import { PDF_FONT_FILES, PDF_WRITE_FAILED_MESSAGE } from "../../web/src/app/pdf-overlay-vector";
+import { fakeCore } from "../../web/src/core/fake-core";
 import type { RecordedList } from "../../web/src/engine/render/record-ctx";
 import type { FormatsBinding } from "../../web/src/platform/container";
 import { loadPdfLib } from "../../web/src/platform/pdf-load";
@@ -161,5 +163,85 @@ describeWasm("superposition vectorielle de la CLI sur le vrai module (D37)", () 
       throw new Error("krilla");
     };
     await expect(nodeOverlay(tab.doc, tab.assets, failing).pages([REQ(page)])).rejects.toThrow(`superposition vectorielle impossible (krilla)${NO_RASTER_SUFFIX}`);
+  });
+});
+
+/** PNG valide w × h, RVB uni : krilla le décode et l'embarque. */
+function solidPng(w: number, h: number): Uint8Array<ArrayBuffer> {
+  const table = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (b: Uint8Array): number => {
+    let c = 0xffffffff;
+    for (const x of b) c = ((table[(c ^ x) & 0xff] ?? 0) ^ (c >>> 8)) >>> 0;
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: Uint8Array): Uint8Array => {
+    const out = new Uint8Array(12 + data.length);
+    const v = new DataView(out.buffer);
+    v.setUint32(0, data.length);
+    out.set(new TextEncoder().encode(type), 4);
+    out.set(data, 8);
+    v.setUint32(8 + data.length, crc(out.subarray(4, 8 + data.length)));
+    return out;
+  };
+  const ihdr = new Uint8Array(13);
+  new DataView(ihdr.buffer).setUint32(0, w);
+  new DataView(ihdr.buffer).setUint32(4, h);
+  ihdr.set([8, 2, 0, 0, 0], 8);
+  const raw = new Uint8Array(h * (1 + 3 * w));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) raw.set([200, 30, 30], y * (1 + 3 * w) + 1 + 3 * x);
+  const parts = [new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", new Uint8Array(deflateSync(raw))), chunk("IEND", new Uint8Array(0))];
+  const png = new Uint8Array(parts.reduce((n, x) => n + x.length, 0));
+  let at = 0;
+  for (const x of parts) {
+    png.set(x, at);
+    at += x.length;
+  }
+  return png;
+}
+
+describeWasm("export PDF de la CLI : image de fond de case (personnalisation-3, C1)", () => {
+  beforeAll(warmModules);
+  it("nodeOverlay — case à fond PNG 20 × 10 : image couvrant la case dans la liste écrite, PDF krilla rendu avec une image", async () => {
+    const ID = "ab".repeat(32);
+    const png = solidPng(20, 10);
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0]!;
+    const table = doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 1, rows: 1, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0]!;
+    const image = doc.apply({ type: "AddImage", page, asset: { id: ID, name: "fond.png", mime: "image/png", size: png.length }, w: 20, h: 10, matrix: [1, 0, 0, 1, 1000, 1000] }).ids[0]!;
+    const view = doc.element(table);
+    if (view?.kind !== "table") throw new Error("tableau");
+    const row = view.table.rows[0]!.id;
+    const col = view.table.cols[0]!.id;
+    doc.apply({ type: "PlaceInCell", ids: [image], matrix: [1, 0, 0, 1, 8, 8], cell: [table, row, col], sizes: [] });
+    doc.apply({ type: "SetCellImage", id: table, row, col, from: image });
+    const onPanic = vi.fn();
+    const real = nodePdfWriter(loadFormats(WEB_SRC), onPanic);
+    const seen: { list: RecordedList; images: readonly Uint8Array[] }[] = [];
+    const assets = { get: (id: string) => (id === ID ? new Blob([png], { type: "image/png" }) : undefined) };
+    const out = await nodeOverlay(doc, assets, async (list, fonts, images) => {
+      seen.push({ list, images });
+      return real(list, fonts, images);
+    }).pages([REQ(page)]);
+    const after = doc.element(table);
+    if (after?.kind !== "table") throw new Error("tableau");
+    const w = after.table.cols[0]!.width;
+    const h = after.table.rows[0]!.height;
+    const k = Math.max(w / 20, h / 10);
+    const ops = seen[0]!.list.ops;
+    const want = [0, (w - 20 * k) / 2, (h - 10 * k) / 2, 20 * k, 10 * k];
+    const found = Array.from({ length: ops.length }, (_, i) => i).some((i) => want.every((x, j) => ops[i + j] === x));
+    expect(seen[0]!.list.images).toHaveLength(1);
+    expect(seen[0]!.images).toEqual([png]);
+    expect(found).toBe(true);
+    const o = out[0]!;
+    expect(o.kind).toBe("pdf");
+    const text = new TextDecoder("latin1").decode(o.bytes);
+    expect(text.startsWith("%PDF-")).toBe(true);
+    expect(text).toMatch(/\/Subtype\s*\/Image/);
+    expect(onPanic).not.toHaveBeenCalled();
   });
 });

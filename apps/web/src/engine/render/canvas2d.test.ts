@@ -769,6 +769,19 @@ describe("Canvas2DRenderer — tableau (C10a)", () => {
     return { r, scene, page };
   }
 
+  it("S5 : une case à fond d'image, rendue par le peintre d'export, appelle drawImage", () => {
+    const ASSET = "b".repeat(64);
+    const bmp = { width: 10, height: 10 } as unknown as CanvasImageSource;
+    const images = { bitmap: (a: string) => (a === ASSET ? bmp : null) } as unknown as ImageSource;
+    const el: TableElement = { ...TABLE, table: { ...TABLE.table, cells: [{ row: "r1", col: "c2", text: "", fill: null, shade: null, spans: [], bg: ASSET }] } };
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => (id === el.id ? el : null), outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, exportPainterOptions(images));
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: [el.id] }, IDENTITY, new Set());
+    expect(scene.images.length).toBe(1);
+  });
+
   it("fonds et traits sous la matrice du tableau, puis le texte dans la cellule (découpe, coin intérieur)", () => {
     const { scene } = draw([TABLE]);
     expect(scene.log).toContain("transform 1,0,0,1,10,20");

@@ -47,6 +47,7 @@ import { browserPlayerPorts, createMediaPlayers, mediaTag, type MediaPlaySpec, t
 import { createEraserTool } from "../engine/tools/eraser";
 import { createFillTool } from "../engine/tools/fill";
 import { createPenTool } from "../engine/tools/pen";
+import { createCellDrop } from "../engine/tools/cell-drop";
 import { createSelectTool } from "../engine/tools/select";
 import { createShapeTool } from "../engine/tools/shape";
 import { createTableTool } from "../engine/tools/table";
@@ -59,6 +60,8 @@ import { createZoneMarks } from "./zone-marks";
 import { stageTags } from "./stage-tags";
 import { createEraserRing } from "./eraser-ring";
 import { watchDpr } from "./mesure-outils";
+import { createCellMenu } from "../ui/cell-menu";
+import { showToast } from "../ui/toast";
 import { createTablePicker } from "./table-picker";
 import { createTextEditor, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
 
@@ -348,7 +351,10 @@ async function buildBoardSession(
   let activeTool = (): string => "";
   const editor = createTextEditor(container, (): TextEditorEvents | null => (activeTool() === "table" ? tableTool : textTool));
   const picker = createTablePicker(container);
+  const cellMenu = createCellMenu(container);
   undo.push(() => picker.element.remove());
+  undo.push(() => cellMenu.destroy());
+  const cellDrop = (ctx: Parameters<typeof createCellDrop>[0]) => createCellDrop(ctx, measure);
   editor.element.removeAttribute("id");
   undo.push(() => editor.element.remove());
   undo.push(() => choice.release());
@@ -377,14 +383,14 @@ async function buildBoardSession(
     tools: {
       pen: createPenTool,
       eraser: createEraserTool,
-      select: createSelectTool,
+      select: (ctx) => createSelectTool(ctx, cellDrop(ctx)),
       shape: createShapeTool,
       text: (ctx, style) => {
         textTool = createTextTool(ctx, editor, style, measure);
         return textTool;
       },
       table: (ctx, style) => {
-        tableTool = createTableTool(ctx, editor, picker, style, measure);
+        tableTool = createTableTool(ctx, editor, picker, style, measure, cellMenu, cellDrop(ctx), (text) => showToast({ text }));
         return tableTool;
       },
       fill: (ctx, color, tolerance) => createFillTool(ctx, color, measure, { tolerance, submit: (r, run) => fillQueue.submit(r, zoneMarks.timed(run)) }),
@@ -766,6 +772,8 @@ async function buildBoardSession(
     stage.dataset["bounds"] = tags.bounds;
     stage.dataset["tool"] = tags.tool;
     stage.dataset["table"] = tags.table;
+    stage.dataset["tableLinked"] = tags.tableLinked;
+    stage.dataset["tableHeader"] = tags.tableHeader;
     stage.dataset["tableMerges"] = tags.tableMerges;
     stage.dataset["tableShades"] = tags.tableShades;
     stage.dataset["units"] = tags.units;
@@ -906,6 +914,7 @@ async function buildBoardSession(
       doc.free();
       stage.remove();
       picker.element.remove();
+      cellMenu.destroy();
       editor.element.remove();
     },
   };

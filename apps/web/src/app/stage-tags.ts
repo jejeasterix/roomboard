@@ -34,7 +34,7 @@ export interface StageExtras {
 export function stageTags(
   s: EngineState,
   extra: StageExtras = {},
-): Record<"page" | "pageMode" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image" | "pot" | "zones" | "zoneMs" | "zoneCells" | "lineEdit" | "bind" | "linePoints", string> {
+): Record<"page" | "pageMode" | "selection" | "bounds" | "tool" | "table" | "tableLinked" | "tableHeader" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image" | "pot" | "zones" | "zoneMs" | "zoneCells" | "lineEdit" | "bind" | "linePoints", string> {
   return {
     page: `${s.pageIndex + 1}/${s.pageCount}`,
     pageMode: s.pageLayout,
@@ -42,6 +42,8 @@ export function stageTags(
     bounds: boundsTag(s.selectionBounds),
     tool: s.tool,
     table: tableTag(s.tableCell),
+    tableLinked: s.tableCell?.linked === undefined ? "" : String(s.tableCell.linked),
+    tableHeader: s.tableCell === null ? "" : s.tableCell.header === true ? "1" : "0",
     tableMerges: String(s.tableMerges),
     tableShades: String(s.tableShades),
     units: String(s.selectionUnits),

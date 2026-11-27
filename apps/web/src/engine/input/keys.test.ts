@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARRANGE_HOWS } from "../../core/arrange";
-import { appShortcut, arrangeKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
+import { appShortcut, arrangeKey, cellKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -214,6 +214,44 @@ describe("appShortcut (personnalisation-1b, Q28)", () => {
   });
 });
 
+describe("cellKey (H12)", () => {
+  it("cellKey : Alt+Entrée, Alt+Maj+Entrée, Alt+F, Alt+I ; Ctrl ou champ : null", () => {
+    const c = (o: Partial<KeyLike>): KeyLike => ({ key: "", code: "", ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+    expect(cellKey(c({ key: "Enter", code: "Enter" }))).toBe("place");
+    expect(cellKey(c({ key: "Enter", code: "Enter", shiftKey: true }))).toBe("unplace");
+    expect(cellKey(c({ key: "ƒ", code: "KeyF" }))).toBe("fit");
+    expect(cellKey(c({ key: "i", code: "KeyI" }))).toBe("cell-image");
+    expect(cellKey(c({ key: "Enter", code: "Enter", ctrlKey: true }))).toBeNull();
+    expect(cellKey(c({ key: "Enter", code: "Enter", target: { tagName: "TEXTAREA" } }))).toBeNull();
+    expect(cellKey(c({ key: "Enter", code: "Enter", altKey: false }))).toBeNull();
+  });
+});
+
+describe("tableKey (H12)", () => {
+  it("tableKey : Alt+flèches seules ; avec Ctrl, Maj, Cmd, sans Alt, en saisie ou en composition : null", () => {
+    const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+    expect(tableKey(a("ArrowRight"))).toBe("col-wider");
+    expect(tableKey(a("ArrowLeft"))).toBe("col-narrower");
+    expect(tableKey(a("ArrowDown"))).toBe("row-taller");
+    expect(tableKey(a("ArrowUp"))).toBe("row-shorter");
+    expect(tableKey(a("ArrowRight", { ctrlKey: true }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { metaKey: true }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { altKey: false }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { shiftKey: true }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { isComposing: true }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { target: { isContentEditable: true } }))).toBeNull();
+  });
+});
+
+describe("tableKey TB2", () => {
+  it("tableKey : Alt+E bascule l'en-tête, sans Maj ni Ctrl", () => {
+    const a = (o: Partial<KeyLike> = {}): KeyLike => ({ key: "e", code: "KeyE", ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+    expect(tableKey(a())).toBe("header-toggle");
+    expect(tableKey(a({ shiftKey: true }))).toBeNull();
+    expect(tableKey(a({ ctrlKey: true }))).toBeNull();
+  });
+});
+
 describe("OG12 : lineEditKey, linkedKey, isCtrlKey", () => {
   it("lineEditKey : Ctrl ou Cmd+Entrée, rien d'autre", () => {
     expect(lineEditKey(k("Enter", { ctrlKey: true }))).toBe(true);
@@ -333,5 +371,38 @@ describe("arrangeKey (OG23, déc. 24)", () => {
     expect(nudgeKey(k("ArrowLeft", { target: { tagName: "CANVAS" } }))).toEqual({ dx: -1, dy: 0 });
     expect(nudgeKey(k("ArrowLeft", { target: { tagName: "BODY" } }))).toEqual({ dx: -1, dy: 0 });
     expect(nudgeKey(k("ArrowLeft", { target: null }))).toEqual({ dx: -1, dy: 0 });
+  });
+});
+
+describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointes", () => {
+  // Les touches du Tableau (Alt+flèches, Alt+E, Alt+F, Alt+I, Alt+Entrée, Alt+Maj+Entrée) ne tombent sur aucun
+  // raccourci d'OG23 (Alt+Maj+flèches, Alt+Maj+H/V/R, Alt+H/V, Maj+H/V/R, flèches) : aucun arbitrage de contexte requis.
+  const table: KeyLike[] = [
+    ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, altKey: true })),
+    k("e", { code: "KeyE", altKey: true }),
+    k("f", { code: "KeyF", altKey: true }),
+    k("i", { code: "KeyI", altKey: true }),
+    k("Enter", { code: "Enter", altKey: true }),
+    k("Enter", { code: "Enter", altKey: true, shiftKey: true }),
+  ];
+  const og23: KeyLike[] = [
+    ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].flatMap((a) => [k(a, { code: a, altKey: true, shiftKey: true }), k(a, { code: a }), k(a, { code: a, shiftKey: true })]),
+    ...["h", "v", "r"].flatMap((l) => [k(l, { code: `Key${l.toUpperCase()}`, altKey: true, shiftKey: true }), k(l.toUpperCase(), { code: `Key${l.toUpperCase()}`, shiftKey: true })]),
+    k("h", { code: "KeyH", altKey: true }),
+    k("v", { code: "KeyV", altKey: true }),
+  ];
+  it("une touche du Tableau n'est ni Disposer ni un pas de flèche", () => {
+    for (const e of table) {
+      expect(tableKey(e) ?? cellKey(e), `${e.code}`).not.toBeNull();
+      expect(arrangeKey(e), `${e.code}`).toBeNull();
+      expect(nudgeKey(e), `${e.code}`).toBeNull();
+    }
+  });
+  it("une touche d'OG23 n'est ni une touche de l'outil Tableau ni une touche de case", () => {
+    for (const e of og23) {
+      expect(arrangeKey(e) ?? nudgeKey(e), `${e.code}`).not.toBeNull();
+      expect(tableKey(e), `${e.code}`).toBeNull();
+      expect(cellKey(e), `${e.code}`).toBeNull();
+    }
   });
 });

@@ -93,6 +93,7 @@ fn add_stroke(d: &mut Document, look: Look) -> String {
         points: hline(100.0),
         style: pen(),
         look,
+        cell: None,
     })
     .expect("trait")
     .ids[0]
@@ -1321,6 +1322,7 @@ fn stroke_with(d: &mut Document, x0: f32, pressure: impl Fn(f32) -> f32, look: L
         points,
         style: thick(),
         look,
+        cell: None,
     })
     .expect("trait")
     .ids[0]
