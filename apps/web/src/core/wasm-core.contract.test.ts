@@ -1,14 +1,14 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import type { AssetRef, LineBinding, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage } from "./api";
 import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
 import { fakeCore } from "./fake-core";
-import { normalizeShape } from "./shapes";
+import { applyMatrix, linePath, normalizeShape } from "./shapes";
 import { createWasmCore, gridArgs, imageParamsArgs, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, toPair, type WasmModule } from "./wasm-core";
 
 // `apps/web` n'a pas `@types/node` : `node:fs` par import dynamique typé localement, `process` par `globalThis`.
@@ -131,7 +131,7 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     expect(calls).toEqual([
       // OG11 : les dix derniers arguments sont l'aspect (stroke_style, roughness, seed, roundness, opacity, puis au lot 2
       // fill_style, start_arrowhead, end_arrowhead, text_align, link), absents ici.
-      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
+      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
       ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
       ["transform", ["e1", "e2"], new Float64Array([2, 0, 0, 2, 10, 20])],
     ]);
@@ -3940,7 +3940,8 @@ describe.each(factories)("contrat OG11 : $name", ({ f }) => {
     unchanged(d, () => expect(restyle(d, [r], { strokeStyle: "dotted", roughness: 2, roundness: "round", opacity: 30.2, color: "#ff0000", width: 6, fill: "#00ff00" }).ids).toEqual([]));
     expect(d.element(r)?.look).toEqual(look);
     unchanged(d, () => expect(restyle(d, [im], { roundness: "round", roughness: 1, strokeStyle: "dashed", fill: "#00ff00", color: "#ff0000", width: 9 }).ids).toEqual([]));
-    unchanged(d, () => expect(restyle(d, [l], { roundness: "round", fill: "#00ff00" }).ids).toEqual([]));
+    // OG12 (T1, T5) : `roundness` s'applique à une ligne ; seul `fill` lui reste inapplicable.
+    unchanged(d, () => expect(restyle(d, [l], { fill: "#00ff00" }).ids).toEqual([]));
     unchanged(d, () => expect(restyle(d, [t], { width: 9, roughness: 1, strokeStyle: "dashed" }).ids).toEqual([]));
     unchanged(d, () => expect(restyle(d, [s], { roundness: "round", roughness: 1, strokeStyle: "dashed", fill: "#00ff00" }).ids).toEqual([]));
     unchanged(d, () => expect(restyle(d, [], { opacity: 10 }).ids).toEqual([]));
@@ -3950,6 +3951,18 @@ describe.each(factories)("contrat OG11 : $name", ({ f }) => {
     expect(c.ids).toEqual([r]);
     expect(d.version()).toBe(v + 1);
     unchanged(d, () => expect(restyle(d, [r, im, l], { roundness: null }).ids).toEqual([]));
+    d.free();
+  });
+
+  it("SetStyle : roundness sur une ligne : une étape (OG12)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const l = line(d, p);
+    const v = d.version();
+    expect(restyle(d, [l], { roundness: "round" }).ids).toEqual([l]);
+    expect(d.version()).toBe(v + 1);
+    expect(d.element(l)?.look?.roundness).toBe("round");
+    unchanged(d, () => expect(restyle(d, [l], { roundness: "round" }).ids).toEqual([]));
     d.free();
   });
 
@@ -4485,5 +4498,245 @@ describe.each(factories)("contrat T18 : SetPageMode, MovePage, DuplicatePage, Re
       messageOf(() => d.apply({ type: "Restack", ids: [a, c], to: 0 })),
       messageOf(() => d.apply({ type: "SetPageMode", page: p1, mode: "a4" as never })),
     ]).toEqual(["rang de page hors bornes", "rang de page hors bornes", "élément inconnu : nulle", "objets de pages différentes", "mode de page inconnu : a4"]);
+  });
+});
+
+// OG12 (T10) : lignes liées, SetLinePoints, AddLinked, bindTarget ; les cas de `fake-lines.test.ts`, joués sur les deux fabriques.
+describe.each(factories)("contrat OG12 : $name", ({ f: fab }) => {
+  const PEN = { color: "#000000", width: 4 };
+  const rect = (d: CoreDocument, x: number, y: number): string =>
+    d.apply({ type: "AddShape", page: d.pageIds()[0]!, shape: "rect", x0: x, y0: y, x1: x + 100, y1: y + 50, style: PEN, fill: null }).ids[0]!;
+  const add = (d: CoreDocument, shape: "line" | "arrow", c: [number, number, number, number], extra: Partial<Extract<Command, { type: "AddShape" }>> = {}): string =>
+    d.apply({ type: "AddShape", page: d.pageIds()[0]!, shape, x0: c[0], y0: c[1], x1: c[2], y1: c[3], style: PEN, fill: null, ...extra }).ids[0]!;
+  const b = (id: string, fx: number, fy: number): LineBinding => ({ id, fx, fy });
+  function world(d: CoreDocument, id: string): [number, number][] {
+    const v = d.element(id);
+    if (v?.kind !== "shape") throw new Error("forme attendue");
+    return linePath(v.shape.w, v.shape.h, v.shape.points ?? []).map(([x, y]) => applyMatrix(v.transform, x, y));
+  }
+  function linked(d: CoreDocument): [string, string, string] {
+    const a = rect(d, 0, 0);
+    const bb = rect(d, 400, 0);
+    return [a, bb, add(d, "arrow", [100, 25, 400, 25], { start: b(a, 1, 0.5), end: b(bb, 0, 0.5) })];
+  }
+  /** Liaisons lues d'un élément : [départ, fin] (id ou undefined). */
+  function ends(d: CoreDocument, id: string): [string | undefined, string | undefined] {
+    const v = d.element(id);
+    if (v?.kind !== "shape") throw new Error("forme attendue");
+    return [v.shape.start?.id, v.shape.end?.id];
+  }
+
+  it("AddShape : extrémités recalées à 5 + épaisseur / 2, points intérieurs gardés", () => {
+    const d = fab.blank();
+    const a = rect(d, 0, 0);
+    const z = rect(d, 400, 0);
+    const f = add(d, "arrow", [110, 25, 390, 25], { points: [250, -60], start: b(a, 1, 0.5), end: b(z, 0, 0.5) });
+    expect(world(d, f)).toEqual([[107, 25], [250, -60], [393, 25]]);
+  });
+  it("suivi en une étape : B déplacé, la fin suit ; annuler rend tout", () => {
+    const d = fab.blank();
+    const [, z, f] = linked(d);
+    const before = d.element(f);
+    const ch = d.apply({ type: "Transform", ids: [z], matrix: [1, 0, 0, 1, 0, 200] });
+    expect(world(d, f)[1]).toEqual([393, 225]);
+    expect(world(d, f)[0]).toEqual([107, 25]);
+    expect(ch.ids).toEqual([z, f]);
+    d.undo();
+    expect(d.element(f)).toEqual(before);
+    // Une seule étape : le même `undo` rend aussi B (un suivi en seconde étape laisserait B déplacé).
+    expect(d.element(z)?.transform[5]).toBe(0);
+    expect(d.canUndo()).toBe(true);
+  });
+  it("rupture bout par bout", () => {
+    const d = fab.blank();
+    const [a, z, f] = linked(d);
+    d.apply({ type: "Transform", ids: [f, a], matrix: [1, 0, 0, 1, 0, 50] });
+    const v = d.element(f);
+    expect(v?.kind === "shape" && v.shape.start?.id === a && v.shape.end === undefined).toBe(true);
+    d.undo();
+    d.apply({ type: "Transform", ids: [f, a, z], matrix: [1, 0, 0, 1, 30, 0] });
+    expect(ends(d, f)).toEqual([a, z]);
+    d.undo();
+    d.apply({ type: "Transform", ids: [f], matrix: [1, 0, 0, 1, 0, 80] });
+    expect(ends(d, f)).toEqual([undefined, undefined]);
+  });
+  it("cible supprimée lue libre ; annuler : liée", () => {
+    const d = fab.blank();
+    const [, z, f] = linked(d);
+    const w0 = world(d, f);
+    d.apply({ type: "Delete", ids: [z] });
+    const v = d.element(f);
+    expect(v?.kind === "shape" && v.shape.end).toBeFalsy();
+    expect(world(d, f)).toEqual(w0);
+    d.undo();
+    const w = d.element(f);
+    expect(w?.kind === "shape" && w.shape.end?.id).toBe(z);
+  });
+  // Distingue `copyElements` (table ancien → neuf du lot tirée d'abord) de `copyElement` appelé élément par élément :
+  // ce dernier laisserait `start` / `end` sur les originaux (a, z), et la copie seule resterait liée à eux.
+  it("copie : liée aux copies avec ses cibles, libre seule", () => {
+    const d = fab.blank();
+    const [a, z, f] = linked(d);
+    const p = d.pageIds()[0]!;
+    const all = d.insertFragment(d.extract(p, [a, z, f]), p, 10, 10).ids;
+    const v = d.element(all[2]!);
+    expect(v?.kind === "shape" && [v.shape.start?.id, v.shape.end?.id]).toEqual([all[0], all[1]]);
+    const alone = d.insertFragment(d.extract(p, [f]), p, 10, 10).ids;
+    const w = d.element(alone[0]!);
+    expect(w?.kind === "shape" && (w.shape.start ?? w.shape.end)).toBeFalsy();
+  });
+  // La table ancien → neuf est tirée avant toute recopie : une flèche placée avant ses cibles dans le lot est renvoyée
+  // vers leurs copies (une table remplie au fil de la recopie la laisserait libre).
+  it("copie : flèche avant ses cibles dans le lot, liée aux copies", () => {
+    const d = fab.blank();
+    const [a, z, f] = linked(d);
+    const p = d.pageIds()[0]!;
+    d.apply({ type: "Restack", ids: [f], to: 0 });
+    expect(d.elementIds(p)).toEqual([f, a, z]);
+    const all = d.insertFragment(d.extract(p, [a, z, f]), p, 10, 10).ids;
+    expect(ends(d, all[0]!)).toEqual([all[1], all[2]]);
+  });
+  it("sauvegarde puis relecture : points, liaisons et coudée gardés", () => {
+    const d = fab.blank();
+    const [a, z, f] = linked(d);
+    d.apply({ type: "SetLinePoints", id: f, points: [107, 25, 250, -60, 393, 25], start: b(a, 1, 0.5), end: b(z, 0, 0.5) });
+    const [, g] = d.apply({ type: "AddLinked", id: a, dir: "down" }).ids;
+    const back = fab.load(d.save("2026-11-27T00:00:00Z", "test"));
+    expect(back.element(f)).toEqual(d.element(f));
+    expect(back.element(g!)).toEqual(d.element(g!));
+    const v = back.element(g!);
+    expect(v?.kind === "shape" && v.look?.elbowed && v.shape.start?.id === a).toBe(true);
+  });
+  it("duplication de page : liaisons renvoyées vers les copies de la page", () => {
+    const d = fab.blank();
+    linked(d);
+    const p = d.pageIds()[0]!;
+    d.apply({ type: "DuplicatePage", page: p });
+    const q = d.pageIds()[1]!;
+    const ids = d.elementIds(q);
+    expect(ends(d, ids[2]!)).toEqual([ids[0], ids[1]]);
+  });
+  it("insertPages : liaisons renvoyées vers les copies des pages insérées", () => {
+    const src = fab.blank();
+    linked(src);
+    const d = fab.blank();
+    const p = d.pageIds()[0]!;
+    d.insertPages(src, p);
+    const ids = d.elementIds(d.pageIds()[1]!);
+    expect(ends(d, ids[2]!)).toEqual([ids[0], ids[1]]);
+  });
+  it("SetLinePoints : une étape ; refus dans l'ordre du cœur", () => {
+    const d = fab.blank();
+    const r = rect(d, 0, 0);
+    const l = add(d, "line", [0, 100, 200, 100]);
+    const v0 = d.version();
+    d.apply({ type: "SetLinePoints", id: l, points: [0, 100, 100, 180, 200, 100], start: null, end: null });
+    expect(d.version()).toBe(v0 + 1);
+    expect(world(d, l)[1]).toEqual([100, 180]);
+    const set = (id: string, points: number[], end: LineBinding | null = null): Command => ({ type: "SetLinePoints", id, points, start: null, end });
+    expect(() => d.apply(set(l, [1, 2]))).toThrow("points invalides");
+    expect(() => d.apply(set("absent", [0, 0, 1, 1]))).toThrow("élément inconnu : absent");
+    expect(() => d.apply(set(r, [0, 0, 1, 1]))).toThrow("forme invalide");
+    expect(() => d.apply(set(l, [0, 0, 1, 1], b(l, 0, 0.5)))).toThrow("forme invalide");
+    d.apply({ type: "SetLinePoints", id: l, points: [0, 100, 100, 180, 200, 100], start: null, end: null });
+    expect(d.version()).toBe(v0 + 1);
+  });
+  it("AddLinked : copie à droite à +200, flèche coudée liée, une étape ; place prise : glisse dessous", () => {
+    const d = fab.blank();
+    const a = rect(d, 0, 0);
+    const [c, f] = d.apply({ type: "AddLinked", id: a, dir: "right" }).ids;
+    expect(d.element(c!)?.transform[4]).toBe(200);
+    const v = d.element(f!);
+    expect(v?.kind === "shape" && v.look?.elbowed && v.shape.start?.id === a && v.shape.end?.id === c).toBe(true);
+    expect(world(d, f!)).toEqual([[107, 25], [193, 25]]);
+    const [c2] = d.apply({ type: "AddLinked", id: a, dir: "right" }).ids;
+    expect(d.element(c2!)?.transform[5]).toBeGreaterThanOrEqual(150);
+    d.undo();
+    expect(d.elementIds(d.pageIds()[0]!)).toHaveLength(3);
+    const l = add(d, "line", [0, 500, 10, 500]);
+    expect(() => d.apply({ type: "AddLinked", id: l, dir: "up" })).toThrow("forme invalide");
+    expect(() => d.apply({ type: "AddLinked", id: "absent", dir: "up" })).toThrow("élément inconnu : absent");
+  });
+  it("bindTarget : plus petit contenant, contour projeté, ancres, ligne exclue", () => {
+    const d = fab.blank();
+    const p = d.pageIds()[0]!;
+    const big = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 0, y0: 0, x1: 400, y1: 400, style: PEN, fill: null }).ids[0]!;
+    const small = rect(d, 100, 100);
+    expect(d.bindTarget(p, 150, 120, 15)).toMatchObject({ id: small, onOutline: false });
+    expect(d.bindTarget(p, 395, 300, 15)).toMatchObject({ id: big, onOutline: true, fixed: [1, 0.75] });
+    expect(d.bindTarget(p, 395, 300, 15)?.anchors[1]).toEqual([400, 200]);
+    expect(d.bindTarget(p, 900, 900, 15)).toBeNull();
+    const l = add(d, "line", [600, 600, 700, 600]);
+    expect(d.bindTarget(p, 650, 600, 15)?.id).not.toBe(l);
+  });
+  it("SetStyle : roundness sur la ligne, elbowed sur la flèche seule, pointes neuves", () => {
+    const d = fab.blank();
+    const l = add(d, "line", [0, 0, 100, 0]);
+    const f = add(d, "arrow", [0, 100, 100, 100], { points: [50, 140] });
+    d.apply({ type: "SetStyle", ids: [l], patch: { roundness: "round" } });
+    expect(d.element(l)?.look?.roundness).toBe("round");
+    const v0 = d.version();
+    d.apply({ type: "SetStyle", ids: [l], patch: { elbowed: true } });
+    expect(d.version()).toBe(v0);
+    d.apply({ type: "SetStyle", ids: [f], patch: { elbowed: true, endArrowhead: "circle" } });
+    const v = d.element(f);
+    expect(v?.kind === "shape" && v.look?.elbowed && v.look.endArrowhead === "circle" && v.shape.points === undefined).toBe(true);
+  });
+  it("SetText élargi : l'extrémité liée suit", () => {
+    const d = fab.blank();
+    const p = d.pageIds()[0]!;
+    const t = d.apply({ type: "SetText", page: p, id: null, x: 0, y: 0, content: "nœud", color: "#000000", size: 36, boxWidth: 100, boxHeight: 50 }).ids[0]!;
+    const l = add(d, "line", [300, 25, 100, 25], { end: b(t, 1, 0.5) });
+    expect(world(d, l)[1]).toEqual([105, 25]);
+    d.apply({ type: "SetText", page: p, id: t, x: 0, y: 0, content: "nœud", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    expect(world(d, l)[1]).toEqual([205, 25]);
+  });
+  it("hitTest suit la polyligne", () => {
+    const d = fab.blank();
+    const p = d.pageIds()[0]!;
+    const l = add(d, "line", [0, 0, 200, 0], { points: [100, -80] });
+    expect(d.hitTest(p, 100, -79, 2)).toBe(l);
+    expect(d.hitTest(p, 100, 0, 2)).toBeNull();
+  });
+});
+
+describe.skipIf(loaded === null)("contrat OG12 : vrai module seulement", () => {
+  const PEN = { color: "#000000", width: 4 };
+  const rectAt = (d: CoreDocument, x: number): string =>
+    d.apply({ type: "AddShape", page: first(d), shape: "rect", x0: x, y0: 0, x1: x + 100, y1: 50, style: PEN, fill: null }).ids[0]!;
+  const worldOf = (d: CoreDocument, id: string): [number, number][] => {
+    const v = d.element(id);
+    if (v?.kind !== "shape") throw new Error("forme attendue");
+    return linePath(v.shape.w, v.shape.h, v.shape.points ?? []).map(([x, y]) => applyMatrix(v.transform, x, y));
+  };
+  it("AddLinked : la flèche a au moins deux points et des segments orthogonaux", () => {
+    const d = need().core.blank();
+    const a = rectAt(d, 0);
+    const [, arrow] = d.apply({ type: "AddLinked", id: a, dir: "right" }).ids;
+    const w = worldOf(d, arrow!);
+    expect(w.length).toBeGreaterThanOrEqual(2);
+    for (let i = 1; i < w.length; i++) {
+      const [p, q] = [w[i - 1]!, w[i]!];
+      expect(Math.abs(p[0] - q[0]) < 1e-6 || Math.abs(p[1] - q[1]) < 1e-6).toBe(true);
+    }
+    d.free();
+  });
+  it("SetStyle { elbowed: true } sur une flèche liée en diagonale : route d'au moins 4 points", () => {
+    const d = need().core.blank();
+    const a = rectAt(d, 0);
+    const z = d.apply({ type: "AddShape", page: first(d), shape: "rect", x0: 400, y0: 300, x1: 500, y1: 350, style: PEN, fill: null }).ids[0]!;
+    const f = d.apply({ type: "AddShape", page: first(d), shape: "arrow", x0: 100, y0: 25, x1: 400, y1: 325, style: PEN, fill: null, start: { id: a, fx: 1, fy: 0.5 }, end: { id: z, fx: 0, fy: 0.5 } }).ids[0]!;
+    d.apply({ type: "SetStyle", ids: [f], patch: { elbowed: true } });
+    expect(worldOf(d, f).length).toBeGreaterThanOrEqual(4);
+    d.free();
+  });
+  it("un fichier sans champ neuf se relit et se réenregistre aux mêmes octets", () => {
+    const d = need().core.blank();
+    rectAt(d, 0);
+    commit(d, first(d), 300);
+    const one = d.save(now, "0.1.0");
+    const two = need().core.load(one).save(now, "0.1.0");
+    expect(Array.from(two)).toEqual(Array.from(one));
+    d.free();
   });
 });
