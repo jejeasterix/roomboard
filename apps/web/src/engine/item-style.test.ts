@@ -17,7 +17,7 @@ describe("item-style", () => {
     expect(mergeItemStyle(DEFAULT_ITEM_STYLE, { opacity: 40 }).opacity).toBe(40);
   });
   it("défaut : Architecte, Droits, plein, opaque", () => {
-    expect(DEFAULT_ITEM_STYLE).toEqual({ color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100, fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", font: "default", fontSize: 36 });
+    expect(DEFAULT_ITEM_STYLE).toEqual({ color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100, fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", font: "default", fontSize: 36, variability: "variable" });
   });
   it("parseItemStyle : couleur invalide refusée (color, background)", () => {
     expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, color: "red" }))?.color).toBe("red"); // nom CSS valide
@@ -43,5 +43,13 @@ describe("style courant : police et taille du prochain texte (T31)", () => {
     expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, font: "" }))).toBeNull();
     expect(mergeItemStyle(DEFAULT_ITEM_STYLE, { fontSize: -3 }).fontSize).toBe(36);
     expect(mergeItemStyle(DEFAULT_ITEM_STYLE, { font: "Courier New" }).font).toBe("Courier New");
+  });
+  it("style ancien sans variability lu", () => {
+    const { variability: _v, ...old } = DEFAULT_ITEM_STYLE;
+    expect(parseItemStyle(JSON.stringify(old))?.variability).toBe("variable");
+    expect(parseItemStyle(JSON.stringify({ ...old, variability: "constant" }))?.variability).toBe("constant");
+  });
+  it("variability invalide : illisible", () => {
+    expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, variability: "fixe" }))).toBeNull();
   });
 });
