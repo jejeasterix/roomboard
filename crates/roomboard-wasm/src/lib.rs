@@ -24,6 +24,7 @@ use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextAttr};
 use roomboard_core::shape::ShapeKind;
 use roomboard_core::style::StylePatch;
 use roomboard_core::table::TableAxis;
+use roomboard_core::table_links::LineSize;
 use wasm_bindgen::prelude::*;
 
 /// Version du cœur, pour vérifier que le module Wasm est chargé.
@@ -1164,6 +1165,46 @@ impl Document {
         )
     }
 
+    /// personnalisation-3 (D3) : `table`, `row`, `col` tous présents = case visée, sinon sortie de case ; `size_keys` =
+    /// triplets (tableau, "row" | "col", ligne) bout à bout, `size_values` une taille par triplet.
+    #[allow(clippy::too_many_arguments)]
+    pub fn place_in_cell(
+        &mut self,
+        ids: Vec<String>,
+        matrix: &[f64],
+        table: Option<String>,
+        row: Option<String>,
+        col: Option<String>,
+        size_keys: Vec<String>,
+        size_values: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let cell = match (table, row, col) {
+            (Some(t), Some(r), Some(c)) => Some([t, r, c]),
+            _ => None,
+        };
+        to_js(
+            &self
+                .place_in_cell_inner(ids, matrix, cell, &size_keys, size_values)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// personnalisation-3 (D4) : ids et tailles de même longueur, sinon `BadTable`.
+    pub fn set_table_line_sizes(
+        &mut self,
+        id: &str,
+        col_ids: Vec<String>,
+        col_widths: &[f64],
+        row_ids: Vec<String>,
+        row_heights: &[f64],
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_line_sizes_inner(id, &col_ids, col_widths, &row_ids, row_heights)
+                .map_err(cmd_err)?,
+        )
+    }
+
     /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
     #[allow(clippy::too_many_arguments)]
     pub fn import_table(
@@ -2073,6 +2114,70 @@ impl Document {
             from: (from[0].to_string(), from[1].to_string()),
             to: (to[0].to_string(), to[1].to_string()),
             shade,
+        })
+    }
+
+    /// Matrice qui n'a pas six nombres : `BadMatrix` ; clés qui ne vont pas par trois ou axe inconnu : `BadTable`.
+    pub fn place_in_cell_inner(
+        &mut self,
+        ids: Vec<String>,
+        matrix: &[f64],
+        cell: Option<[String; 3]>,
+        size_keys: &[String],
+        size_values: &[f64],
+    ) -> Result<Change, CommandError> {
+        let matrix: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
+        if size_keys.len() != 3 * size_values.len() {
+            return Err(CommandError::BadTable);
+        }
+        let sizes = size_keys
+            .chunks(3)
+            .zip(size_values)
+            .map(|(k, s)| {
+                let axis = match k[1].as_str() {
+                    "row" => TableAxis::Row,
+                    "col" => TableAxis::Col,
+                    _ => return Err(CommandError::BadTable),
+                };
+                Ok(LineSize {
+                    table: k[0].clone(),
+                    axis,
+                    line: k[2].clone(),
+                    size: *s,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.run(Command::PlaceInCell {
+            ids,
+            matrix,
+            cell,
+            sizes,
+        })
+    }
+
+    pub fn set_table_line_sizes_inner(
+        &mut self,
+        id: &str,
+        col_ids: &[String],
+        col_widths: &[f64],
+        row_ids: &[String],
+        row_heights: &[f64],
+    ) -> Result<Change, CommandError> {
+        if col_ids.len() != col_widths.len() || row_ids.len() != row_heights.len() {
+            return Err(CommandError::BadTable);
+        }
+        self.run(Command::SetTableLineSizes {
+            id: id.to_string(),
+            cols: col_ids
+                .iter()
+                .cloned()
+                .zip(col_widths.iter().copied())
+                .collect(),
+            rows: row_ids
+                .iter()
+                .cloned()
+                .zip(row_heights.iter().copied())
+                .collect(),
         })
     }
 
@@ -3664,6 +3769,70 @@ mod tests {
             .expect("deux lignes");
         assert_eq!(table_of(&d, &id).rows.len(), 1);
     }
+
+    // personnalisation-3 (D3, D4) : `PlaceInCell` et `SetTableLineSizes` par les `*_inner`.
+    #[test]
+    fn place_in_cell_inner_links_and_sizes() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [3, 3], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = table_of(&d, &id);
+        let s = d
+            .add_shape_inner(
+                &p,
+                "rect",
+                [1000.0, 1000.0, 1400.0, 1300.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+            )
+            .expect("forme")
+            .ids[0]
+            .clone();
+        let keys = vec![
+            id.clone(),
+            "col".into(),
+            t.cols[1].id.clone(),
+            id.clone(),
+            "row".into(),
+            t.rows[1].id.clone(),
+        ];
+        let cell = [id.clone(), t.rows[1].id.clone(), t.cols[1].id.clone()];
+        d.place_in_cell_inner(
+            vec![s.clone()],
+            &[1.0, 0.0, 0.0, 1.0, -752.0, -928.0],
+            Some(cell.clone()),
+            &keys,
+            &[416.0, 316.0],
+        )
+        .expect("logé");
+        let after = table_of(&d, &id);
+        assert_eq!((after.cols[1].width, after.rows[1].height), (416.0, 316.0));
+        assert_eq!(d.core.element(&s).and_then(|e| e.cell), Some(cell));
+        assert!(d
+            .place_in_cell_inner(vec![s.clone()], &[1.0], None, &[], &[])
+            .is_err());
+        assert!(d
+            .place_in_cell_inner(vec![s], &IDENTITY_6, None, &keys[..3], &[])
+            .is_err());
+        let bad_axis = vec![id.clone(), "diag".into(), t.cols[1].id.clone()];
+        assert!(d
+            .place_in_cell_inner(vec![], &IDENTITY_6, None, &bad_axis, &[300.0])
+            .is_err());
+        assert!(d
+            .set_table_line_sizes_inner(&id, &[t.cols[0].id.clone()], &[], &[], &[])
+            .is_err());
+        d.set_table_line_sizes_inner(&id, &[t.cols[0].id.clone()], &[300.0], &[], &[])
+            .expect("colonne");
+        assert_eq!(table_of(&d, &id).cols[0].width, 300.0);
+    }
+
+    const IDENTITY_6: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 
     #[test]
     fn import_table_inner_reads_flat_merges() {

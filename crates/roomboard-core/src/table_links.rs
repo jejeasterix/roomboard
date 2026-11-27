@@ -906,10 +906,7 @@ mod tests {
                 matrix: [1.0, 0.0, 0.0, 1.0, 50.0, 20.0],
             })
             .expect("déplacé");
-        assert_eq!(
-            (tx(&d, &o)[4], tx(&d, &o)[5]),
-            (at[4] + 50.0, at[5] + 20.0)
-        );
+        assert_eq!((tx(&d, &o)[4], tx(&d, &o)[5]), (at[4] + 50.0, at[5] + 20.0));
         assert_eq!(raw_link(&d, &o), Some(link(&d, &t, 0, 0)), "lien gardé");
         let mut want = vec![t.clone(), o.clone()];
         want.sort();
