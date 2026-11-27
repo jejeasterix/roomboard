@@ -50,10 +50,10 @@ const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", too
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 75 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils et les îlots", () => {
+  it("ICONS : 73 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils et les îlots", () => {
     const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...OPTION_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(75);
+    expect(Object.keys(ICONS)).toHaveLength(73);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));

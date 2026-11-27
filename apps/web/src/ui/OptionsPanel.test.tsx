@@ -165,13 +165,13 @@ const pressed = (c: HTMLElement, sec: string): string | null =>
 
 describe("OptionsPanel : état vivant (T20)", () => {
   it("mixte : propriété absente ignorée (rectangle en tirets + trait de stylo)", () => {
-    const { container } = live("select", [shape("a", "rect", { stroke: "dashed" }), stroke("b")]);
+    const { container } = live("select", [shape("a", "rect", { strokeStyle: "dashed" }), stroke("b")]);
     expect(container.querySelector('[data-option="strokeStyle"]')).not.toBeNull();
     expect(container.querySelector('[data-option="strokeStyle"]')!.hasAttribute("data-mixed")).toBe(false);
     expect(pressed(container, "strokeStyle")).toBe("dashed");
   });
   it("mixte : propriété absente ignorée (rectangle arrondi + ellipse : Angles = arrondi)", () => {
-    const { container } = live("select", [shape("a", "rect", { round: true }), shape("b", "ellipse")]);
+    const { container } = live("select", [shape("a", "rect", { roundness: "round" }), shape("b", "ellipse")]);
     expect(container.querySelector('[data-option="roundness"]')!.hasAttribute("data-mixed")).toBe(false);
     expect(pressed(container, "roundness")).toBe("round");
   });
