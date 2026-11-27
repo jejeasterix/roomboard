@@ -53,7 +53,8 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
   const keep = (e: Event): void => { if (props.keepFocus === true) e.preventDefault(); };
   const known = (): boolean => props.value !== null && props.options.some((o) => o.value === props.value);
   const onKey = (e: KeyboardEvent, index: number): void => {
-    if (!Object.hasOwn(STEP, e.key)) return;
+    // Une flèche avec Alt, Ctrl ou Méta est un raccourci (Alt+Maj+flèche aligne, OG23) : le segment la laisse passer.
+    if (!Object.hasOwn(STEP, e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     const n = props.options.length;
     const rank = (index + STEP[e.key]! + n) % n;
