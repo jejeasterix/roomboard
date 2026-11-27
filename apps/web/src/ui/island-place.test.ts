@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Toolbar as Bar } from "../toolbar";
 import {
-  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, sheetLane, sideCorners, tabsWidth,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, beyondObstacles, sheetLane, sideCorners, tabsWidth,
   type Anchor, type Corners,
 } from "./island-place";
 
@@ -195,5 +195,21 @@ describe("island-place : correctifs de relecture (T19)", () => {
     const tools = { x: 170, y: 80, w: 940, h: 56 };
     expect(laneOf("side-start", { w: 260, h: 600 }, MID, sideCorners(base, "pages", tools)).y).toBe(144);
     expect(sideCorners(base, "pages", null).above).toEqual([]);
+  });
+});
+
+describe("beyondObstacles (T22 : la rangée contextuelle ne passe pas sous une barre latérale)", () => {
+  const side = { x: 16, y: 80, w: 325, h: 600 };
+  it("rangée posée sous la barre latérale : décalée à son bord droit + écart", () => {
+    expect(beyondObstacles(0, { top: 144, height: 56 }, [side], GAP)).toBe(16 + 325 + GAP);
+  });
+  it("sans recouvrement vertical, ou déjà à droite de la barre : inchangée", () => {
+    expect(beyondObstacles(0, { top: 700, height: 56 }, [side], GAP)).toBe(0);
+    expect(beyondObstacles(400, { top: 144, height: 56 }, [side], GAP)).toBe(400);
+    expect(beyondObstacles(12, { top: 144, height: 56 }, [], GAP)).toBe(12);
+  });
+  it("plusieurs obstacles : le plus à droite gagne, seulement ceux qui recouvrent", () => {
+    const other = { x: 400, y: 100, w: 50, h: 300 };
+    expect(beyondObstacles(0, { top: 144, height: 56 }, [side, other], GAP)).toBe(450 + GAP);
   });
 });

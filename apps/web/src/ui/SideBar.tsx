@@ -69,9 +69,9 @@ export interface SideBarProps {
   readonly size?: Accessor<ButtonSize>;
 }
 
-/** Largeur minimale CSS de la miniature par taille (petites, moyennes, grandes) : la liste ne descend pas dessous, le panneau
- * s'élargit au besoin ; au-delà (panneau plus large), la miniature prend toute la largeur utile de la ligne. */
-export const THUMB_CSS: Readonly<Record<SidebarState["thumb"], number>> = { s: 160, m: 220, l: 280 };
+/** Largeur CSS de la miniature par taille (petites, moyennes, grandes) : la liste ne descend pas dessous (le panneau
+ * s'élargit au besoin) et la miniature ne dépasse pas cette largeur (T22 : 3 Moyennes, 4 Petites visibles à 1280 × 900). */
+export const THUMB_CSS: Readonly<Record<SidebarState["thumb"], number>> = { s: 128, m: 176, l: 240 };
 /** Ce que la ligne prend en plus de la miniature : marges de la liste (2 × 2), de la ligne (2 × 4), numéro (24) et écart (4). */
 const LINE_CHROME = 40;
 
@@ -388,7 +388,6 @@ export function SideBar(props: SideBarProps): JSX.Element {
       <div class="rb-side-body" hidden={props.collapsed()}>
         <div class="rb-side-pane" data-pane="pages" hidden={tab() !== "pages"}>
         <div class="rb-side-group" data-side-mode title={pages.fixedByBackdrop() ? FIXED_BY_BACKDROP : undefined}>
-          <span class="rb-side-label">Mode</span>
           <RadioChoices<PageLayout> name="page-mode" label="Mode de la page" look="segment" options={MODES} value={pages.layout()} choose={(m) => pages.setLayout(m)} />
         </div>
         <div
@@ -430,7 +429,6 @@ export function SideBar(props: SideBarProps): JSX.Element {
           </For>
         </div>
         <div class="rb-side-group">
-          <span class="rb-side-label">Taille</span>
           <RadioChoices<SidebarState["thumb"]> name="page-thumb" label="Taille des miniatures" look="segment" options={SIZES} value={thumbSize()} choose={choose} />
         </div>
         </div>

@@ -9,7 +9,7 @@ import type { ToolbarHost } from "../app/toolbar-host";
 import type { RuntimeCapabilities, Toolbar, ToolItem } from "../toolbar";
 import type { ToolbarView } from "./item-state";
 import type { LayerRow } from "../app/layer-list";
-import { SideBar, type LayersPort, type PagesPort } from "./SideBar";
+import { SideBar, THUMB_CSS, type LayersPort, type PagesPort } from "./SideBar";
 
 const item = (action: string): ToolItem => ({ id: action, kind: "action", action, label: action, requires: [], rest: {} });
 const bar: Toolbar = {
@@ -195,16 +195,29 @@ describe("SideBar (T10)", () => {
     Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
     const { container, pages, store } = setup();
     await vi.advanceTimersByTimeAsync(0);
-    expect(pages.thumb).toHaveBeenCalledWith("a", 440); // moyennes : 220 px CSS (largeur minimale, rien de mesuré)
+    expect(pages.thumb).toHaveBeenCalledWith("a", 352); // moyennes : 176 px CSS (T22) (largeur minimale, rien de mesuré)
     pages.thumb.mockClear();
     fireEvent.click(container.querySelector('[data-edit="page-thumb"] [data-choice="l"]')!);
     expect(store.setSidebar).toHaveBeenCalledWith({ tab: "pages", thumb: "l" });
     expect(container.querySelector<HTMLElement>(".rb-pages-list")!.getAttribute("data-thumb")).toBe("l");
     await vi.advanceTimersByTimeAsync(0);
-    expect(pages.thumb).toHaveBeenCalledWith("a", 560);
-    expect(container.querySelector<HTMLElement>(".rb-pages-list")!.style.getPropertyValue("--rb-thumb")).toBe("280px");
+    expect(pages.thumb).toHaveBeenCalledWith("a", 480);
+    expect(container.querySelector<HTMLElement>(".rb-pages-list")!.style.getPropertyValue("--rb-thumb")).toBe("240px");
     expect(container.querySelector('[data-page="1"] img')?.getAttribute("src")).toBe("blob:vignette");
     Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
+  });
+
+  it("T22 : la liste prend toute la hauteur restante de l'îlot (aucun plafond fixe), la miniature est plafonnée à son gabarit, gabarits réduits, libellés Mode et Taille retirés", () => {
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    const rule = (sel: string): string => css.split("\n").find((l) => l.startsWith(`${sel} {`)) ?? "";
+    expect(rule(".rb-pages-list")).not.toMatch(/max-block-size/);
+    expect(rule(".rb-pages-list")).toMatch(/flex: 1 1 auto;.*min-block-size: 0;.*overflow-y: auto;/);
+    expect(rule(".rb-page-img")).toMatch(/max-inline-size: var\(--rb-thumb\)/);
+    expect(THUMB_CSS).toEqual({ s: 128, m: 176, l: 240 });
+    const { container } = setup();
+    expect(container.querySelector(".rb-side-label")).toBeNull();
+    expect(container.querySelector('[data-edit="page-mode"]')?.getAttribute("aria-label")).toBe("Mode de la page");
+    expect(container.querySelector('[data-edit="page-thumb"]')?.getAttribute("aria-label")).toBe("Taille des miniatures");
   });
 
   it("miniatures : la colonne de l'image prend toute la place de la ligne, l'image toute la colonne", () => {
@@ -224,7 +237,7 @@ describe("SideBar (T10)", () => {
     const { pages } = setup({ thumb: "l" });
     await vi.advanceTimersByTimeAsync(0);
     spy.mockRestore();
-    expect(pages.thumb.mock.calls.map((c) => (c as unknown as [string, number])[1])).toEqual([600, 600, 600]); // (340 − 40) × 2; thumb l = 280 au minimum
+    expect(pages.thumb.mock.calls.map((c) => (c as unknown as [string, number])[1])).toEqual([600, 600, 600]); // (340 − 40) × 2; thumb l = 240 au minimum
     Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
   });
 
