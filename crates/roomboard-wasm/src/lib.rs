@@ -9,7 +9,7 @@ use roomboard_core::asset::AssetRef;
 use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
 use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, EraseMode};
 use roomboard_core::document::Document as CoreDocument;
-use roomboard_core::element::{Look, StrokeStyle, Transform};
+use roomboard_core::element::{Look, PageLayout, StrokeStyle, Transform};
 use roomboard_core::fill::FillTarget;
 use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
 use roomboard_core::grid::{GridInput, GridLevelView, GridLines};
@@ -85,6 +85,20 @@ fn look_of(
 
 fn fmt_err(e: FormatError) -> JsError {
     JsError::new(&js_message(&e))
+}
+
+/// Disposition de page lue d'un nom JS (`PageLayout::parse`) ; illisible : le message de l'Error JS (que `fake-core.ts`
+/// reproduit). Sans JsValue, testée en natif.
+fn page_layout(mode: &str) -> Result<PageLayout, String> {
+    PageLayout::parse(mode).ok_or_else(|| format!("mode de page inconnu : {mode}"))
+}
+
+/// `mode` facultatif venu de JS : absent → `None` ; illisible → Error, levée avant la commande.
+fn layout_arg(mode: Option<String>) -> Result<Option<PageLayout>, JsError> {
+    mode.as_deref()
+        .map(page_layout)
+        .transpose()
+        .map_err(|m| JsError::new(&m))
 }
 
 fn parse_platform(name: &str) -> Option<Platform> {
@@ -511,9 +525,11 @@ impl Document {
         Self::wrap(CoreDocument::new(), None)
     }
 
-    /// Document de démarrage : une page, hors historique (D37).
-    pub fn blank() -> Document {
-        Self::wrap(CoreDocument::blank(), None)
+    /// Document de démarrage : une page à la disposition `mode` (absent : Paysage), hors historique (D37) ; mode
+    /// illisible : Error « mode de page inconnu : <valeur> ». `blank()` reste la forme Rust sans argument.
+    #[wasm_bindgen(js_name = blank)]
+    pub fn blank_js(mode: Option<String>) -> Result<Document, JsError> {
+        Ok(Self::blank_with(layout_arg(mode)?))
     }
 
     /// Document d'un PDF importé (C12, PF6) : `sizes` = largeurs et hauteurs en points bout à bout ; hors historique.
@@ -1217,12 +1233,42 @@ impl Document {
         self.core.element_ids_of_kind(page, kind)
     }
 
-    pub fn add_page_after(&mut self, after: Option<String>) -> Result<JsValue, JsError> {
-        to_js(&self.add_page_after_inner(after).map_err(cmd_err)?)
+    /// `mode` illisible : Error « mode de page inconnu : <valeur> », avant tout contrôle de la page.
+    pub fn add_page_after(
+        &mut self,
+        after: Option<String>,
+        mode: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        let layout = layout_arg(mode)?;
+        to_js(
+            &self
+                .add_page_after_mode_inner(after, layout)
+                .map_err(cmd_err)?,
+        )
     }
 
     pub fn remove_page(&mut self, page: &str) -> Result<JsValue, JsError> {
         to_js(&self.remove_page_inner(page).map_err(cmd_err)?)
+    }
+
+    /// Disposition d'une page (`landscape`, `portrait`, `infinite`) ; illisible : Error « mode de page inconnu : … ».
+    pub fn set_page_mode(&mut self, page: &str, mode: &str) -> Result<JsValue, JsError> {
+        let layout = page_layout(mode).map_err(|m| JsError::new(&m))?;
+        to_js(&self.set_page_mode_inner(page, layout).map_err(cmd_err)?)
+    }
+
+    pub fn move_page(&mut self, page: &str, to: u32) -> Result<JsValue, JsError> {
+        to_js(&self.move_page_inner(page, to).map_err(cmd_err)?)
+    }
+
+    pub fn duplicate_page(&mut self, page: &str) -> Result<JsValue, JsError> {
+        to_js(&self.duplicate_page_inner(page).map_err(cmd_err)?)
+    }
+
+    /// Ordre des objets (décision 16) : les `ids` en un bloc dont le bas est au rang `to` (0 = arrière-plan), ids
+    /// gardés, une étape ; même ordre : aucune ; pages mêlées : Error « objets de pages différentes ».
+    pub fn restack(&mut self, ids: Vec<String>, to: u32) -> Result<JsValue, JsError> {
+        to_js(&self.restack_inner(ids, to).map_err(cmd_err)?)
     }
 
     /// OG11 : les cinq derniers arguments sont l'aspect (`look_of`), contrôlé avant tout le reste.
@@ -1509,6 +1555,16 @@ impl Document {
 }
 
 impl Document {
+    /// Document de démarrage : une page, hors historique (D37).
+    pub fn blank() -> Document {
+        Self::blank_with(None)
+    }
+
+    /// Document de démarrage dont la page a la disposition `layout` (`CoreDocument::blank_with`).
+    pub fn blank_with(layout: Option<PageLayout>) -> Document {
+        Self::wrap(CoreDocument::blank_with(layout), None)
+    }
+
     fn wrap(core: CoreDocument, created: Option<String>) -> Document {
         Document { core, created }
     }
@@ -2058,13 +2114,49 @@ impl Document {
     }
 
     pub fn add_page_after_inner(&mut self, after: Option<String>) -> Result<Change, CommandError> {
-        self.run(Command::AddPage { after })
+        self.run(Command::add_page(after))
+    }
+
+    pub fn add_page_after_mode_inner(
+        &mut self,
+        after: Option<String>,
+        mode: Option<PageLayout>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::AddPage { after, mode })
     }
 
     pub fn remove_page_inner(&mut self, page: &str) -> Result<Change, CommandError> {
         self.run(Command::RemovePage {
             page: page.to_string(),
         })
+    }
+
+    pub fn set_page_mode_inner(
+        &mut self,
+        page: &str,
+        mode: PageLayout,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetPageMode {
+            page: page.to_string(),
+            mode,
+        })
+    }
+
+    pub fn move_page_inner(&mut self, page: &str, to: u32) -> Result<Change, CommandError> {
+        self.run(Command::MovePage {
+            page: page.to_string(),
+            to,
+        })
+    }
+
+    pub fn duplicate_page_inner(&mut self, page: &str) -> Result<Change, CommandError> {
+        self.run(Command::DuplicatePage {
+            page: page.to_string(),
+        })
+    }
+
+    pub fn restack_inner(&mut self, ids: Vec<String>, to: u32) -> Result<Change, CommandError> {
+        self.run(Command::Restack { ids, to })
     }
 
     pub fn commit_stroke_inner(
@@ -3893,5 +3985,106 @@ mod tests {
             .expect("même valeur")
             .ids
             .is_empty());
+    }
+
+    // Personnalisation 1a : disposition lue par le pont, commandes de page par leur `_inner`.
+    #[test]
+    fn set_page_mode_unknown_is_an_error() {
+        assert_eq!(
+            page_layout("a4"),
+            Err("mode de page inconnu : a4".to_string())
+        );
+        assert_eq!(page_layout("portrait"), Ok(PageLayout::Portrait));
+        let mut d = Document::blank();
+        assert_eq!(
+            d.set_page_mode_inner("nulle-part", PageLayout::Portrait),
+            Err(CommandError::UnknownPage("nulle-part".into()))
+        );
+    }
+
+    #[test]
+    fn move_page_through_the_bridge_is_one_step() {
+        let mut d = Document::blank();
+        let a = d.page_ids()[0].clone();
+        let b = d.add_page_after_inner(Some(a.clone())).expect("page").pages[0].clone();
+        let c = d.move_page_inner(&a, 1).expect("move");
+        assert_eq!(c.pages, vec![a.clone()]);
+        assert_eq!(d.page_ids(), vec![b.clone(), a.clone()]);
+        d.undo_inner();
+        assert_eq!(d.page_ids(), vec![a.clone(), b.clone()]);
+        assert!(d
+            .move_page_inner(&a, 0)
+            .expect("même rang")
+            .pages
+            .is_empty());
+        assert_eq!(d.move_page_inner(&a, 2), Err(CommandError::BadIndex));
+    }
+
+    #[test]
+    fn restack_through_the_bridge_keeps_ids_in_one_step() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let [a, b, c] = [100.0, 200.0, 300.0].map(|y| {
+            d.commit_stroke_inner(
+                &p,
+                &[100.0, y, 0.5, 500.0, y, 0.5],
+                "#000000",
+                4.0,
+                Look::default(),
+            )
+            .expect("trait")
+            .ids[0]
+                .clone()
+        });
+        let ch = d.restack_inner(vec![a.clone()], 2).expect("premier plan");
+        assert_eq!((ch.pages, ch.ids), (vec![p.clone()], vec![a.clone()]));
+        assert_eq!(
+            d.core.element_ids(&p),
+            vec![b.clone(), c.clone(), a.clone()]
+        );
+        d.undo_inner();
+        assert_eq!(
+            d.core.element_ids(&p),
+            vec![a.clone(), b.clone(), c.clone()]
+        );
+        assert!(d
+            .restack_inner(vec![a.clone()], 0)
+            .expect("même ordre")
+            .pages
+            .is_empty());
+        let q = d.add_page_after_inner(Some(p.clone())).expect("page").pages[0].clone();
+        let x = d
+            .commit_stroke_inner(
+                &q,
+                &[100.0, 100.0, 0.5, 500.0, 100.0, 0.5],
+                "#000000",
+                4.0,
+                Look::default(),
+            )
+            .expect("trait")
+            .ids[0]
+            .clone();
+        assert_eq!(
+            d.restack_inner(vec![a, x], 0),
+            Err(CommandError::MixedPages)
+        );
+    }
+
+    #[test]
+    fn page_mode_add_duplicate_and_blank_with_through_the_bridge() {
+        let mut d = Document::blank_with(Some(PageLayout::Portrait));
+        let p = d.page_ids()[0].clone();
+        assert_eq!(d.core.page(&p).expect("page").height, 1920.0 * 16.0 / 9.0);
+        let q = d
+            .add_page_after_mode_inner(Some(p.clone()), Some(PageLayout::Infinite))
+            .expect("page")
+            .pages[0]
+            .clone();
+        assert_eq!(d.core.page(&q).expect("page").mode, "infinite");
+        d.set_page_mode_inner(&p, PageLayout::Landscape)
+            .expect("mode");
+        assert_eq!(d.core.page(&p).expect("page").height, 1080.0);
+        let c = d.duplicate_page_inner(&q).expect("copie");
+        assert_eq!(d.page_ids(), vec![p, q, c.pages[0].clone()]);
     }
 }

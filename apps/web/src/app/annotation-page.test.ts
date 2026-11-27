@@ -376,6 +376,13 @@ describe("viewOf : style courant (OG11 T9)", () => {
     } as unknown as EngineState;
     const v = viewOf(s);
     expect(v.itemStyle).toEqual(itemStyle);
-    expect(Object.keys(v).sort()).toEqual(["canRedo", "canUndo", "eraserMode", "itemStyle", "pageCount", "pageIndex", "textFormat", "tool"]);
+    expect(Object.keys(v).sort()).toEqual(["canRedo", "canUndo", "eraserMode", "itemStyle", "pageCount", "pageIndex", "pageLayout", "pageMode", "textFormat", "tool"]);
+  });
+});
+
+describe("viewOf", () => {
+  it("viewOf projette pageMode, pageLayout", () => {
+    const v = viewOf({ tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, pageMode: "page", pageLayout: "portrait", textFormat: null } as never);
+    expect(v).toMatchObject({ pageMode: "page", pageLayout: "portrait" });
   });
 });

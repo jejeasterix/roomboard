@@ -7,7 +7,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
-import type { ImageData } from "../core/api";
+import { PDF_PAGE_KIND, type ImageData, type PageLayout } from "../core/api";
 import { createDeviceSettings, type DeviceSettings } from "../device-settings";
 import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost, type ToolbarHost } from "../app/toolbar-host";
@@ -19,7 +19,7 @@ import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
 import { leaveDraft, originOf } from "../profile-edit";
 import type { ProfileStore } from "../profile-store";
-import { ANNOTATION_ROLE, MENU_ROLE, annotationBarOf, itemsForMode, resolveStartMode, visibleItems, type Profile, type StartMode, type Toolbar as Bar } from "../toolbar";
+import { ANNOTATION_ROLE, MENU_ROLE, annotationBarOf, itemsForMode, resolveStartMode, type Profile, type StartMode, type Toolbar as Bar } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
 import { IslandLayer } from "./Island";
@@ -30,7 +30,9 @@ import { MenuBar } from "./MenuBar";
 import { Model3dBar, type Model3dControls } from "./Model3dBar";
 import { NO_WEBGL_MESSAGE } from "../platform/model3d-import";
 import { MODEL3D_FAILED_MESSAGE } from "../platform/model-sessions";
-import { PagesBar } from "./PagesBar";
+import { dropTarget, layerRows } from "../app/layer-list";
+import { SideBar, type LayersPort, type PagesPort } from "./SideBar";
+import { createPageThumbs, type PageThumbs } from "./page-thumbs";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
 import { GridPanel } from "./GridPanel";
@@ -75,6 +77,8 @@ export interface AppProps {
   /** design-l4 (L4-14) : réglages de l'appareil ; donnés au panneau Réglages seulement avec la capacité d'annotation
    *  (H10) ; absents (tests anciens) : aucun bouton du cadre. */
   readonly device?: DeviceSettings;
+  /** personnalisation-1a (décision 25) : l'application y pose `toggle` ; l'amorce le branche sur Ctrl+Maj+P (`pageShortcut`). */
+  readonly sidebar?: { toggle?: (tab: "pages" | "calques") => void };
 }
 
 type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library";
@@ -111,6 +115,23 @@ export function App(props: AppProps): JSX.Element {
     if (focused instanceof HTMLElement && props.stages.contains(focused)) focused.blur();
   };
 
+  /** Miniatures de page, un cache par onglet (DA7) ; libéré avec l'onglet. */
+  const thumbsOf = new Map<TabSession, PageThumbs>();
+  const thumbsFor = (t: TabSession): PageThumbs => {
+    let c = thumbsOf.get(t);
+    if (c === undefined) {
+      c = createPageThumbs((id, w) => ws.pageThumb(t, id, w));
+      thumbsOf.set(t, c);
+    }
+    return c;
+  };
+  onCleanup(() => {
+    for (const c of thumbsOf.values()) c.dispose();
+    thumbsOf.clear();
+  });
+  /** Barre latérale ouverte (décision 25) : lue par `page-number` ; posée par le rendu de la barre `pages`. */
+  const [sidebarOpen, setSidebarOpen] = createSignal(false);
+
   // Lecteurs de l'onglet montré (C14) : leurs changements relisent l'état de la barre du média.
   const [mediaTick, bumpMedia] = createSignal(undefined, { equals: false });
   let shown: TabSession | null = null;
@@ -130,6 +151,12 @@ export function App(props: AppProps): JSX.Element {
       if (next !== null) setState(next.board.engine.state());
     }
     const alive = new Set(ws.tabs.list().map((t) => t.session));
+    for (const [s, thumbs] of thumbsOf) {
+      if (!alive.has(s)) {
+        thumbs.dispose();
+        thumbsOf.delete(s);
+      }
+    }
     for (const [s, off] of filesWatch) {
       if (!alive.has(s)) {
         off();
@@ -300,6 +327,27 @@ export function App(props: AppProps): JSX.Element {
   createEffect(on(annotating, (a) => { if (!a) setRemoteView(null); }));
   const mode = (): StartMode => (annotating() ? "desktop-annotation" : "board");
 
+  /** Ctrl+Maj+P, `page-number` (Pages) et Ctrl+Maj+L (Calques) : déplie la barre latérale sur l'onglet voulu, change
+   *  d'onglet si elle est dépliée sur l'autre, ou la replie si l'onglet est déjà montré. Barre absente du profil montré
+   *  (ou ancrée, sans repli) : sans effet. */
+  const toggleSidebar = (tab: "pages" | "calques"): void => {
+    const island = props.stages.ownerDocument.querySelector<HTMLElement>('[data-island="pages"]');
+    if (island === null) return;
+    const wasFolded = island.dataset["collapsed"] === "1";
+    const tabEl = island.querySelector<HTMLElement>(`[data-side-tab="${tab}"]`);
+    const onOther = !wasFolded && tabEl?.getAttribute("aria-selected") === "false";
+    if (tabEl === null && tab === "calques") return;
+    if (onOther) {
+      tabEl?.click();
+      return;
+    }
+    // Barre repliée : toucher l'onglet la déplie (SideBar `openTab`) ; sans onglet, le bouton Déplier.
+    if (wasFolded && tabEl !== null) tabEl.click();
+    else island.querySelector<HTMLElement>("[data-island-collapse]")?.click();
+    if (wasFolded) (tab === "pages" ? island.querySelector<HTMLElement>('.rb-pages-list [aria-current="page"]') : tabEl)?.focus();
+  };
+  if (props.sidebar !== undefined) props.sidebar.toggle = toggleSidebar;
+
   const local = createLocalToolbarHost(
     {
       engine: () => ws.active().board.engine,
@@ -312,6 +360,7 @@ export function App(props: AppProps): JSX.Element {
       editOriginal: () => void ws.editOriginal(),
       selection: (a) => ws.selection(a),
       toggle: (p) => leaveEditor(() => setPanel((cur) => (cur === p ? null : p))),
+      toggleSidebar,
       ...(ann === undefined ? {} : { annotation: ann.control }),
     },
     shownProfile,
@@ -384,7 +433,7 @@ export function App(props: AppProps): JSX.Element {
   const view = (): ToolbarView => {
     tick();
     const a = annState();
-    const base: ToolbarView = a.active ? (remoteView() ?? { ...state(), canPaste: false }) : { ...state(), canPaste: ws.canPaste() };
+    const base: ToolbarView = a.active ? (remoteView() ?? { ...state(), canPaste: false }) : { ...state(), canPaste: ws.canPaste(), sidebarOpen: sidebarOpen() };
     return ann === undefined
       ? base
       : {
@@ -408,40 +457,94 @@ export function App(props: AppProps): JSX.Element {
     />
   );
   /** Rendu d'une barre selon son rôle (table) ; tout autre rôle est une barre d'outils. design-l2 (L2-6) : `menu`. */
-  const BY_ROLE: Readonly<Record<string, (bar: Bar) => JSX.Element>> = {
-    pages: (bar) => (
-      <PagesBar
-        bar={bar}
-        items={() => visibleItems(bar, props.active.capabilities())}
-        view={state}
-        size={size}
-        runAction={(id) => host.runAction(id)}
-        goTo={(index) => {
-          const b = ws.active().board;
-          const id = b.doc.pageIds()[index];
-          if (id !== undefined) b.engine.showPage(id);
-        }}
-      />
+  /** Page montrée de l'onglet actif, branchée sur le moteur ; « Retirer » montre d'abord la page visée (le moteur retire la montrée). */
+  const pagesPort: PagesPort = {
+    ids: () => {
+      tick();
+      state();
+      return ws.active().board.doc.pageIds();
+    },
+    shown: () => state().page,
+    layout: () => state().pageLayout ?? "landscape",
+    fixedByBackdrop: () => {
+      state();
+      return ws.active().board.doc.page(state().page)?.backdrop?.kind === PDF_PAGE_KIND;
+    },
+    show: (id) => void ws.active().board.engine.showPage(id),
+    move: (id, to) => void ws.active().board.engine.movePage(id, to),
+    duplicate: (id) => void ws.active().board.engine.duplicatePage(id),
+    remove: (id) => {
+      const e = ws.active().board.engine;
+      if (e.showPage(id)) e.removePage();
+    },
+    addAfter: (id) => void ws.active().board.engine.addPage(id),
+    setLayout: (m: PageLayout) => void ws.active().board.engine.setPageMode(m),
+    // Le mode de la page montrée change son cadre : sa miniature gardée est refaite, même sans version neuve.
+    thumb: async (id, width) => thumbsFor(ws.active()).get(id, width, id === state().page ? (state().pageLayout ?? "landscape") : undefined),
+  };
+  /** Onglet Calques : lignes de la page montrée, sélection et glisser branchés sur le moteur. */
+  const layersPort: LayersPort = {
+    rows: () => {
+      tick();
+      state();
+      return layerRows(ws.active().board.doc, state().page);
+    },
+    selected: () => state().selection ?? [],
+    select: (ids) => ws.active().board.engine.select(ids),
+    drop: (key, slot) => {
+      const b = ws.active().board;
+      const t = dropTarget(b.doc, state().page, key, slot);
+      if (t !== null) b.engine.restack(t.ids, t.to);
+    },
+  };
+  /** DA7 : une écriture sur la page montrée refait sa miniature (les autres restent gardées). */
+  createEffect(
+    on(
+      () => state().version,
+      () => thumbsFor(ws.active()).invalidate([state().page]),
+      { defer: true },
     ),
+  );
+  const BY_ROLE: Readonly<Record<string, (bar: Bar, collapsed?: Accessor<boolean>, expand?: () => void) => JSX.Element>> = {
+    pages: (bar, collapsed, expand) => {
+      createEffect(() => setSidebarOpen(collapsed === undefined || !collapsed()));
+      onCleanup(() => setSidebarOpen(false));
+      return (
+        <SideBar
+          bar={bar}
+          collapsed={collapsed ?? (() => false)}
+          caps={props.active.capabilities}
+          {...(expand !== undefined ? { expand } : {})}
+          view={view}
+          host={host}
+          pages={pagesPort}
+          layers={layersPort}
+          size={size}
+          {...(props.device !== undefined ? { store: props.device } : {})}
+        />
+      );
+    },
     [MENU_ROLE]: (bar) => <MenuBar bar={bar} items={() => itemsForMode(bar, props.active.capabilities(), mode())} view={view} size={size} host={host} />,
   };
-  const barOf = (bar: Bar, collapsed?: Accessor<boolean>): JSX.Element =>
-    Object.hasOwn(BY_ROLE, bar.role) ? BY_ROLE[bar.role]!(bar) : toolbarOf(bar, collapsed);
+  const barOf = (bar: Bar, collapsed?: Accessor<boolean>, expand?: () => void): JSX.Element =>
+    Object.hasOwn(BY_ROLE, bar.role) ? BY_ROLE[bar.role]!(bar, collapsed, expand) : toolbarOf(bar, collapsed);
   /** design-l2 : ce qui change la largeur d'un îlot centré (pages) ou sa rangée contextuelle (outil) : remesure. */
-  const islandWatch = createMemo(() => `${state().pageCount}|${state().tool}`);
+  /** T16 (design-l4) : haut des panneaux passagers (`--rb-pop-top` de rb.css), sous l'îlot d'outils descendu. */
+  const [popTop, setPopTop] = createSignal(88);
+  const islandWatch = createMemo(() => `${state().pageCount}|${state().tool}|${state().pageLayout}`);
 
   return (
     <div
       class="rb-layout"
       data-mode={annotating() ? "annotation" : "board"}
       data-panneau={panel() === "editor" ? "profils" : undefined}
-      style={{ "grid-template-areas": grid().areas, "grid-template-columns": grid().columns, "grid-template-rows": grid().rows }}
+      style={{ "grid-template-areas": grid().areas, "grid-template-columns": grid().columns, "grid-template-rows": grid().rows, "--rb-pop-top": `${popTop()}px` }}
     >
       <For each={shownDocked()}>{(bar) => <div class="rb-slot" style={{ "grid-area": bar.id }}>{barOf(bar)}</div>}</For>
       {props.stages}
       <IslandLayer
         bars={shownFloating}
-        render={(bar, collapsed) => barOf(bar, collapsed)}
+        render={(bar, collapsed, expand) => barOf(bar, collapsed, expand)}
         head={
           <TabsBar
             tabs={tabs}
@@ -460,19 +563,20 @@ export function App(props: AppProps): JSX.Element {
         size={size}
         sheetOpen={() => panel() === "editor"}
         watch={islandWatch}
-        extra={
+        extra={(sideStart) => (
           <OptionsPanel
-          engine={() => board().engine}
-          state={state}
-          element={(id) => ws.active().board.doc.element(id)}
-          presets={() => profile().presets}
-          size={size}
-          profileId={() => profile().id}
-          settings={optionSettings}
-          annotating={annotating}
-          sideStart={() => null}
-        />
-        }
+            engine={() => board().engine}
+            state={state}
+            element={(id) => ws.active().board.doc.element(id)}
+            presets={() => profile().presets}
+            size={size}
+            profileId={() => profile().id}
+            settings={optionSettings}
+            annotating={annotating}
+            sideStart={sideStart}
+          />
+        )}
+        onTopFree={setPopTop}
       />
       <Toasts />
       <Show when={selectedMedia()}>

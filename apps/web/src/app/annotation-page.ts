@@ -66,6 +66,8 @@ export function viewOf(s: EngineState): AnnotationView {
     canRedo: s.canRedo,
     pageIndex: s.pageIndex,
     pageCount: s.pageCount,
+    pageMode: s.pageMode,
+    pageLayout: s.pageLayout,
     textFormat: s.textFormat,
     ...(s.fillTolerance === undefined ? {} : { fillTolerance: s.fillTolerance }),
     ...(s.itemStyle === undefined ? {} : { itemStyle: s.itemStyle }),

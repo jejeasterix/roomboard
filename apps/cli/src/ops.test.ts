@@ -39,12 +39,39 @@ describe("lecture d'une opération (D6)", () => {
     expect(codeOf(() => parseOp({ type: "CommitStroke", page: "p", points: [1, "a"], style }, ctx()))).toBe("usage");
     expect(codeOf(() => parseOp({ type: "Erase", page: "p", path: "0,0", radius: 4, mode: "object" }, ctx()))).toBe("usage");
   });
-  it("COMMAND_TYPES couvre les 31 commandes de Command, sans doublon", () => {
+  it("COMMAND_TYPES couvre les 35 commandes de Command, sans doublon", () => {
     expect(ALL_COMMANDS).toBe(true);
-    expect(new Set(COMMAND_TYPES).size).toBe(31);
+    expect(new Set(COMMAND_TYPES).size).toBe(35);
   });
   it("SetStyle accepté", () => {
     expect(COMMAND_TYPES).toContain("SetStyle");
+  });
+  it("Restack lu (T13, D15) : références d'éléments résolues, rang gardé", () => {
+    const op = parseOp({ type: "Restack", ids: ["$1.2", "$1"], to: 0 }, ctx());
+    expect(op.kind === "command" ? op.cmd : null).toEqual({ type: "Restack", ids: ["e2", "e1"], to: 0 });
+  });
+  it("SetPageMode, MovePage, DuplicatePage, AddPage mode lus (T7, D15) : références de page résolues", () => {
+    const cmd = (o: object) => {
+      const op = parseOp(o, ctx());
+      return op.kind === "command" ? op.cmd : null;
+    };
+    for (const t of ["SetPageMode", "MovePage", "DuplicatePage"]) expect(COMMAND_TYPES).toContain(t);
+    expect(cmd({ type: "SetPageMode", page: "$page:1", mode: "portrait" })).toEqual({ type: "SetPageMode", page: "p1", mode: "portrait" });
+    expect(cmd({ type: "MovePage", page: "$page:0", to: 1 })).toEqual({ type: "MovePage", page: "p0", to: 1 });
+    expect(cmd({ type: "DuplicatePage", page: "$page:1" })).toEqual({ type: "DuplicatePage", page: "p1" });
+    expect(cmd({ type: "AddPage", after: "$page:0", mode: "infinite" })).toEqual({ type: "AddPage", after: "p0", mode: "infinite" });
+  });
+});
+
+describe("rang `to` de MovePage et Restack (T18)", () => {
+  it("entier ≥ 0 exigé : -1, 1,5, chaîne (+to de la liaison), absent, NaN → usage", () => {
+    for (const t of ["MovePage", "Restack"]) {
+      const base = t === "MovePage" ? { type: t, page: "$page:0" } : { type: t, ids: ["$1"] };
+      for (const to of [-1, 1.5, "1", null, undefined, Number.NaN]) {
+        expect(codeOf(() => parseOp({ ...base, to }, ctx())), `${t} to=${String(to)}`).toBe("usage");
+      }
+      expect(codeOf(() => parseOp({ ...base, to: 0 }, ctx()))).not.toBe("usage");
+    }
   });
 });
 

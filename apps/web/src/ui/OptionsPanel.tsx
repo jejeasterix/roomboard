@@ -14,7 +14,7 @@ import type { ButtonSize, Profile } from "../toolbar";
 import { observeBox } from "./Island";
 import { IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { createTip } from "./tooltip";
-import { BUTTON_PX, optionsWidth, placeOptions, topRowBottom, type Box } from "./island-place";
+import { BUTTON_PX, optionsWidth, placeOptions, topRowBottom, type Box, type Rect } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import {
   WIDTHS, appliesTo, backgroundPicks, formValue, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
@@ -31,7 +31,8 @@ export interface OptionsPanelProps {
   readonly settings: DeviceSettings;
   readonly annotating: Accessor<boolean>;
   /** null tant qu'OG4 n'a pas de barre latérale. */
-  readonly sideStart: Accessor<Box | null>;
+  /** Rectangle posé de l'îlot latéral de début (barre latérale d'OG4), px de la zone ; null : aucun. */
+  readonly sideStart: Accessor<Rect | null>;
 }
 
 const LABEL: Readonly<Record<OptionKey, string>> = {

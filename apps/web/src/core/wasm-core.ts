@@ -20,6 +20,7 @@ import type {
   Matrix,
   Model3dFile,
   Model3dFormat,
+  PageLayout,
   PageView,
   PdfPageSize,
   StrokeBuilderApi,
@@ -367,11 +368,12 @@ function toGridView(v: unknown): GridView | null {
 export function toPageView(v: unknown): PageView | null {
   if (v === null || v === undefined) return null;
   if (!isRecord(v)) throw new Error(PAGE);
-  const { id, width, height, background } = v;
+  const { id, width, height, background, mode } = v;
   if (typeof id !== "string" || typeof width !== "number" || typeof height !== "number" || typeof background !== "string") {
     throw new Error(PAGE);
   }
-  return { id, width, height, background, backdrop: toBackdropView(v["backdrop"]), grid: toGridView(v["grid"]) };
+  if (mode !== "page" && mode !== "infinite") throw new Error(PAGE);
+  return { id, width, height, background, backdrop: toBackdropView(v["backdrop"]), grid: toGridView(v["grid"]), mode };
 }
 
 export function toAssetInfo(v: unknown): AssetInfo {
@@ -516,8 +518,12 @@ class WasmCoreDocument implements CoreDocument {
 
   apply(cmd: Command): Change {
     switch (cmd.type) {
-      case "AddPage": return toChange(this.d.add_page_after(cmd.after));
+      case "AddPage": return toChange(this.d.add_page_after(cmd.after, cmd.mode));
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
+      case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));
+      case "MovePage": return toChange(this.d.move_page(cmd.page, cmd.to));
+      case "DuplicatePage": return toChange(this.d.duplicate_page(cmd.page));
+      case "Restack": return toChange(this.d.restack([...cmd.ids], cmd.to));
       case "CommitStroke": {
         const l = cmd.look;
         return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity)));
@@ -744,7 +750,7 @@ const asContainerKind = (k: string): ContainerKind => {
 
 export function createWasmCore(mod: WasmModule): CoreFactory {
   return {
-    blank: () => new WasmCoreDocument(mod.Document.blank(), mod),
+    blank: (mode?: PageLayout) => new WasmCoreDocument(mod.Document.blank(mode), mod),
     fromPdfPages: (asset: AssetRef, sizes: readonly PdfPageSize[], original?: AssetRef) => {
       const flat = new Float64Array(sizes.flatMap((s) => [s.w, s.h]));
       return new WasmCoreDocument(

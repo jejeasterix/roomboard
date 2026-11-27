@@ -7,6 +7,7 @@
  * `canvas2d.ts`. Une seule entrée : une page, un zoom.
  */
 import { MAX_GRID_DOTS, type Bounds, type Change, type GridLines, type LevelLines } from "../../core/api";
+import type { PageRect } from "../page";
 import { MIN_DOT_PX, MIN_GRID_PX } from "./grid-paint";
 
 /** Calcul des lignes par le cœur (ou l'aperçu) pour un rectangle monde. */
@@ -45,20 +46,27 @@ export function cacheMargin(viewW: number, viewH: number, zoom: number, pageWidt
   return lo;
 }
 
-/** Marge du rectangle gardé, en monde. */
-const worldMargin = (visible: Bounds, zoom: number, pageWidth: number): number =>
-  cacheMargin((visible.x1 - visible.x0) * zoom, (visible.y1 - visible.y0) * zoom, zoom, pageWidth) / zoom;
+/** Marge du rectangle gardé, en monde ; largeur sans borne en Infini. */
+const worldMargin = (visible: Bounds, zoom: number, frame: PageRect | null): number =>
+  cacheMargin((visible.x1 - visible.x0) * zoom, (visible.y1 - visible.y0) * zoom, zoom, frame === null ? Infinity : frame.x1 - frame.x0) / zoom;
 
-const grow = (visible: Bounds, m: number): Bounds => ({
-  x0: Math.max(0, visible.x0 - m),
-  y0: Math.max(0, visible.y0 - m),
-  x1: visible.x1 + m,
-  y1: visible.y1 + m,
-});
+/**
+ * Vue élargie de `m` ; la marge s'arrête aux bornes passées par l'appelant (le cadre de la page), la vue jamais : le
+ * rectangle gardé la contient toujours. `null` (Infini) : aucune borne, x0 et y0 < 0 permis.
+ */
+const grow = (visible: Bounds, m: number, frame: PageRect | null): Bounds => {
+  if (frame === null) return { x0: visible.x0 - m, y0: visible.y0 - m, x1: visible.x1 + m, y1: visible.y1 + m };
+  return {
+    x0: Math.max(Math.min(frame.x0, visible.x0), visible.x0 - m),
+    y0: Math.max(Math.min(frame.y0, visible.y0), visible.y0 - m),
+    x1: Math.min(Math.max(frame.x1, visible.x1), visible.x1 + m),
+    y1: Math.min(Math.max(frame.y1, visible.y1), visible.y1 + m),
+  };
+};
 
-/** Rectangle gardé : la vue élargie de `cacheMargin` de chaque côté (en monde), ramenée à x ≥ 0 et y ≥ 0. */
-export function cacheRect(visible: Bounds, zoom: number, pageWidth: number): Bounds {
-  return grow(visible, worldMargin(visible, zoom, pageWidth));
+/** Rectangle gardé : la vue élargie de `cacheMargin` de chaque côté (en monde), recoupée au cadre (`null` : sans borne). */
+export function cacheRect(visible: Bounds, zoom: number, frame: PageRect | null): Bounds {
+  return grow(visible, worldMargin(visible, zoom, frame), frame);
 }
 
 const inside = (v: number, lo: number, hi: number): boolean => v >= lo - EDGE_EPS && v <= hi + EDGE_EPS;
@@ -141,12 +149,13 @@ export class GridLinesCache {
 
   constructor(private readonly compute: GridCompute) {}
 
-  /** Lignes de `page` dans `visible` (monde) au zoom donné ; un appel à `compute` seulement hors de l'entrée gardée. */
-  get(page: string, visible: Bounds, zoom: number, pageWidth: number): GridLines | null {
+  /** Lignes de `page` dans `visible` (monde) au zoom donné, bornées à `frame` (`null` : Infini, sans borne) ; un appel à
+   *  `compute` seulement hors de l'entrée gardée. */
+  get(page: string, visible: Bounds, zoom: number, frame: PageRect | null): GridLines | null {
     let e = this.entry;
     if (e === null || e.page !== page || e.zoom !== zoom || !(e.only === null ? contains(e.rect, visible) : same(e.only, visible))) {
-      const m = worldMargin(visible, zoom, pageWidth);
-      const rect = grow(visible, m);
+      const m = worldMargin(visible, zoom, frame);
+      const rect = grow(visible, m, frame);
       const only = m === 0 ? { x0: visible.x0, y0: visible.y0, x1: visible.x1, y1: visible.y1 } : null;
       e = { page, zoom, rect, only, lines: this.compute(page, rect, MIN_GRID_PX / zoom, MIN_DOT_PX / zoom) };
       this.entry = e;

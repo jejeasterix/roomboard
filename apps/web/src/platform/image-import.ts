@@ -5,7 +5,7 @@
  */
 import type { Matrix } from "../core/api";
 import { screenToWorld, type Camera } from "../engine/camera";
-import { PAGE_WIDTH } from "../engine/page";
+import { PAGE_HEIGHT, PAGE_WIDTH, type PageRect } from "../engine/page";
 import { messageOf } from "./controller";
 import type { Point } from "./files";
 import type { ImportHandler, StageRect } from "./import-handler";
@@ -148,11 +148,18 @@ export function anchorOf(rect: StageRect, camera: Camera, at: Point | null): rea
   return [x, y];
 }
 
-/** Partie visible de la page en unités monde (R5) : largeur coupée à [0, PAGE_WIDTH], hauteur de la vue (page infinie). */
-export function visibleOf(rect: StageRect, camera: Camera): { readonly w: number; readonly h: number } {
+/** Cadre d'une cible qui ne dit pas le sien (`ImageTarget.frame` absent) : la page par défaut, 1920 × 1080. */
+const DEFAULT_FRAME: PageRect = { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: PAGE_HEIGHT };
+
+/**
+ * Partie visible de la page en unités monde (R5) : largeur coupée au cadre (Page), hauteur de la vue ; Infini (`frame`
+ * null, DA4) : toute la vue, sans coupe (une image déposée à gauche de l'origine reste au point de dépôt). `frame`
+ * absent : la page par défaut (appelants qui ne lisent pas encore le cadre).
+ */
+export function visibleOf(rect: StageRect, camera: Camera, frame: PageRect | null = DEFAULT_FRAME): { readonly w: number; readonly h: number } {
   const [x0] = screenToWorld(camera, 0, 0);
   const [x1] = screenToWorld(camera, rect.width, rect.height);
-  const w = Math.min(x1, PAGE_WIDTH) - Math.max(x0, 0);
+  const w = frame === null ? x1 - x0 : Math.min(x1, frame.x1) - Math.max(x0, frame.x0);
   return { w: w > 0 ? w : rect.width / camera.zoom, h: rect.height / camera.zoom };
 }
 
@@ -207,13 +214,14 @@ export function imageHandler(deps: { readonly decode?: ImageDecoder } = {}): Imp
         }
         const rect = target.stageRect();
         const camera = target.camera();
+        const frame = target.frame ? target.frame() : DEFAULT_FRAME;
         const change = target.run({
           type: "AddImage",
           page: target.page(),
           asset: { id, name: file.name, mime, size: blob.size },
           w: decoded.w,
           h: decoded.h,
-          matrix: placement(decoded.w, decoded.h, anchorOf(rect, camera, ctx.at), visibleOf(rect, camera), ctx.inserted),
+          matrix: placement(decoded.w, decoded.h, anchorOf(rect, camera, ctx.at), visibleOf(rect, camera, frame), ctx.inserted),
         });
         return change === null ? "failed" : "inserted";
       } catch (e) {

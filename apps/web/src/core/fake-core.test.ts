@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Command, CoreDocument, TextAttrsPatch } from "./api";
+import type { Command, CoreDocument, GridInput, PageLayout, TextAttrsPatch } from "./api";
 import { IS_A_GRID_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage, wrongKindMessage } from "./api";
 import { fakeCore, KNOWN_KINDS } from "./fake-core";
 
@@ -436,6 +436,15 @@ describe("grille de la fausse liaison (C9, G4)", () => {
     const d = withGrid({ levels });
     expect(d.page(firstPage(d))?.grid?.levels.map((l) => l.lineWidth)).toEqual([1, 1, 1, 1, 2.5]);
     expect(saveJson(d).pages[0]?.["grid"]).toEqual({ levels });
+  });
+
+  it("gridLinesOf : rectangle de vue non fini → aucune ligne, même recoupé au cadre (T18, comme grid::lines)", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const g = { visible: true, snap: false, above: false, levels: [{ ...squares(40, 0), lineWidth: 3 }] };
+    for (const r of [{ x0: 0, y0: 0, x1: Infinity, y1: 100 }, { x0: 0, y0: Number.NaN, x1: 100, y1: 100 }, { x0: -Infinity, y0: 0, x1: 100, y1: 100 }]) {
+      expect(d.gridLinesOf(p, g, r, 4, 8)?.levels).toEqual([]);
+    }
   });
 
   it("gridLinesOf (DAE1) : carreaux du brouillon, rien d'écrit ; page inconnue → null", () => {
@@ -910,3 +919,230 @@ describe("fausse liaison : SetStyle (OG11)", () => {
   });
 });
 
+describe("fakeCore — personnalisation-1a (mode de page, MovePage, DuplicatePage, grille au cadre)", () => {
+  const PORTRAIT = (1920 * 16) / 9;
+  const squaresGrid = (step: number): GridInput => ({
+    visible: true,
+    snap: true,
+    above: false,
+    levels: [{ kind: "squares", spacingX: step, spacingY: step, originX: 0, originY: 0, color: "#cccccc", line: "solid", lineWidth: 1, snap: true, visible: true }],
+  });
+  const setMode = (d: CoreDocument, page: string, mode: PageLayout) => d.apply({ type: "SetPageMode", page, mode });
+  /** Pages `n` d'un document neuf, dans l'ordre. */
+  const pages = (n: number): { d: CoreDocument; ids: string[] } => {
+    const d = fakeCore.blank();
+    for (let i = 1; i < n; i++) d.apply({ type: "AddPage", after: d.pageIds()[i - 1] ?? null });
+    return { d, ids: d.pageIds() };
+  };
+  const reload = (d: CoreDocument, edit: (page: Record<string, unknown>) => void): CoreDocument => {
+    const raw = JSON.parse(new TextDecoder().decode(d.save("2026-11-27T00:00:00Z", "test"))) as { pages: Record<string, unknown>[] };
+    const first = raw.pages[0];
+    if (first === undefined) throw new Error("aucune page");
+    edit(first);
+    return fakeCore.load(new TextEncoder().encode(JSON.stringify(raw)));
+  };
+
+  it("SetPageMode portrait puis undo : une étape", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    expect(d.page(p)).toMatchObject({ mode: "page", width: 1920, height: 1080 });
+    const c = setMode(d, p, "portrait");
+    expect(c.pages).toEqual([p]);
+    expect(c.version).toBe(1);
+    expect(d.page(p)).toMatchObject({ mode: "page", height: PORTRAIT });
+    d.undo();
+    expect(d.page(p)).toMatchObject({ mode: "page", height: 1080 });
+    expect(d.canUndo()).toBe(false);
+  });
+
+  it("SetPageMode même valeur : aucune étape (D38)", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const c = setMode(d, p, "landscape");
+    expect(c).toEqual({ pages: [], ids: [], removed: [], full: false, version: 0 });
+    setMode(d, p, "infinite");
+    expect(setMode(d, p, "infinite").version).toBe(1);
+    expect(d.canUndo()).toBe(true);
+  });
+
+  it("SetPageMode infini garde height ; retour en Page : hauteur écrite", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    setMode(d, p, "portrait");
+    setMode(d, p, "infinite");
+    expect(d.page(p)).toMatchObject({ mode: "infinite", height: PORTRAIT });
+    setMode(d, p, "landscape");
+    expect(d.page(p)).toMatchObject({ mode: "page", height: 1080 });
+  });
+
+  it("SetPageMode : valeur inconnue lue Page et gardée (U3) ; disposition illisible refusée", () => {
+    const d = reload(fakeCore.blank(), (page) => { page["mode"] = "frame"; });
+    const p = firstPage(d);
+    expect(d.page(p)?.mode).toBe("page");
+    setMode(d, p, "portrait");
+    expect(d.page(p)).toMatchObject({ mode: "page", height: PORTRAIT });
+    const raw = JSON.parse(new TextDecoder().decode(d.save("2026-11-27T00:00:00Z", "test"))) as { pages: Record<string, unknown>[] };
+    expect(raw.pages[0]?.["mode"]).toBe("frame");
+    expect(() => setMode(d, p, "a4" as PageLayout)).toThrow("mode de page inconnu : a4");
+    expect(() => d.apply({ type: "AddPage", after: null, mode: "a4" as PageLayout })).toThrow("mode de page inconnu : a4");
+    expect(() => setMode(d, "nulle-part", "portrait")).toThrow("page inconnue : nulle-part");
+  });
+
+  it("MovePage garde les ids ; hors bornes refusé ; même rang : aucune étape", () => {
+    const { d, ids } = pages(3);
+    const [a, b, c] = ids as [string, string, string];
+    const s = commit(d, a, 10);
+    const ch = d.apply({ type: "MovePage", page: a, to: 2 });
+    expect(ch.pages).toEqual([a]);
+    expect(d.pageIds()).toEqual([b, c, a]);
+    expect(d.elementIds(a)).toEqual([s]);
+    d.undo();
+    expect(d.pageIds()).toEqual([a, b, c]);
+    const v = d.version();
+    expect(() => d.apply({ type: "MovePage", page: a, to: 3 })).toThrow("rang de page hors bornes");
+    expect(() => d.apply({ type: "MovePage", page: "nulle-part", to: 0 })).toThrow("page inconnue : nulle-part");
+    expect(d.apply({ type: "MovePage", page: b, to: 1 }).version).toBe(v);
+    expect(d.version()).toBe(v);
+  });
+
+  it("DuplicatePage : ids neufs, copie juste après, Change.ids = éléments copiés", () => {
+    const { d, ids } = pages(2);
+    const [p, q] = ids as [string, string];
+    const s1 = commit(d, p, 10);
+    const s2 = commit(d, p, 40);
+    setMode(d, p, "infinite");
+    const before = d.version();
+    const ch = d.apply({ type: "DuplicatePage", page: p });
+    const [copy] = ch.pages;
+    if (copy === undefined) throw new Error("aucune copie");
+    expect(ch.pages).toHaveLength(1);
+    expect(d.pageIds()).toEqual([p, copy, q]);
+    expect(copy).not.toBe(p);
+    const copied = d.elementIds(copy);
+    expect(copied).toHaveLength(2);
+    expect(copied.some((id) => id === s1 || id === s2)).toBe(false);
+    expect(ch.ids).toEqual(copied);
+    expect(d.page(copy)).toMatchObject({ mode: "infinite", height: 1080 });
+    expect(ch.version).toBe(before + 1);
+    d.undo();
+    expect(d.pageIds()).toEqual([p, q]);
+    expect(() => d.apply({ type: "DuplicatePage", page: "nulle-part" })).toThrow("page inconnue : nulle-part");
+  });
+
+  /** Quatre traits sur la première page d'un document neuf, du bas vers le haut de la pile. */
+  const four = (): { d: CoreDocument; p: string; ids: [string, string, string, string] } => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    return { d, p, ids: [100, 200, 300, 400].map((y) => commit(d, p, y)) as [string, string, string, string] };
+  };
+
+  // Discrimine le patron écarté (recopie à ids neufs, groupe renuméroté, posée en haut) : ids, groupe et ordre relatif
+  // gardés, `to` = rang du bas du bloc.
+  it("Restack : bloc au premier plan, ids et groupe gardés, une étape", () => {
+    const { d, p, ids } = four();
+    const [a, b, c, e] = ids;
+    d.apply({ type: "Group", ids: [a, c] });
+    const views = [a, c].map((id) => d.element(id));
+    const ch = d.apply({ type: "Restack", ids: [c, a], to: 2 });
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+    expect([a, c].map((id) => d.element(id))).toEqual(views);
+    expect(ch.pages).toEqual([p]);
+    expect(ch.ids).toEqual([a, c]);
+    expect(ch.removed).toEqual([]);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([a, b, c, e]);
+    d.redo();
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+  });
+
+  it("Restack : arrière-plan, bloc à trou ; même ordre : aucune étape", () => {
+    const { d, p, ids } = four();
+    const [a, b, c, e] = ids;
+    d.apply({ type: "Restack", ids: [e, b], to: 0 });
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+    d.apply({ type: "Restack", ids: [a], to: 1 });
+    expect(d.elementIds(p)).toEqual([b, a, e, c]);
+    const v = d.version();
+    expect(d.apply({ type: "Restack", ids: [a, e, e], to: 1 }).version).toBe(v);
+    expect(d.version()).toBe(v);
+    d.apply({ type: "Restack", ids: [b, e], to: 0 });
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+  });
+
+  it("Restack : pages mêlées, hors bornes, vide ou inconnu refusés sans étape", () => {
+    const { d, p, ids } = four();
+    const [a, b] = ids;
+    const q = d.apply({ type: "AddPage", after: p }).pages[0] ?? "";
+    const x = commit(d, q, 100);
+    const v = d.version();
+    expect(() => d.apply({ type: "Restack", ids: [a, x], to: 0 })).toThrow("objets de pages différentes");
+    expect(() => d.apply({ type: "Restack", ids: [a, b], to: 3 })).toThrow("rang de page hors bornes");
+    expect(() => d.apply({ type: "Restack", ids: [a], to: -1 })).toThrow("rang de page hors bornes");
+    expect(() => d.apply({ type: "Restack", ids: [], to: 0 })).toThrow("rang de page hors bornes");
+    expect(() => d.apply({ type: "Restack", ids: [a, "absent"], to: 0 })).toThrow("élément inconnu : absent");
+    expect(d.version()).toBe(v);
+    expect(d.elementIds(p)).toEqual(ids);
+  });
+
+  it("AddPage mode infinite (et portrait) ; sans mode : Paysage", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const inf = d.apply({ type: "AddPage", after: p, mode: "infinite" }).pages[0] ?? "";
+    expect(d.page(inf)).toMatchObject({ mode: "infinite", height: 1080 });
+    const por = d.apply({ type: "AddPage", after: inf, mode: "portrait" }).pages[0] ?? "";
+    expect(d.page(por)).toMatchObject({ mode: "page", height: PORTRAIT });
+    const plain = d.apply({ type: "AddPage", after: null }).pages[0] ?? "";
+    expect(d.page(plain)).toMatchObject({ mode: "page", height: 1080 });
+    expect(d.pageIds()).toEqual([p, inf, por, plain]);
+  });
+
+  it("blank(mode) : première page à la disposition demandée", () => {
+    const d = fakeCore.blank("portrait");
+    expect(d.page(firstPage(d))).toMatchObject({ mode: "page", height: PORTRAIT });
+    const e = fakeCore.blank("infinite");
+    expect(d.canUndo() || e.canUndo()).toBe(false);
+    expect(e.page(firstPage(e))).toMatchObject({ mode: "infinite", height: 1080 });
+  });
+
+  it("page() rend mode et height lus, et la sauvegarde les réécrit", () => {
+    const d = reload(fakeCore.blank(), (page) => { page["mode"] = "infinite"; page["height"] = 2000; });
+    const p = firstPage(d);
+    expect(d.page(p)).toMatchObject({ mode: "infinite", height: 2000, width: 1920 });
+    const again = reload(d, () => undefined);
+    expect(again.page(firstPage(again))).toMatchObject({ mode: "infinite", height: 2000 });
+  });
+
+  it("grille : page bornée au cadre, infini sans borne (lignes à x < 0) ; accroche à (-500, -500) en infini", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    d.apply({ type: "SetGrid", page: p, grid: squaresGrid(100) });
+    const wide = { x0: -1000, y0: -1000, x1: 5000, y1: 5000 };
+    /** Segments [x0, y0, x1, y1] du seul niveau. */
+    const segs = (): number[][] => {
+      const s = d.gridLines(p, wide, 4, 8)?.levels[0]?.segments ?? [];
+      const out: number[][] = [];
+      for (let i = 0; i < s.length; i += 4) out.push(s.slice(i, i + 4));
+      return out;
+    };
+    const ys = (): number[] => segs().flatMap((g) => [g[1] ?? 0, g[3] ?? 0]);
+    const xs = (): number[] => segs().flatMap((g) => [g[0] ?? 0, g[2] ?? 0]);
+    // Paysage : cadre (0, 0) → (1920, 1080), rien au-dessous.
+    expect(Math.max(...ys())).toBe(1080);
+    expect(Math.min(...ys())).toBe(0);
+    expect(Math.min(...xs())).toBe(0);
+    expect(Math.max(...xs())).toBe(1920);
+    expect(d.snapPoint(p, 500, 1250)).toEqual([500, 1000]);
+    // Portrait : le bas du cadre suit la hauteur lue, pas PAGE_HEIGHT.
+    setMode(d, p, "portrait");
+    expect(Math.max(...ys())).toBeCloseTo(PORTRAIT, 6);
+    expect(d.snapPoint(p, 500, 3600)).toEqual([500, 3400]);
+    // Infini : aucune borne, lignes à x < 0 et au-delà de la largeur.
+    setMode(d, p, "infinite");
+    expect(Math.min(...xs())).toBe(-1000);
+    expect(Math.max(...xs())).toBe(5000);
+    expect(Math.min(...ys())).toBe(-1000);
+    expect(d.snapPoint(p, -480, -520)).toEqual([-500, -500]);
+    expect(d.snapPoint(p, 2510, 4020)).toEqual([2500, 4000]);
+    expect(d.gridLinesOf(p, squaresGrid(100), wide, 4, 8)?.levels[0]?.segments.some((v, i) => i % 2 === 0 && v < 0)).toBe(true);
+  });
+});

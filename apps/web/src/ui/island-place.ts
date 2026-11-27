@@ -1,5 +1,5 @@
 import { placeWithin } from "../app/table-picker";
-import type { ButtonSize } from "../toolbar";
+import type { ButtonSize, Toolbar } from "../toolbar";
 
 /**
  * Placement des îlots (design-l2, DA-L2-2) : pur, sans DOM, en px CSS entiers (L2-12 : jamais `translate(-50%)` ni
@@ -7,14 +7,20 @@ import type { ButtonSize } from "../toolbar";
  * îlots centrés (L2-30), les bornes d'un îlot déplacé (L2-9, L2-11), le pas clavier (L2-10), la voie imposée par le
  * panneau des profils (L2-16) et la largeur des onglets (L2-30 c). `Island.tsx` mesure et appelle.
  */
-export type Anchor = "top-start" | "top-center" | "top-end" | "bottom-start" | "bottom-center";
+export type Anchor = "top-start" | "top-center" | "top-end" | "bottom-start" | "bottom-center" | "side-start" | "side-end";
 export interface Point { readonly x: number; readonly y: number }
 export interface Box { readonly w: number; readonly h: number }
 /** Rangée de l'ancre : largeur occupée à gauche (`start`) et à droite (`end`) par les groupes de coins, hauteur de la
  *  rangée des coins (`band`, 0 sans coin). En haut, `start` compte l'îlot des onglets à sa largeur minimale, puis
- *  `#etat` non vide et son écart (T11). */
-export interface Corners { readonly start: number; readonly end: number; readonly band: number }
-export interface Lane { readonly x: number; readonly y: number; readonly maxWidth: number }
+ *  `#etat` non vide et son écart (T11). `foot` : hauteur de la rangée du bas (0 ou absent sans coin), que la voie
+ *  latérale laisse libre (personnalisation-1a). */
+export interface Corners { readonly start: number; readonly end: number; readonly band: number; readonly foot?: number; readonly above?: readonly Rect[] }
+/** Rectangle d'un îlot, px de la case. `Corners.above` (voie latérale seulement, T16) : îlots de la rangée du haut posés
+ *  hors des coins (l'îlot d'outils, sur la rangée ou descendu sur la voie suivante), que la voie passe dessous quand ils
+ *  la surplombent. */
+export interface Rect { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+/** `maxHeight` : voie latérale seulement (`side-*`), hauteur disponible entre les rangées du haut et du bas. */
+export interface Lane { readonly x: number; readonly y: number; readonly maxWidth: number; readonly maxHeight?: number }
 
 /** Marge des coins et du bord (L2-12). */
 export const EDGE = 16;
@@ -33,8 +39,10 @@ export const ISLAND_ANCHORS: Readonly<Record<string, Anchor>> = Object.freeze({
   tools: "top-center",
   panels: "top-end",
   history: "bottom-start",
-  pages: "bottom-center",
+  pages: "side-start",
 });
+/** personnalisation-1a : seuls ces rôles se déplacent et se replient (poignée, Replier, clavier, appareil). */
+export const MOVABLE_ROLES: ReadonlySet<string> = new Set(["tools", "pages"]);
 const CENTERED: ReadonlySet<Anchor> = new Set<Anchor>(["top-center", "bottom-center"]);
 const KEY_STEP: Readonly<Record<string, readonly [number, number]>> = Object.freeze({
   ArrowLeft: [-1, 0],
@@ -45,8 +53,23 @@ const KEY_STEP: Readonly<Record<string, readonly [number, number]>> = Object.fre
 const STEP = 16;
 const BIG_STEP = 64;
 
-export function anchorOf(role: string): Anchor {
-  return Object.hasOwn(ISLAND_ANCHORS, role) ? ISLAND_ANCHORS[role]! : "top-end";
+/** Ancre par défaut d'un rôle ; rôle inconnu : haut-droite. */
+const roleAnchor = (role: string): Anchor => (Object.hasOwn(ISLAND_ANCHORS, role) ? ISLAND_ANCHORS[role]! : "top-end");
+
+/** Ancre d'une barre flottante : celle du profil (`bar.anchor`), sinon celle de son rôle. Lecture tolérante : une barre
+ *  mobile (`MOVABLE_ROLES`) ne se pose pas dans un coin (elle recouvrirait le menu, les panneaux ou l'historique) ; une
+ *  ancre de coin lue dans un profil se replie vers l'ancre centrée de la même rangée, sans réécrire le profil. */
+export function anchorOf(bar: Toolbar): Anchor {
+  const a = bar.anchor ?? roleAnchor(bar.role);
+  if (!MOVABLE_ROLES.has(bar.role)) return a;
+  if (a === "top-start" || a === "top-end") return "top-center";
+  return a === "bottom-start" ? "bottom-center" : a;
+}
+
+/** Corners de la voie latérale pour l'îlot de rôle `role` : `above` reçoit l'îlot d'outils posé (`tools`), sauf pour
+ *  l'îlot d'outils lui-même, qui ne se surplombe pas (sinon il se repousse sous lui-même, passe après passe). */
+export function sideCorners(base: Corners, role: string, tools: Rect | null): Corners {
+  return { ...base, above: role === "tools" || tools === null ? [] : [tools] };
 }
 
 export function isCentered(anchor: Anchor): boolean {
@@ -73,8 +96,26 @@ export function laneOf(anchor: Anchor, size: Box, area: Box, corners: Corners): 
     return { x: Math.round((area.w - w) / 2), y: Math.max(0, Math.round(y)), maxWidth: full };
   }
   const w = Math.min(size.w, full);
+  if (anchor === "side-start" || anchor === "side-end") {
+    const foot = corners.foot ?? 0;
+    const x = Math.round(anchor === "side-end" ? area.w - EDGE - w : EDGE);
+    const y = belowAbove(x, w, EDGE + (corners.band > 0 ? corners.band + GAP : 0), corners.above ?? []);
+    return { x, y, maxWidth: full, maxHeight: Math.max(0, Math.floor(area.h - EDGE - (foot > 0 ? foot + GAP : 0) - y)) };
+  }
   const x = anchor === "top-end" ? area.w - EDGE - w : EDGE;
   return { x: Math.round(x), y: Math.max(0, Math.round(top ? EDGE : area.h - EDGE - size.h)), maxWidth: full };
+}
+
+/** T16 : haut de la voie latérale (abscisses `x` à `x + w`), sous la rangée des coins (`y0`) puis sous chaque îlot de
+ *  `above` qui la surplombe (il la croise en abscisse et son haut n'est pas plus bas que celui de la voie), avec l'écart ;
+ *  arrondi au pixel supérieur. Un îlot posé plus bas que la voie ne la repousse pas (îlot déplacé : choix de l'utilisateur). */
+function belowAbove(x: number, w: number, y0: number, above: readonly Rect[]): number {
+  let y = y0;
+  for (const r of [...above].sort((a, b) => a.y - b.y)) {
+    if (r.w <= 0 || r.h <= 0 || r.x >= x + w || r.x + r.w <= x || r.y > y) continue;
+    y = Math.max(y, Math.ceil(r.y + r.h + GAP));
+  }
+  return y;
 }
 
 /** Position affichée (L2-9, L2-11) : sans position enregistrée, celle de la voie ; sinon la position, l'îlot entier
@@ -121,10 +162,12 @@ export function topRowBottom(btn: number): number {
   return EDGE + btn + 8;
 }
 
-/** OG11 : coin haut-gauche du panneau d'options, sous la rangée du haut (`tops` = son bas, `topRowBottom`), à droite de la barre
- *  latérale quand elle existe (`sideStart`, relative au bord gauche de la zone) ; y borné pour rester dans la zone. */
-export function placeOptions(area: Box, sideStart: Box | null, tops: number): Point {
-  return { x: sideStart ? sideStart.w + GAP : EDGE, y: Math.min(tops + GAP, Math.max(EDGE, area.h - EDGE)) };
+/** OG11 : coin haut-gauche du panneau d'options, sous la rangée du haut (`tops` = son bas, `topRowBottom`), à droite de
+ *  l'îlot latéral de début quand il existe (`sideStart` : rectangle posé de la barre latérale d'OG4, dépliée ou repliée ;
+ *  `x` absent : 0, bord gauche de la zone), jamais par-dessus ; sans îlot : contre le bord. y borné dans la zone. */
+export function placeOptions(area: Box, sideStart: (Box & { readonly x?: number }) | null, tops: number): Point {
+  const x = sideStart !== null && sideStart.w > 0 ? Math.max(EDGE, Math.ceil((sideStart.x ?? 0) + sideStart.w + GAP)) : EDGE;
+  return { x, y: Math.min(tops + GAP, Math.max(EDGE, area.h - EDGE)) };
 }
 
 /** L2-16 : panneau des profils ouvert, voie de l'îlot d'outils dans la place à sa gauche, sous la rangée du haut ;
@@ -141,4 +184,15 @@ export function sheetLane(area: Box, sheet: number, band: number, btn: number): 
 export function tabsWidth(area: Box, startX: number, end: number, tools: Point | null, status = 0): number {
   const right = tools !== null && tools.y === EDGE && tools.x > startX ? tools.x - GAP : area.w - EDGE - end - (end > 0 ? GAP : 0);
   return Math.max(TABS_MIN, Math.floor(right - startX - (status > 0 ? status + GAP : 0)));
+}
+
+/** T22 : abscisse (relative à l'îlot) de la rangée contextuelle, repoussée à droite des obstacles (barres latérales) qui
+ *  la recouvrent verticalement ; `obstacles` dans le même repère que `left` et `row.top`. */
+export function beyondObstacles(left: number, row: { readonly top: number; readonly height: number }, obstacles: readonly Rect[], gap: number): number {
+  let x = left;
+  for (const o of obstacles) {
+    const overlapsRow = o.y < row.top + row.height && o.y + o.h > row.top;
+    if (overlapsRow && o.x + o.w > x) x = Math.max(x, o.x + o.w + gap);
+  }
+  return x;
 }

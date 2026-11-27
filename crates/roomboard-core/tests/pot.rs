@@ -234,11 +234,7 @@ fn bad_fill_is_refused_in_core_order_without_step() {
     let l = shape(&mut d, &p, ShapeKind::Arrow, [100.0, 300.0, 300.0, 300.0]);
     let s = stroke(&mut d, &p);
     let t = text(&mut d, &p);
-    let p2 = d
-        .apply(Command::AddPage { after: None })
-        .expect("page")
-        .pages[0]
-        .clone();
+    let p2 = d.apply(Command::add_page(None)).expect("page").pages[0].clone();
     let v = d.version();
     let cases = [
         (fill("nope", inside(&r), Some("#12")), CommandError::BadFill),

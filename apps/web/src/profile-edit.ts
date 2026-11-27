@@ -20,8 +20,10 @@ import {
   presetsOf,
   uniqueId,
   type ActionId,
+  type BarAnchor,
   type ButtonSize,
   type Dock,
+  type PageLayout,
   type Preset,
   type Profile,
   type StartMode,
@@ -72,6 +74,16 @@ export const setLabel = (p: Profile, label: string): Profile => ({ ...p, label }
 export const setStartMode = (p: Profile, mode: StartMode): Profile => ({ ...p, behavior: { ...p.behavior, startMode: mode } });
 export const setButtonSize = (p: Profile, size: ButtonSize): Profile => ({ ...p, interface: { ...p.interface, buttonSize: size } });
 export const setDock = (p: Profile, barId: string, dock: Dock): Profile => mapBar(p, barId, (b) => ({ ...b, dock }));
+/** personnalisation-1a (décisions 20, 22) : ancre de l'îlot ; null retire le champ (voie par défaut). */
+export const setAnchor = (p: Profile, barId: string, a: BarAnchor | null): Profile =>
+  mapBar(p, barId, (b) => {
+    if (a !== null) return { ...b, anchor: a };
+    const { anchor: _gone, ...kept } = b;
+    return kept;
+  });
+export const setCollapsed = (p: Profile, barId: string, c: boolean): Profile => mapBar(p, barId, (b) => ({ ...b, collapsed: c }));
+/** personnalisation-1a (décision 7) : mode de la page neuve. */
+export const setPageMode = (p: Profile, m: PageLayout): Profile => ({ ...p, behavior: { ...p.behavior, pageMode: m } });
 
 /** Faux pour l'accès au menu Profil (P33) et pour un élément inconnu (P16, réécrit tel quel). */
 export const canHide = (item: ToolItem): boolean => isKnownItem(item) && !isProfilesAccess(item);
@@ -146,6 +158,9 @@ const ONLY_IN_ANNOTATION: ReadonlySet<ActionId> = new Set([...ANNOTATION_MAIN_AC
 /** Actions qui agissent en annotation : fenêtre principale et rejouées dans `annotate` (`toolbar.ts:653`, `:660`). */
 const ACTS_IN_ANNOTATION: ReadonlySet<ActionId> = new Set([...ANNOTATION_MAIN_ACTIONS, ...ANNOTATION_REMOTE_ACTIONS]);
 
+/** personnalisation-1a (décision 27) : navigation de page, dans la barre d'outils, jamais proposée à la barre `pages`. */
+const PAGE_NAV: ReadonlySet<ActionId> = new Set(["page-prev", "page-next", "page-number"]);
+
 type CatalogKind = "annotation" | "shown-in-annotation" | "board";
 /** design-l3 (L3-17) : actions proposées selon la barre (table, ferme le constat `toolbar-profiles.ts:112`). */
 const CATALOG_ACTIONS: Readonly<Record<CatalogKind, (id: ActionId) => boolean>> = {
@@ -174,6 +189,7 @@ export function catalog(p: Profile, barId: string): CatalogEntry[] {
       : Object.entries(TOOL_TABLE).filter(([id]) => !tools.has(id)).map(([id, e]) => ({ kind: "tool", ref: id, label: e.label }));
   const actionEntries: CatalogEntry[] = Object.entries(ACTION_TABLE)
     .filter(([id]) => offered(id) && !actions.has(id) && !TABLE_ACTIONS.includes(id)) // actions du tableau : rangée contextuelle (C10a)
+    .filter(([id]) => bar.role !== "pages" || !PAGE_NAV.has(id))
     .map(([id, e]) => ({ kind: "action", ref: id, label: e.label }));
   return [...toolEntries, ...actionEntries];
 }

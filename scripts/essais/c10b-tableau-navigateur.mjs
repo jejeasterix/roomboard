@@ -14,7 +14,9 @@ import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, i
 const LABEL = "C10b tableau";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
 /** Point cliqué sur la scène (px de la scène) : coin haut gauche du premier tableau. */
-const CLICK = [200, 150];
+// À 1280 px, l'îlot d'outils (941 px avec la navigation de page) descend à y = 80 (règle L2-30) et sa rangée contextuelle
+// couvre y = 144 à 200 : le clic est placé sous elle.
+const CLICK = [200, 230];
 const COL = 240;
 const ROW = 64;
 const PASTE =
@@ -189,7 +191,8 @@ async function scenario(page, url, { captures, tmp }) {
   const els4 = Number(await attr("data-elements"));
   const b4 = await stageBox(page);
   // Le tableau (64 lignes) déborde de la scène : on le descend pour que sa première ligne reste sous les îlots du haut (outils + options de l'outil Tableau).
-  const mid = [b4.width / 2, b4.height / 2 + 100];
+  // À 1280 px, la rangée contextuelle de l'îlot d'outils abaissé va jusqu'à y = 200 : avec +100 la première ligne (y = 195) était couverte, d'où +140 (y = 235).
+  const mid = [b4.width / 2, b4.height / 2 + 140];
   await dropFile(page, "#stage", "valeurs.xlsx", readFileSync(XLSX), "", mid);
   await waitAttr("data-elements", String(els4 + 1));
   await waitDialog(TRUNCATED);

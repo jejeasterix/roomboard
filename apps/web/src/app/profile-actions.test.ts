@@ -14,6 +14,15 @@ import { createProfileActions, RESET_ALL_QUESTION } from "./profile-actions";
 const NO_CAPS: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
 const DEFAUT = BUILTIN_PROFILES[0]!;
 const SIMPLE = BUILTIN_PROFILES[1]!;
+/** Décisions 7 et 19 (H6) : la reprise ajoute `behavior.pageMode` et le groupe de navigation à la première barre `tools`, sans rien retirer. */
+const withReprise = (raw: string): unknown => {
+  const j = JSON.parse(raw);
+  j.behavior = { ...j.behavior, pageMode: "landscape" };
+  const nav = (action: string, label: string) => ({ id: action, kind: "action", action, label });
+  const first = j.toolbars.find((b: { role: string }) => b.role === "tools");
+  first.groups.push({ id: "pages", items: [nav("page-prev", "Page précédente"), nav("page-number", "Numéro de page"), nav("page-next", "Page suivante")] });
+  return j;
+};
 const fixture = (name: string): string => readFileSync(join(__dirname, "..", "fixtures", "profils", name), "utf8");
 const outils = (p: Profile) => p.toolbars.find((b) => b.id === "outils")!;
 const visible = (p: Profile) => visibleItems(outils(p), NO_CAPS).map((i) => i.id);
@@ -98,7 +107,7 @@ describe("gestes de profil (C1)", () => {
     expect(warn).toHaveBeenCalledWith("profil importé 1.2-outil-inconnu.rbprofile : outil inconnu masqué : laser");
     expect(visible(active.profile())).not.toContain("laser");
     await actions.exportActive();
-    expect(JSON.parse(saved[0]!.text)).toEqual(JSON.parse(raw));
+    expect(JSON.parse(saved[0]!.text)).toEqual(withReprise(raw));
   });
 
   it("S2 : 2.0 refusé : message « mettez RoomBoard à jour », profil actif inchangé", async () => {
@@ -210,7 +219,7 @@ describe("gestes de profil (C1)", () => {
     };
     const { active, actions, warn } = setup([{ name: "ferme.rbprofile", text: JSON.stringify(ferme) }]);
     expect(await actions.importFile()).toBe("imported");
-    expect(visible(active.profile())).toEqual(["pen", "profiles"]);
+    expect(visible(active.profile())).toEqual(["pen", "profiles", "page-prev", "page-number", "page-next"]);
     expect(warn).toHaveBeenCalledWith("profil importé ferme.rbprofile : accès au menu Profil ajouté");
   });
 
