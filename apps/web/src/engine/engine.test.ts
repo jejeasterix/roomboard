@@ -14,6 +14,7 @@ import { DEFAULT_CAMERA, type ModelCamera } from "./render/model-frames";
 import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
 import type { GridPreview, ImagePreview, LiveLayer, PageView, Renderer } from "./render/renderer";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
+import { stageTags } from "../app/stage-tags";
 import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
 import { worldPoints } from "./tools/line-points";
@@ -2703,6 +2704,46 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(doc.element(id)).toBeNull();
     expect(engine.state()).toMatchObject({ lineEditing: null, selection: [] });
     expect(engine.removeLinePoints()).toBe(false);
+  });
+
+  it("C3 : chaque geste de l'éditeur republie l'état — toucher un point publie linePoints = 1 et montre « Retirer le point »", () => {
+    // `engine.state()` est recalculé à la demande : seul l'état publié (`onState`) est ce que lisent `#stage` et le panneau.
+    const { engine, doc, page, pointsOf, tap } = og12();
+    const id = doc.apply({ type: "AddShape", page, shape: "line", x0: 100, y0: 100, x1: 250, y1: 50, style: PEN, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "SetLinePoints", id, points: [100, 100, 150, 50, 200, 100, 250, 50], start: null, end: null });
+    let last = engine.state();
+    engine.onState((s) => (last = s));
+    const removeShown = (): boolean => last.lineEditing !== null && last.lineEditing !== undefined && (last.linePointsSelected ?? 0) > 0; // condition du bouton `point-remove` (OptionsPanel)
+    engine.select([id]);
+    expect(engine.editLinePoints()).toBe(true);
+    expect(stageTags(last).linePoints).toBe("0");
+    expect(removeShown()).toBe(false);
+    // Toucher (sans mouvement) d'un point : aucun changement du document ni de la sélection, l'état est republié.
+    tap(1, 200, 100);
+    expect(stageTags(last)).toMatchObject({ lineEdit: id, linePoints: "1" });
+    expect(removeShown()).toBe(true);
+    // Suppr retire ce point, une étape ; l'état publié revient à 0.
+    const v0 = doc.version();
+    expect(engine.key(key("Delete"))).toBe(true);
+    expect(doc.version()).toBe(v0 + 1);
+    expect(pointsOf(id)).toEqual([[100, 100], [150, 50], [250, 50]]);
+    expect(stageTags(last).linePoints).toBe("0");
+    expect(removeShown()).toBe(false);
+    // Tirer un point : le point tiré reste choisi dans l'état publié.
+    engine.sink.begin(2, "select", [{ ...sample, x: 150, y: 50 }]);
+    engine.sink.extend(2, [{ ...sample, x: 150, y: 80 }], []);
+    engine.sink.close(2, "end");
+    expect(doc.version()).toBe(v0 + 2);
+    expect(stageTags(last).linePoints).toBe("1");
+    expect(removeShown()).toBe(true);
+    // Le bouton retire ce point, une étape.
+    expect(engine.removeLinePoints()).toBe(true);
+    expect(doc.version()).toBe(v0 + 3);
+    expect(pointsOf(id)).toEqual([[100, 100], [250, 50]]);
+    expect(stageTags(last)).toMatchObject({ lineEdit: id, linePoints: "0" });
+    // Toucher d'un bout : choisi et publié.
+    tap(3, 100, 100);
+    expect(stageTags(last).linePoints).toBe("1");
   });
 
   it("en édition : le calque montre les poignées de l'éditeur, sans le cadre de l'outil Sélection", () => {
