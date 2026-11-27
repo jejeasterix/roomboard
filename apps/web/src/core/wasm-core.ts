@@ -560,6 +560,9 @@ class WasmCoreDocument implements CoreDocument {
           cmd.end?.id, cmd.end ? new Float64Array([cmd.end.fx, cmd.end.fy]) : undefined));
       case "AddLinked":
         return toChange(this.d.add_linked(cmd.id, cmd.dir));
+      // OG12 lot 2a : le module Wasm n'expose pas encore `shape_to_polygon` (pas de chemin générique) ; L6 le branche.
+      case "ShapeToPolygon":
+        throw new Error("ShapeToPolygon : pont Wasm non branché (OG12 lot 2a, L6)");
       case "AddPage": return toChange(this.d.add_page_after(cmd.after, cmd.mode));
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));

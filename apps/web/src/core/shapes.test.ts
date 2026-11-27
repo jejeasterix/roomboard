@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anchorPoint, ANCHOR_RATIOS, applyMatrix, arrowWings, bandPolygonForTest, boxPolygon, composeMatrix, CURVE_STEPS, ELLIPSE_VERTICES, flattenPath, invertMatrix, isShapeKind, linePath, normalizeShape, shapePolygon } from "./shapes";
+import { anchorPoint, ANCHOR_RATIOS, isClosedShape, isPointsShape, applyMatrix, arrowWings, bandPolygonForTest, boxPolygon, composeMatrix, CURVE_STEPS, ELLIPSE_VERTICES, flattenPath, invertMatrix, isShapeKind, linePath, normalizeShape, shapePolygon } from "./shapes";
 
 describe("shapes (miroir de shape.rs)", () => {
   it("normalizeShape : rectangle et ellipse au coin haut-gauche, tailles positives", () => {
@@ -107,11 +107,46 @@ describe("OG12 : chemin, courbe et ancrage (miroir de linear.rs)", () => {
     expect(Math.max(...xs)).toBeGreaterThan(100);
   });
   it("anchorPoint : contour + écart 5 + épaisseur / 2, dedans sans écart, ellipse", () => {
-    const b = { id: "a", m: [1, 0, 0, 1, 10, 20] as const, w: 100, h: 50, ellipse: false, gap: 7 };
+    const b = { id: "a", m: [1, 0, 0, 1, 10, 20] as const, w: 100, h: 50, outline: "box" as const, gap: 7 };
     expect(anchorPoint(b, 1, 0.5)).toEqual([117, 45]);
     expect(anchorPoint(b, 0.3, 0.4)).toEqual([40, 40]);
-    const [x, y] = anchorPoint({ ...b, ellipse: true }, 0.5, 0);
+    const [x, y] = anchorPoint({ ...b, outline: "ellipse" as const }, 0.5, 0);
     expect([x, Math.round(y * 1e9) / 1e9]).toEqual([60, 13]);
     expect(ANCHOR_RATIOS).toEqual([[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]]);
+  });
+});
+
+describe("OG12 lot 2a : losange et ligne fermée (miroir de shape.rs)", () => {
+  it("losange : polygone élargi le long des normales", () => {
+    const p = shapePolygon("diamond", 100, 60, 2);
+    const l = Math.hypot(100, 60);
+    expect(p).toEqual([50, -l / 100, 100 + l / 60, 30, 50, 60 + l / 100, -l / 60, 30].map((v) => expect.closeTo(v, 6)));
+  });
+  it("losange de boîte nulle : rectangle élargi", () => {
+    expect(shapePolygon("diamond", 0, 60, 2)).toEqual(shapePolygon("rect", 0, 60, 2));
+  });
+  it("losange : ancre du sommet droit et contour (on_outline, anchor)", () => {
+    const b = { id: "d", m: [1, 0, 0, 1, 0, 0] as const, w: 100, h: 60, outline: "diamond" as const, gap: 7 };
+    expect(anchorPoint(b, 1, 0.5)).toEqual([107, 30]);
+    // (0.9, 0.5) du losange : dedans, pas sur le contour, rendu tel quel (une boîte le dirait dedans aussi).
+    expect(anchorPoint(b, 0.9, 0.5)).toEqual([90, 30]);
+    // (0.9, 0.1) : dans la boîte mais hors du losange, recalé sur son contour (75, 15) puis écarté de 7 (une boîte le
+    // rendrait tel quel, (90, 6)).
+    const [x, y] = anchorPoint(b, 0.9, 0.1);
+    const l = Math.hypot(25, 15);
+    expect(x).toBeCloseTo(75 + (7 * 25) / l, 9);
+    expect(y).toBeCloseTo(15 - (7 * 15) / l, 9);
+  });
+  it("ligne fermée : bornes du rectangle d'origine", () => {
+    const p = shapePolygon("line", 0, 50, 2, { inner: [100, 0, 100, 50], curve: false, closed: true });
+    const xs = p.filter((_, i) => i % 2 === 0);
+    const ys = p.filter((_, i) => i % 2 === 1);
+    expect([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map((v) => Math.round(v * 1e6) / 1e6)).toEqual([-1, -1, 101, 51]);
+    expect(p).toHaveLength(8);
+  });
+  it("isClosedShape, isPointsShape", () => {
+    expect(isClosedShape({ shape: "line", w: 0, h: 50, fill: null, polygon: true })).toBe(true);
+    expect(isClosedShape({ shape: "line", w: 0, h: 50, fill: null })).toBe(false);
+    expect(["rect", "ellipse", "diamond", "line", "arrow"].map((k) => isPointsShape(k as never))).toEqual([true, true, true, false, false]);
   });
 });

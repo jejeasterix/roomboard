@@ -16,9 +16,12 @@ export const SKIPPED_LABEL = ["objet illisible ignoré", "objets illisibles igno
 export const MAX_GROUP_DEPTH = 256;
 export const BOARD_OP = { page: 1, background: 2, shape: 3, stroke: 4, text: 5, image: 6, groupBegin: 7, groupEnd: 8 } as const;
 export const BOARD_BAD_LIST_PREFIX = "liste de tableau invalide : ";
-/** Code de chaque forme dans le flux ; `satisfies` oblige à en donner un à chaque `ShapeKind`. */
-const SHAPE_CODE = { rect: 0, ellipse: 1, line: 2, arrow: 3 } satisfies Record<ShapeKind, number>;
-const SHAPES = (Object.keys(SHAPE_CODE) as ShapeKind[]).sort((a, b) => SHAPE_CODE[a] - SHAPE_CODE[b]);
+/** Formes du flux : le losange (OG12 lot 2a) n'y entre pas, il s'exporte en polyligne fermée (`roomboard-formats` a son
+ *  propre `ShapeKind`, board.rs). */
+export type BoardShape = Exclude<ShapeKind, "diamond">;
+/** Code de chaque forme dans le flux ; `satisfies` oblige à en donner un à chaque `BoardShape`. */
+const SHAPE_CODE = { rect: 0, ellipse: 1, line: 2, arrow: 3 } satisfies Record<BoardShape, number>;
+const SHAPES = (Object.keys(SHAPE_CODE) as BoardShape[]).sort((a, b) => SHAPE_CODE[a] - SHAPE_CODE[b]);
 export const MAX_POINTS = 1_000_000;
 export const MAX_SPANS = 10_000;
 const MAX_INDEX = 16_777_216;
@@ -262,6 +265,8 @@ export function encodeBoardList(pages: readonly BoardListPage[]): BoardListData 
   const obj = (o: BoardObject): void => {
     switch (o.kind) {
       case "shape":
+        // OG12 lot 2a : un losange arrive ici déjà converti en polyligne fermée (L3), jamais avec un code inventé.
+        if (o.shape === "diamond") throw new Error("losange hors du flux : polyligne fermée attendue (OG12 lot 2a)");
         ops.push(BOARD_OP.shape, SHAPE_CODE[o.shape]);
         mat(o.m);
         ops.push(o.x0, o.y0, o.x1, o.y1);
