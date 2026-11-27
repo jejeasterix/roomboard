@@ -444,6 +444,20 @@ try {
   verifie("D79 : Ctrl-C pendant une conversion : code 130", pidFaux !== null && sortie.code === 130, JSON.stringify(sortie));
   verifie("D79 : une ligne {\"error\":…} « conversion Office interrompue »", errEnfant.trim().split("\n").length === 1 && messageErreur(errEnfant)?.startsWith("conversion Office interrompue (SIGINT)"), errEnfant);
   verifie("D79 : rien écrit", !existsSync(join(dir, "lent.roomboard")));
+  // personnalisation-2 (OG11, déc. 29) : SetStyle puis undo, refus hors domaine, arrondi, état.
+  {
+    const f = join(dir, "style.roomboard");
+    const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], `${JSON.stringify({ type: "AddShape", page: "$page:0", shape: "rect", x0: 0, y0: 0, x1: 100, y1: 50, style: { color: "#000000", width: 4 }, fill: null })}\n`);
+    verifie("personnalisation-2 : rectangle posé", neuf.code === 0, neuf.brut);
+    const id = neuf.lignes[0].change.ids[0];
+    const s = cli(["run", f, "--save", "--ops", "-"], `${[{ type: "SetStyle", ids: [id], patch: { strokeStyle: "dashed", opacity: 44.6 } }, { op: "state" }, { op: "undo" }, { op: "state" }].map((o) => JSON.stringify(o)).join("\n")}\n`);
+    const avant = JSON.stringify(s.lignes[1].state);
+    const apres = JSON.stringify(s.lignes[3].state);
+    verifie("personnalisation-2 : SetStyle puis undo, une étape chacun", s.code === 0 && avant.includes('"strokeStyle":"dashed"') && avant.includes('"opacity":45') && !apres.includes('"strokeStyle"'), s.brut);
+    const refus = cli(["run", f, "--ops", "-"], `${JSON.stringify({ type: "SetStyle", ids: [id], patch: { opacity: 150 } })}\n`);
+    verifie("personnalisation-2 : opacity 150 refusée (code 1)", refus.code === 1, refus.brut);
+    console.log("personnalisation-2 : SetStyle puis undo");
+  }
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);
