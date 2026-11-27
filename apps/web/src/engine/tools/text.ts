@@ -22,6 +22,8 @@ export interface TextStyle {
   readonly opacity?: number;
   /** T28 : alignement du style courant ; absent ou `left` : rien écrit. */
   readonly textAlign?: "left" | "center" | "right";
+  /** T31 : police du style courant (absente : la normale) ; portée par les segments d'une boîte neuve. */
+  readonly font?: string;
 }
 
 export interface TextEditSession {
@@ -84,7 +86,9 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     const s = session;
     if (!s) return;
     const content = host.value();
-    const spans = host.spans();
+    const typed = host.spans();
+    const font = style().font;
+    const spans = s.id === null && font !== undefined ? typed.map((x) => (x.attrs.font === undefined ? { ...x, attrs: { ...x.attrs, font } } : x)) : typed;
     const hadHidden = live.hidden.size > 0;
     session = null;
     gate.reset();

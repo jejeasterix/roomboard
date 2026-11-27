@@ -15,10 +15,13 @@ export interface ItemStyle {
   readonly startArrowhead: Arrowhead;
   readonly endArrowhead: Arrowhead;
   readonly textAlign: TextAlign;
+  /** T31 : police et taille du prochain texte (Excalidraw : currentItemFontFamily, currentItemFontSize) ; `default` : la police normale. */
+  readonly font: string;
+  readonly fontSize: number;
 }
 export const DEFAULT_ITEM_STYLE: ItemStyle = Object.freeze({
   color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100,
-  fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left",
+  fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", font: "default", fontSize: 36,
 });
 const KINDS: readonly string[] = ["solid", ...STROKE_STYLES];
 const ok: { readonly [K in keyof ItemStyle]: (v: unknown) => boolean } = {
@@ -33,6 +36,8 @@ const ok: { readonly [K in keyof ItemStyle]: (v: unknown) => boolean } = {
   startArrowhead: (v) => typeof v === "string" && ARROWHEADS.includes(v),
   endArrowhead: (v) => typeof v === "string" && ARROWHEADS.includes(v),
   textAlign: (v) => v === "left" || v === "center" || v === "right",
+  font: (v) => typeof v === "string" && v !== "" && v.length <= 64,
+  fontSize: (v) => typeof v === "number" && Number.isFinite(v) && v > 0,
 };
 const KEYS = Object.keys(ok) as (keyof ItemStyle)[];
 

@@ -159,8 +159,8 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     textAlign: (s) => s.textAlign,
     startArrowhead: (s) => s.startArrowhead,
     endArrowhead: (s) => s.endArrowhead,
-    font: () => "default",
-    fontSize: () => 36,
+    font: (s) => s.font,
+    fontSize: (s) => s.fontSize,
   };
   const fallback = (k: string): unknown => fallbacks[k]?.(cur());
   /** Valeur commune des cibles, ou null quand elles diffèrent ; sans cible, le style courant. */
@@ -222,6 +222,15 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     const h = typeof window === "undefined" ? 0 : window.innerHeight;
     setPicker({ key, anchor, x: Math.round(r.right + 8), y: Math.max(8, Math.min(Math.round(r.top), h > 0 ? h - 440 : 8)) });
   };
+  // T31 : hauteur réelle du sélecteur posé (rb-color-pop), mesurée après chaque ouverture ; le haut est borné par elle.
+  let pop: HTMLDivElement | undefined;
+  const [popH, setPopH] = createSignal(0);
+  createEffect(() => {
+    picker();
+    setPopH(pop?.offsetHeight ?? 0);
+  });
+  const winH = (): number => (typeof window === "undefined" ? 0 : window.innerHeight);
+  const popTop = (y: number): number => (winH() > 0 && popH() > 0 ? Math.max(8, Math.min(y, winH() - popH() - 8)) : y);
   const onObjectKey = (e: KeyboardEvent): void => {
     const hit = objectKey(e as unknown as KeyLike);
     if (hit !== "stroke-picker" && hit !== "fill-picker") return;
@@ -291,27 +300,27 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     strokeColor: () => colors("strokeColor", strokeChoices, (c) => ({ color: c ?? "#000000" })),
     background: () => colors("background", backgroundPicks, (c) => ({ background: c })),
     fillStyle: () => (
-      <RadioChoices name="fillStyle" label={LABEL.fillStyle} look="segment" options={FILLS} valueAttr="data-option-value"
+      <RadioChoices keepFocus name="fillStyle" label={LABEL.fillStyle} look="segment" options={FILLS} valueAttr="data-option-value"
         value={(value("fillStyle") as FillKind | null) ?? null} choose={(f) => write({ fillStyle: f })} />
     ),
     font: () => (
-      <RadioChoices name="font" label={LABEL.font} look="segment" options={FONT_OPTIONS} valueAttr="data-option-value" disabled={off("font")}
+      <RadioChoices keepFocus name="font" label={LABEL.font} look="segment" options={FONT_OPTIONS} valueAttr="data-option-value" disabled={off("font")}
         value={(value("font") as string | null) ?? null}
-        choose={(f) => formatAll({ font: FONTS.find((x) => x.value === f)?.font ?? null })} />
+        choose={(f) => { write({ font: f }); formatAll({ font: FONTS.find((x) => x.value === f)?.font ?? null }); }} />
     ),
     fontSize: () => (
-      <RadioChoices name="fontSize" label={LABEL.fontSize} look="segment" options={SIZE_OPTIONS} valueAttr="data-option-value" disabled={off("fontSize")}
-        value={typeof value("fontSize") === "number" ? String(value("fontSize")) : null} choose={(n) => formatAll({ size: Number(n) })} />
+      <RadioChoices keepFocus name="fontSize" label={LABEL.fontSize} look="segment" options={SIZE_OPTIONS} valueAttr="data-option-value" disabled={off("fontSize")}
+        value={typeof value("fontSize") === "number" ? String(value("fontSize")) : null} choose={(n) => { write({ fontSize: Number(n) }); formatAll({ size: Number(n) }); }} />
     ),
     textAlign: () => (
-      <RadioChoices name="textAlign" label={LABEL.textAlign} look="segment" options={ALIGNS} valueAttr="data-option-value"
+      <RadioChoices keepFocus name="textAlign" label={LABEL.textAlign} look="segment" options={ALIGNS} valueAttr="data-option-value"
         value={(value("textAlign") as TextAlign | null) ?? null} choose={(a) => write({ textAlign: a })} />
     ),
     arrowheads: () => (
       <>
-        <RadioChoices name="startArrowhead" label="Pointe de début" look="segment" options={HEADS} valueAttr="data-option-value"
+        <RadioChoices keepFocus name="startArrowhead" label="Pointe de début" look="segment" options={HEADS} valueAttr="data-option-value"
           value={(value("startArrowhead", "arrowheads") as Arrowhead | null) ?? null} choose={(h) => write({ startArrowhead: h })} />
-        <RadioChoices name="endArrowhead" label="Pointe de fin" look="segment" options={HEADS} valueAttr="data-option-value"
+        <RadioChoices keepFocus name="endArrowhead" label="Pointe de fin" look="segment" options={HEADS} valueAttr="data-option-value"
           value={(value("endArrowhead", "arrowheads") as Arrowhead | null) ?? null} choose={(h) => write({ endArrowhead: h })} />
       </>
     ),
@@ -325,19 +334,19 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       </div>
     ),
     strokeWidth: () => (
-      <RadioChoices name="strokeWidth" label={LABEL.strokeWidth} look="segment" options={WIDTH_OPTIONS} valueAttr="data-option-value"
+      <RadioChoices keepFocus name="strokeWidth" label={LABEL.strokeWidth} look="segment" options={WIDTH_OPTIONS} valueAttr="data-option-value"
         value={widthValue()} choose={(w) => write({ width: Number(w) })} />
     ),
     strokeStyle: () => (
-      <RadioChoices name="strokeStyle" label={LABEL.strokeStyle} look="segment" options={STROKES} valueAttr="data-option-value"
+      <RadioChoices keepFocus name="strokeStyle" label={LABEL.strokeStyle} look="segment" options={STROKES} valueAttr="data-option-value"
         value={(value("strokeStyle") as StrokeKind | null) ?? null} choose={(s) => write({ strokeStyle: s })} />
     ),
     roughness: () => (
-      <RadioChoices name="roughness" label={LABEL.roughness} look="segment" options={ROUGH} valueAttr="data-option-value"
+      <RadioChoices keepFocus name="roughness" label={LABEL.roughness} look="segment" options={ROUGH} valueAttr="data-option-value"
         value={roughValue()} choose={(r) => write({ roughness: Number(r) as 0 | 1 | 2 })} />
     ),
     roundness: () => (
-      <RadioChoices name="roundness" label={LABEL.roundness} look="segment" options={CORNERS} valueAttr="data-option-value"
+      <RadioChoices keepFocus name="roundness" label={LABEL.roundness} look="segment" options={CORNERS} valueAttr="data-option-value"
         value={(value("roundness") as "sharp" | "round" | null) ?? null} choose={(r) => write({ roundness: r })} />
     ),
     opacity: () => (
@@ -419,7 +428,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         </Show>
         <Show when={picker()} keyed>
           {(p) => (
-            <div class="rb-color-pop" style={{ left: `${p.x}px`, top: `${p.y}px` }}>
+            <div ref={pop} class="rb-color-pop" style={{ left: `${p.x}px`, top: `${popTop(p.y)}px`, ...(winH() > 0 ? { "max-block-size": `${winH() - 16}px` } : {}) }}>
               <ColorPicker
                 value={typeof value(p.key) === "string" && value(p.key) !== "transparent" ? (value(p.key) as string) : null}
                 choose={chooseFull}

@@ -613,7 +613,7 @@ export function createEngine(deps: EngineDeps): Engine {
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   /** Style de texte des outils Texte et Tableau : couleur du stylo, taille par défaut. */
-  const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}), ...(item.textAlign !== "left" ? { textAlign: item.textAlign } : {}) });
+  const textStyle = (): TextStyle => ({ color: item.color, size: item.fontSize > 0 ? item.fontSize : DEFAULT_TEXT_SIZE, ...(item.font !== "default" ? { font: item.font } : {}), ...(item.opacity < 100 ? { opacity: item.opacity } : {}), ...(item.textAlign !== "left" ? { textAlign: item.textAlign } : {}) });
   const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
   const textTool: TextTool = deps.tools.text?.(ctx, textStyle) ?? inertText();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => item) ?? inertTool();
@@ -837,10 +837,15 @@ export function createEngine(deps: EngineDeps): Engine {
     item = next;
     if (changed) for (const cb of [...itemListeners]) cb(item);
     const sel = selectTool.selection();
-    if (writeSelection && sel.length > 0) {
+    // T31 : un texte rouvert en saisie est la cible quand rien n'est sélectionné (le panneau agit sur lui, comme Excalidraw).
+    const editedId = tool === "text" ? textTool.editing()?.id ?? null : null;
+    const ids = sel.length > 0 ? [...sel] : editedId !== null ? [editedId] : [];
+    if (writeSelection && ids.length > 0) {
       const accepted = Object.fromEntries(keys.filter((k) => k in p && p[k] === next[k]).map((k) => [k, p[k]])) as Partial<ItemStyle>;
-      if (Object.keys(accepted).length > 0) {
-        run({ type: "SetStyle", ids: [...sel], patch: patchOf(accepted) });
+      const patch = patchOf(accepted);
+      // `font` et `fontSize` ne sont que le style du prochain texte : aucune commande.
+      if (Object.keys(patch).length > 0) {
+        run({ type: "SetStyle", ids, patch });
         return;
       }
     }
