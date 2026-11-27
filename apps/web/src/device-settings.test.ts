@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDeviceSettings, FRAME_KEY, NO_ISLAND, islandKey } from "./device-settings";
+import { createDeviceSettings, FRAME_KEY, ITEM_STYLE_KEY, NO_ISLAND, islandKey } from "./device-settings";
+import { DEFAULT_ITEM_STYLE } from "./engine/item-style";
 import type { KeyValue } from "./profile-store";
 
 function memoryKv(init: Record<string, string> = {}): KeyValue & { readonly map: Map<string, string> } {
@@ -139,5 +140,30 @@ describe("design-l2 T11 : clé d'îlot", () => {
   it("design-l2 T11 (discrimine) : chaque partie de la clé est encodée (encodeURIComponent)", () => {
     expect(islandKey("mon profil", "outils/a")).toBe("roomboard.ilot.mon%20profil.outils%2Fa");
     expect(islandKey("defaut", "outils")).toBe("roomboard.ilot.defaut.outils");
+  });
+});
+
+describe("device-settings : style courant (OG11 déc. 23)", () => {
+  const dashed = { ...DEFAULT_ITEM_STYLE, color: "#1d4ed8", strokeStyle: "dashed" as const, opacity: 40 };
+  it("style courant relu : clé roomboard.style-courant, relue par une nouvelle instance (rechargement)", () => {
+    expect(ITEM_STYLE_KEY).toBe("roomboard.style-courant");
+    const kv = memoryKv();
+    expect(createDeviceSettings(kv).itemStyle()).toBeNull();
+    expect(createDeviceSettings(kv).setItemStyle(dashed)).toBe(true);
+    expect(kv.map.has(ITEM_STYLE_KEY)).toBe(true);
+    expect(createDeviceSettings(kv).itemStyle()).toEqual(dashed);
+  });
+  it("style courant illisible : défaut (null), aucune exception", () => {
+    for (const raw of ["{", "null", "[]", JSON.stringify({ ...dashed, width: -1 }), JSON.stringify({ ...dashed, color: "" })]) {
+      expect(createDeviceSettings(memoryKv({ [ITEM_STYLE_KEY]: raw })).itemStyle()).toBeNull();
+    }
+    const s = createDeviceSettings(throwing);
+    expect(() => s.itemStyle()).not.toThrow();
+    expect(s.itemStyle()).toBeNull();
+    expect(() => s.setItemStyle(dashed)).not.toThrow();
+    expect(s.setItemStyle(dashed)).toBe(false);
+  });
+  it("style courant sans stockage : setItemStyle rend faux", () => {
+    expect(createDeviceSettings(null).setItemStyle(dashed)).toBe(false);
   });
 });
