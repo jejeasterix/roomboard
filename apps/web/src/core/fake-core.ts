@@ -572,8 +572,12 @@ function scanAssets(v: unknown, acc: Set<string>): void {
 let counter = 0;
 const newId = (): string => `fake-${++counter}`;
 
-/** Recopie (Z4) : id neuf, chemin renuméroté par `groups` (commun à l'insertion), translation si le transform est lu. */
-function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy: number): FakeElement {
+/** personnalisation-3 (T5), comme `copy_elements` du cœur : ids neufs générés d'abord, table ancien → neuf des éléments
+ *  copiés (un objet passé sous son tableau est recopié avant lui). */
+const freshIds = (elements: readonly FakeElement[]): ReadonlyMap<string, string> => new Map(elements.map((e) => [e.id, newId()]));
+/** Recopie (Z4) : id neuf (pris dans `ids`), chemin renuméroté par `groups` (commun à l'insertion), lien de case relié au
+ *  tableau copié, translation si le transform est lu. */
+function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy: number, ids?: ReadonlyMap<string, string>): FakeElement {
   const group = e.group?.map((g) => {
     let n = groups.get(g);
     if (n === undefined) {
@@ -582,12 +586,14 @@ function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy
     }
     return n;
   });
-  // personnalisation-3 : la copie est libre (`cell` retiré, comme `copy_elements` du cœur), jamais liée à la case d'origine.
+  // personnalisation-3 (T5) : `cell[0]` remplacé par l'id neuf du tableau copié ; tableau absent de la copie : lien retiré.
   const { group: _old, cell: _c, ...rest } = e;
+  const table = e.cell === undefined ? undefined : ids?.get(e.cell[0]);
+  const cell: { cell?: CellLink } = e.cell !== undefined && table !== undefined ? { cell: [table, e.cell[1], e.cell[2]] } : {};
   const moves = (dx !== 0 || dy !== 0) && e.unknown?.hasTransform !== false && e.malformed === undefined;
   const t = e.transform;
   const transform: Matrix = moves ? [t[0], t[1], t[2], t[3], t[4] + dx, t[5] + dy] : t;
-  return { ...rest, id: newId(), transform, ...withGroup(group) };
+  return { ...rest, id: ids?.get(e.id) ?? newId(), transform, ...withGroup(group), ...cell };
 }
 /** personnalisation-3 : élément de nature tableau, lisible ou non (`kind` brut du cœur : un tableau mal formé aussi). */
 const isTableKind = (e: FakeElement): boolean => e.table !== undefined || e.unknown?.sourceKind === "table";
@@ -1006,7 +1012,9 @@ class FakeDocument implements CoreDocument {
         // `cmd_duplicate_page` = `extract_page` + `insert_pages` : copie juste après, ids neufs, champs gardés.
         const src = this.pageOf(cmd.page);
         const groups = new Map<string, string>();
-        const copy: FakePage = { ...src, id: newId(), elements: src.elements.map((e) => copyElement(e, groups, 0, 0)) };
+        const id = newId();
+        const ids = freshIds(src.elements);
+        const copy: FakePage = { ...src, id, elements: src.elements.map((e) => copyElement(e, groups, 0, 0, ids)) };
         return this.step((s) => {
           s.pages.splice(s.pages.findIndex((p) => p.id === cmd.page) + 1, 0, copy);
           return { pages: [copy.id], ids: copy.elements.map((e) => e.id), removed: [] };
@@ -1179,6 +1187,9 @@ class FakeDocument implements CoreDocument {
       case "SetTableLineSizes": {
         // personnalisation-3 (D4), comme `cmd_set_table_line_sizes` : tableau, tailles, mêmes tailles (aucune étape).
         const { found, t } = this.tableOf(cmd.id);
+        // Défaut T2a, comme `repeats_line` du cœur : une ligne ou une colonne citée deux fois est refusée.
+        const repeats = (ls: readonly (readonly [string, number])[]): boolean => new Set(ls.map(([l]) => l)).size !== ls.length;
+        if (repeats(cmd.cols) || repeats(cmd.rows)) throw new Error(MESSAGES.badTable);
         const next = resizedLines(t, [
           ...cmd.cols.map(([l, size]): readonly [TableAxis, string, number] => ["col", l, size]),
           ...cmd.rows.map(([l, size]): readonly [TableAxis, string, number] => ["row", l, size]),
@@ -1252,6 +1263,17 @@ class FakeDocument implements CoreDocument {
               const free = withoutCell(e);
               p.elements[i] = target === null ? { ...free, transform } : { ...free, transform, cell: target };
             });
+            // T5, comme `lift_above` du cœur : les placés situés sous le tableau visé montent juste au-dessus, ordre gardé.
+            if (target !== null) {
+              const ti = p.elements.findIndex((e) => e.id === target[0]);
+              const below = (e: FakeElement, i: number): boolean => i < ti && skip.has(e.id);
+              const lifted = p.elements.filter(below);
+              if (lifted.length > 0) {
+                const rest = p.elements.filter((e, i) => !below(e, i));
+                rest.splice(rest.findIndex((e) => e.id === target[0]) + 1, 0, ...lifted);
+                p.elements.splice(0, p.elements.length, ...rest);
+              }
+            }
           }
           return { pages: [pageId], ids: [...touched].sort(), removed: [] };
         });
@@ -2023,7 +2045,9 @@ class FakeDocument implements CoreDocument {
     for (const id of ids) if (!p.elements.some((e) => e.id === id)) throw new Error(`élément inconnu : ${id}`);
     const wanted = new Set(ids);
     const groups = new Map<string, string>();
-    const elements = p.elements.filter((e) => wanted.has(e.id)).map((e) => copyElement(e, groups, 0, 0));
+    const picked = p.elements.filter((e) => wanted.has(e.id));
+    const fresh = freshIds(picked);
+    const elements = picked.map((e) => copyElement(e, groups, 0, 0, fresh));
     const out = new FakeDocument({ pages: [{ ...newPage(undefined), elements }], assets: new Map() });
     adoptMeta(out.state.assets, this.state.assets, out.citedAssets().map((a) => a.id));
     return out;
@@ -2036,7 +2060,8 @@ class FakeDocument implements CoreDocument {
     const from = src.state.pages[0]?.elements ?? [];
     if (from.length === 0) return this.unchanged();
     const groups = new Map<string, string>();
-    const copies = from.map((e) => copyElement(e, groups, dx, dy));
+    const ids = freshIds(from);
+    const copies = from.map((e) => copyElement(e, groups, dx, dy, ids));
     const cited = src.citedAssets().map((a) => a.id);
     return this.step((s) => {
       s.pages.find((q) => q.id === page)?.elements.push(...copies);
@@ -2050,11 +2075,11 @@ class FakeDocument implements CoreDocument {
     if (at < 0) throw new Error(`page inconnue : ${after}`);
     if (src.state.pages.length === 0) return this.unchanged();
     const groups = new Map<string, string>();
-    const pages: FakePage[] = src.state.pages.map((p) => ({
-      ...p,
-      id: newId(),
-      elements: p.elements.map((e) => copyElement(e, groups, 0, 0)),
-    }));
+    const pages: FakePage[] = src.state.pages.map((p) => {
+      const id = newId();
+      const ids = freshIds(p.elements);
+      return { ...p, id, elements: p.elements.map((e) => copyElement(e, groups, 0, 0, ids)) };
+    });
     const cited = src.citedAssets().map((a) => a.id);
     return this.step((s) => {
       s.pages.splice(at + 1, 0, ...pages);

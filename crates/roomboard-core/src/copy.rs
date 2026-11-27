@@ -2,7 +2,7 @@
 //! `Y.Text` avec attributs de plage et embeds), sert l'extraction d'une sélection, l'insertion d'un fragment et
 //! l'insertion des pages d'un document. Chaque élément garde tous ses champs (types inconnus compris, U3) ; seuls
 //! `id`, `group` (renuméroté par une table commune à l'insertion) et la translation de `transform` sont réécrits ;
-//! `cell` (personnalisation-3) est retiré : une copie est libre.
+//! `cell` (personnalisation-3, T5) vise le tableau copié dans le même appel, ou est retiré si le tableau n'est pas copié.
 //! Aucune lecture du `kind`.
 //!
 //! Jamais l'état d'un document appliqué comme mise à jour Yrs sur la cible (U9) : la cible garderait les ids et
@@ -18,7 +18,9 @@ use yrs::{
 
 use crate::commands::{Change, CommandError};
 use crate::document::{collect_out, insert_page, Document};
-use crate::element::{out_string, out_transform, transform_to_any, SCHEMA};
+use crate::element::{
+    cell_link_to_any, out_string, out_transform, read_cell_link, transform_to_any, SCHEMA,
+};
 
 /// Table ancien → neuf des ids de groupe, commune à toute une insertion (Z4).
 pub(crate) type IdMap = HashMap<String, String>;
@@ -57,8 +59,8 @@ fn elements_of<T: ReadTxn>(txn: &T, page: &MapRef) -> Vec<MapRef> {
     }
 }
 
-/// Recopie `from` (lus dans `src`) en haut de `into`, dans l'ordre : id neuf, groupes renumérotés par `ids`, translation.
-/// Rend les ids neufs.
+/// Recopie `from` (lus dans `src`) en haut de `into`, dans l'ordre : id neuf, groupes renumérotés par `ids`, lien de
+/// case relié au tableau copié, translation. Rend les ids neufs.
 pub(crate) fn copy_elements<T: ReadTxn>(
     src: &T,
     from: &[MapRef],
@@ -68,16 +70,35 @@ pub(crate) fn copy_elements<T: ReadTxn>(
     dx: f64,
     dy: f64,
 ) -> Vec<String> {
+    // personnalisation-3 (T5) : ids neufs générés d'abord (un objet passé sous son tableau est recopié avant lui), puis
+    // `cell[0]` remplacé par l'id neuf du tableau copié ; tableau absent de la copie : lien retiré. Un id neuf par
+    // élément, même si la source répète un id ; la table suit la première occurrence.
+    let fresh: Vec<String> = from.iter().map(|_| yrs::uuid_v4().to_string()).collect();
+    let mut renamed: HashMap<String, String> = HashMap::with_capacity(from.len());
+    for (e, id) in from.iter().zip(&fresh) {
+        if let Some(old) = out_string(e.get(src, "id")) {
+            renamed.entry(old).or_insert_with(|| id.clone());
+        }
+    }
     let mut out = Vec::with_capacity(from.len());
-    for e in from {
+    for (e, id) in from.iter().zip(fresh) {
         let mut prelim = e.as_prelim(src);
-        let id = yrs::uuid_v4().to_string();
         prelim.insert("id".into(), In::from(id.as_str()));
         if let Some(g) = prelim.get("group").and_then(|g| renumber(g, ids)) {
             prelim.insert("group".into(), g);
         }
-        // personnalisation-3 : une copie est libre, jamais liée au tableau d'origine (renumérotation : T5).
-        prelim.remove("cell");
+        // Lien illisible : recopié tel quel (U3).
+        if let Some(mut l) = read_cell_link(src, e) {
+            match renamed.get(&l[0]) {
+                Some(t) => {
+                    l[0] = t.clone();
+                    prelim.insert("cell".into(), In::Any(cell_link_to_any(&l)));
+                }
+                None => {
+                    prelim.remove("cell");
+                }
+            }
+        }
         // Transformation illisible : gardée telle quelle.
         if dx != 0.0 || dy != 0.0 {
             if let Some(mut t) = out_transform(e.get(src, "transform")) {

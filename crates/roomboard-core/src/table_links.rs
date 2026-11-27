@@ -4,7 +4,8 @@
 //! des ids de ligne et de colonne, jamais des rangs : une ligne insérée avant ne change pas la case.
 use std::collections::{HashMap, HashSet};
 
-use yrs::{Any, Array, In, Map, MapRef, Out, ReadTxn, TransactionMut};
+use yrs::types::AsPrelim;
+use yrs::{Any, Array, In, Map, MapPrelim, MapRef, Out, ReadTxn, TransactionMut};
 
 use crate::commands::{valid_matrix, Change, CommandError};
 use crate::document::Document;
@@ -72,6 +73,14 @@ pub(crate) fn line_sizes_ok(raw: &RawTable, sizes: &[(TableAxis, String, f64)]) 
             .sum()
     };
     known && fits_f32(&[total(TableAxis::Row), total(TableAxis::Col)])
+}
+
+/// Vrai si une ligne ou une colonne est citée deux fois.
+pub(crate) fn repeats_line(sizes: &[(TableAxis, String, f64)]) -> bool {
+    let mut seen = HashSet::with_capacity(sizes.len());
+    !sizes
+        .iter()
+        .all(|(a, id, _)| seen.insert((*a == TableAxis::Row, id.as_str())))
 }
 
 /// Vrai si chaque taille demandée vaut déjà la taille lue.
@@ -285,7 +294,9 @@ impl Document {
             .map(|(l, s)| (TableAxis::Col, l.clone(), *s))
             .chain(rows.iter().map(|(l, s)| (TableAxis::Row, l.clone(), *s)))
             .collect();
-        if !line_sizes_ok(&raw, &sizes) {
+        // Défaut T2a : une ligne citée deux fois est refusée (le contrôle lirait la dernière taille, l'écriture la
+        // première différente).
+        if repeats_line(&sizes) || !line_sizes_ok(&raw, &sizes) {
             return Err(CommandError::BadTable);
         }
         if line_sizes_same(&raw, &sizes) {
@@ -298,6 +309,45 @@ impl Document {
             self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
         };
         Ok(self.table_done_with(page, id, moved))
+    }
+
+    /// T5 : retire les éléments `ids` placés sous le tableau `table` de `page` et les réinsère juste au-dessus de lui,
+    /// dans l'ordre de la pile (`reinsert_kept`, même transaction : une étape).
+    fn lift_above(
+        &self,
+        txn: &mut TransactionMut,
+        page: &str,
+        table: &str,
+        ids: &HashSet<String>,
+    ) {
+        let Some(elements) = self.page_elements(&*txn, page) else {
+            return;
+        };
+        let at = |want: &dyn Fn(&str) -> bool| -> Vec<(u32, MapRef)> {
+            elements
+                .iter(&*txn)
+                .enumerate()
+                .filter_map(|(i, o)| match o {
+                    Out::YMap(m) => out_string(m.get(&*txn, "id"))
+                        .filter(|id| want(id))
+                        .map(|_| (i as u32, m)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let Some(ti) = at(&|id| id == table).first().map(|(i, _)| *i) else {
+            return;
+        };
+        let moves: Vec<(u32, MapPrelim)> = at(&|id| ids.contains(id))
+            .into_iter()
+            .filter(|(i, _)| *i < ti)
+            .map(|(i, m)| (i, m.as_prelim(&*txn)))
+            .collect();
+        if moves.is_empty() {
+            return;
+        }
+        let to = ti + 1 - moves.len() as u32;
+        crate::copy::reinsert_kept(&elements, txn, moves, to);
     }
 
     /// `PlaceInCell` (D3) : refus dans l'ordre du plan (T1a) ; puis une transaction : tailles et suivi des autres objets
@@ -414,6 +464,11 @@ impl Document {
                         f.element.remove(&mut txn, "cell");
                     }
                 }
+            }
+            // T5 : les objets logés situés sous le tableau visé montent juste au-dessus de lui, ordre gardé. Après
+            // l'écriture de `matrix` et `cell` : la recopie de `reinsert_kept` emporte tous les champs, lien compris.
+            if let Some(l) = cell {
+                self.lift_above(&mut txn, &page, &l[0], &skip);
             }
         }
         touched.sort();
@@ -853,7 +908,7 @@ mod tests {
         );
     }
 
-    // Sans T5 : une copie n'est jamais liée au tableau d'origine.
+    // T5 : une copie n'est jamais liée au tableau d'origine (elle vise le tableau copié).
     #[test]
     fn copy_drops_cell_link() {
         let mut d = Document::blank();

@@ -687,6 +687,8 @@ struct Cut {
     style: StrokeStyle,
     pieces: Vec<Vec<InkPoint>>,
     group: Option<Any>,
+    /// personnalisation-3 (T5) : lien de case du trait coupé, valeur brute recopiée telle quelle sur chaque morceau.
+    cell: Option<Any>,
     /// OG11 (G12) : clés d'aspect du trait coupé, valeurs brutes recopiées telles quelles sur chaque morceau.
     look: Vec<(&'static str, Any)>,
 }
@@ -1615,6 +1617,10 @@ impl Document {
                             Some(Out::Any(a)) => Some(a),
                             _ => None,
                         },
+                        cell: match e.get(&txn, "cell") {
+                            Some(Out::Any(a)) => Some(a),
+                            _ => None,
+                        },
                         look: LOOK_KEYS
                             .iter()
                             .filter_map(|k| match e.get(&txn, k) {
@@ -1649,6 +1655,10 @@ impl Document {
                     // Z1 : un morceau reste dans le groupe du trait coupé (valeur recopiée telle quelle).
                     if let Some(g) = &cut.group {
                         prelim.insert("group".into(), In::Any(g.clone()));
+                    }
+                    // personnalisation-3 : un morceau reste dans la case du trait coupé.
+                    if let Some(c) = &cut.cell {
+                        prelim.insert("cell".into(), In::Any(c.clone()));
                     }
                     elements.insert(&mut txn, cut.index + k as u32, prelim);
                     change.ids.push(id);
