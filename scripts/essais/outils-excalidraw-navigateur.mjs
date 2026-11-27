@@ -673,21 +673,14 @@ async function addDiamondToBar(page) {
 /** Cibles de 44 px et netteté § 10 (2x) de l'icône Losange (ajoutée à la barre) et du bouton « Modifier les points ». */
 async function cibles2a(browser, base, tmp) {
   const { ctx, page, cdp, errors } = await poseAD(browser, base, tmp, "cibles2a", { scale: 2 });
-  await addDiamondToBar(page);
-  await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
-  await tool(page, "select");
-  await tapStage(page, 860, 300);
-  await waitAttr(page, "data-selection", "1");
+  const POINTS = `${OPT} [data-option-value="line-edit"]`;
   const mesures = [];
-  for (const [nom, sel] of [["Losange", item("diamond")], ["Modifier les points", `${OPT} [data-option-value="line-edit"]`]]) {
+  const fr = [];
+  /** Cible (≥ 44 px) puis netteté de l'icône d'un bouton ; `first` : rangé en tête, l'ordre des relevés reste Losange d'abord. */
+  const measure = async (nom, fnom, sel, first) => {
     const bb = await page.locator(sel).first().boundingBox();
     if (bb === null) throw new Echec(`cible ${nom} : introuvable (${sel})`);
     check(bb.width >= 43.5 && bb.height >= 43.5, `cible ${nom} : ${Math.round(bb.width)} × ${Math.round(bb.height)} px (≥ 44)`);
-    mesures.push(`${nom} ${Math.round(bb.width)}x${Math.round(bb.height)}`);
-  }
-  lire("cibles2a", mesures.join(" ; "));
-  const fr = [];
-  for (const [nom, sel] of [["diamond", item("diamond")], ["edit-points-forme", `${OPT} [data-option-value="line-edit"]`]]) {
     await page.locator(sel).first().scrollIntoViewIfNeeded();
     await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
     await frames(page);
@@ -695,9 +688,20 @@ async function cibles2a(browser, base, tmp) {
     const px = await pixelsOf(page, box);
     const { ink } = await colorsOf(page, sel);
     const f = fringes(px, [px.data[0], px.data[1], px.data[2]], rgbOf(ink));
-    fr.push(`${nom} ${f}`);
-    console.log(`netteté — ${nom} : frange ${f}`);
-  }
+    console.log(`netteté — ${fnom} : frange ${f}`);
+    mesures[first ? "unshift" : "push"](`${nom} ${Math.round(bb.width)}x${Math.round(bb.height)}`);
+    fr[first ? "unshift" : "push"](`${fnom} ${f}`);
+  };
+  // « Modifier les points » d'abord, sur la forme touchée ; puis le Losange, ajouté à la barre, qui la refait descendre
+  // d'une rangée à 1280 px (OG19) : plus aucun toucher sur la scène après lui.
+  await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
+  await tool(page, "select");
+  await tapStage(page, 860, 300);
+  await waitAttr(page, "data-selection", "1");
+  await measure("Modifier les points", "edit-points-forme", POINTS, false);
+  await addDiamondToBar(page);
+  await measure("Losange", "diamond", item("diamond"), true);
+  lire("cibles2a", mesures.join(" ; "));
   check(fr.every((m) => m.endsWith(" 0")), `netteté § 10 : 0 frange colorée (${fr.join(" ; ")})`);
   void cdp;
   check(errors.length === 0, "cibles2a : aucune erreur dans la page");
