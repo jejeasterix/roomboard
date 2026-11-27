@@ -2290,7 +2290,10 @@ pub(crate) mod tests {
         let (p, [a, b, c, e]) = four(&mut d);
         let n = writes(&d);
         assert_eq!(restack(&mut d, &[&a, &b], 3), Err(CommandError::BadIndex));
-        assert_eq!(restack(&mut d, &[&a], u32::MAX), Err(CommandError::BadIndex));
+        assert_eq!(
+            restack(&mut d, &[&a], u32::MAX),
+            Err(CommandError::BadIndex)
+        );
         assert_eq!(restack(&mut d, &[], 0), Err(CommandError::BadIndex));
         assert_eq!(
             restack(&mut d, &[&a, &"absent".to_string()], 0),

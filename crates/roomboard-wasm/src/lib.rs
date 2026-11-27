@@ -1226,6 +1226,12 @@ impl Document {
         to_js(&self.duplicate_page_inner(page).map_err(cmd_err)?)
     }
 
+    /// Ordre des objets (décision 16) : les `ids` en un bloc dont le bas est au rang `to` (0 = arrière-plan), ids
+    /// gardés, une étape ; même ordre : aucune ; pages mêlées : Error « objets de pages différentes ».
+    pub fn restack(&mut self, ids: Vec<String>, to: u32) -> Result<JsValue, JsError> {
+        to_js(&self.restack_inner(ids, to).map_err(cmd_err)?)
+    }
+
     pub fn commit_stroke(
         &mut self,
         page: &str,
@@ -2049,6 +2055,10 @@ impl Document {
         self.run(Command::DuplicatePage {
             page: page.to_string(),
         })
+    }
+
+    pub fn restack_inner(&mut self, ids: Vec<String>, to: u32) -> Result<Change, CommandError> {
+        self.run(Command::Restack { ids, to })
     }
 
     pub fn commit_stroke_inner(
@@ -3803,6 +3813,44 @@ mod tests {
     }
 
     #[test]
+    fn restack_through_the_bridge_keeps_ids_in_one_step() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let [a, b, c] = [100.0, 200.0, 300.0].map(|y| {
+            d.commit_stroke_inner(&p, &[100.0, y, 0.5, 500.0, y, 0.5], "#000000", 4.0)
+                .expect("trait")
+                .ids[0]
+                .clone()
+        });
+        let ch = d.restack_inner(vec![a.clone()], 2).expect("premier plan");
+        assert_eq!((ch.pages, ch.ids), (vec![p.clone()], vec![a.clone()]));
+        assert_eq!(
+            d.core.element_ids(&p),
+            vec![b.clone(), c.clone(), a.clone()]
+        );
+        d.undo_inner();
+        assert_eq!(
+            d.core.element_ids(&p),
+            vec![a.clone(), b.clone(), c.clone()]
+        );
+        assert!(d
+            .restack_inner(vec![a.clone()], 0)
+            .expect("même ordre")
+            .pages
+            .is_empty());
+        let q = d.add_page_after_inner(Some(p.clone())).expect("page").pages[0].clone();
+        let x = d
+            .commit_stroke_inner(&q, &[100.0, 100.0, 0.5, 500.0, 100.0, 0.5], "#000000", 4.0)
+            .expect("trait")
+            .ids[0]
+            .clone();
+        assert_eq!(
+            d.restack_inner(vec![a, x], 0),
+            Err(CommandError::MixedPages)
+        );
+    }
+
+    #[test]
     fn page_mode_add_duplicate_and_blank_with_through_the_bridge() {
         let mut d = Document::blank_with(Some(PageLayout::Portrait));
         let p = d.page_ids()[0].clone();
@@ -3813,7 +3861,8 @@ mod tests {
             .pages[0]
             .clone();
         assert_eq!(d.core.page(&q).expect("page").mode, "infinite");
-        d.set_page_mode_inner(&p, PageLayout::Landscape).expect("mode");
+        d.set_page_mode_inner(&p, PageLayout::Landscape)
+            .expect("mode");
         assert_eq!(d.core.page(&p).expect("page").height, 1080.0);
         let c = d.duplicate_page_inner(&q).expect("copie");
         assert_eq!(d.page_ids(), vec![p, q, c.pages[0].clone()]);
