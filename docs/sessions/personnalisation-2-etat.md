@@ -1,10 +1,10 @@
 # État — personnalisation-2
 
-Statut : en cours — lot 1 en fusion (OG4 et OG5 intégrés), lot 2 sur feat/personnalisation-2b (poussée, non fusionnée)
+Statut : arrêté (borne horaire) — lot 1 clos et fusionné (PR #63, main 23b23c1) + correctif T30 ; lot 2 sur feat/personnalisation-2b, non fusionné
 Gabarit : chantier (18 tâches : lot 1 = 10, lot 2 = 8 ; lot 1 fusionnable seul)
 Objectif : RoomBoard reçoit un panneau d'options par outil et un menu général ☰ copiés du comportement d'Excalidraw, remplis de nos commandes, tactile d'abord et clavier ensuite.
 Avancement : lot 1 clos (T1–T11 + correctifs T2b, T4b, T8b, T9b, T20–T27) ; lot 2 : T12–T17 + T28 fusionnés dans feat/personnalisation-2b, T18 (lien) non fait, T19 en cours
-Étage : 4 (lot 1) — depuis 2026-11-27 13:06
+Étage : 4 — depuis 2026-11-27 14:15
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -21,6 +21,11 @@ Tailles Wasm à 45484db : principal 1 375 581 o (plafond 1 572 864) · formats 2
 ## Fin du lot 1
 verifier.sh --e2e sur 75cfe6d : e2e OK, OK · cargo 1410 · web 3765 (184 fichiers) · cli 265 (29) · Wasm principal 1 394 336 o, formats 2 794 511 o · personnalisation-2 : OK, CLI : OK
 Double relecture : conformité + qualité UI + qualité TS, aucun bloquant ; majeurs corrigés par T20, T21 ; essais anciens : amorce foldOptions dans s34, c3, c4, c6a, c8, c13 ; T22 (menu sous le panneau, panneau compact, calage, design-l2/l3), T24, T25, T26.
+
+## Fin du lot 1
+PR #63 fusionnée par merge --no-ff local, main 23b23c1. verifier.sh --e2e sur 09a7449 : e2e OK, OK · cargo 1487 · web 4033 (195) · cli 282 (30) · Wasm 1 429 407 / 2 794 527 o.
+Correctif T30 (panneau sous la rangée de contexte d'OG4) : branche fix/options-panel-context-row, voir sa PR.
+Restes : captures apres-mixte et apres-replie d'avant OG4 (le mode --captures échoue sur la vue mixte) ; 22 commits poussés portent Co-Authored-By Sonnet.
 
 ## Lot 2 — reprise
 Branche poussée : feat/personnalisation-2b (c98c9b2), base lot 1 avant l'intégration d'OG4/OG5. Contient T12 (champs fillStyle, pointes, textAlign, link), T13 (Restack minimal), T14 (rendu hachures, pointes, alignement, polices), T15 (panneau : Remplissage, Texte, Pointes, Disposition, raccourcis Ctrl+(Maj+)↑/↓), T16 (sélecteur de couleur, S et G), T17 (Aide « ? », Effacer la page, Ctrl+Maj+E export PDF), T28 (outils de création lisent le style lot 2). Preuves rejouées par tâche ; aucune suite complète, aucune relecture de lot.
@@ -53,7 +58,7 @@ toutes les tâches terminées (aucune bloquée) · double relecture sans bloquan
 - mode de page, barre latérale, barre des pages, ordre des objets dans le cœur (OG4) ; fonds de page (OG5)
 
 ## Portes
-ouvertes : — · passées : —
+ouvertes : — · passées : aucune (merge sans go, profil « Porte avant merge : non »)
 
 ## Pièges trouvés
 - OG4 (feat/personnalisation-1a) touche commands.rs, api.ts, fake-core.ts, ops.ts, keys.ts, toolbar-profiles.ts, App.tsx, rb.css, icons.ts, SelectionRow.tsx… ; OG5 (1b) commands.rs, element.rs, api.ts, rb.css, App.tsx : relire avant le rebase final.
