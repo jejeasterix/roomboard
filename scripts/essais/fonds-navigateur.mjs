@@ -120,6 +120,9 @@ async function s1(page, captures) {
   await openDialog(page);
   check((await page.getAttribute(SECTION("colors"), "aria-checked")) === "true", "S1 : la fenêtre s'ouvre sur « Couleurs »");
   if (captures) await shot(page, "apres-fenetre-couleurs", DIALOG);
+  check((await page.locator(`${DIALOG} [data-fonds="notice"][role="status"]`).count()) === 1, "S1 : la région d'avis (role=status) est montée dans la fenêtre");
+  for (let i = 0; i < 25; i++) await page.keyboard.press("Tab");
+  check(await page.evaluate((sel) => document.querySelector(sel)?.contains(document.activeElement) ?? false, DIALOG), "S1 : après 25 Tab, le focus reste dans la fenêtre");
   await page.tap(SECTION("lines"));
   await settle(page);
   if (captures) await shot(page, "apres-fenetre-lignes", DIALOG);
@@ -240,7 +243,7 @@ async function s4(page, tmp) {
   const file = join(tmp, "fonds.roomboard");
   await (await dl).saveAs(file);
   const asset = l.split("|image:")[1];
-  check(zipEntries(readFileSync(file)).some((n) => n.startsWith(`assets/${asset}`)), "S4 : l'image du fond est dans assets/ du fichier enregistré");
+  check([...zipEntries(readFileSync(file)).keys()].some((n) => n.startsWith(`assets/${asset}`)), "S4 : l'image du fond est dans assets/ du fichier enregistré");
   await dropFile(page, "#stage", "fonds.roomboard", readFileSync(file), "");
   await page.waitForFunction((k) => document.querySelector("#stage")?.dataset.look?.includes(k) ?? false, `|image:${asset}`, { timeout: 30000 }).catch(() => undefined);
   const reopened = await allLooks(page, 2);
