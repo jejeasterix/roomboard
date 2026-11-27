@@ -19,6 +19,9 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("delete", "Édition", "Supprimer", "Suppr"),
   s("escape", "Édition", "Désélectionner", "Échap"),
   s("link", "Édition", "Lien", "Ctrl+K"),
+  s("line-edit", "Édition", "Modifier les points", "Ctrl+Entrée"),
+  s("linked-node", "Édition", "Objet relié", "Alt+Maj+↑ ↓ ← →"),
+  s("no-binding", "Édition", "Flèche sans liaison", "Ctrl tenu"),
   s("front", "Disposition", "Premier plan", "Ctrl+Maj+↑"),
   s("forward", "Disposition", "Avancer", "Ctrl+↑"),
   s("backward", "Disposition", "Reculer", "Ctrl+↓"),
@@ -34,10 +37,10 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("cell-place", "Tableau", "Loger la sélection dans la case", "Alt+Entrée"),
   s("table-fit", "Tableau", "Agrandir ou rétrécir pour les objets", "Alt+F"),
   s("cell-image", "Tableau", "Mettre l'image logée en fond", "Alt+I"),
-  s("table-col-wider", "Tableau", "Élargir la colonne", "Alt+Maj+→"),
-  s("table-col-narrower", "Tableau", "Rétrécir la colonne", "Alt+Maj+←"),
-  s("table-row-taller", "Tableau", "Agrandir la ligne", "Alt+Maj+↓"),
-  s("table-row-shorter", "Tableau", "Réduire la ligne", "Alt+Maj+↑"),
+  s("table-col-wider", "Tableau", "Élargir la colonne", "Ctrl+Alt+→"),
+  s("table-col-narrower", "Tableau", "Rétrécir la colonne", "Ctrl+Alt+←"),
+  s("table-row-taller", "Tableau", "Agrandir la ligne", "Ctrl+Alt+↓"),
+  s("table-row-shorter", "Tableau", "Réduire la ligne", "Ctrl+Alt+↑"),
   s("cell-unplace", "Tableau", "Sortir la sélection de sa case", "Alt+Maj+Entrée"),
   s("page-prev", "Pages", "Page précédente", "Pg préc"),
   s("page-next", "Pages", "Page suivante", "Pg suiv"),
@@ -52,12 +55,12 @@ export function shortcutText(id: string, mac: boolean): string | null {
   return mac ? MAC.reduce((t, [a, b]) => t.split(a).join(b), hit.keys) : hit.keys;
 }
 /** Noms `aria-keyshortcuts` (WAI-ARIA) des parties d'un raccourci de la table. */
-const ARIA: Readonly<Record<string, string>> = { Maj: "Shift", Alt: "Alt", Suppr: "Delete", "Échap": "Escape", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown" };
+const ARIA: Readonly<Record<string, string>> = { Maj: "Shift", Alt: "Alt", Suppr: "Delete", "Échap": "Escape", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight", "Entrée": "Enter" };
 /** OG19 : valeur `aria-keyshortcuts` d'un raccourci (Ctrl → Control, ou Meta sous macOS) ; null pour un geste
  *  (« Espace + glisser »), une liste (« Ctrl+B, I, U ») ou un id absent de la table. */
 export function ariaShortcut(id: string, mac: boolean): string | null {
   const keys = SHORTCUTS.find((x) => x.id === id)?.keys;
-  if (keys === undefined || keys.includes(",") || keys.includes(" + ")) return null;
+  if (keys === undefined || keys.includes(",") || keys.includes(" + ") || /[↑↓←→] [↑↓←→]/.test(keys)) return null;
   return keys
     .split("+")
     .map((k) => (k === "Ctrl" ? (mac ? "Meta" : "Control") : Object.hasOwn(ARIA, k) ? ARIA[k]! : k))

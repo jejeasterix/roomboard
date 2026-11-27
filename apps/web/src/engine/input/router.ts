@@ -42,6 +42,8 @@ export interface RouterDeps {
   ring?(c: EraserRingView | null): void;
   readonly gestures: GestureSink;
   readonly view: ViewSink;
+  /** OG12 (n° 29, DA-6) : doigt tardif tenu pendant un geste au doigt = Maj ; absent : ignoré comme avant. */
+  modifier?(held: boolean): void;
 }
 
 export interface Router {
@@ -65,6 +67,7 @@ interface Track {
   tool: DrawTool;
   readonly pointerType: string;
   readonly startT: number;
+  late?: boolean;
   x: number;
   y: number;
   /** OG25 : dernière géométrie reçue (px CSS) ; 0 × 0 sans géométrie. */
@@ -106,6 +109,25 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     const a = p[0];
     const b = p[1];
     return a && b ? [a[1], b[1]] : null;
+  };
+
+  /** OG12 (n° 29) : seul un geste au doigt dont l'outil n'est ni le stylo ni la gomme donne ce sens au doigt tardif ;
+   *  le doigt garde le rôle `ignored`. */
+  let lateCount = 0;
+  const lateFinger = (drawing: Track, track: Track): void => {
+    if (drawing.tool === "pen" || drawing.tool === "eraser" || deps.modifier === undefined) return;
+    track.late = true;
+    if (lateCount++ === 0) deps.modifier(true);
+  };
+  /** OG12 : le geste au doigt finit (fermé, ou avorté par la paume d'OG25) : ses doigts tardifs ne valent plus Maj ;
+   *  `which` : seulement ceux-là (doigts tardifs entrés dans la gomme). */
+  const releaseLate = (which: (t: Track) => boolean = () => true): void => {
+    for (const [, o] of tracks) {
+      if (o.late && which(o)) {
+        o.late = false;
+        if (--lateCount === 0) deps.modifier?.(false);
+      }
+    }
   };
 
   const memberBoxes = (): ContactBox[] => {
@@ -178,6 +200,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     if (!group.some(([, t]) => isLargeContact({ width: t.w, height: t.h })) && !isTightCluster(boxes)) return false;
     if (deps.gesturesToTools?.() === false) return false;
     const id = nextPalmId--;
+    const aborted = group.some(([, t]) => t.role === "draw");
     for (const [pid, t] of group) {
       if (t.role === "draw") deps.gestures.close(pid, "abort");
       else if (t.role === "pan" && (t.panX !== 0 || t.panY !== 0)) deps.view.panBy(-t.panX, -t.panY);
@@ -185,6 +208,9 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       t.panX = 0;
       t.panY = 0;
     }
+    // OG12 × OG25 (A-1, A-2) : la paume gagne sur le doigt tardif, Maj retombe avant la gomme ; un trait hors du groupe
+    // garde son geste et son Maj, sauf le doigt tardif entré dans la gomme.
+    releaseLate(aborted ? undefined : (o) => o.role === "palm");
     // Hors du groupe, défilement et pincement s'arrêtent jusqu'au lever : la vue ne bouge plus (règle 5, revue T11).
     for (const [, t] of touches("pan")) t.role = "spent";
     for (const [, t] of touches("pinch")) t.role = "spent";
@@ -254,7 +280,10 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       track.role = "pinch";
       return;
     }
-    if (drawing) return; // second doigt tardif : ignoré, le trait continue
+    if (drawing) {
+      lateFinger(drawing[1], track); // OG12 : doigt tardif = Maj pendant un geste au doigt, jamais le stylo ni la gomme
+      return;
+    }
     if (tool === "hand" || held || (seenPen && opts.fingerPansAfterPen)) {
       track.role = "pan";
       return;
@@ -325,6 +354,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     const t = tracks.get(g.pointerId);
     if (!t) return;
     tracks.delete(g.pointerId);
+    if (t.late && --lateCount === 0) deps.modifier?.(false);
     if (t.role === "palm") {
       if (palm === null) return;
       palm.members.delete(g.pointerId);
@@ -336,6 +366,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     if (t.role === "draw") {
       const how: CloseReason = g.palm === true ? "abort" : g.kind === "cancel" ? "cancel" : "end";
       deps.gestures.close(g.pointerId, how);
+      releaseLate();
     } else if (t.role === "pinch") {
       for (const [, other] of touches("pinch")) other.role = "ignored";
     }

@@ -30,6 +30,7 @@ import type {
   TextAttrs,
   TextSpan,
 } from "./api";
+import type { BindHit, LineBinding } from "./api";
 import { MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, UNKNOWN_BOX } from "./api";
 import { toLook, type Look } from "./look";
 import { isAssetId } from "./asset-store";
@@ -224,7 +225,17 @@ export function toElementView(v: unknown): ElementView | null {
         throw new Error(ELEMENT);
       }
       if (fill !== undefined && fill !== null && typeof fill !== "string") throw new Error(ELEMENT);
-      return { ...base, kind, style, shape: { shape, w, h, fill: typeof fill === "string" ? fill : null } };
+      const points = s["points"];
+      if (points !== undefined && !(Array.isArray(points) && points.length % 2 === 0 && points.every((x) => typeof x === "number"))) throw new Error(ELEMENT);
+      const bindingOf = (b: unknown): LineBinding | undefined => {
+        if (b === undefined || b === null) return undefined;
+        if (!isRecord(b) || typeof b["id"] !== "string" || typeof b["fx"] !== "number" || typeof b["fy"] !== "number") throw new Error(ELEMENT);
+        return { id: b["id"], fx: b["fx"], fy: b["fy"] };
+      };
+      const start = bindingOf(s["start"]);
+      const end = bindingOf(s["end"]);
+      return { ...base, kind, style, shape: { shape, w, h, fill: typeof fill === "string" ? fill : null,
+        ...(Array.isArray(points) && points.length > 0 ? { points: points as number[] } : {}), ...(start ? { start } : {}), ...(end ? { end } : {}) } };
     }
     case "text": {
       const style = toStyle(v["style"]);
@@ -548,8 +559,24 @@ class WasmCoreDocument implements CoreDocument {
   elementIds(page: string): string[] { return this.d.element_ids(page); }
   elementIdsOfKind(page: string, kind: string): readonly string[] { return this.d.element_ids_of_kind(page, kind); }
 
+  bindTarget(page: string, x: number, y: number, tol: number): BindHit | null {
+    const v: unknown = this.d.bind_target(page, x, y, tol);
+    if (v === null || v === undefined) return null;
+    if (!isRecord(v) || typeof v["id"] !== "string" || typeof v["onOutline"] !== "boolean") throw new Error(ELEMENT);
+    const f = v["fixed"];
+    const a = v["anchors"];
+    if (!Array.isArray(f) || f.length !== 2 || !Array.isArray(a) || a.length !== 4) throw new Error(ELEMENT);
+    return { id: v["id"], fixed: [Number(f[0]), Number(f[1])], onOutline: v["onOutline"], anchors: a.map((p: unknown) => (Array.isArray(p) ? [Number(p[0]), Number(p[1])] as const : [0, 0] as const)) };
+  }
+
   apply(cmd: Command): Change {
     switch (cmd.type) {
+      case "SetLinePoints":
+        return toChange(this.d.set_line_points(cmd.id, new Float64Array(cmd.points),
+          cmd.start?.id, cmd.start ? new Float64Array([cmd.start.fx, cmd.start.fy]) : undefined,
+          cmd.end?.id, cmd.end ? new Float64Array([cmd.end.fx, cmd.end.fy]) : undefined));
+      case "AddLinked":
+        return toChange(this.d.add_linked(cmd.id, cmd.dir));
       case "AddPage": return toChange(this.d.add_page_after(cmd.after, cmd.mode));
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));
@@ -569,7 +596,10 @@ class WasmCoreDocument implements CoreDocument {
         const l = cmd.look;
         return toChange(
           this.d.add_shape(cmd.page, cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1, cmd.style.color, cmd.style.width, cmd.fill ?? undefined,
-            ...lookArgs(l)),
+            ...lookArgs(l),
+            l?.elbowed, cmd.points && cmd.points.length > 0 ? new Float64Array(cmd.points) : undefined,
+            cmd.start?.id, cmd.start ? new Float64Array([cmd.start.fx, cmd.start.fy]) : undefined,
+            cmd.end?.id, cmd.end ? new Float64Array([cmd.end.fx, cmd.end.fy]) : undefined),
         );
       }
       case "SetText": {
@@ -590,6 +620,7 @@ class WasmCoreDocument implements CoreDocument {
           // T12 : paires `*_set`, valeur du lot 2.
           "fillStyle" in p, p.fillStyle ?? undefined, "startArrowhead" in p, p.startArrowhead ?? undefined,
           "endArrowhead" in p, p.endArrowhead ?? undefined, "textAlign" in p, p.textAlign ?? undefined, "link" in p, p.link ?? undefined,
+          "elbowed" in p, p.elbowed ?? undefined,
         ));
       }
       case "Transform":

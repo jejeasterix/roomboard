@@ -321,6 +321,7 @@ fn grouped_image_fills_alone_and_keeps_its_group() {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: roomboard_core::linear::LineInit::default(),
         })
         .expect("forme")
         .ids[0]

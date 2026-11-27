@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, cellKey, editAction, isPanKey, keyAction, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, cellKey, editAction, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -12,11 +12,12 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   copy: ["native", "c"], cut: ["native", "x"], paste: ["native", "v"], pan: ["pan", " "], bold: ["rich", "b"],
   "stroke-picker": ["object", "stroke-picker"], "fill-picker": ["object", "fill-picker"], link: ["object", "link"],
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
+  "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
   "palm-eraser": ["app", "palm-eraser"],
   "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
   "table-col-wider": ["table", "col-wider"], "table-col-narrower": ["table", "col-narrower"], "table-row-taller": ["table", "row-taller"], "table-row-shorter": ["table", "row-shorter"],
 };
-const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown" };
+const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "Entrée": "Enter" };
 const ARROWS: Readonly<Record<string, string>> = { "→": "ArrowRight", "←": "ArrowLeft", "↑": "ArrowUp", "↓": "ArrowDown" };
 /** Raccourci de l'outil Tableau (Alt ou Ctrl, Maj, lettre par `code`, flèche) lu comme un `KeyLike`. */
 const pressTable = (keys: string): KeyLike => {
@@ -49,6 +50,9 @@ describe("shortcuts", () => {
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
       else if (by === "cell") expect(cellKey({ ...press("Enter"), code: s.keys.endsWith("Entrée") ? "Enter" : `Key${s.keys.slice(-1)}`, altKey: true, shiftKey: s.keys.includes("Maj") }), s.id).toBe(value);
       else if (by === "table") expect(tableKey(pressTable(s.keys)), s.id).toBe(value);
+      else if (by === "lineEdit") expect(lineEditKey(e), s.id).toBe(true);
+      else if (by === "linked") expect(linkedKey({ ...press("→"), key: "ArrowRight", altKey: true, shiftKey: true }), s.id).toBe(value);
+      else if (by === "ctrlHeld") expect(isCtrlKey({ key: "Control" }), s.id).toBe(true);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
       else {
         // Copier, couper, coller (événements natifs) et Ctrl+B (rich-edit) : aucun reconnaisseur ne les vole.
@@ -100,5 +104,16 @@ describe("shortcuts", () => {
   it("ids uniques", () => {
     expect(new Set(SHORTCUTS.map((s) => s.id)).size).toBe(SHORTCUTS.length);
     expect(SHORTCUTS.map((s) => s.id).sort()).toEqual(Object.keys(EXPECT).sort());
+  });
+});
+
+describe("OG12 : raccourcis des lignes", () => {
+  it("line-edit, linked-node et no-binding existent", () => {
+    for (const id of ["line-edit", "linked-node", "no-binding"]) expect(SHORTCUTS.some((x) => x.id === id), id).toBe(true);
+  });
+  it("ariaShortcut : line-edit Control+Enter / Meta+Enter ; linked-node (liste de touches) : null", () => {
+    expect(ariaShortcut("line-edit", false)).toBe("Control+Enter");
+    expect(ariaShortcut("line-edit", true)).toBe("Meta+Enter");
+    expect(ariaShortcut("linked-node", false)).toBeNull();
   });
 });

@@ -245,3 +245,42 @@ describe("board-io : bornes (C13 lot 2)", () => {
     expect([MAX_POINTS, MAX_SPANS, MAX_GROUP_DEPTH]).toEqual([1_000_000, 10_000, 256]);
   });
 });
+
+describe("board-io : lignes à plusieurs points (OG12 T6)", () => {
+  /** Document dont l'élément `id` est remplacé par une forme à points (le faux cœur ne les porte pas encore). */
+  const withShape = (shape: "line" | "arrow", points: number[], kind: "iwb" | "ubz" = "iwb") => {
+    const draft = fakeCore.blank();
+    const pid = draft.pageIds()[0]!;
+    draft.apply({ type: "AddShape", page: pid, shape, x0: 100, y0: 100, x1: 200, y1: 100, style: { color: "#112233", width: 2 }, fill: null });
+    const real = draft.elementIds(pid)[0]!;
+    const doc = Object.create(draft) as typeof draft;
+    doc.element = (id: string) => {
+      const el = draft.element(id);
+      return el !== null && el.kind === "shape" ? { ...el, shape: { ...el.shape, points } } : el;
+    };
+    void real;
+    return boardListOf(doc, createAssetStore(fakeHasher), kind);
+  };
+  const first = (r: Awaited<ReturnType<typeof withShape>>) => decodeBoardList(r.list.ops, r.list.texts)[0]!.objects[0]!;
+
+  it("ligne à plusieurs points : polyligne", async () => {
+    const r = await withShape("line", [50, 40]);
+    const o = first(r) as Extract<BoardObject, { kind: "stroke" }>;
+    expect(o.kind).toBe("stroke");
+    expect(o.points).toEqual([0, 0, 0.5, 50, 40, 0.5, 100, 0, 0.5]);
+    expect([o.color, o.width]).toEqual(["#112233", 2]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("flèche à points : même polyligne et avis « flèche à plusieurs points écrite sans pointe »", async () => {
+    const r = await withShape("arrow", [50, 40]);
+    expect(first(r).kind).toBe("stroke");
+    expect(r.warnings).toEqual(["1 flèche à plusieurs points écrite sans pointe"]);
+  });
+
+  it("flèche droite : kind shape comme avant", async () => {
+    const r = await withShape("arrow", []);
+    expect(first(r).kind).toBe("shape");
+    expect(r.warnings).toEqual([]);
+  });
+});

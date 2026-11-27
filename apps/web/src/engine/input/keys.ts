@@ -31,6 +31,20 @@ export function isPanKey(e: KeyLike): boolean {
   return e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && !inEditable(e.target);
 }
 
+export type LinkDir = "up" | "down" | "left" | "right";
+/** OG12 (n° 21) : Ctrl+Entrée (Cmd+Entrée sous macOS) entre dans « Modifier les points » ; hors champ, hors IME. */
+export function lineEditKey(e: KeyLike): boolean {
+  return e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.isComposing && !inEditable(e.target);
+}
+const LINK_KEYS: Readonly<Record<string, LinkDir>> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+/** OG12 (n° 28, H2) : Alt+Maj+flèche crée un objet relié ; Ctrl+flèche reste au rangement (OG14). */
+export function linkedKey(e: KeyLike): LinkDir | null {
+  if (e.isComposing || !e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey || inEditable(e.target)) return null;
+  return Object.hasOwn(LINK_KEYS, e.key) ? LINK_KEYS[e.key]! : null;
+}
+/** OG12 (n° 19) : touche Ctrl ou Cmd seule (tenue pendant un glisser). */
+export const isCtrlKey = (e: { readonly key: string }): boolean => e.key === "Control" || e.key === "Meta";
+
 export function keyAction(e: KeyLike): KeyAction | null {
   // Composition IME : la touche appartient à l'IME (D14). Alt Gr = Ctrl+Alt sous Windows : un caractère, pas un raccourci.
   if (e.isComposing || e.altKey) return null;
@@ -73,11 +87,11 @@ export function cellKey(e: KeyLike): CellKey | null {
 }
 
 export type TableKey = "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
-/** personnalisation-3 (H12) : touches de l'outil Tableau : Alt+Maj+→ ← largeur ± 8, Alt+Maj+↓ ↑ hauteur ± 8 ; hors champ,
- *  hors IME, sans Ctrl ni Cmd. */
+/** personnalisation-3 (H12) : touches de l'outil Tableau : Ctrl+Alt+→ ← largeur ± 8, Ctrl+Alt+↓ ↑ hauteur ± 8 (Alt+Maj+flèche est à l'objet relié, OG12) ; hors champ,
+ *  hors IME, sans Cmd ni Maj. */
 export function tableKey(e: KeyLike): TableKey | null {
   if (e.isComposing || e.metaKey || inEditable(e.target)) return null;
-  if (!e.altKey || e.ctrlKey || !e.shiftKey) return null;
+  if (!e.altKey || !e.ctrlKey || e.shiftKey) return null;
   if (e.key === "ArrowRight") return "col-wider";
   if (e.key === "ArrowLeft") return "col-narrower";
   if (e.key === "ArrowDown") return "row-taller";

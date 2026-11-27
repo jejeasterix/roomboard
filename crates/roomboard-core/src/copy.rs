@@ -21,6 +21,7 @@ use crate::document::{collect_out, insert_page, Document};
 use crate::element::{
     cell_link_to_any, out_string, out_transform, read_cell_link, transform_to_any, SCHEMA,
 };
+use crate::linear::End;
 
 /// Table ancien → neuf des ids de groupe, commune à toute une insertion (Z4).
 pub(crate) type IdMap = HashMap<String, String>;
@@ -59,8 +60,78 @@ fn elements_of<T: ReadTxn>(txn: &T, page: &MapRef) -> Vec<MapRef> {
     }
 }
 
-/// Recopie `from` (lus dans `src`) en haut de `into`, dans l'ordre : id neuf, groupes renumérotés par `ids`, lien de
-/// case relié au tableau copié, translation. Rend les ids neufs.
+/// Recopies de `from` (lus dans `src`), sans écrire : id neuf, groupes renumérotés par `ids`, lien de case relié au
+/// tableau copié, translation ; OG12 (n° 10) : `startBound` / `endBound` renvoyés vers la copie de leur cible quand elle
+/// est copiée aussi, retirés avec leur `*Fixed` sinon (`fixDuplicatedBindingsAfterDuplication` d'Excalidraw). Rend (id
+/// neuf, prélim), dans l'ordre. Moitié lecture de `copy_elements`, appelée seule par `AddLinked` avant sa transaction
+/// unique.
+pub(crate) fn copy_prelims<T: ReadTxn>(
+    src: &T,
+    from: &[MapRef],
+    ids: &mut IdMap,
+    dx: f64,
+    dy: f64,
+) -> Vec<(String, MapPrelim)> {
+    // personnalisation-3 (T5) : ids neufs générés d'abord (un objet passé sous son tableau est recopié avant lui), puis
+    // `cell[0]` remplacé par l'id neuf du tableau copié ; tableau absent de la copie : lien retiré. Un id neuf par
+    // élément, même si la source répète un id ; la table suit la première occurrence (liaisons OG12 comprises).
+    let mut fresh: HashMap<String, String> = HashMap::with_capacity(from.len());
+    let mut own: Vec<String> = Vec::with_capacity(from.len());
+    for e in from {
+        let id = yrs::uuid_v4().to_string();
+        if let Some(old) = out_string(e.get(src, "id")) {
+            fresh.entry(old).or_insert_with(|| id.clone());
+        }
+        own.push(id);
+    }
+    from.iter()
+        .zip(own)
+        .map(|(e, id)| {
+            let mut prelim = e.as_prelim(src);
+            prelim.insert("id".into(), In::from(id.as_str()));
+            if let Some(g) = prelim.get("group").and_then(|g| renumber(g, ids)) {
+                prelim.insert("group".into(), g);
+            }
+            // Lien illisible : recopié tel quel (U3).
+            if let Some(mut l) = read_cell_link(src, e) {
+                match fresh.get(&l[0]) {
+                    Some(t) => {
+                        l[0] = t.clone();
+                        prelim.insert("cell".into(), In::Any(cell_link_to_any(&l)));
+                    }
+                    None => {
+                        prelim.remove("cell");
+                    }
+                }
+            }
+            // Transformation illisible : gardée telle quelle.
+            if dx != 0.0 || dy != 0.0 {
+                if let Some(mut t) = out_transform(e.get(src, "transform")) {
+                    t[4] += dx;
+                    t[5] += dy;
+                    prelim.insert("transform".into(), In::Any(transform_to_any(&t)));
+                }
+            }
+            for end in [End::Start, End::End] {
+                let Some(old) = out_string(e.get(src, end.bound_key())) else {
+                    continue;
+                };
+                match fresh.get(&old) {
+                    Some(n) => {
+                        prelim.insert(end.bound_key().into(), In::from(n.as_str()));
+                    }
+                    None => {
+                        prelim.remove(end.bound_key());
+                        prelim.remove(end.fixed_key());
+                    }
+                }
+            }
+            (id, prelim)
+        })
+        .collect()
+}
+
+/// Recopie `from` (lus dans `src`) en haut de `into`, dans l'ordre, par `copy_prelims` ; rend les ids neufs.
 pub(crate) fn copy_elements<T: ReadTxn>(
     src: &T,
     from: &[MapRef],
@@ -70,43 +141,8 @@ pub(crate) fn copy_elements<T: ReadTxn>(
     dx: f64,
     dy: f64,
 ) -> Vec<String> {
-    // personnalisation-3 (T5) : ids neufs générés d'abord (un objet passé sous son tableau est recopié avant lui), puis
-    // `cell[0]` remplacé par l'id neuf du tableau copié ; tableau absent de la copie : lien retiré. Un id neuf par
-    // élément, même si la source répète un id ; la table suit la première occurrence.
-    let fresh: Vec<String> = from.iter().map(|_| yrs::uuid_v4().to_string()).collect();
-    let mut renamed: HashMap<String, String> = HashMap::with_capacity(from.len());
-    for (e, id) in from.iter().zip(&fresh) {
-        if let Some(old) = out_string(e.get(src, "id")) {
-            renamed.entry(old).or_insert_with(|| id.clone());
-        }
-    }
     let mut out = Vec::with_capacity(from.len());
-    for (e, id) in from.iter().zip(fresh) {
-        let mut prelim = e.as_prelim(src);
-        prelim.insert("id".into(), In::from(id.as_str()));
-        if let Some(g) = prelim.get("group").and_then(|g| renumber(g, ids)) {
-            prelim.insert("group".into(), g);
-        }
-        // Lien illisible : recopié tel quel (U3).
-        if let Some(mut l) = read_cell_link(src, e) {
-            match renamed.get(&l[0]) {
-                Some(t) => {
-                    l[0] = t.clone();
-                    prelim.insert("cell".into(), In::Any(cell_link_to_any(&l)));
-                }
-                None => {
-                    prelim.remove("cell");
-                }
-            }
-        }
-        // Transformation illisible : gardée telle quelle.
-        if dx != 0.0 || dy != 0.0 {
-            if let Some(mut t) = out_transform(e.get(src, "transform")) {
-                t[4] += dx;
-                t[5] += dy;
-                prelim.insert("transform".into(), In::Any(transform_to_any(&t)));
-            }
-        }
+    for (id, prelim) in copy_prelims(src, from, ids, dx, dy) {
         let n = into.len(dst);
         into.insert(dst, n, prelim);
         out.push(id);
@@ -412,6 +448,7 @@ mod tests {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: crate::linear::LineInit::default(),
         })
         .expect("forme")
         .ids[0]

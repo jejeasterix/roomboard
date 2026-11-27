@@ -845,6 +845,8 @@ impl Document {
             if let Some(h) = grow {
                 last.map.insert(&mut txn, "height", In::Any(Any::from(h)));
             }
+            // C3 : tableau agrandi : ses objets logés, puis ses lignes liées et celles des objets déplacés suivent, même
+            // étape (`follow_in`, après la translation).
             self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
         };
         Ok(self.table_done_with(page, id, moved))
@@ -880,6 +882,7 @@ impl Document {
         let moved = {
             let mut txn = self.transact_local();
             arr.insert(&mut txn, index, line_prelim(&line_id, size_key(axis), size));
+            // C1 : tableau élargi : ses objets logés, puis ses lignes liées et celles des objets déplacés suivent, même étape.
             self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
         };
         Ok(self.table_done_with(page, id, moved))
@@ -959,6 +962,7 @@ impl Document {
                     }
                 }
             }
+            // C3 : tableau réduit : ses objets logés, puis ses lignes liées et celles des objets déplacés suivent, même étape.
             self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
         };
         Ok(self.table_done_with(page, id, moved))
@@ -998,6 +1002,7 @@ impl Document {
                 l.map
                     .insert(&mut txn, "height", In::Any(Any::from(row_height)));
             }
+            // C1 : taille du tableau changée : ses objets logés, puis ses lignes liées et celles des objets déplacés suivent, même étape.
             self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
         };
         Ok(self.table_done_with(page, id, moved))

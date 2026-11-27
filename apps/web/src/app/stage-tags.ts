@@ -30,11 +30,11 @@ export interface StageExtras {
 }
 
 /** Attributs de `#stage` lus par les scénarios S3/S4, S1 de C10a (`table`), S1 à S4 de C10b (`tableMerges`, `tableShades`)
- *  C5 (`pixels`, `image`) C6b (`pot`) et C8 (`zones`, `zoneMs`, `zoneCells`). */
+ *  C5 (`pixels`, `image`) C6b (`pot`), C8 (`zones`, `zoneMs`, `zoneCells`) et OG12 (`lineEdit`, `bind`, `linePoints`). */
 export function stageTags(
   s: EngineState,
   extra: StageExtras = {},
-): Record<"page" | "pageMode" | "selection" | "bounds" | "tool" | "table" | "tableLinked" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image" | "pot" | "zones" | "zoneMs" | "zoneCells", string> {
+): Record<"page" | "pageMode" | "selection" | "bounds" | "tool" | "table" | "tableLinked" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image" | "pot" | "zones" | "zoneMs" | "zoneCells" | "lineEdit" | "bind" | "linePoints", string> {
   return {
     page: `${s.pageIndex + 1}/${s.pageCount}`,
     pageMode: s.pageLayout,
@@ -53,5 +53,9 @@ export function stageTags(
     zoneMs: extra.zoneMs ?? "",
     zoneCells: extra.zoneCells ?? "",
     image: extra.image ? `${Math.round(extra.image[0])}x${Math.round(extra.image[1])}` : "",
+    // OG12 T11 : ligne en « Modifier les points », cible surlignée, nombre de points choisis.
+    lineEdit: s.lineEditing ?? "",
+    bind: s.bindHint ?? "",
+    linePoints: String(s.linePointsSelected ?? 0),
   };
 }

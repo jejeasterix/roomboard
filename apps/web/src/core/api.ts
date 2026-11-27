@@ -82,7 +82,15 @@ export type Command =
       readonly fill: string | null;
       /** OG11 : aspect écrit dans la même étape (omis s'il est neutre). */
       readonly look?: Look;
+      /** OG12 (n° 12 a) : points intérieurs en monde ; liaisons (null ou absent : libre). */
+      readonly points?: readonly number[];
+      readonly start?: LineBinding | null;
+      readonly end?: LineBinding | null;
     }
+  /** OG12 : remplace tous les points (monde) et les liaisons d'une ligne ou flèche ; refus `BadPoints` (« points invalides … »), `BadShape` (« forme invalide … »). */
+  | { readonly type: "SetLinePoints"; readonly id: string; readonly points: readonly number[]; readonly start: LineBinding | null; readonly end: LineBinding | null }
+  /** OG12 : copie de `id` dans la direction `dir` et flèche qui les lie ; change.ids = [copie, flèche]. */
+  | { readonly type: "AddLinked"; readonly id: string; readonly dir: LinkDir }
   | {
       readonly type: "SetText";
       readonly page: string;
@@ -227,7 +235,21 @@ export type Command =
   /** C3 (Z1) : retire le niveau extérieur des ids groupés ; aucun : aucune étape. */
   | { readonly type: "Ungroup"; readonly ids: readonly string[] };
 
-export interface ShapeData { readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null }
+export interface LineBinding { readonly id: string; readonly fx: number; readonly fy: number }
+/** OG12 (DA-1, DA-2) : `points` = points intérieurs locaux à plat (absent : segment du socle) ; `start`, `end` : liaisons
+ *  vers un objet présent (absentes sinon, lecture tolérante). */
+export interface ShapeData {
+  readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null;
+  readonly points?: readonly number[]; readonly start?: LineBinding; readonly end?: LineBinding;
+}
+export type LinkDir = "up" | "down" | "left" | "right";
+/** OG12 (n° 17) : cible d'accroche ; `anchors` = 4 ancres monde, ordre `ANCHOR_RATIOS`. */
+export interface BindHit {
+  readonly id: string;
+  readonly fixed: readonly [number, number];
+  readonly onOutline: boolean;
+  readonly anchors: readonly (readonly [number, number])[];
+}
 export interface TextData {
   readonly content: string;
   readonly size: number;
@@ -387,6 +409,8 @@ export interface StrokeBuilderApi {
 }
 
 export interface CoreDocument {
+  /** OG12 (n° 17) : cible d'accroche sous (x, y) monde à `tol` monde ; null sans cible. */
+  bindTarget(page: string, x: number, y: number, tol: number): BindHit | null;
   pageIds(): string[];
   elementIds(page: string): string[];
   /** OE23 (Q7) : ids de `page` dont le champ `kind` brut vaut `kind`, dans l'ordre de la page, sans lire de vue ; page

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, cellKey, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "./keys";
+import { appShortcut, cellKey, editAction, inEditable, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -227,15 +227,45 @@ describe("cellKey (H12)", () => {
 });
 
 describe("tableKey (H12)", () => {
-  it("tableKey : Alt+Maj+flèches ; sans Maj, avec Ctrl, en saisie ou en composition : null", () => {
-    const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: false, metaKey: false, shiftKey: true, altKey: true, isComposing: false, target: null, ...o });
+  it("tableKey : Ctrl+Alt+flèches ; sans Ctrl, avec Maj, en saisie ou en composition : null", () => {
+    const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: true, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
     expect(tableKey(a("ArrowRight"))).toBe("col-wider");
     expect(tableKey(a("ArrowLeft"))).toBe("col-narrower");
     expect(tableKey(a("ArrowDown"))).toBe("row-taller");
     expect(tableKey(a("ArrowUp"))).toBe("row-shorter");
-    expect(tableKey(a("ArrowRight", { shiftKey: false }))).toBeNull();
-    expect(tableKey(a("ArrowRight", { ctrlKey: true }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { ctrlKey: false }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { shiftKey: true }))).toBeNull();
     expect(tableKey(a("ArrowRight", { isComposing: true }))).toBeNull();
     expect(tableKey(a("ArrowRight", { target: { isContentEditable: true } }))).toBeNull();
+  });
+});
+
+describe("OG12 : lineEditKey, linkedKey, isCtrlKey", () => {
+  it("lineEditKey : Ctrl ou Cmd+Entrée, rien d'autre", () => {
+    expect(lineEditKey(k("Enter", { ctrlKey: true }))).toBe(true);
+    expect(lineEditKey(k("Enter", { metaKey: true }))).toBe(true);
+    expect(lineEditKey(k("Enter", { ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(lineEditKey(k("Enter", { ctrlKey: true, altKey: true }))).toBe(false);
+    expect(lineEditKey(k("Enter"))).toBe(false);
+    expect(lineEditKey(k("Enter", { ctrlKey: true, isComposing: true }))).toBe(false);
+    expect(lineEditKey(k("Enter", { ctrlKey: true, target: { tagName: "INPUT" } as unknown as KeyLike["target"] }))).toBe(false);
+  });
+  it("linkedKey : Alt+Maj+flèche", () => {
+    expect(linkedKey(k("ArrowRight", { altKey: true, shiftKey: true }))).toBe("right");
+    expect(linkedKey(k("ArrowUp", { altKey: true, shiftKey: true }))).toBe("up");
+    expect(linkedKey(k("ArrowDown", { altKey: true, shiftKey: true }))).toBe("down");
+    expect(linkedKey(k("ArrowLeft", { altKey: true, shiftKey: true }))).toBe("left");
+    expect(linkedKey(k("ArrowRight", { altKey: true }))).toBeNull();
+    expect(linkedKey(k("ArrowRight", { altKey: true, shiftKey: true, ctrlKey: true }))).toBeNull();
+    expect(linkedKey(k("a", { altKey: true, shiftKey: true }))).toBeNull();
+    expect(linkedKey(k("ArrowRight", { altKey: true, shiftKey: true, target: { tagName: "INPUT" } as unknown as KeyLike["target"] }))).toBeNull();
+  });
+  it("orderKey inchangé pour Ctrl+↑", () => {
+    expect(orderKey(k("ArrowUp", { ctrlKey: true }))).not.toBeNull();
+  });
+  it("isCtrlKey : Control ou Meta", () => {
+    expect(isCtrlKey({ key: "Control" })).toBe(true);
+    expect(isCtrlKey({ key: "Meta" })).toBe(true);
+    expect(isCtrlKey({ key: "Shift" })).toBe(false);
   });
 });

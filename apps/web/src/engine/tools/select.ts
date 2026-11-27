@@ -10,12 +10,15 @@
  * groupe qu'entier (`engine/groups.ts`).
  * personnalisation-3 (DA3) : glisser vers une case par `cell-drop.ts`, 4 points d'appel.
  */
-import type { Bounds, Matrix } from "../../core/api";
-import { IDENTITY_MATRIX } from "../../core/shapes";
+import type { Bounds, LinkDir, Matrix, ShapeElement, ElementView } from "../../core/api";
+import { elbowedOf } from "../../core/look";
+import { IDENTITY_MATRIX, isSegment } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
+import { isDoubleTap, type Tap } from "../input/double-tap";
 import type { InputSample } from "../input/sampler";
-import { EMPTY_OVERLAY, type EditOverlay } from "../render/overlay";
+import { BOUND_DRAG_PX, dragLine, linkHandles, linkedCopy, pickHandle, pickLink, pointHandles, worldPoints, type DraggedLine, type PointHit } from "./line-points";
+import { EMPTY_OVERLAY, type EditOverlay, type ShapePreview } from "../render/overlay";
 import {
   HANDLE_GRAB_PX,
   handlePoint,
@@ -36,7 +39,7 @@ export const DRAG_THRESHOLD_PX = 2;
 /** Toucher qui révèle un ombrage (F10, HB-24) : seuil propre, le glisser de 2 px est trop petit au doigt. */
 export const REVEAL_TAP_PX = 8;
 
-type Mode = "move" | "resize" | "band" | "none" | "tap-shade";
+type Mode = "move" | "resize" | "band" | "none" | "tap-shade" | "line-end" | "line-mid" | "link";
 
 /** Cellule ombrée retenue au `begin` (F10), révélée au `close` si le pointeur n'a pas glissé. */
 interface Reveal {
@@ -58,7 +61,25 @@ interface Drag {
   readonly base: Bounds | null;
   readonly shift: boolean;
   readonly reveal: Reveal | null;
+  /** OG12 : poignée de point prise, direction « + », ligne liée (seuil 10 px), cible touchée, doigt ; premier échantillon. */
+  readonly hit?: PointHit;
+  readonly link?: LinkDir;
+  bound?: boolean;
+  target?: string | null;
+  readonly touch?: boolean;
+  readonly t: number;
+  readonly sx: number;
+  readonly sy: number;
 }
+
+const isLine = (v: ElementView | null): v is ShapeElement => v?.kind === "shape" && isSegment(v.shape.shape);
+const isNode = (v: ElementView | null): boolean => v?.kind === "shape" && (v.shape.shape === "rect" || v.shape.shape === "ellipse");
+/** n° 39 : poignées hors édition : les deux bouts ; le milieu si deux points et non coudée. */
+const endHandles = (v: ShapeElement): { pts: [number, number][]; mids: boolean } => {
+  const all = worldPoints(v);
+  const mids = all.length === 2 && !elbowedOf(v.look);
+  return { pts: mids ? all : [all[0]!, all[all.length - 1]!], mids };
+};
 
 const NONE: ReadonlySet<string> = new Set<string>();
 /** `a` suivi des éléments de `b` qui n'y sont pas. */
@@ -93,9 +114,20 @@ function grabbedHandle(frame: Bounds, x: number, y: number, zoom: number): Handl
 export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): SelectionTool {
   let selection: string[] = [];
   let drag: Drag | null = null;
+  let lastTap: (Tap & { id: string }) | null = null;
+  let first: InputSample | null = null;
+  const one = (): ElementView | null => (selection.length === 1 ? ctx.doc.element(selection[0]!) : null);
+  // personnalisation-3 (D28) : pendant un glisser, la vue de l'élément seul (OG12 : ligne, nœud) est lue une fois, au
+  // premier aperçu ; aucun element() par image. Le glisser est muté en place : la clé tient jusqu'à sa fin.
+  const dragViews = new WeakMap<Drag, ElementView | null>();
+  const oneOf = (d: Drag | null): ElementView | null => {
+    if (d === null) return one();
+    if (!dragViews.has(d)) dragViews.set(d, one());
+    return dragViews.get(d) ?? null;
+  };
 
   const world = (s: InputSample): [number, number] => screenToWorld(ctx.camera(), s.x, s.y);
-  const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= DRAG_THRESHOLD_PX;
+  const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= (d.bound ? BOUND_DRAG_PX : DRAG_THRESHOLD_PX);
 
   /** Vues de la page montrée (C3, Z2), lues au geste, jamais gardées. */
   const pageViews = (): GroupedView[] => viewsOf(ctx.doc, ctx.doc.elementIds(ctx.page()));
@@ -122,7 +154,7 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
     return IDENTITY_MATRIX;
   };
 
-  const startDrag = (pointerId: number, mode: Mode, x: number, y: number, extra: { handle?: HandleId; base?: Bounds; reveal?: Reveal } = {}): void => {
+  const startDrag = (pointerId: number, mode: Mode, x: number, y: number, extra: { handle?: HandleId; base?: Bounds; reveal?: Reveal; hit?: PointHit; link?: LinkDir; bound?: boolean; target?: string | null; touch?: boolean } = {}): void => {
     drag = {
       pointerId,
       mode,
@@ -135,7 +167,23 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       base: extra.base ?? null,
       shift: ctx.shift?.() === true,
       reveal: extra.reveal ?? null,
+      ...(extra.hit ? { hit: extra.hit } : {}),
+      ...(extra.link ? { link: extra.link } : {}),
+      bound: extra.bound === true,
+      target: extra.target ?? null,
+      touch: extra.touch === true,
+      t: first?.t ?? 0,
+      sx: first?.x ?? 0,
+      sy: first?.y ?? 0,
     };
+  };
+
+  /** Ligne après le glisser d'une poignée : bout déplacé (aimanté, Maj 15°) et lié sous le doigt, ou point inséré. Les
+   *  poignées hors édition n'offrent que les deux bouts : l'indice 1 est le dernier point. */
+  const draggedLine = (v: ShapeElement, d: Drag): DraggedLine => {
+    const hit = d.hit!;
+    const norm: PointHit = hit.kind === "point" && hit.index !== 0 ? { kind: "point", index: worldPoints(v).length - 1 } : hit;
+    return dragLine(ctx, v, norm, d.x, d.y, d.zoom, d.touch === true);
   };
 
   /** Cellule ombrée sous (x, y) monde du tableau `id` (ancre d'une zone), ou null. */
@@ -152,12 +200,30 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
     begin(pointerId, samples) {
       const s = samples[0];
       if (drag !== null || !s) return;
+      first = s;
       const [x, y] = world(s);
       const zoom = ctx.camera().zoom;
       const shift = ctx.shift?.() === true;
       const frame = selection.length > 0 ? ctx.doc.bounds(selection) : null;
+      const v = one();
+      const touch = ctx.pointerType?.() === "touch";
+      if (isLine(v)) {
+        const { pts, mids } = endHandles(v);
+        const hit = pickHandle(pts, x, y, zoom, touch, mids);
+        if (hit) {
+          startDrag(pointerId, hit.kind === "point" ? "line-end" : "line-mid", x, y, { hit, touch });
+          return;
+        }
+      } else if (isNode(v) && frame) {
+        const dir = pickLink(linkHandles(frame, zoom), x, y, zoom);
+        if (dir) {
+          startDrag(pointerId, "link", x, y, { link: dir });
+          return;
+        }
+      }
       // Poignée cherchée avant hitTest, Maj tenue ou non : Maj sur une poignée = proportions (D15, CL4-11).
-      const h = frame ? grabbedHandle(frame, x, y, zoom) : null;
+      // n° 39 : une ligne seule n'a pas de cadre à 8 poignées.
+      const h = frame && !isLine(v) ? grabbedHandle(frame, x, y, zoom) : null;
       if (frame && h) {
         startDrag(pointerId, "resize", x, y, { handle: h, base: frame });
         return;
@@ -180,7 +246,8 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
           return;
         }
         if (!selection.includes(hit)) selection = unit;
-        startDrag(pointerId, "move", x, y);
+        const sel = one();
+        startDrag(pointerId, "move", x, y, { bound: isLine(sel) && !!(sel.shape.start || sel.shape.end), target: hit, touch });
         return;
       }
       if (!shift) selection = [];
@@ -210,6 +277,33 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       if (!d || d.pointerId !== pointerId) return;
       drag = null;
       if (how !== "end") return;
+      if (!moved(d)) {
+        // Un relâché sans mouvement sur une poignée de la ligne sélectionnée compte comme un toucher sur la ligne.
+        const id = d.mode === "move" ? d.target ?? null : d.mode === "line-end" || d.mode === "line-mid" ? selection[0] ?? null : null;
+        const cur: Tap = { t: d.t, x: d.sx, y: d.sy };
+        const view = id === null ? null : ctx.doc.element(id);
+        if (id !== null && lastTap?.id === id && isDoubleTap(lastTap, cur) && isLine(view) && !elbowedOf(view.look)) {
+          lastTap = null;
+          ctx.editPoints?.(id);
+          return;
+        }
+        lastTap = id === null ? null : { ...cur, id };
+      }
+      if (d.mode === "link") {
+        if (!moved(d) && d.link) {
+          const ch = ctx.run({ type: "AddLinked", id: selection[0]!, dir: d.link });
+          const copy = ch ? linkedCopy(ctx.doc, ch.ids, selection[0]!) : null;
+          if (copy !== null) selection = [copy];
+        }
+        return;
+      }
+      if (d.mode === "line-end" || d.mode === "line-mid") {
+        const v = one();
+        if (!isLine(v) || !moved(d) || !d.hit) return;
+        const next = draggedLine(v, d);
+        ctx.run({ type: "SetLinePoints", id: v.id, points: next.pts.flat(), start: next.start, end: next.end });
+        return;
+      }
       if (d.mode === "tap-shade") {
         const r = d.reveal;
         if (r !== null) ctx.run({ type: "SetTableShade", id: r.id, from: { row: r.row, col: r.col }, to: { row: r.row, col: r.col }, shade: null });
@@ -233,6 +327,35 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       }
       if (selection.length === 0) return { strokes: [], erasers: [], hidden: NONE };
       const bounds = ctx.doc.bounds(selection);
+      const zoom = ctx.camera().zoom;
+      const v = oneOf(d);
+      if (isLine(v)) {
+        // n° 39 : ligne seule : un point à chaque bout, un milieu ; aucun cadre à 8 poignées.
+        if (d && (d.mode === "line-end" || d.mode === "line-mid") && moved(d) && d.hit) {
+          const next = draggedLine(v, d);
+          const p = next.pts;
+          const a = p[0]!;
+          const z = p[p.length - 1]!;
+          const inner = p.slice(1, -1).flat();
+          const preview: ShapePreview = {
+            shape: v.shape.shape, x0: a[0], y0: a[1], x1: z[0], y1: z[1], style: v.style, fill: null,
+            ...(v.look ? { look: v.look } : {}),
+            ...(inner.length > 0 ? { points: inner } : {}),
+          };
+          const overlay: EditOverlay = { ...EMPTY_OVERLAY, shapes: [preview], points: pointHandles(p, [], zoom, false), bind: next.hint };
+          return { strokes: [], erasers: [], hidden: new Set([v.id]), overlay };
+        }
+        const m = d && d.mode === "move" ? matrixOf(d) : IDENTITY_MATRIX;
+        const dragging = !isIdentity(m);
+        const { pts, mids } = endHandles(v);
+        const overlay: EditOverlay = {
+          ...EMPTY_OVERLAY,
+          ghosts: dragging ? [{ id: v.id, matrix: m }] : [],
+          ...(dragging ? {} : { points: pointHandles(pts, [], zoom, mids) }),
+          target: dragging && d ? (cellDrop?.target(selection, d.x, d.y) ?? null) : null,
+        };
+        return { strokes: [], erasers: [], hidden: dragging ? new Set(selection) : NONE, overlay };
+      }
       const m = d && (d.mode === "move" || d.mode === "resize") ? matrixOf(d) : IDENTITY_MATRIX;
       const dragging = !isIdentity(m);
       const overlay: EditOverlay = {
@@ -241,6 +364,7 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
         frame: bounds === null ? null : dragging ? transformBounds(m, bounds) : bounds,
         handles: !dragging,
         target: dragging && d?.mode === "move" ? (cellDrop?.target(selection, d.x, d.y) ?? null) : null,
+        ...(isNode(v) && !dragging && bounds ? { links: linkHandles(bounds, zoom) } : {}),
       };
       return { strokes: [], erasers: [], hidden: dragging ? new Set(selection) : NONE, overlay };
     },

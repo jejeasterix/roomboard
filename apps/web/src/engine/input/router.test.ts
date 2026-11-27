@@ -324,6 +324,70 @@ describe("createRouter (D18)", () => {
   });
 });
 
+describe("OG12 : doigt tardif = Maj (n° 29)", () => {
+  function setupLate(tool: ToolChoice) {
+    const log: string[] = [];
+    const gestures: GestureSink = {
+      begin: (id, t, samples) => log.push(`begin ${id} ${t} ${samples.length}`),
+      extend: (id, samples) => log.push(`extend ${id} ${samples.length}`),
+      close: (id, how) => log.push(`close ${id} ${how}`),
+    };
+    const view: ViewSink = { panBy: () => {}, zoomAt: () => {} };
+    const mods: boolean[] = [];
+    const router = createRouter(DEFAULT_ROUTER_OPTIONS, { currentTool: () => tool, gestures, view, modifier: (h) => mods.push(h) });
+    return { router, log, mods };
+  }
+  it("doigt tardif pendant un geste au doigt de Sélection : modifier(true) puis modifier(false) au lever", () => {
+    const { router, log, mods } = setupLate("select");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    expect(mods).toEqual([true]);
+    router.handle(ev("move", 1, "touch", [s(5, 5, 420)]));
+    expect(log).toContain("extend 1 1");
+    router.handle(ev("end", 2, "touch", []));
+    expect(mods).toEqual([true, false]);
+  });
+  it("doigt tardif pendant un geste au stylet : ignoré", () => {
+    const { router, log, mods } = setupLate("select");
+    router.handle(ev("start", 1, "pen", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    expect(mods).toEqual([]);
+    expect(log.filter((l) => l.startsWith("begin 2"))).toEqual([]);
+  });
+  it("doigt tardif avec le stylo ou la gomme : ignoré", () => {
+    const { router, mods } = setupLate("pen");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    expect(mods).toEqual([]);
+  });
+  it("second doigt sous 150 ms : pincement inchangé", () => {
+    const { router, log, mods } = setupLate("select");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 100)]));
+    expect(log).toContain("close 1 abort");
+    expect(mods).toEqual([]);
+  });
+  it("deux doigts tardifs : lever le premier garde Maj, lever le second la coupe", () => {
+    const { router, mods } = setupLate("select");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    router.handle(ev("start", 3, "touch", [s(90, 90, 600)]));
+    router.handle(ev("end", 2, "touch", []));
+    expect(mods).toEqual([true]);
+    router.handle(ev("end", 3, "touch", []));
+    expect(mods).toEqual([true, false]);
+  });
+  it("geste fermé pendant que le doigt tardif est posé : modifier(false)", () => {
+    const { router, mods } = setupLate("select");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    router.handle(ev("end", 1, "touch", []));
+    expect(mods).toEqual([true, false]);
+    router.handle(ev("end", 2, "touch", []));
+    expect(mods).toEqual([true, false]);
+  });
+});
+
 describe("gomme automatique à la surface de contact (OG25)", () => {
   /** `unset` : `autoEraser` absent des options (défaut d'aujourd'hui) ; sinon accesseur sur `on`. */
   function palmSetup(o: { tool?: ToolChoice; held?: boolean; toTools?: boolean; on?: () => boolean; unset?: boolean } = {}) {
@@ -713,5 +777,91 @@ describe("gomme automatique à la surface de contact (OG25)", () => {
     router.handle(touch("start", 4, 1500, 600, 900, 140));
     expect(log).toEqual(["begin 1 pen 1", "close 1 abort", "begin -1 eraser 1", "resize -1 70", "close -1 end", "begin -2 eraser 1", "resize -2 70"]);
     expect(rings).toEqual(["1500,300,70", "null", "1500,600,70"]);
+  });
+});
+
+describe("OG12 × OG25 : doigt tardif (Maj) ou membre de la paume", () => {
+  function shared(tool: ToolChoice) {
+    const log: string[] = [];
+    const gestures: GestureSink = {
+      begin: (id, t) => log.push(`begin ${id} ${t}`),
+      extend: () => {},
+      close: (id, how) => log.push(`close ${id} ${how}`),
+      resize: () => {},
+    };
+    const view: ViewSink = { panBy: () => {}, zoomAt: () => {} };
+    const router = createRouter(
+      { ...DEFAULT_ROUTER_OPTIONS, autoEraser: true },
+      { currentTool: () => tool, gestures, view, modifier: (h) => log.push(`mod ${h}`) },
+    );
+    return { router, log, mods: () => log.filter((l) => l.startsWith("mod ")) };
+  }
+  const touch = (kind: GestureKind, id: number, x: number, y: number, t: number, w = 0): GestureEvent =>
+    ev(kind, id, "touch", kind === "end" || kind === "cancel" ? [] : [s(x, y, t)], w > 0 ? { contact: { width: w, height: w } } : {});
+
+  it("doigt tardif compté puis élargi dans sa fenêtre (A-1) : la paume gagne, Maj retombe avant la gomme", () => {
+    const { router, log, mods } = shared("rect");
+    router.handle(touch("start", 1, 100, 100, 0, 20));
+    router.handle(touch("start", 2, 150, 100, SECOND_FINGER_MS + 10, 20));
+    expect(mods()).toEqual(["mod true"]);
+    router.handle(touch("move", 2, 150, 100, 200, 140));
+    expect(router.roleOf(2)).toBe("erase");
+    expect(log).toEqual(["begin 1 rect", "mod true", "close 1 abort", "mod false", "begin -1 eraser"]);
+    router.handle(touch("end", 2, 0, 0, 0));
+    router.handle(touch("end", 1, 0, 0, 0));
+    expect(mods()).toEqual(["mod true", "mod false"]);
+  });
+
+  it("trois doigts serrés dont un doigt tardif déjà compté : la paume gagne, Maj retombe", () => {
+    const { router, log, mods } = shared("rect");
+    router.handle(touch("start", 1, 100, 100, 0, 20));
+    router.handle(touch("start", 2, 140, 100, SECOND_FINGER_MS + 10, 20));
+    router.handle(touch("start", 3, 120, 140, 200, 20));
+    expect(router.roleOf(3)).toBe("erase");
+    expect(log).toEqual(["begin 1 rect", "mod true", "close 1 abort", "mod false", "begin -1 eraser"]);
+    for (const id of [3, 2, 1]) router.handle(touch("end", id, 0, 0, 0));
+    expect(mods()).toEqual(["mod true", "mod false"]);
+  });
+
+  it("paume posée loin du trait (A-2) : le trait garde son geste et son Maj", () => {
+    const { router, log, mods } = shared("rect");
+    router.handle(touch("start", 1, 100, 100, 0, 20));
+    router.handle(touch("start", 2, 150, 100, SECOND_FINGER_MS + 10, 20));
+    router.handle(touch("start", 3, 1000, 100, 200, 140));
+    expect([router.roleOf(1), router.roleOf(3)]).toEqual(["edit", "erase"]);
+    expect(log).toEqual(["begin 1 rect", "mod true", "begin -1 eraser"]);
+    router.handle(touch("end", 1, 0, 0, 0));
+    expect(mods()).toEqual(["mod true", "mod false"]);
+  });
+
+  it("doigt tardif posé large dans la fenêtre du trait : paume, jamais Maj", () => {
+    const { router, log, mods } = shared("rect");
+    router.handle(touch("start", 1, 100, 100, 0, 20));
+    router.handle(touch("start", 2, 150, 100, SECOND_FINGER_MS + 10, 140));
+    expect(router.roleOf(2)).toBe("erase");
+    expect(log).toEqual(["begin 1 rect", "close 1 abort", "begin -1 eraser"]);
+    router.handle(touch("end", 2, 0, 0, 0));
+    expect(mods()).toEqual([]);
+  });
+
+  it("trait établi (au-delà de 250 ms, déc. 13) : le doigt tardif large reste Maj, même élargi", () => {
+    const { router, log } = shared("rect");
+    router.handle(touch("start", 1, 100, 100, 0, 20));
+    router.handle(touch("start", 2, 150, 100, 400, 140));
+    router.handle(touch("move", 2, 150, 100, 450, 160));
+    expect(router.roleOf(1)).toBe("edit");
+    expect(router.roleOf(2)).toBeNull();
+    router.handle(touch("end", 1, 0, 0, 0));
+    expect(log).toEqual(["begin 1 rect", "mod true", "close 1 end", "mod false"]);
+  });
+
+  it("Sélection (hors des outils qui basculent, déc. 33) : le doigt tardif large vaut Maj", () => {
+    const { router, log, mods } = shared("select");
+    router.handle(touch("start", 1, 100, 100, 0, 20));
+    router.handle(touch("start", 2, 150, 100, SECOND_FINGER_MS + 10, 140));
+    expect(mods()).toEqual(["mod true"]);
+    expect(log.some((l) => l.includes("eraser"))).toBe(false);
+    router.handle(touch("end", 2, 0, 0, 0));
+    expect(mods()).toEqual(["mod true", "mod false"]);
   });
 });
