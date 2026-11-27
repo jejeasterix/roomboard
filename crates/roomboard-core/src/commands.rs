@@ -1342,8 +1342,60 @@ impl Document {
         self.insert_pages(&tmp, page)
     }
 
-    fn cmd_restack(&mut self, _ids: &[String], _to: u32) -> Result<Change, CommandError> {
-        Ok(self.unchanged())
+    /// Retire les `ids` puis réinsère leurs recopies complètes (`id` et `group` compris, DA2), dans l'ordre de la pile,
+    /// en un bloc dont le bas est au rang final `to`, dans une transaction : une étape ; sélection et cache des contours
+    /// restent valides. Ids dédoublonnés ; premier id inconnu (ordre donné) : `UnknownElement` ; pages mêlées :
+    /// `MixedPages` ; bloc vide ou hors de la pile : `BadIndex` ; même ordre : aucune étape (D38). `Change.ids` : le
+    /// bloc, du bas vers le haut.
+    fn cmd_restack(&mut self, ids: &[String], to: u32) -> Result<Change, CommandError> {
+        let (page, arr, moves) = {
+            let txn = self.read();
+            let mut seen = BTreeSet::new();
+            let mut found = Vec::with_capacity(ids.len());
+            for id in ids.iter().filter(|id| seen.insert(id.as_str())) {
+                let f = self
+                    .find_element(&txn, id)
+                    .ok_or_else(|| CommandError::UnknownElement(id.clone()))?;
+                found.push((id.clone(), f));
+            }
+            let Some((_, head)) = found.first() else {
+                return Err(CommandError::BadIndex);
+            };
+            let (page, arr) = (head.page_id.clone(), head.elements.clone());
+            if found.iter().any(|(_, f)| f.page_id != page) {
+                return Err(CommandError::MixedPages);
+            }
+            found.sort_by_key(|(_, f)| f.index);
+            let n = found.len() as u32;
+            if to.checked_add(n).is_none_or(|end| end > arr.len(&txn)) {
+                return Err(CommandError::BadIndex);
+            }
+            if found.iter().zip(to..).all(|((_, f), rank)| f.index == rank) {
+                return Ok(self.unchanged());
+            }
+            let moves: Vec<(String, u32, MapPrelim)> = found
+                .into_iter()
+                .map(|(id, f)| (id, f.index, f.element.as_prelim(&txn)))
+                .collect();
+            (page, arr, moves)
+        };
+        let mut moved = Vec::with_capacity(moves.len());
+        let kept = moves
+            .into_iter()
+            .map(|(id, i, prelim)| {
+                moved.push(id);
+                (i, prelim)
+            })
+            .collect();
+        {
+            let mut txn = self.transact_local();
+            reinsert_kept(&arr, &mut txn, kept, to);
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: moved,
+            ..Default::default()
+        }))
     }
 
     fn cmd_commit_stroke(
