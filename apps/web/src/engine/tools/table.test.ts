@@ -887,7 +887,7 @@ describe("image de fond de case (personnalisation-3 T9, S5)", () => {
       s.tool.begin(1, [at(120, 220)]);
       vi.advanceTimersByTime(500);
       expect(s.menuOpens).toHaveLength(1);
-      s.tool.extend(1, [at(400, 290)]);
+      s.tool.extend(1, [at(400, 290)], []);
       expect(s.tool.cellState()?.range).toBeNull();
       s.tool.close(1, "end");
     } finally {

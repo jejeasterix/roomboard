@@ -25,6 +25,7 @@ import {
   cellOf,
   cellRect,
   expandRange,
+  linkedIn,
   mergeAt,
   rangeCells,
   rangeRect,
@@ -291,10 +292,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
 
   /** Objets logés dans la case `ref` (T9), du plus bas au plus haut de la pile. */
   const placedIn = (ref: CellRef): string[] =>
-    ctx.doc.elementIds(ctx.page()).filter((e) => {
-      const l = ctx.doc.element(e)?.cell;
-      return l !== undefined && l[0] === ref.id && l[1] === ref.row && l[2] === ref.col;
-    });
+    linkedIn(ctx.doc, ctx.page(), ref.id)
+      .filter((v) => v.cell?.[1] === ref.row && v.cell[2] === ref.col)
+      .map((v) => v.id);
   const topImage = (ref: CellRef): string | null => {
     const ids = placedIn(ref).filter((e) => ctx.doc.element(e)?.kind === "image");
     return ids[ids.length - 1] ?? null;
@@ -420,7 +420,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       });
       const zone = mergeAt(t, at.cell);
       // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
-      const linked = ctx.doc.elementIds(ctx.page()).filter((e) => ctx.doc.element(e)?.cell?.[0] === at.ref.id).length;
+      const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
       return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked };
     },
     act(a) {

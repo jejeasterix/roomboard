@@ -7,7 +7,7 @@
  * (`layoutRich`, B1) ; sur une ancre de plusieurs lignes, la dernière ligne porte le reste (F7). Tailles par défaut en
  * unités de page (T4) ; la largeur de page se lit sur la page, jamais ici.
  */
-import type { Bounds, CellLink, CoreDocument, Matrix, TableData, TableElement, TextSpan } from "../core/api";
+import type { Bounds, CellLink, CoreDocument, ElementView, Matrix, TableData, TableElement, TextSpan } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
@@ -189,6 +189,14 @@ export function tableAt(doc: Pick<CoreDocument, "elementIdsOfKind" | "element">,
   return tableHitIn(tables, x, y);
 }
 
+/** Éléments de la page logés dans le tableau `tableId` (`cell[0]`), dans l'ordre de la pile, hors `skip`. */
+export function linkedIn(doc: Pick<CoreDocument, "elementIds" | "element">, page: string, tableId: string, skip: readonly string[] = []): ElementView[] {
+  return doc.elementIds(page).flatMap((id) => {
+    const v = skip.includes(id) ? null : doc.element(id);
+    return v?.cell?.[0] === tableId ? [v] : [];
+  });
+}
+
 /** D10 : case du tableau le plus haut sous le premier point qui contient `box` (monde), à `tol` près ; null sinon
  *  (case ombrée, boîte qui déborde). Quatre coins passés par la matrice du tableau : l'englobante reste valable. */
 export function cellContaining(doc: Pick<CoreDocument, "elementIdsOfKind" | "element">, page: string, box: Bounds, firstX: number, firstY: number, tol: number): CellLink | null {
@@ -197,7 +205,7 @@ export function cellContaining(doc: Pick<CoreDocument, "elementIdsOfKind" | "ele
   const row = hit.table.rows[hit.cell.row];
   const col = hit.table.cols[hit.cell.col];
   if (row === undefined || col === undefined) return null;
-  if ((hit.table.cells.find((c) => c.row === row.id && c.col === col.id)?.shade ?? null) !== null) return null;
+  if (cellContent(hit.table, row.id, col.id).shade !== null) return null;
   const r = cellRect(hit.table, hit.cell);
   const xs: number[] = [];
   const ys: number[] = [];
