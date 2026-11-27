@@ -53,6 +53,7 @@ export class FakeCtx {
   beginPath(): void { this.log.push("beginPath"); }
   moveTo(x = 0, y = 0): void { this.log.push("moveTo"); this.path.push(["M", x, y]); }
   lineTo(x = 0, y = 0): void { this.log.push("lineTo"); this.path.push(["L", x, y]); }
+  arcTo(): void { this.log.push("arcTo"); }
   closePath(): void { this.log.push("closePath"); }
   rect(): void { this.log.push("rect"); }
   clip(): void { this.log.push("clip"); }

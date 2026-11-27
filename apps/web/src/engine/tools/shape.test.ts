@@ -233,7 +233,8 @@ describe("outil Formes : style courant du lot 2 (T28)", () => {
     expect(drawn("rect", cur).look).toEqual({ fillStyle: "hachure" });
     expect(drawn("ellipse", cur).look).toEqual({ fillStyle: "hachure" });
     expect(drawn("rect", { ...cur, background: null }).look).toBeUndefined();
-    expect(drawn("line", cur).look).toEqual({ startArrowhead: "triangle", endArrowhead: "none" });
+    // T37 (déc. 17) : les pointes sont réservées à la flèche, une ligne neuve ne les reçoit pas.
+    expect(drawn("line", cur).look).toBeUndefined();
   });
   it("flèche neuve : pointes du style courant", () => {
     expect(drawn("arrow", cur).look).toEqual({ startArrowhead: "triangle", endArrowhead: "none" });
