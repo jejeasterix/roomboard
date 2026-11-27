@@ -53,6 +53,8 @@ export function objectKey(e: KeyLike): ObjectKey | null {
     if (k === "g") return "fill-picker";
   }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "d") return "duplicate";
+  // T18 (déc. 38, 39) : Ctrl+K (Cmd+K sous macOS) ouvre l'éditeur de lien ; Ctrl+Maj+K reste au navigateur.
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "k") return "link";
   return null;
 }
 

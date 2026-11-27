@@ -56,7 +56,7 @@ export async function prepareHost(w: Window): Promise<PreparedHost> {
     const { createTauriHost, createTauriShell, loadTauriPorts } = await import("./host-tauri");
     const p = await loadTauriPorts();
     const host = createTauriHost(p.dialog, p.fs, p.ipc, () => w.devicePixelRatio || 1);
-    return { kind, host, shell: createTauriShell(p.dialog, p.win), dropReady: () => host.dropListening() };
+    return { kind, host, shell: createTauriShell(p.dialog, p.win, undefined, (url) => p.ipc.invoke("plugin:opener|open_url", { url })), dropReady: () => host.dropListening() };
   }
   const shell = createWebShell({
     confirm: (m) => w.confirm(m),
@@ -64,6 +64,7 @@ export async function prepareHost(w: Window): Promise<PreparedHost> {
     addEventListener: (t, cb) => w.addEventListener(t, cb),
     removeEventListener: (t, cb) => w.removeEventListener(t, cb),
     document: w.document,
+    open: (u, t, f) => w.open(u, t, f),
   });
   const host =
     kind === "fsa"

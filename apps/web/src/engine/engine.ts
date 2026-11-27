@@ -25,6 +25,8 @@ import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
 import { createModelOrbit, type ModelOrbit, type ModelOrbitSession } from "./tools/model-orbit";
 import { SELECT_TOL_PX } from "./tools/select";
+import { inLinkBadge, linkBadgeBox } from "./render/link-badge";
+import { validLink } from "../core/look";
 import type { ModelCamera } from "./render/model-frames";
 import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type SelectionTool, type TableTool, type ToolContext } from "./tools/tool";
 
@@ -63,6 +65,9 @@ export interface EngineState {
   /** OG11 (déc. 23) : style courant des créations et du panneau d'options. Facultatif comme fillColor (PC5) : le moteur
    *  le publie toujours. */
   readonly itemStyle?: ItemStyle;
+  /** T18 (H5, déc. 38) : élément dont l'éditeur de lien est ouvert (Ctrl+K ou bouton Lien, un seul élément) ; null
+   *  sinon. Facultatif comme fillColor (PC5) : le moteur le publie toujours. */
+  readonly linkEditing?: string | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -106,6 +111,9 @@ export interface EngineDeps {
   readonly fitTop?: () => number;
   /** Disposition d'une page neuve (profil actif, `behavior.pageMode`) ; absent : paysage. */
   readonly pageMode?: () => PageLayout;
+  /** T18 (déc. 38) : ouverture d'un lien (`ShellPort.openLink`), appelée seulement au relâché d'un toucher du badge avec
+   *  l'outil Sélection ; absent : rien ne s'ouvre. */
+  readonly openLink?: (url: string) => void;
 }
 
 /**
@@ -230,6 +238,13 @@ export interface Engine {
   deleteSelection(): boolean;
   /** OG11 (Ctrl+D) : copie de la sélection décalée de +10/+10, sélectionnée ; une étape ; faux sans sélection. */
   duplicateSelection(): boolean;
+  /** T18 (déc. 38) : ouvre l'éditeur de lien sur l'unique élément sélectionné (`linkEditing`) ; faux sinon. */
+  editLink(): boolean;
+  /** T18 : pose (un SetStyle { link }, une étape) ou retire (null) le lien de l'unique élément sélectionné, puis ferme
+   *  l'éditeur ; faux sans élément unique ou si le cœur refuse (schéma hors http, https, mailto ; 2 048 caractères). */
+  setLink(url: string | null): boolean;
+  /** T18 : ferme l'éditeur de lien sans écrire. */
+  closeLink(): void;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
    *  invalide est ignorée. */
   setFillColor(color: string | null): void;
@@ -366,6 +381,8 @@ export function createEngine(deps: EngineDeps): Engine {
   let lastOverlay = overlayKey(EMPTY_OVERLAY);
   let eraserMode: EraseMode = "partial";
   let error: string | null = null;
+  /** T18 : élément dont l'éditeur de lien est ouvert ; retombe à null dès qu'il n'est plus l'unique sélection. */
+  let linkEditing: string | null = null;
   let sceneDirty = true;
   let lastHidden: ReadonlySet<string> = new Set<string>();
   /** Aperçu de grille posé sur le rendu (DAE1). */
@@ -464,13 +481,21 @@ export function createEngine(deps: EngineDeps): Engine {
       fillColor,
       fillTolerance,
       itemStyle: item,
+      linkEditing: linkTarget(),
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
     };
   }
 
+  /** T18 : élément de l'éditeur de lien, s'il est encore l'unique sélection. */
+  function linkTarget(): string | null {
+    const sel = selectTool.selection();
+    return linkEditing !== null && sel.length === 1 && sel[0] === linkEditing ? linkEditing : null;
+  }
+
   function emit(): void {
+    linkEditing = linkTarget();
     const s = state();
     for (const cb of stateListeners) cb(s);
   }
@@ -701,9 +726,67 @@ export function createEngine(deps: EngineDeps): Engine {
     };
   };
 
+  /** T18 (déc. 38) : lien dont le badge est sous le point (px CSS), élément du dessus d'abord ; null : aucun. */
+  const badgeLinkAt = (s: InputSample | undefined, pointerType?: string): string | null => {
+    if (s === undefined) return null;
+    const ids = doc.elementIds(pageId);
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const id = ids[i];
+      if (id === undefined || lastHidden.has(id)) continue;
+      const link = doc.element(id)?.look?.link;
+      if (link === undefined || !validLink(link)) continue;
+      const b = doc.bounds([id]);
+      if (b !== null && inLinkBadge(linkBadgeBox(b, camera), s.x, s.y, pointerType)) return link;
+    }
+    return null;
+  };
+
+  /**
+   * T18 : appui sur un badge (patron de `missedOrbit`). Relâché sous le seuil : le lien s'ouvre, seul geste qui ouvre
+   * une URL ; au-delà du seuil, l'outil Sélection reçoit tous les points (glisser l'élément ou une poignée reste
+   * possible) ; abandon ou fin anormale : rien.
+   */
+  const linkTap = (g: GestureTool, pointerId: number, first: readonly InputSample[], url: string): GestureTool => {
+    const held: InputSample[] = [];
+    const origin = first[0];
+    let started = false;
+    const start = (predicted: readonly InputSample[]): void => {
+      started = true;
+      emitIfSelectionChanged(() => {
+        g.begin(pointerId, first);
+        if (held.length > 0) g.extend(pointerId, held, predicted);
+      });
+      loop.start();
+    };
+    const far = (s: InputSample): boolean => origin !== undefined && Math.hypot(s.x - origin.x, s.y - origin.y) > ORBIT_MISS_SLOP_PX;
+    return {
+      begin() {},
+      extend(id, samples, predicted) {
+        if (started) return g.extend(id, samples, predicted);
+        held.push(...samples);
+        if (samples.some(far)) start(predicted);
+      },
+      frame() {},
+      close(id, how) {
+        if (started) return g.close(id, how);
+        if (how === "end") deps.openLink?.(url);
+      },
+      live: () => NO_LIVE,
+      active: () => started && g.active(),
+    };
+  };
+
   const sink: GestureSink = {
-    begin(pointerId, t, samples) {
+    begin(pointerId, t, samples, pointerType) {
       lastDeleted = null;
+      // T18 (déc. 38) : toucher du badge d'un lien avec l'outil Sélection, hors rognage, pipette et orbite.
+      if (t === "select" && orbit === null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        const url = badgeLinkAt(samples[0], pointerType);
+        if (url !== null) {
+          owner.set(pointerId, linkTap(tools[t], pointerId, samples, url));
+          return;
+        }
+      }
       // C15 (S2) : un appui qui ne touche pas l'objet de l'orbite (zone vide ou autre élément, hit-test de la sélection)
       // ferme l'orbite et va à l'outil courant (`missedOrbit`) ; pendant un glissé de l'orbite, un second appui lui
       // reste (ignoré).
@@ -898,6 +981,8 @@ export function createEngine(deps: EngineDeps): Engine {
         engine.duplicateSelection();
         return true;
       }
+      // T18 (déc. 38, 39) : Ctrl+K ouvre l'éditeur de lien sur un seul élément ; aucun ou plusieurs : la touche passe.
+      if (objectKey(e) === "link") return engine.editLink();
       if (edit !== null) {
         // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
         if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
@@ -1066,6 +1151,29 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     setItemStyle(p) {
       setItem(p, true);
+    },
+    editLink() {
+      const sel = selectTool.selection();
+      const id = sel.length === 1 ? sel[0] : undefined;
+      if (id === undefined) return false;
+      linkEditing = id;
+      emit();
+      return true;
+    },
+    setLink(url) {
+      const sel = selectTool.selection();
+      const id = sel.length === 1 ? sel[0] : undefined;
+      if (id === undefined) return false;
+      // Lien inchangé (vide sur un élément sans lien) : aucune étape vide dans l'historique.
+      if ((doc.element(id)?.look?.link ?? null) !== url && run({ type: "SetStyle", ids: [id], patch: { link: url } }) === null) return false;
+      linkEditing = null;
+      emit();
+      return true;
+    },
+    closeLink() {
+      if (linkEditing === null) return;
+      linkEditing = null;
+      emit();
     },
     itemStyle: () => item,
     adoptItemStyle(s) {

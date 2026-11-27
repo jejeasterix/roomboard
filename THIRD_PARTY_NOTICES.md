@@ -590,6 +590,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
 - Lue dans Lucide au même commit (design L2, correctif T12) : `file-plus` (Lucide `file-plus`), pour « Insérer des pages… ».
 - Reprises de la maquette `docs/design/maquettes/02-annotation-bureau.html` (design L4, tracés Lucide au même commit),
   noms RoomBoard : `check` (Lucide `check`), `drop` (Lucide `file-down`).
+- Lue dans Lucide (personnalisation 2, T18) : `link` (Lucide `link`), pour le bouton Lien, l'éditeur de lien et le
+  badge des éléments liés (mêmes tracés dans `apps/web/src/engine/render/link-badge.ts`).
 - Reprises de la maquette `docs/design/maquettes/03-profils.html` (design L3, tracés Lucide au même commit), noms
   RoomBoard : `close` (Lucide `x`), `grip` (Lucide `grip-vertical`), `hidden` (Lucide `eye-off`),
   `dock-top` (Lucide `panel-top`), `dock-bottom` (Lucide `panel-bottom`), `dock-left` (Lucide `panel-left`),
@@ -677,3 +679,9 @@ Les fichiers d'icône de `apps/desktop/src-tauri/icons/`, leurs sources `docs/de
 `gen.mjs`) et les planches `docs/essais/design-l5-icone-*.png` reprennent l'hexagone et la flèche de l'icône RoomFlow (`roomflow-app-icon.svg`), marque de l'auteur
 (jejeasterix). Ils sont la marque de l'auteur et restent hors de la licence PolyForm Shield 1.0.0 du code (`LICENSE`) : leur
 présence dans ce dépôt n'accorde aucun droit sur la marque. Aucune dépendance n'est ajoutée.
+
+## tauri-plugin-opener (Apache-2.0 OR MIT), personnalisation 2 (T18)
+
+Crate `tauri-plugin-opener` 2.7.3 (https://github.com/tauri-apps/plugins-workspace), Copyright (c) Tauri Programme within
+The Commons Conservancy, licence `Apache-2.0 OR MIT` ; RoomBoard l'utilise sous la licence MIT. Seule commande permise par
+la capacité de la fenêtre principale : `open_url` (`opener:allow-open-url`), portée `http://*`, `https://*`, `mailto:*`.

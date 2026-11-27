@@ -580,6 +580,8 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        // T18 (H5) : liens d'éléments ; capacité limitée à open_url, portée http, https et mailto.
+        .plugin(tauri_plugin_opener::init())
         .manage(granted)
         .manage(Launch(Mutex::new((strings(&at_launch), false))))
         .manage(SavedGeometry::default())

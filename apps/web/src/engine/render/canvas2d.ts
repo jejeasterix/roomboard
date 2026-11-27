@@ -19,6 +19,7 @@ import type { ModelFrames } from "./model-frames";
 import { GridLinesCache } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
+import { linkBadgeBox, paintLinkBadge } from "./link-badge";
 import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { setLiveOpacity } from "./renderer";
 import { cornerRadius, dashOf, hatched, headWings, seedOf, sketchShape, strokeWith, wingDashOf, type SketchMemo, type SketchPlan } from "./sketch";
@@ -481,15 +482,32 @@ export class Canvas2DRenderer implements Renderer {
     this.onBackdrop?.(state);
     const grid = this.gridOf(page.id, camera);
     if (grid && !grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
+    const linked: string[] = [];
     for (const id of page.elementIds) {
       if (hidden.has(id)) continue;
       const el = this.source.element(id);
-      if (el) this.paintElement(ctx, this.withImagePreview(el), null);
+      if (!el) continue;
+      this.paintElement(ctx, this.withImagePreview(el), null);
+      if (el.look?.link !== undefined) linked.push(id);
     }
     this.paintOverlayContent(ctx, overlay);
     if (grid && grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
     this.paintOverlayChrome(ctx, overlay, camera.zoom);
+    this.paintLinkBadges(ctx, linked, camera);
     this.images?.endScene?.();
+  }
+
+  /** T18 (déc. 38) : badge des éléments liés, en px CSS au pixel de l'appareil, au-dessus du chrome ; jamais à l'export. */
+  private paintLinkBadges(ctx: CanvasRenderingContext2D, ids: readonly string[], camera: Camera): void {
+    const bounds = this.source.bounds;
+    if (this.forExport || ids.length === 0 || bounds === undefined) return;
+    ctx.save();
+    ctx.setTransform(this.sx, 0, 0, this.sy, 0, 0);
+    for (const id of ids) {
+      const b = bounds.call(this.source, [id]);
+      if (b !== null) paintLinkBadge(ctx, linkBadgeBox(b, camera, this.dpr), SELECTION_COLOR);
+    }
+    ctx.restore();
   }
 
   /** Lignes visibles de la grille de la page (G9), servies par le cache (E3) ; null sans source, sans grille ou hors cadre.

@@ -2,6 +2,7 @@
  * Coquille du navigateur (D26) : question et message par la fenêtre, fermeture gardée par `beforeunload` (le navigateur
  * affiche son propre texte), titre de la page.
  */
+import { validLink } from "../core/look";
 import type { ShellPort } from "./files";
 
 export interface BeforeUnloadEventLike {
@@ -15,6 +16,8 @@ export interface WebShellWindow {
   addEventListener(type: "beforeunload", cb: (e: BeforeUnloadEventLike) => void): void;
   removeEventListener(type: "beforeunload", cb: (e: BeforeUnloadEventLike) => void): void;
   readonly document: { title: string };
+  /** T18 : `window.open` ; absent : aucun lien ouvert. */
+  open?(url: string, target: string, features: string): unknown;
 }
 
 export function createWebShell(w: WebShellWindow): ShellPort {
@@ -34,6 +37,10 @@ export function createWebShell(w: WebShellWindow): ShellPort {
     },
     setTitle(title) {
       w.document.title = title;
+    },
+    // T18 (déc. 38) : jamais `window.open(url)` nu : schéma contrôlé, onglet neuf sans `opener`.
+    openLink(url) {
+      if (validLink(url)) w.open?.(url, "_blank", "noopener");
     },
   };
 }

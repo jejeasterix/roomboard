@@ -133,6 +133,9 @@ export interface ShellPort {
    */
   guardClose(isDirty: () => boolean, message: string, divert?: () => boolean): () => void;
   setTitle(title: string): void;
+  /** T18 (déc. 38) : ouvre un lien `http://`, `https://` ou `mailto:` (`validLink`), seulement sur un geste de
+   *  l'utilisateur ; tout autre schéma est ignoré. Jamais un `shell.open` générique. Absent : rien ne s'ouvre. */
+  openLink?(url: string): void;
 }
 
 /** Fichier ouvert qui attend le rechargement de la page (T75, T77). */

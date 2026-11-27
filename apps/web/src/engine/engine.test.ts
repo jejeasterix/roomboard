@@ -8,6 +8,7 @@ import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, WHEEL_ZOOM_SPEED, typ
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "./item-style";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
+import { linkBadgeBox } from "./render/link-badge";
 import type { InputSample } from "./input/sampler";
 import { DEFAULT_CAMERA, type ModelCamera } from "./render/model-frames";
 import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
@@ -1946,7 +1947,7 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
 });
 
 describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
-  function styleSetup(deps: Partial<Pick<EngineDeps, "itemStyle" | "penStyle">> = {}) {
+  function styleSetup(deps: Partial<Pick<EngineDeps, "itemStyle" | "penStyle" | "openLink">> = {}) {
     const doc = fakeCore.blank();
     const frames = new Frames();
     const renderer = new FakeRenderer();
@@ -2202,12 +2203,12 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     engine.key(key("k", { ctrlKey: true }));
     const v = doc.version();
     expect(engine.setLink("https://example.org")).toBe(true);
-    expect(lookOf(a).link).toBe("https://example.org");
+    expect(lookOf(a)?.["link"]).toBe("https://example.org");
     expect(doc.version()).toBe(v + 1);
     expect(engine.state().linkEditing).toBeNull();
     expect("link" in engine.itemStyle()).toBe(false);
     engine.undo();
-    expect(lookOf(a).link).toBeUndefined();
+    expect(lookOf(a)?.["link"]).toBeUndefined();
   });
 
   it("T18 setLink(null) retire le lien ; javascript: refusé par le cœur, rien d'écrit", () => {
@@ -2218,9 +2219,36 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     const v = doc.version();
     expect(engine.setLink("javascript:alert(1)")).toBe(false);
     expect(doc.version()).toBe(v);
-    expect(lookOf(a).link).toBe("mailto:a@example.org");
+    expect(lookOf(a)?.["link"]).toBe("mailto:a@example.org");
     expect(engine.setLink(null)).toBe(true);
-    expect(lookOf(a).link).toBeUndefined();
+    expect(lookOf(a)?.["link"]).toBeUndefined();
+  });
+
+  it("T18 toucher du badge avec l'outil Sélection : ouvre le lien une fois ; glisser ou autre outil : rien", () => {
+    const openLink = vi.fn();
+    const { engine, doc, addRect, sel } = styleSetup({ openLink });
+    const a = addRect();
+    sel().setSelection([a]);
+    expect(engine.setLink("https://example.org")).toBe(true);
+    expect(openLink).not.toHaveBeenCalled();
+    sel().setSelection([]);
+    const badge = linkBadgeBox(doc.bounds([a])!, engine.camera());
+    const at = (dx = 0, dy = 0) => [{ x: badge.x + 8 + dx, y: badge.y + 8 + dy, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }];
+    engine.setTool("pen");
+    engine.sink.begin(1, "pen", at(), "touch");
+    engine.sink.close(1, "end");
+    expect(openLink).not.toHaveBeenCalled();
+    engine.setTool("select");
+    engine.sink.begin(2, "select", at(), "touch");
+    engine.sink.extend(2, at(30, 30), []);
+    engine.sink.close(2, "end");
+    engine.sink.begin(3, "select", at(), "touch");
+    engine.sink.close(3, "cancel");
+    expect(openLink).not.toHaveBeenCalled();
+    // Dans la zone de 44 px, hors du dessin de 16 px.
+    engine.sink.begin(4, "select", at(18, -18), "touch");
+    engine.sink.close(4, "end");
+    expect(openLink.mock.calls).toEqual([["https://example.org"]]);
   });
 
   it("T18 Échap ferme l'éditeur de lien sans vider la sélection", () => {

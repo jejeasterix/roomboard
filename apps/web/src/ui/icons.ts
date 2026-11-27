@@ -30,6 +30,8 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "prev": [["path", { d: "m15 18-6-6 6-6" }]],
   "next": [["path", { d: "m9 18 6-6-6-6" }]],
   "plus": [["path", { d: "M5 12h14" }], ["path", { d: "M12 5v14" }]],
+  // Lucide link (ISC), T18 : lien d'un élément (bouton Lien, éditeur ; le badge du canvas reprend les mêmes tracés)
+  "link": [["path", { d: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" }], ["path", { d: "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" }]],
   // Lucide circle-help (ISC), lu au même commit que les autres
   "circle-help": [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" }], ["path", { d: "M12 17h.01" }]],
   "trash": [["path", { d: "M10 11v6" }], ["path", { d: "M14 11v6" }], ["path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" }], ["path", { d: "M3 6h18" }], ["path", { d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }]],
