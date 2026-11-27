@@ -4698,6 +4698,69 @@ describe.each(factories)("contrat OG12 : $name", ({ f: fab }) => {
     expect(d.hitTest(p, 100, -79, 2)).toBe(l);
     expect(d.hitTest(p, 100, 0, 2)).toBeNull();
   });
+  // C1 (double relecture du lot 1).
+  it("C1 : liaison vers un objet d'une autre page : refusée par AddShape et SetLinePoints, rien d'écrit", () => {
+    const d = fab.blank();
+    const p2 = d.apply({ type: "AddPage", after: null }).pages[0]!;
+    const r = d.apply({ type: "AddShape", page: p2, shape: "rect", x0: 0, y0: 0, x1: 100, y1: 50, style: PEN, fill: null }).ids[0]!;
+    expect(() => add(d, "arrow", [200, 25, 400, 25], { start: b(r, 1, 0.5) })).toThrow("forme invalide");
+    const f = add(d, "arrow", [200, 25, 400, 25]);
+    const before = d.element(f);
+    expect(() => d.apply({ type: "SetLinePoints", id: f, points: [200, 25, 400, 25], start: null, end: b(r, 0, 0.5) })).toThrow("forme invalide");
+    expect(d.element(f)).toEqual(before);
+    const a = rect(d, 0, 0);
+    d.apply({ type: "SetLinePoints", id: f, points: [200, 25, 400, 25], start: b(a, 1, 0.5), end: null });
+    expect(ends(d, f)).toEqual([a, undefined]);
+  });
+  it("C1 : colonne ajoutée, puis tailles changées, d'un tableau lié : l'extrémité suit, une étape", () => {
+    const d = fab.blank();
+    const p = d.pageIds()[0]!;
+    const t = d.apply({ type: "AddTable", page: p, x: 0, y: 0, cols: 2, rows: 2, colWidth: 100, rowHeight: 25, color: "#000000", size: 16 }).ids[0]!;
+    const l = add(d, "line", [400, 25, 200, 25], { end: b(t, 1, 0.5) });
+    expect(world(d, l)[1]).toEqual([205, 25]);
+    d.apply({ type: "InsertTableLine", id: t, axis: "col", at: 2 });
+    expect(world(d, l)[1]).toEqual([305, 25]);
+    d.undo();
+    expect(world(d, l)[1]).toEqual([205, 25]);
+    d.apply({ type: "SetTableSizes", id: t, colWidth: 150, rowHeight: 25 });
+    expect(world(d, l)[1]).toEqual([305, 25]);
+    d.undo();
+    expect(world(d, l)[1]).toEqual([205, 25]);
+  });
+  it("C1 : SetStyle épaissit la cible : le départ lié suit (5 + 20 / 2), la flèche touchée garde ses liaisons, une étape", () => {
+    const d = fab.blank();
+    const [a, z, f] = linked(d);
+    d.apply({ type: "SetStyle", ids: [a, f], patch: { width: 20 } });
+    expect(world(d, f)[0]).toEqual([115, 25]);
+    expect(ends(d, f)).toEqual([a, z]);
+    d.undo();
+    expect(world(d, f)[0]).toEqual([107, 25]);
+  });
+  it("C1 : FormatText change boxHeight d'un texte lié : l'extrémité suit, une étape", () => {
+    const d = fab.blank();
+    const p = d.pageIds()[0]!;
+    const t = d.apply({ type: "SetText", page: p, id: null, x: 0, y: 0, content: "nœud", color: "#000000", size: 36, boxWidth: 100, boxHeight: 50 }).ids[0]!;
+    const l = add(d, "line", [50, 300, 50, 50], { end: b(t, 0.5, 1) });
+    expect(world(d, l)[1]).toEqual([50, 55]);
+    d.apply({ type: "FormatText", id: t, start: 0, len: 0, attrs: {}, boxHeight: 80 });
+    expect(world(d, l)[1]).toEqual([50, 85]);
+    d.undo();
+    expect(world(d, l)[1]).toEqual([50, 55]);
+  });
+  it("C1 : AddLinked : la copie ne garde ni le lien ni la graine de la source", () => {
+    const d = fab.blank();
+    const a = rect(d, 0, 0);
+    d.apply({ type: "SetStyle", ids: [a], patch: { roughness: 1, link: "https://example.com/" } });
+    const src = d.element(a)?.look;
+    expect(src?.link).toBe("https://example.com/");
+    expect(typeof src?.seed).toBe("number");
+    const [c] = d.apply({ type: "AddLinked", id: a, dir: "right" }).ids;
+    const look = d.element(c!)?.look;
+    expect(look?.link).toBeUndefined();
+    expect(typeof look?.seed).toBe("number");
+    expect(look?.seed).not.toBe(src?.seed);
+    expect(look?.roughness).toBe(1);
+  });
 });
 
 describe.skipIf(loaded === null)("contrat OG12 : vrai module seulement", () => {
@@ -4728,6 +4791,25 @@ describe.skipIf(loaded === null)("contrat OG12 : vrai module seulement", () => {
     const f = d.apply({ type: "AddShape", page: first(d), shape: "arrow", x0: 100, y0: 25, x1: 400, y1: 325, style: PEN, fill: null, start: { id: a, fx: 1, fy: 0.5 }, end: { id: z, fx: 0, fy: 0.5 } }).ids[0]!;
     d.apply({ type: "SetStyle", ids: [f], patch: { elbowed: true } });
     expect(worldOf(d, f).length).toBeGreaterThanOrEqual(4);
+    d.free();
+  });
+  // C1 : la fausse liaison garde les seuls bouts d'une coudée (écart assumé, DA-3) : ces routes ne s'y jouent pas.
+  it("C1 : AddShape coudée (200, 200)→(300, 300) : routée à la création, en Z par x = 250", () => {
+    const d = need().core.blank();
+    const f = d.apply({ type: "AddShape", page: first(d), shape: "arrow", x0: 200, y0: 200, x1: 300, y1: 300, style: PEN, fill: null, look: { elbowed: true } }).ids[0]!;
+    expect(worldOf(d, f)).toEqual([[200, 200], [250, 200], [250, 300], [300, 300]]);
+    d.free();
+  });
+  it("C1 : AddLinked sur une source tournée de 90° : sortie verticale par le côté lié", () => {
+    const d = need().core.blank();
+    const a = rectAt(d, 0);
+    d.apply({ type: "Transform", ids: [a], matrix: [0, 1, -1, 0, 0, 0] });
+    const [, arrow] = d.apply({ type: "AddLinked", id: a, dir: "right" }).ids;
+    const w = worldOf(d, arrow!);
+    expect(w[0]![0]).toBeCloseTo(-25, 6);
+    expect(w[0]![1]).toBeCloseTo(107, 6);
+    expect(w[1]![0]).toBeCloseTo(-25, 6);
+    expect(w[1]![1]).toBeCloseTo(147, 6);
     d.free();
   });
   it("un fichier sans champ neuf se relit et se réenregistre aux mêmes octets", () => {
