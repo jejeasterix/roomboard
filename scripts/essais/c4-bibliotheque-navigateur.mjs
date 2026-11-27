@@ -122,7 +122,7 @@ async function scenario(page, url, { captures, tmp }) {
   check(box !== null && box.width >= 640 && box.height >= 640, `S1 : scène ≥ 640 px, panneau ouvert (${box?.width} × ${box?.height})`);
 
   // Autre page, glisser la carte du résultat : trois objets ; Annuler ; Rétablir.
-  await page.click(item("page-add"));
+  await clickItem(page, "page-add");
   await waitAttr("data-elements", "0");
   await dragCardToStage("Fractions/moitie.rbitem", [300, 300]);
   await waitAttr("data-elements", "3");
@@ -141,7 +141,7 @@ async function scenario(page, url, { captures, tmp }) {
   await page.fill(lib("search"), "");
 
   // S2 : grille Seyès sur une page, enregistrée en ressource, déposée sur une page sans grille.
-  await page.click(item("page-add"));
+  await clickItem(page, "page-add");
   await clickItem(page, "grid");
   await page.waitForSelector(gridField("kind"));
   await page.selectOption(gridField("kind"), "seyes");
@@ -150,7 +150,7 @@ async function scenario(page, url, { captures, tmp }) {
   await openFractions();
   await addResource("grid", "Seyès");
   await page.waitForSelector(card("Fractions/seyes.rbitem"), { timeout: 15000 });
-  await page.click(item("page-add"));
+  await clickItem(page, "page-add");
   check((await gridKind()) === "none", "S2 : page 4 sans grille");
   await openFractions();
   await dragCardToStage("Fractions/seyes.rbitem", [300, 300]);

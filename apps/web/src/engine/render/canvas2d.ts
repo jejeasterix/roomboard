@@ -9,7 +9,7 @@ import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
-import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePageRect, type PageRect } from "../page";
+import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, pageFrame, visibleGridRect, visiblePageRect, type PageRect } from "../page";
 import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import type { ImageSource } from "./image-cache";
@@ -50,6 +50,11 @@ export interface Canvas2DOptions {
 
 /** Options du peintre d'un export (PDF, superposition PNG ou vectorielle) : rendu d'export (sans badge « lecture », R7),
  *  ni lecteurs de média (poster, M34) ni nom de son. */
+/** Cadre de la page montrée (DA4), règle commune aux deux rendus : `pageFrame` ; null en Infini. */
+export function frameOfView(page: PageView): PageRect | null {
+  return pageFrame({ width: page.width ?? PAGE_WIDTH, height: page.height ?? PAGE_HEIGHT, backdrop: page.backdrop ?? null, mode: page.mode ?? "page" });
+}
+
 export function exportPainterOptions(images: ImageSource, extra: Pick<Canvas2DOptions, "makePath"> = {}): Canvas2DOptions {
   return { images, ...extra, forExport: true };
 }
@@ -308,6 +313,8 @@ export class Canvas2DRenderer implements Renderer {
   private readonly onBackdrop: ((s: BackdropState) => void) | null;
   /** Fond du dernier drawScene, repeint par l'aperçu de gomme partielle (D20). */
   private background = PAGE_BACKGROUND;
+  /** Cadre de la dernière scène (DA4) : l'aperçu de gomme le relit ; null en Infini. */
+  private frame: PageRect | null = { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: PAGE_HEIGHT };
 
   /** Fond que le canvas a retenu au dernier `drawScene` (écriture normalisée par le navigateur). */
   get pageColor(): string {
@@ -361,19 +368,25 @@ export class Canvas2DRenderer implements Renderer {
     this.images?.beginScene?.(); // `data-pixels` ne compte que les images de cette scène (I33)
     this.zoom = camera.zoom;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (this.transparent) ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    else {
-      ctx.fillStyle = SURROUND_COLOR;
-      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    }
-    this.setView(ctx, camera);
     // Blanc d'abord : le canvas ignore une couleur qu'il ne sait pas lire (un nom CSS accepté par le cœur) ; on retient
     // ce qu'il a vraiment accepté (relu normalisé), que l'aperçu de gomme repeint et que WebGL2 relit (`pageColor`).
     ctx.fillStyle = PAGE_BACKGROUND;
     ctx.fillStyle = page.background ?? PAGE_BACKGROUND;
     this.background = String(ctx.fillStyle);
-    const rect = visiblePageRect(camera, this.cssHeight);
-    if (rect && !this.transparent) ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+    this.frame = frameOfView(page);
+    // Infini (DA4) : le fond de page sur tout le tampon, aucun pourtour. Page : pourtour, puis la partie visible du cadre.
+    if (this.transparent) ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    else if (this.frame === null) ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    else {
+      ctx.fillStyle = SURROUND_COLOR;
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
+    this.setView(ctx, camera);
+    const rect = this.frame === null ? null : visiblePageRect(camera, this.cssWidth, this.cssHeight, this.frame);
+    if (rect && !this.transparent) {
+      ctx.fillStyle = this.background;
+      ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+    }
     // Fond de page (U6, C12 PF14) : sous la grille et sous les éléments (G11).
     const state = page.backdrop ? this.paintBackdrop(ctx, page.backdrop, camera) : "";
     this.onBackdrop?.(state);
@@ -390,11 +403,12 @@ export class Canvas2DRenderer implements Renderer {
     this.images?.endScene?.();
   }
 
-  /** Lignes visibles de la grille de la page (G9), servies par le cache (E3) ; null sans source, sans grille ou hors page. */
+  /** Lignes visibles de la grille de la page (G9), servies par le cache (E3) ; null sans source, sans grille ou hors cadre.
+   *  Bornées au cadre de la scène ; en Infini, aucune borne (coordonnées négatives comprises). */
   private gridOf(page: string, camera: Camera): GridLines | null {
-    const rect = visibleGridRect(camera, this.cssWidth, this.cssHeight);
+    const rect = visibleGridRect(camera, this.cssWidth, this.cssHeight, this.frame);
     if (!rect) return null;
-    return this.gridCache.get(page, rect, camera.zoom, PAGE_WIDTH);
+    return this.gridCache.get(page, rect, camera.zoom, this.frame);
   }
 
   /** Placeholder sur `rect`, puis le bitmap d'un fond `image` ou le peintre d'un fond `pdf-page` (PF14) ; un autre genre
@@ -605,7 +619,7 @@ export class Canvas2DRenderer implements Renderer {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     if (live.strokes.length === 0 && live.erasers.length === 0) return;
     this.setView(ctx, camera);
-    const rect = visiblePageRect(camera, this.cssHeight);
+    const rect = visiblePageRect(camera, this.cssWidth, this.cssHeight, this.frame);
     for (const e of live.erasers) this.paintEraser(ctx, e, rect);
     for (const s of live.strokes) this.paintStroke(ctx, s);
   }
@@ -728,6 +742,8 @@ export class Canvas2DRenderer implements Renderer {
       if (page) ctx.rect(page.x0, page.y0, page.x1 - page.x0, page.y1 - page.y0);
     };
     if (page) along(this.background, pageRect);
+    // Infini : aucun pourtour (le fond couvre toute la vue).
+    if (this.frame === null) return;
     along(SURROUND_COLOR, () => {
       ctx.rect(-FAR, -FAR, 2 * FAR, 2 * FAR);
       pageRect();

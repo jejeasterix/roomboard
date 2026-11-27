@@ -53,7 +53,7 @@ describe("import-handler (OF13, D5)", () => {
 
   it("feuille : n'importe que des types, jamais le registre", () => {
     const source = readFileSync(join(__dirname, "import-handler.ts"), "utf8");
-    expect(ts.preProcessFile(source, true, true).importedFiles.map((f) => f.fileName)).toEqual(["../core/api", "../core/asset-store", "../engine/camera", "../engine/text-layout", "./files"]);
+    expect(ts.preProcessFile(source, true, true).importedFiles.map((f) => f.fileName)).toEqual(["../core/api", "../engine/page", "../core/asset-store", "../engine/camera", "../engine/text-layout", "./files"]);
     // Les imports de type sont effacés à la compilation : il ne reste aucun import à l'exécution.
     expect(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText).not.toMatch(/\bimport\b|\brequire\b/);
   });

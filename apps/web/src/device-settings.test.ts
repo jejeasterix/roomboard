@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDeviceSettings, FRAME_KEY, NO_ISLAND, islandKey } from "./device-settings";
+import { createDeviceSettings, FRAME_KEY, NO_ISLAND, islandKey, SIDEBAR_KEY } from "./device-settings";
 import type { KeyValue } from "./profile-store";
 
 function memoryKv(init: Record<string, string> = {}): KeyValue & { readonly map: Map<string, string> } {
@@ -139,5 +139,31 @@ describe("design-l2 T11 : clé d'îlot", () => {
   it("design-l2 T11 (discrimine) : chaque partie de la clé est encodée (encodeURIComponent)", () => {
     expect(islandKey("mon profil", "outils/a")).toBe("roomboard.ilot.mon%20profil.outils%2Fa");
     expect(islandKey("defaut", "outils")).toBe("roomboard.ilot.defaut.outils");
+  });
+});
+
+describe("device-settings : barre latérale (personnalisation-1a T2)", () => {
+  it("barre latérale : clé roomboard.laterale ; rien d'enregistré : onglet pages, vignettes m", () => {
+    expect(SIDEBAR_KEY).toBe("roomboard.laterale");
+    expect(createDeviceSettings(memoryKv()).sidebar()).toEqual({ tab: "pages", thumb: "m" });
+    expect(createDeviceSettings(null).sidebar()).toEqual({ tab: "pages", thumb: "m" });
+  });
+  it("barre latérale : aller-retour, relu par une nouvelle instance (rechargement)", () => {
+    const kv = memoryKv();
+    const s = createDeviceSettings(kv);
+    s.setSidebar({ tab: "calques", thumb: "l" });
+    expect(s.sidebar()).toEqual({ tab: "calques", thumb: "l" });
+    expect(JSON.parse(kv.map.get(SIDEBAR_KEY)!)).toEqual({ tab: "calques", thumb: "l" });
+    expect(createDeviceSettings(kv).sidebar()).toEqual({ tab: "calques", thumb: "l" });
+  });
+  it("barre latérale : valeur illisible → défaut, champ par champ ; stockage qui lève : mémoire seule, rien ne lève", () => {
+    for (const raw of ["{", "[]", "null", '"pages"', '{"tab":"x","thumb":"xl"}']) {
+      expect(createDeviceSettings(memoryKv({ [SIDEBAR_KEY]: raw })).sidebar(), raw).toEqual({ tab: "pages", thumb: "m" });
+    }
+    expect(createDeviceSettings(memoryKv({ [SIDEBAR_KEY]: '{"tab":"calques","thumb":9}' })).sidebar()).toEqual({ tab: "calques", thumb: "m" });
+    const s = createDeviceSettings(throwing);
+    expect(s.sidebar()).toEqual({ tab: "pages", thumb: "m" });
+    expect(() => s.setSidebar({ tab: "calques", thumb: "s" })).not.toThrow();
+    expect(s.sidebar()).toEqual({ tab: "calques", thumb: "s" });
   });
 });

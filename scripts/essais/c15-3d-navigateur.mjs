@@ -210,7 +210,12 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
     await page.click(item("select"));
     // Les six objets se recouvrent : on cherche, sur une grille, un point où le clic prend le GLB (format « glb »).
     // Les îlots flottent sur la scène : les points de la grille qu'ils couvrent sont sautés.
-    const isl = await islandBoxes(page);
+    // La rangée contextuelle de l'îlot d'outils (hors de l'îlot, plus large que lui) couvre aussi des points de la grille : un clic
+    // sur l'un de ses boutons (Dupliquer) ajoutait un élément. Ses boîtes comptent donc avec celles des îlots.
+    const ctxBoxes = await page.$$eval(".rb-context", (els) =>
+      els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0).map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height })),
+    );
+    const isl = [...(await islandBoxes(page)), ...ctxBoxes];
     const bs = await stageBox(page);
     const free = (x, y) => !isl.some((b) => bs.x + x >= b.x && bs.x + x <= b.x + b.width && bs.y + y >= b.y && bs.y + y <= b.y + b.height);
     let found = false;

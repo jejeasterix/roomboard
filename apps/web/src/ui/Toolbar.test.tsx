@@ -8,6 +8,7 @@ import type { ButtonSize, RuntimeCapabilities, StartMode, Toolbar as Bar, ToolIt
 import { ACTION_TABLE } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ToolbarHost } from "../app/toolbar-host";
+import { SideBar, type PagesPort } from "./SideBar";
 import { Toolbar, type PresetTable } from "./Toolbar";
 import type { ToolbarView } from "./item-state";
 import { TIP_HOVER_MS } from "./tooltip";
@@ -52,7 +53,10 @@ describe("Toolbar", () => {
     const { container, setV } = setup();
     expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
     setV({ ...VIEW, tool: "select" });
-    expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(6);
+    // T16 : six actions de C3, puis Premier plan et Arrière-plan (lot 2, table 2 bis du cadrage personnalisation-1a)
+    const ids = [...container.querySelectorAll("[data-selection-action]")].map((b) => b.getAttribute("data-selection-action"));
+    expect(ids).toHaveLength(8);
+    expect(ids.slice(-3)).toEqual(["layer-front", "layer-back", "image"]);
   });
   it("defaut : un bouton par élément visible, dans l'ordre", () => {
     const { container } = setup();
@@ -510,7 +514,7 @@ describe("Toolbar — barre d'annotation (design-l4)", () => {
     const ann = setup({ ...mkBar([tool("pen")]), role: "annotation" }, NO_CAPS, "m", PEN);
     expect(ann.container.querySelectorAll("button[data-preset]")).toHaveLength(3);
     ann.setV({ ...VIEW, tool: "select" });
-    expect(ann.container.querySelectorAll("[data-selection-action]")).toHaveLength(6);
+    expect(ann.container.querySelectorAll("[data-selection-action]")).toHaveLength(8);
     cleanup();
     const other = setup({ ...mkBar([tool("pen")]), role: "autre" }, NO_CAPS, "m", PEN);
     expect(other.container.querySelectorAll("button[data-preset]")).toHaveLength(0);
@@ -542,5 +546,46 @@ describe("Toolbar — design-l2 (L2-8, L2-13)", () => {
     expect(bar.hasAttribute("data-collapsed")).toBe(false);
     setC(true);
     expect(bar.getAttribute("data-collapsed")).toBe("1");
+  });
+});
+
+describe("Toolbar — compteur de pages (personnalisation-1a, T6)", () => {
+  const nav = mkBar([
+    { id: "page-prev", kind: "action", action: "page-prev", label: "Page précédente", requires: [], rest: {} },
+    { id: "page-number", kind: "action", action: "page-number", label: "Numéro de page", requires: [], rest: {} },
+    { id: "page-next", kind: "action", action: "page-next", label: "Page suivante", requires: [], rest: {} },
+  ]);
+  it("page-number rend #pages 2 / 5, bouton à icône, seul #pages de la page", () => {
+    const { container, setV } = setup(nav);
+    setV({ ...VIEW, pageIndex: 1, pageCount: 5 });
+    const b = container.querySelector<HTMLButtonElement>('button[data-item="page-number"]')!;
+    expect(b.id).toBe("pages");
+    expect(b.classList.contains("rb-pages-count")).toBe(true);
+    expect(b.textContent).toBe("2 / 5");
+    expect(b.getAttribute("aria-label")).toBe("2 / 5");
+    expect(b.querySelector("svg.rb-icon")).not.toBeNull();
+    expect(document.querySelectorAll("#pages")).toHaveLength(1);
+  });
+  it("page-number pressed quand sidebarOpen ; clic → runAction(page-number)", () => {
+    const { container, setV, host } = setup(nav);
+    const b = container.querySelector<HTMLButtonElement>('button[data-item="page-number"]')!;
+    expect(b.getAttribute("aria-pressed")).toBe("false");
+    setV({ ...VIEW, sidebarOpen: true });
+    expect(b.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(b);
+    expect(host.runAction).toHaveBeenCalledWith("page-number");
+  });
+  it("barre latérale (successeur de PagesBar) : aucun second #pages, le compteur reste celui de la barre d'outils", () => {
+    const pages: PagesPort = { ids: () => ["a", "b"], shown: () => "a", layout: () => "landscape", fixedByBackdrop: () => false, show() {}, move() {}, duplicate() {}, remove() {}, addAfter() {}, setLayout() {}, thumb: async () => null };
+    const { container } = render(() => (
+      <SideBar bar={{ id: "pages", role: "pages", dock: "floating", collapsed: false, groups: [{ id: "g", items: [nav.groups[0]!.items[1]!], rest: {} }], rest: {} }} collapsed={() => false} caps={() => ({ desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false })} view={() => ({ ...VIEW, pageIndex: 0, pageCount: 2 })} host={{ runAction() {} } as never} pages={pages} />
+    ));
+    expect(container.querySelector("#pages")).toBeNull();
+  });
+  it("page-next sur la dernière page : actif, nommé Nouvelle page", () => {
+    const { container } = setup(nav);
+    const b = container.querySelector<HTMLButtonElement>('button[data-item="page-next"]')!;
+    expect(b.disabled).toBe(false);
+    expect(b.getAttribute("aria-label")).toBe("Nouvelle page");
   });
 });

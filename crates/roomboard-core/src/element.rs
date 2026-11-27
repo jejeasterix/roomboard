@@ -14,6 +14,10 @@ use crate::table::TableView;
 pub const SCHEMA: u32 = 1;
 pub const PAGE_WIDTH: f64 = 1920.0;
 pub const PAGE_HEIGHT: f64 = 1080.0;
+/// Hauteur d'une page Portrait (décision 3) : largeur gardée, rapport 9:16.
+pub const PORTRAIT_HEIGHT: f64 = 1920.0 * 16.0 / 9.0;
+/// Seule valeur de `mode` écrite par cette version (page infinie).
+pub const INFINITE_MODE: &str = "infinite";
 pub const DEFAULT_BACKGROUND: &str = "#ffffff";
 
 /// Transformation affine [a, b, c, d, e, f] : x' = a·x + c·y + e ; y' = b·x + d·y + f (D4).
@@ -38,6 +42,34 @@ pub const FIT_WIDTH: &str = "width";
 /// Genre du fond d'une page venue d'un PDF (C12, PF5) : `page` y désigne la page d'origine, à partir de 0.
 pub const PDF_PAGE_KIND: &str = "pdf-page";
 
+/// Disposition d'une page (décisions 3, 4, 6) : Paysage et Portrait sont des pages (`mode` absent, hauteur 1080 ou
+/// `PORTRAIT_HEIGHT`) ; Infini écrit `mode = "infinite"` et garde la hauteur.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageLayout {
+    Landscape,
+    Portrait,
+    Infinite,
+}
+
+impl PageLayout {
+    pub fn parse(s: &str) -> Option<PageLayout> {
+        match s {
+            "landscape" => Some(PageLayout::Landscape),
+            "portrait" => Some(PageLayout::Portrait),
+            "infinite" => Some(PageLayout::Infinite),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PageLayout::Landscape => "landscape",
+            PageLayout::Portrait => "portrait",
+            PageLayout::Infinite => "infinite",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct PageView {
     pub id: String,
@@ -47,6 +79,8 @@ pub struct PageView {
     pub backdrop: Option<BackdropView>,
     /// Grille de page (U31, C9) ; `None` sans champ `grid` lisible (G4).
     pub grid: Option<GridView>,
+    /// `"page"` ou `"infinite"` ; champ `mode` absent ou inconnu : `"page"` (U3).
+    pub mode: String,
 }
 
 /// Fond de page (U6, K6, K9) : valeurs brutes, `rect` calculé par le cœur (DAK4).

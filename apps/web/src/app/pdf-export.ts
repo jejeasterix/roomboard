@@ -3,7 +3,9 @@
  * `deps.loadPdfLib`). Pages dans l'ordre du document. Page à fond `pdf-page` : la page d'origine recopiée
  * (`copyPages` : flux, polices, texte, annotations intacts), puis la superposition du contenu RoomBoard posée sur la
  * CropBox en tenant compte de /Rotate ; sans contenu, recopiée telle quelle. Autre page (ou indice au-delà du PDF
- * d'origine, PC7) : page neuve de 842 pt de large, hauteur max(1080, bas du contenu) × 842 / 1920. La superposition
+ * d'origine, PC7) : page neuve de 842 pt de large, à la proportion de `pageExportRect` (Page : cadre étendu jusqu'au
+ * contenu, soit max(1080, bas du contenu) × 842 / 1920 pour la page par défaut ; Infini : boîte du contenu ∪ fond, sinon
+ * 1920 × 1080, DA4). La superposition
  * vient d'un producteur interchangeable : PNG (b, `pdf-overlay.ts`) ou page vectorielle `krilla` (c).
  *
  * Le document n'est lu qu'au départ, avant le premier `await` : l'onglet peut se fermer pendant l'export (`dispose`
@@ -17,6 +19,7 @@
 import type { PDFDocument, PDFPage } from "pdf-lib";
 import { PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, type Bounds } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
+import { pageFrame, type PageRect } from "../engine/page";
 
 export const NEW_PAGE_WIDTH = 842;
 export const PDF_CUT_MESSAGE = "du contenu hors des pages PDF n'est pas exporté";
@@ -36,7 +39,14 @@ export interface ExportSource {
   pageIds(): string[];
   elementIds(page: string): string[];
   bounds(ids: readonly string[]): Bounds | null;
-  page(id: string): { readonly backdrop: ExportBackdrop | null; readonly grid: { readonly visible: boolean } | null } | null;
+  page(id: string): {
+    readonly backdrop: ExportBackdrop | null;
+    readonly grid: { readonly visible: boolean } | null;
+    /** DA4 : champs du cadre (`pageFrame`) ; absents : 1920 × 1080, mode Page. */
+    readonly width?: number;
+    readonly height?: number;
+    readonly mode?: string;
+  } | null;
 }
 /** Superposition demandée : rectangle monde exporté, boîte vue (points, après /Rotate) où la poser. */
 export interface OverlayRequest {
@@ -118,6 +128,24 @@ interface Snapshot {
   readonly pdf: { readonly asset: string; readonly index: number; readonly rect: Bounds } | null;
   readonly bounds: Bounds | null;
   readonly content: boolean;
+  /** Cadre de la page (DA4) ; null en Infini. */
+  readonly frame: PageRect | null;
+  /** Rectangle du fond, quel qu'en soit le genre ; null sans fond. */
+  readonly backdrop: Bounds | null;
+}
+
+const union = (a: Bounds | null, b: Bounds | null): Bounds | null =>
+  a === null ? b : b === null ? a : { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
+
+/**
+ * Rectangle monde d'une page neuve (DA4) : Page → le cadre de `pageFrame` (déjà étendu par le fond) étendu vers le bas
+ * jusqu'au contenu ; Infini → boîte du contenu ∪ fond (une unité au moins de côté), sinon 1920 × 1080.
+ */
+export function pageExportRect(frame: PageRect | null, content: Bounds | null, backdrop: Bounds | null): Bounds {
+  if (frame !== null) return { x0: frame.x0, y0: frame.y0, x1: frame.x1, y1: Math.max(frame.y1, content?.y1 ?? 0) };
+  const box = union(content, backdrop);
+  if (box === null) return { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: PAGE_HEIGHT };
+  return { x0: box.x0, y0: box.y0, x1: Math.max(box.x1, box.x0 + 1), y1: Math.max(box.y1, box.y0 + 1) };
 }
 
 const outside = (b: Bounds, r: Bounds): boolean => b.x0 < r.x0 || b.y0 < r.y0 || b.x1 > r.x1 || b.y1 > r.y1;
@@ -129,7 +157,9 @@ function snapshot(doc: ExportSource): Snapshot[] {
     const bounds = ids.length > 0 ? doc.bounds(ids) : null;
     const b = view?.backdrop ?? null;
     const pdf = b !== null && b.kind === PDF_PAGE_KIND && b.page !== null && b.rect !== null ? { asset: b.asset, index: b.page, rect: { ...b.rect } } : null;
-    return { id, pdf, bounds: bounds === null ? null : { ...bounds }, content: ids.length > 0 || view?.grid?.visible === true };
+    const frame = pageFrame({ width: view?.width ?? PAGE_WIDTH, height: view?.height ?? PAGE_HEIGHT, backdrop: b, mode: view?.mode ?? "page" });
+    const backdrop = b?.rect ? { ...b.rect } : null;
+    return { id, pdf, bounds: bounds === null ? null : { ...bounds }, content: ids.length > 0 || view?.grid?.visible === true, frame, backdrop };
   });
 }
 
@@ -233,8 +263,8 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
       }
     }
     const kept = page !== null && p.pdf !== null;
-    const rect = kept && p.pdf !== null ? p.pdf.rect : { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: Math.max(PAGE_HEIGHT, p.bounds?.y1 ?? 0) };
-    if (page === null) page = out.addPage([NEW_PAGE_WIDTH, ((rect.y1 - rect.y0) * NEW_PAGE_WIDTH) / PAGE_WIDTH]);
+    const rect = kept && p.pdf !== null ? p.pdf.rect : pageExportRect(p.frame, p.bounds, p.backdrop);
+    if (page === null) page = out.addPage([NEW_PAGE_WIDTH, ((rect.y1 - rect.y0) * NEW_PAGE_WIDTH) / (rect.x1 - rect.x0)]);
     annotated ||= kept;
     cut ||= kept && p.bounds !== null && outside(p.bounds, rect);
     pages.push(page);

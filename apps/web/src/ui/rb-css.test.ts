@@ -247,8 +247,23 @@ describe("rb.css (design-l2)", () => {
     expect(rule('.rb-island .rb-bar[data-collapsed="1"]')).toContain("display: none;");
     expect(rule(".rb-island-chrome[data-island-grip]")).toContain("touch-action: none;");
   });
-  it("design-l2 T12 : îlot des pages : place de trois numéros gardée (CL5b-8, essai c13 S4) ; compteur en bleu nuit, marges réduites", () => {
-    expect(rule(".rb-island .rb-pages-list")).toMatch(/min-width: calc\(3 \* var\(--rb-btn\) \+ 2 \* var\(--rb-gap\)\);.*flex: 0 1 auto;/);
+  it("personnalisation-1a T10 : barre latérale : liste verticale défilante ; compteur en bleu nuit, marges réduites ; aucun 48 px littéral", () => {
+    expect(rule(".rb-pages-list")).toMatch(/flex-direction: column;.*overflow-y: auto;/);
+    expect(rule(".rb-pages-list")).not.toMatch(/overflow-x: auto/);
+    expect(rule(".rb-side .rb-page-thumb")).toMatch(/touch-action: none;/);
+    // T16 : îlot latéral en colonne (volet) ; replié : bande d'un bouton de large, onglets en icônes empilés, puis Déplier.
+    const side = '.rb-island[data-anchor^="side-"]';
+    expect(rule(side)).toMatch(/flex-direction: column;.*align-items: stretch;/);
+    expect(rule(`${side} > .rb-island-chrome`)).toMatch(/inline-size: auto;/);
+    expect(rule(`${side}[data-collapsed="1"] .rb-side-tabs`)).toContain("flex-direction: column;");
+    expect(rule(`${side}[data-collapsed="1"] .rb-side .rb-tab`)).toMatch(/inline-size: var\(--rb-btn\); block-size: var\(--rb-btn\);.*padding: 0;/);
+    expect(rule(`${side}[data-collapsed="1"] .rb-side .rb-tab-title`)).toContain("clip-path: inset(50%);");
+    // T16 (design-l4) : panneaux passagers sous les îlots du haut, outil descendu compris (--rb-pop-top posé par App)
+    expect(rule(".rb-popover")).toMatch(/max-height: calc\(100% - var\(--rb-pop-top, 88px\) - 16px\);.*margin: var\(--rb-pop-top, 88px\) 0 0 16px;/);
+    expect(rule('.rb-popover[data-panel="image"]')).toContain("margin: var(--rb-pop-top, 88px) 16px 0 0;");
+    expect(rule(".rb-side .rb-page-thumb[aria-current=\"page\"]")).toContain("var(--rf-violet-600)");
+    expect(own(/rb-side|rb-page-|rb-pages-list/).length).toBeGreaterThan(10);
+    for (const r of own(/rb-side|rb-page-|rb-pages-list/)) expect(r, r).not.toMatch(/\b48px|\d\.\d+px|translate|blur/);
     expect(rule(".rb-pages-count")).toMatch(/color: var\(--rf-navy-500\);/);
     expect(rule(".rb-pages-count")).not.toMatch(/margin-inline: var\(--rb-gap\)/);
   });
@@ -272,8 +287,8 @@ describe("rb.css (design-l2)", () => {
     expect(rule('.rb-bar button[data-menu-toggle][aria-expanded="true"]')).toMatch(/background: var\(--rf-violet-100\);.*color: var\(--rf-violet-700\);/);
   });
   it("design-l2 L2-15 : panneaux passagers en îlot, sous la rangée du haut ; menu Profil à droite ; barres du média au-dessus des pages", () => {
-    expect(rule(".rb-popover")).toMatch(/border: 0;.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-hover\);.*margin: 88px 0 0 16px;/);
-    expect(rule('.rb-popover[data-panel="image"]')).toMatch(/justify-self: end;.*margin: 88px 16px 0 0;/);
+    expect(rule(".rb-popover")).toMatch(/border: 0;.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-hover\);.*margin: var\(--rb-pop-top, 88px\) 0 0 16px;/);
+    expect(rule('.rb-popover[data-panel="image"]')).toMatch(/justify-self: end;.*margin: var\(--rb-pop-top, 88px\) 16px 0 0;/);
     expect(rule('.rb-popover[data-panel="menu-profils"]')).toMatch(/justify-self: end;.*margin: 88px 16px 0 0;/);
     expect(rule(".rb-media-bar")).toContain("margin: 0 0 88px;");
   });

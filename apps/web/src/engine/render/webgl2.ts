@@ -7,8 +7,8 @@
  */
 import type { Change } from "../../core/api";
 import type { Camera } from "../camera";
-import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visiblePageRect } from "../page";
-import { PEN_HALF_WIDTH } from "./canvas2d";
+import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, type PageRect } from "../page";
+import { frameOfView, PEN_HALF_WIDTH } from "./canvas2d";
 import type { EditOverlay } from "./overlay";
 import type { EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer } from "./renderer";
 
@@ -72,13 +72,15 @@ export function pageScissor(
   bufH: number,
   sx: number,
   sy: number,
+  frame: PageRect | null,
 ): [number, number, number, number] {
-  const x0 = Math.max(0, Math.floor(c.tx * sx));
-  const x1 = Math.min(bufW, Math.ceil((PAGE_WIDTH * c.zoom + c.tx) * sx));
-  const top = Math.max(0, Math.floor(c.ty * sy));
-  // Page infinie en hauteur : le fond va jusqu'au bas du tampon tant que le haut de page est dans la vue.
-  const bottom = visiblePageRect(c, bufH / sy) ? bufH : top;
-  return [x0, bufH - bottom, Math.max(0, x1 - x0), Math.max(0, bottom - top)];
+  // Infini (DA4) : aucun cadre, le fond couvre tout le tampon.
+  if (frame === null) return [0, 0, bufW, bufH];
+  const x0 = Math.max(0, Math.floor((frame.x0 * c.zoom + c.tx) * sx));
+  const x1 = Math.min(bufW, Math.ceil((frame.x1 * c.zoom + c.tx) * sx));
+  const top = Math.max(0, Math.floor((frame.y0 * c.zoom + c.ty) * sy));
+  const bottom = Math.max(top, Math.min(bufH, Math.ceil((frame.y1 * c.zoom + c.ty) * sy)));
+  return [x0, bufH - bottom, Math.max(0, x1 - x0), bottom - top];
 }
 
 /** Polygones x, y séparés par une paire non finie ; ceux de moins de 3 sommets sont écartés. */
@@ -262,6 +264,8 @@ export class WebGL2LiveRenderer implements Renderer {
   private res: Resources;
   /** Fond du dernier drawScene, repeint par l'aperçu de gomme partielle (D20). */
   private background = PAGE_BACKGROUND;
+  /** Cadre de la dernière scène (DA4, même règle que `canvas2d.ts`) ; null en Infini. */
+  private frame: PageRect | null = { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: PAGE_HEIGHT };
   private sx = 1;
   private sy = 1;
   private contextLost = false;
@@ -299,6 +303,7 @@ export class WebGL2LiveRenderer implements Renderer {
     // Le fond retenu par la scène (le canvas accepte « red », WebGL non : il le relit normalisé en `#rrggbb`).
     const kept = this.scene.pageColor ?? page.background;
     this.background = kept !== undefined && tryParseColor(kept) !== null ? kept : PAGE_BACKGROUND;
+    this.frame = frameOfView(page);
   }
 
   invalidate(change: Change): void {
@@ -384,9 +389,15 @@ export class WebGL2LiveRenderer implements Renderer {
     if (e.mode !== "partial" || e.path.length < 2) return;
     const gl = this.gl;
     const band = thickPolyline(e.path, e.radius + PEN_HALF_WIDTH);
+    // Infini : aucun pourtour, la bande prend le fond de page partout.
+    if (this.frame === null) {
+      this.color(this.background);
+      this.draw(gl.TRIANGLES, band);
+      return;
+    }
     this.color(SURROUND_COLOR);
     this.draw(gl.TRIANGLES, band);
-    const [x, y, sw, sh] = pageScissor(camera, w, h, this.sx, this.sy);
+    const [x, y, sw, sh] = pageScissor(camera, w, h, this.sx, this.sy, this.frame);
     if (sw === 0 || sh === 0) return;
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(x, y, sw, sh);

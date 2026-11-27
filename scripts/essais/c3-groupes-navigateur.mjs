@@ -66,16 +66,18 @@ async function scenario(page, url, { captures, tmp }) {
   await page.waitForSelector("#stage");
   await fr();
 
+  // Les points de dessin sont décalés de +120 px en y : à 1280 px, l'îlot d'outils (941 px avec la navigation de page) ne tient plus
+  // dans la place centrée du haut (816 px) et descend à y = 80 (règle L2-30) ; il recouvrait le départ du 2e rectangle.
   // S1 : deux rectangles et un trait, puis rectangle de sélection autour des trois.
   await page.click(item("rect"));
-  await drag(120, 120, 220, 200);
-  await drag(260, 120, 360, 200);
+  await drag(120, 240, 220, 320);
+  await drag(260, 240, 360, 320);
   await page.click(item("pen"));
-  await drag(120, 260, 360, 260);
+  await drag(120, 380, 360, 380);
   await waitAttr("data-elements", "3");
   await page.click(item("select"));
   await fr();
-  await drag(90, 90, 400, 300);
+  await drag(90, 210, 400, 420);
   await waitAttr("data-selection", "3");
   check((await attr("data-units")) === "3" && (await attr("data-grouped")) === "0", "S1 : trois objets sélectionnés, trois unités, aucun groupe");
   await page.keyboard.press("Control+g");
@@ -83,12 +85,12 @@ async function scenario(page, url, { captures, tmp }) {
   check((await attr("data-units")) === "1", 'S1 : Ctrl+G : data-units="1", data-grouped="1"');
   await page.keyboard.press("Escape");
   await waitAttr("data-selection", "0");
-  await mouse.click(170, 160);
+  await mouse.click(170, 280);
   await waitAttr("data-selection", "3");
   check(true, "S1 : un clic sur un rectangle prend les trois objets du groupe");
   await shot("c3-groupe-selectionne.png");
   const before = await bounds();
-  await drag(170, 160, 270, 210);
+  await drag(170, 280, 270, 330);
   const cam = ((await attr("data-camera")) ?? "").split(",").map(Number);
   const moved = await bounds();
   const dx = (moved[0] - before[0]) * cam[0];
@@ -101,18 +103,18 @@ async function scenario(page, url, { captures, tmp }) {
   await waitAttr("data-grouped", "0");
   await page.keyboard.press("Escape");
   await waitAttr("data-selection", "0");
-  await mouse.click(170, 160);
+  await mouse.click(170, 280);
   await waitAttr("data-selection", "1");
   check((await attr("data-units")) === "1" && (await attr("data-grouped")) === "0", "S1 : Dégrouper : un clic ne prend plus qu'un objet");
   await page.keyboard.press("Escape");
   await waitAttr("data-selection", "0");
   await page.keyboard.press("Control+z");
-  await mouse.click(170, 160);
+  await mouse.click(170, 280);
   await waitAttr("data-selection", "3");
   check((await attr("data-grouped")) === "1", "S1 : Annuler rend le groupe : un clic reprend les trois objets");
 
   // S2 : Ctrl+C réel, enveloppe relue dans le presse-papiers système.
-  await mouse.click(170, 160);
+  await mouse.click(170, 280);
   await waitAttr("data-selection", "3");
   await page.keyboard.press("Control+c");
   // Sondage côté Node : un readText refusé ou en attente ne bloque pas l'attente, la limite reste 15 s.
@@ -177,7 +179,7 @@ async function scenario(page, url, { captures, tmp }) {
   await fr();
   await page.click(item("select"));
   await fr();
-  await mouse.click(170, 160);
+  await mouse.click(170, 280);
   await waitAttr("data-selection", "3");
   check((await attr("data-grouped")) === "1", "S5 : enregistré puis rouvert : un clic prend les trois objets groupés");
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitPage, fitWidth, topBelowIslands, IDENTITY, MAX_ZOOM, MIN_ZOOM, panBy, screenToWorld, worldToScreen, zoomAt, type Camera } from "./camera";
+import { fitFor, fitFrame, fitPage, fitWidth, topBelowIslands, IDENTITY, MAX_ZOOM, MIN_ZOOM, panBy, screenToWorld, worldToScreen, zoomAt, type Camera } from "./camera";
 
 describe("camera (D17)", () => {
   const cam: Camera = { zoom: 2, tx: 10, ty: -20 };
@@ -87,5 +87,41 @@ describe("camera (D17)", () => {
     it("mesure depuis le haut de la scène", () => {
       expect(topBelowIslands({ top: 40, bottom: 1120 }, [{ top: 56, bottom: 112 }])).toBe(148);
     });
+  });
+});
+
+describe("fitFor (décision 10)", () => {
+  const frame = { x0: 0, y0: 0, x1: 1920, y1: 3413.33 };
+  it("fitFor portrait : cadre entier visible sous top", () => {
+    const c = fitFor("portrait", 1000, 800, frame, null, 100);
+    expect(c.ty).toBeGreaterThanOrEqual(100);
+    expect(c.ty + frame.y1 * c.zoom).toBeLessThanOrEqual(800 + 1e-6);
+    expect(c.tx).toBeGreaterThanOrEqual(0);
+    expect(c).toEqual(fitFrame(1000, 800, frame, 100));
+  });
+  it("fitFor landscape = fitWidth", () => {
+    const f = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+    expect(fitFor("landscape", 1000, 800, f, null, 100)).toEqual(fitWidth(1000, 800, 1920, 0.95, 100));
+  });
+  it("fitFor infini sans contenu : 1920 × 1080 en largeur", () => {
+    expect(fitFor("infinite", 1000, 800, null, null, 100)).toEqual(fitWidth(1000, 800, 1920, 0.95, 100));
+  });
+  it("fitFor infini avec contenu : contenu entier visible", () => {
+    const c = fitFor("infinite", 1000, 800, null, { x0: -500, y0: -500, x1: 500, y1: 500 }, 100);
+    expect(c.ty + -500 * c.zoom).toBeGreaterThanOrEqual(100 - 1e-6);
+    expect(c.ty + 500 * c.zoom).toBeLessThanOrEqual(800 + 1e-6);
+  });
+});
+
+describe("topBelowIslands : îlots latéraux", () => {
+  const stage = { top: 0, bottom: 900 };
+  const top = { top: 8, bottom: 56 };
+  const base = topBelowIslands(stage, [top]);
+  it("un îlot latéral haut de 600 px ne change pas fitTop", () => {
+    expect(topBelowIslands(stage, [top, { top: 0, bottom: 600, side: true }])).toBe(base);
+  });
+  it("un îlot latéral replié (48 px, en haut du côté) est ignoré", () => {
+    expect(topBelowIslands(stage, [top, { top: 0, bottom: 48, side: true }])).toBe(base);
+    expect(topBelowIslands(stage, [{ top: 0, bottom: 48, side: true }])).toBe(16);
   });
 });

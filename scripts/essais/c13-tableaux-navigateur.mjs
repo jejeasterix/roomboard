@@ -18,7 +18,7 @@ import { createRequire } from "node:module";
 import { deflateSync, inflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, openMenuOf, ROOT, serve, solidPng, stageBox, stageMouse, TAB, VIEWPORT } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, openMenuOf, openSideOf, pageTo, ROOT, serve, solidPng, stageBox, stageMouse, TAB, VIEWPORT } from "./commun.mjs";
 import { bambooContainer, makeFlipchart } from "./fabriques/flipchart.mjs";
 import { flipPages, iwbRaw3, iwbZip, nbSvg, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
 
@@ -218,12 +218,26 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await page.keyboard.press("Escape");
   const box0 = await stageBox(page, 640);
   check(box0.height >= 640, `S4 : scène de ${Math.round(box0.width)} × ${Math.round(box0.height)} px (hauteur ≥ 640) avec les deux actions`);
+  const unfolded = await openSideOf(page, ".rb-pages-list"); // la liste se mesure barre latérale dépliée
+  // T16 : mesurée selon son axe de défilement (liste en colonne dans la barre latérale : la hauteur qu'elle peut prendre,
+  // bornée par son max-block-size et par la place laissée dans l'îlot ; en rangée : sa largeur), même intention.
   const list = await page.evaluate(() => {
     const l = document.querySelector(".rb-pages-list");
     const b = l?.querySelector("button");
-    return { visible: l?.clientWidth ?? 0, button: b?.getBoundingClientRect().width ?? 0, first: b ? l.getBoundingClientRect().left <= b.getBoundingClientRect().left + 0.5 && b.getBoundingClientRect().right <= l.getBoundingClientRect().right + 0.5 : false };
+    if (!l || !b) return { visible: 0, button: 0, first: false, axis: "?" };
+    const lr = l.getBoundingClientRect();
+    const br = b.getBoundingClientRect();
+    if (!getComputedStyle(l).flexDirection.startsWith("column")) {
+      return { visible: l.clientWidth, button: br.width, first: lr.left <= br.left + 0.5 && br.right <= lr.right + 0.5, axis: "largeur", room: NaN };
+    }
+    const isl = l.closest(".rb-island");
+    const room = isl ? (Number.parseFloat(isl.style.maxBlockSize) || Infinity) - isl.getBoundingClientRect().height : 0;
+    const max = Number.parseFloat(getComputedStyle(l).maxBlockSize) || Infinity;
+    return { visible: Math.min(max, l.clientHeight + Math.max(0, room)), button: br.height, first: lr.top <= br.top + 0.5 && br.bottom <= lr.bottom + 0.5, axis: "hauteur", room };
   });
-  check(list.button > 0 && list.visible >= 3 * list.button && list.first, `S4 : liste des pages de ${Math.round(list.visible)} px visibles (≥ 3 boutons de ${Math.round(list.button)} px), le bouton « 1 » entier`);
+  check(list.axis === "hauteur" && Number.isFinite(list.room), `S4 : liste verticale (axe « ${list.axis} »), place restante finie (${list.room})`);
+  check(list.button > 0 && list.visible >= 3 * list.button && list.first, `S4 : liste des pages de ${Math.round(list.visible)} px visibles en ${list.axis} (≥ 3 miniatures de ${Math.round(list.button)} px), la miniature « 1 » entière`);
+  if (unfolded) await page.click('[data-island="pages"] [data-island-collapse]'); // T16 : repliée, la scène reste libre
 
   // S1 : .iwb ZIP.
   const k273 = dialogs.length;
@@ -311,12 +325,12 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await drop("brut.iwb", enc(iwbRaw3()), 2, "1/3");
   check(true, 'S2 : .iwb SVG brut de 3 pages : data-page="1/3", 2 objets');
   for (const p of [2, 3]) {
-    await page.click(`.rb-pages-list [data-page="${p}"]`);
+    await pageTo(page, p);
     await waitAttr("data-page", `${p}/3`);
     await waitAttr("data-elements", "2");
     check(true, `S2 : page ${p}/3 du .iwb SVG brut : 2 objets`);
   }
-  await page.click('.rb-pages-list [data-page="1"]');
+  await pageTo(page, 1);
   await waitAttr("data-page", "1/3");
 
   // S5 : fichier hostile.
@@ -372,11 +386,11 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   check(nbText.includes("Leçon SMART"), `S1 (lot 2) : le texte « ${nbText} » s'ouvre dans la zone de saisie (éditable)`);
   await page.keyboard.press("Escape");
   await page.click(item("select"));
-  await page.click('.rb-pages-list [data-page="2"]');
+  await pageTo(page, 2);
   await waitAttr("data-page", "2/2");
   await waitAttr("data-elements", "1");
   check(true, 'S1 (lot 2) : page 2 = page0.svg (ordre du manifeste inverse des noms) : data-elements="1"');
-  await page.click('.rb-pages-list [data-page="1"]');
+  await pageTo(page, 1);
   await waitAttr("data-page", "1/2");
   await waitAttr("data-elements", "4");
   const nbSaved = await download(() => page.keyboard.press("Control+s"), "lecon.roomboard");
@@ -455,10 +469,10 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   const orange = await orangeOf();
   check(orange > 50, `S4 (lot 3) : image PNG #FF8000 dessinée (${orange} pixels)`);
   const secondPage = async (when) => {
-    await page.click('.rb-pages-list [data-page="2"]');
+    await pageTo(page, 2);
     await waitAttr("data-page", "2/2");
     await waitAttr("data-elements", "1");
-    await page.click('.rb-pages-list [data-page="1"]');
+    await pageTo(page, 1);
     await waitAttr("data-page", "1/2");
     check(true, `S4 (lot 3) : page 2 ${when} : data-elements="1"`);
   };

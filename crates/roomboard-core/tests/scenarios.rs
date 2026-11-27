@@ -77,16 +77,12 @@ fn s3_pages_save_load_remove_undo() {
     let mut d = Document::blank();
     let p1 = d.page_ids()[0].clone();
     let p2 = d
-        .apply(Command::AddPage {
-            after: Some(p1.clone()),
-        })
+        .apply(Command::add_page(Some(p1.clone())))
         .expect("p2")
         .pages[0]
         .clone();
     let p3 = d
-        .apply(Command::AddPage {
-            after: Some(p2.clone()),
-        })
+        .apply(Command::add_page(Some(p2.clone())))
         .expect("p3")
         .pages[0]
         .clone();
@@ -110,7 +106,7 @@ fn s3_pages_save_load_remove_undo() {
 fn s3_last_page_cannot_be_removed() {
     let mut d = Document::blank();
     let p1 = d.page_ids()[0].clone();
-    let p2 = d.apply(Command::AddPage { after: None }).expect("p2").pages[0].clone();
+    let p2 = d.apply(Command::add_page(None)).expect("p2").pages[0].clone();
     d.apply(Command::RemovePage { page: p1 })
         .expect("première suppression");
     assert_eq!(
@@ -125,16 +121,12 @@ fn s3_text_stroke_shape_survive_save_load() {
     let mut d = Document::blank();
     let p1 = d.page_ids()[0].clone();
     let p2 = d
-        .apply(Command::AddPage {
-            after: Some(p1.clone()),
-        })
+        .apply(Command::add_page(Some(p1.clone())))
         .expect("p2")
         .pages[0]
         .clone();
     let p3 = d
-        .apply(Command::AddPage {
-            after: Some(p2.clone()),
-        })
+        .apply(Command::add_page(Some(p2.clone())))
         .expect("p3")
         .pages[0]
         .clone();

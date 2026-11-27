@@ -14,6 +14,7 @@ import { ANNOTATION_REMOTE_ACTIONS, annotationBarOf, resolveStartMode, type Dock
 import { createContainerIO } from "./app/container-io";
 import { createAssetStore } from "./core/asset-store";
 import { createBoardSession, type SessionShared } from "./app/board-session";
+import { pageShortcut } from "./engine/engine";
 import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
 import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, vectorPainter, workerPdfWriter } from "./app/pdf-overlay-vector";
@@ -224,6 +225,7 @@ async function start(): Promise<void> {
   const shared: SessionShared = {
     container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker, modelView,
     ...(ports === null ? {} : { mediaUrl: ports.assetUrl }),
+    pageMode: () => active.profile().behavior.pageMode,
   };
 
   // C16 (O24) : capacité `officeConverter` lue de la coque avant le profil (convertisseur cherché une fois au lancement).
@@ -387,6 +389,7 @@ async function start(): Promise<void> {
       }
     },
     first,
+    pageMode: () => active.profile().behavior.pageMode,
     makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
     dropReady: () => prepared.dropReady(),
     // L'ordre écoute du dépôt puis `launch_files` est tenu par le workspace (T98) : `launchFiles` n'est appelé que là.
@@ -417,8 +420,11 @@ async function start(): Promise<void> {
   // Choix assumé (fiche ENI) : l'espace est pris même quand un bouton de la barre a le focus, donc il n'active plus les
   // boutons ; sans cela, « espace + glisser » casserait après un clic dans la barre. Puis les raccourcis de fichier de
   // l'onglet actif (hors composition IME).
+  const sidebar: { toggle?: (tab: "pages" | "calques") => void } = {};
   window.addEventListener("keydown", (e) => {
     let taken = workspace.active().board.engine.key(keyOf(e));
+    // Raccourcis de page (DA9, H7) avant ceux de fichier ; la barre latérale est branchée par `sidebar.toggle` (T10).
+    if (pageShortcut({ ...keyOf(e), repeat: e.repeat }, workspace.active().board.engine, sidebar.toggle)) taken = true;
     if (!e.isComposing && workspace.key(e)) taken = true;
     if (taken) e.preventDefault();
   });
@@ -507,6 +513,7 @@ async function start(): Promise<void> {
     stages,
     library: { library, shared: sharedFolder, packs: packFiles },
     device,
+    sidebar,
     ...(ctl === null || windows === null
       ? {}
       : { annotation: { control: ctl, remote: (local) => createRemoteToolbarHost((m) => ctl.command(m), local, ANNOTATION_REMOTE_ACTIONS), onView: (cb) => windows.onView(cb) } }),

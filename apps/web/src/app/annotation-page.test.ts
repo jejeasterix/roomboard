@@ -7,7 +7,7 @@ import { ANNOTATION_EVENTS } from "../platform/annotation-port";
 import { toBase64 } from "../platform/clipboard";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { BoardSession } from "./board-session";
-import { createAnnotationPage, passThrough, viewMatrix, type PageChannel } from "./annotation-page";
+import { createAnnotationPage, passThrough, viewOf, viewMatrix, type PageChannel } from "./annotation-page";
 
 function channel() {
   const listeners = new Map<string, (p: unknown) => void>();
@@ -362,5 +362,12 @@ describe("page annotate (C11b, P13, P15, P16)", () => {
     await flush();
     expect(frames).toEqual([true, false, true]);
     warn.mockRestore();
+  });
+});
+
+describe("viewOf", () => {
+  it("viewOf projette pageMode, pageLayout", () => {
+    const v = viewOf({ tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, pageMode: "page", pageLayout: "portrait", textFormat: null } as never);
+    expect(v).toMatchObject({ pageMode: "page", pageLayout: "portrait" });
   });
 });
