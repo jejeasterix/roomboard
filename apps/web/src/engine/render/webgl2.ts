@@ -275,7 +275,7 @@ export class WebGL2LiveRenderer implements Renderer {
   readonly badColors = new Set<string>();
 
   constructor(
-    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview" | "setImagePreview"> & { readonly pageColor?: string },
+    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview" | "setImagePreview" | "colorAt"> & { readonly pageColor?: string },
     private readonly gl: WebGL2RenderingContext,
   ) {
     this.res = setup(gl);
@@ -314,6 +314,11 @@ export class WebGL2LiveRenderer implements Renderer {
 
   setGridPreview(p: GridPreview | null): void {
     this.scene.setGridPreview(p);
+  }
+
+  /** OG23 (pipette) : la lecture de pixel est celle de la scène Canvas 2D ; sans elle, null. */
+  colorAt(x: number, y: number): string | null {
+    return this.scene.colorAt?.(x, y) ?? null;
   }
 
   /** C5 : l'image se dessine sur la scène Canvas 2D ; WebGL2 ne dessine que l'encre vive. */

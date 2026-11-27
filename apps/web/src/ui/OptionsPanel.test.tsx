@@ -451,16 +451,34 @@ describe("OptionsPanel accordéon et couleurs (OG23, T5)", () => {
     ));
     expect(head(again.container, "strokeStyle").getAttribute("aria-expanded")).toBe("true");
   });
-  it("en-tête : Entrée et Espace basculent", () => {
+  it("en-tête : Entrée et Espace basculent (vraies touches)", () => {
     const { container } = mount({ tool: "rect", selection: [] });
     const h = head(container, "roundness");
     expect(h.tagName).toBe("BUTTON");
     expect(h.getAttribute("aria-controls")).toBe("opt-body-roundness");
-    // Un bouton natif bascule par Entrée ou Espace via `click` : on joue le clic que le navigateur déclenche.
-    fireEvent.click(h);
+    // Entrée : au keydown, comme un bouton natif.
+    fireEvent.keyDown(h, { key: "Enter" });
+    fireEvent.keyUp(h, { key: "Enter" });
     expect(h.getAttribute("aria-expanded")).toBe("true");
-    fireEvent.click(h);
+    // Espace : au keyup, comme un bouton natif ; le moteur (fenêtre) ne prend pas l'espace pour le panoramique.
+    const onWindow = vi.fn();
+    window.addEventListener("keydown", onWindow);
+    const down = fireEvent.keyDown(h, { key: " ", cancelable: true });
+    window.removeEventListener("keydown", onWindow);
+    expect(down).toBe(false);
+    expect(onWindow).not.toHaveBeenCalled();
+    expect(h.getAttribute("aria-expanded")).toBe("true"); // pas encore : le keyup bascule
+    expect(fireEvent.keyUp(h, { key: " ", cancelable: true })).toBe(false);
     expect(h.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.keyDown(h, { key: " " });
+    fireEvent.keyUp(h, { key: " " });
+    expect(h.getAttribute("aria-expanded")).toBe("true");
+  });
+  it("en-tête : un titre h3 contient le bouton, data-option-head intact", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const h = head(container, "roundness");
+    expect(h.parentElement?.tagName).toBe("H3");
+    expect(container.querySelector("h3 > [data-option-head]")).not.toBeNull();
   });
   it("résumé de valeur", () => {
     const m = mount({ tool: "rect", selection: [] });
@@ -567,6 +585,28 @@ describe("OptionsPanel (OG23, T7) : Pression, Aligner, Transformer", () => {
   });
 });
 
+describe("OptionsPanel : Pression (OG23, T17)", () => {
+  it("les segments Constante et Variable ont une infobulle visible (survol), pas d'aria-description posé après coup", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = mount({ tool: "pen", selection: [] });
+      const v = container.querySelector<HTMLElement>('[data-edit="pressure"] [data-option-value="variable"]')!;
+      expect(v.hasAttribute("aria-description")).toBe(false);
+      fireEvent.pointerEnter(v, { pointerType: "mouse" });
+      vi.advanceTimersByTime(1000);
+      expect(document.querySelector(".rb-tip")?.textContent).toBe("Épaisseur selon la pression du stylet");
+      fireEvent.pointerLeave(v, { pointerType: "mouse" });
+      const c = container.querySelector<HTMLElement>('[data-edit="pressure"] [data-option-value="constant"]')!;
+      fireEvent.pointerEnter(c, { pointerType: "mouse" });
+      vi.advanceTimersByTime(1000);
+      expect(document.querySelector(".rb-tip")?.textContent).toBe("Épaisseur constante");
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("OptionsPanel : pipette (OG23, T8)", () => {
   const flush = async (): Promise<void> => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
   it("pipette : écrit la section retenue puis ferme", async () => {
@@ -594,6 +634,57 @@ describe("OptionsPanel : pipette (OG23, T8)", () => {
     picks[1]!(null);
     await flush();
     expect(calls).toHaveLength(n);
+  });
+});
+
+describe("OptionsPanel : pipette, désarmement (OG23, T17)", () => {
+  const flush = async (): Promise<void> => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
+  it("armée pour le Trait puis ouverture du sélecteur du Fond : désarmée, rien n'est écrit au Trait", async () => {
+    const { container, calls, picks, engine } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    fireEvent.click(container.querySelector('[data-more-colors="background"]')!);
+    expect(engine.cancelPick).toHaveBeenCalledTimes(1);
+    const n = calls.length;
+    picks[0]!("#abcdef");
+    await flush();
+    expect(calls).toHaveLength(n);
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull(); // le sélecteur du Fond reste ouvert
+  });
+  it("sélecteur fermé pendant l'armement : la pipette est désarmée et la couleur lue n'écrit rien", async () => {
+    const { container, calls, picks, engine } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!); // referme
+    expect(container.querySelector("[data-color-picker]")).toBeNull();
+    expect(engine.cancelPick).toHaveBeenCalledTimes(1);
+    const n = calls.length;
+    picks[0]!("#abcdef");
+    await flush();
+    expect(calls).toHaveLength(n);
+  });
+  it("sélection changée pendant l'armement : rien n'est écrit sur d'autres cibles", async () => {
+    const a = rectEl("a", "#000000");
+    const b = rectEl("b", "#000000");
+    const [sel, setSel] = createSignal<string[]>(["a"]);
+    const picks: ((c: string | null) => void)[] = [];
+    const calls: Partial<ItemStyle>[] = [];
+    const engine = {
+      setItemStyle: vi.fn((p: Partial<ItemStyle>) => { calls.push(p); }),
+      pickColor: vi.fn(() => new Promise<string | null>((r) => { picks.push(r); })),
+      cancelPick: vi.fn(),
+    };
+    const state = () => ({ tool: "select", selection: sel(), itemStyle: DEFAULT_ITEM_STYLE, selectionUnits: sel().length, textFormat: null }) as unknown as EngineState;
+    const { container } = render(() => (
+      <OptionsPanel engine={() => engine as never} state={state} element={(id) => [a, b].find((e) => e.id === id) ?? null} presets={() => presets}
+        size={() => "s"} profileId={() => "p"} settings={createDeviceSettings(null)} annotating={() => false} sideStart={() => null} />
+    ));
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    setSel(["a", "b"]);
+    picks[0]!("#123456");
+    await flush();
+    expect(calls).toHaveLength(0);
   });
 });
 

@@ -8,7 +8,14 @@ export interface KeyLike {
   readonly shiftKey: boolean;
   readonly altKey: boolean;
   readonly isComposing: boolean;
-  readonly target: { readonly tagName?: string; readonly type?: string; readonly isContentEditable?: boolean } | null;
+  /** Touche déjà prise par un contrôle de l'interface (`preventDefault`) : le moteur ne la rejoue pas (T17). */
+  readonly defaultPrevented?: boolean;
+  readonly target: {
+    readonly tagName?: string;
+    readonly type?: string;
+    readonly isContentEditable?: boolean;
+    readonly getAttribute?: (name: string) => string | null;
+  } | null;
 }
 
 export type KeyAction = "undo" | "redo" | "group" | "ungroup";
@@ -25,6 +32,18 @@ export const inEditable = (t: KeyLike["target"]): boolean => {
   // Une réglette, une case ou un bouton gardent le focus après un réglage : ils n'attendent pas de saisie (cf. Excalidraw isWritableElement).
   if (tag === "INPUT" && t.type !== undefined && NON_TEXT_INPUTS.has(t.type.toLowerCase())) return false;
   return EDITABLE.has(tag);
+};
+
+const CONTROL_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT", "BUTTON"]);
+const CONTROL_ROLES = new Set(["radio", "gridcell", "tab", "menuitem", "menuitemradio", "menuitemcheckbox", "slider", "option"]);
+/** Contrôle de l'interface qui garde les flèches (bouton, champ de tout type, réglette, case de grille, onglet, menu,
+ *  segment, option, zone éditable) ; la scène et le body n'en sont pas (OG23, T17). */
+export const inControl = (t: KeyLike["target"]): boolean => {
+  if (t === null) return false;
+  if (t.isContentEditable === true) return true;
+  if (t.tagName !== undefined && CONTROL_TAGS.has(t.tagName.toUpperCase())) return true;
+  const role = t.getAttribute?.("role");
+  return role !== null && role !== undefined && CONTROL_ROLES.has(role);
 };
 
 /** Barre d'espace sans Ctrl, Cmd ni Alt, hors champ de saisie et hors composition IME (D17 : espace + glisser). */
@@ -139,7 +158,7 @@ export function arrangeKey(e: KeyLike): ArrangeHow | null {
 
 /** Flèche seule : 1 px ; Maj : 5 px (Excalidraw) ; jamais avec Ctrl, Cmd ou Alt (Ctrl+flèches = Disposition d'OG4). */
 export function nudgeKey(e: KeyLike): { dx: number; dy: number } | null {
-  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return null;
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented === true || inEditable(e.target) || inControl(e.target)) return null;
   const s = e.shiftKey ? 5 : 1;
   if (e.key === "ArrowLeft") return { dx: -s, dy: 0 };
   if (e.key === "ArrowRight") return { dx: s, dy: 0 };

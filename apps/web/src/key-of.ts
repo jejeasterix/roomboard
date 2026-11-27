@@ -10,6 +10,7 @@ export function keyOf(e: KeyboardEvent): KeyLike {
     shiftKey: e.shiftKey,
     altKey: e.altKey,
     isComposing: e.isComposing,
+    defaultPrevented: e.defaultPrevented,
     target: e.target instanceof HTMLElement ? e.target : null,
   };
 }
