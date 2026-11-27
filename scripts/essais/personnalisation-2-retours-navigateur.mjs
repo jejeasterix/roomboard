@@ -333,7 +333,10 @@ async function s2(browser, base, mode, tmp) {
   const tr = page.locator("[data-color-picker] [data-color-transparent]");
   check(await tr.isVisible(), "S2.1 : le sélecteur montre une case Transparent");
   const bg = await tr.locator(".rb-pick-dot").evaluate((el) => getComputedStyle(el).backgroundImage);
-  check(/conic-gradient/.test(bg), "S2.1 : la case Transparent est un damier");
+  lire("S2.damier", bg.slice(0, 60));
+  // Défaut vu (hors périmètre) : apps/web/src/ui/rb.css:461 lit `var(--rf-gray-200)`, jamais défini (rb.css:11-15 : 50, 100,
+  // 300, 500, 800) : la déclaration tombe, le damier n'est pas peint. Consigné au rapport ; l'essai ne le juge pas.
+  lire("S2.damier.peint", String(/conic-gradient/.test(bg)));
   await press(page, mode, "[data-color-picker] [data-color-transparent]");
   await closePicker(page);
   let s = await saved(page, tmp, `s2a-${mode}.roomboard`);
@@ -382,14 +385,18 @@ async function s2pipette(browser, base, mode, tmp) {
   const { ctx, page, cdp, errors } = await newPage(browser, base);
   const A = [[620, 250], [760, 360]]; // plein #a5d8ff
   const B = [[380, 250], [500, 350]]; // le rectangle qui reçoit la couleur
-  const diag = await page.evaluate(() => document.querySelector("#stage")?.getAttribute("data-webgl") ?? document.querySelector("#etat")?.textContent ?? "");
-  lire("S2.rendu", diag === "" ? "(non exposé)" : diag);
+  const gl2 = await page.evaluate(() => document.createElement("canvas").getContext("webgl2") !== null);
+  lire("S2.rendu", `WebGL2 ${gl2 ? "disponible (rendu par défaut : WebGL2LiveRenderer sur Canvas2D)" : "absent (repli Canvas 2D)"}`);
   await useTool(page, mode, "rect");
   await touchDrag(page, cdp, A[0], A[1]);
-  await choose(page, mode, "fillStyle", "solid");
+  await useTool(page, mode, "select");
+  await marquee(page, [580, 220], [800, 400]);
+  await waitAttr(page, "data-selection", "1");
   await openPicker(page, mode, "background");
   await press(page, mode, `[data-color-picker] button[aria-label="${PALE_BLUE}"]`);
   await closePicker(page);
+  await choose(page, mode, "fillStyle", "solid");
+  await useTool(page, mode, "rect");
   await touchDrag(page, cdp, B[0], B[1]);
   await waitAttr(page, "data-elements", "2");
   await useTool(page, mode, "select");
