@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { RoughGenerator } from "roughjs/bin/generator";
 import type { Bounds, CoreDocument, ElementView, MediaData, Model3dData, GridInput, GridLevel, GridView, ImageElement, TableElement, TextElement } from "../../core/api";
 import { NO_CHANGE } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
@@ -1525,6 +1526,58 @@ describe("OG11 (T8) — tirets, alpha, angles, roughjs", () => {
     expect(named(elementPart(traceContent(["r"], { roughness: 2 })), "bezierCurveTo")).toEqual(named(a.calls, "bezierCurveTo"));
     const preview = traceOverlay({ shape: "rect", x0: 0, y0: 0, x1: 200, y1: 100, style: { color: "#000000", width: 4 }, fill: null, look: { opacity: 50 } });
     expect(preview).toContainEqual(["globalAlpha=", 0.5]);
+  });
+
+  /** Motif de tirets en vigueur à chaque `stroke` (suivi des `setLineDash`). */
+  const dashAtStrokes = (calls: readonly Call[]): number[][] => {
+    let cur: number[] = [];
+    const out: number[][] = [];
+    for (const c of calls) {
+      if (c[0] === "setLineDash") cur = c[1] as number[];
+      else if (c[0] === "stroke") out.push(cur);
+    }
+    return out;
+  };
+
+  it("flèche en tirets : pointe pleine (ailes sans tirets, fût en tirets), net et roughjs", () => {
+    const arrow = { shape: "arrow" as const, w: 100, h: 0, fill: null };
+    const net = tracing();
+    paintShape(net.ctx, arrow, PEN_R, { strokeStyle: "dashed" }, 0);
+    expect(dashAtStrokes(net.calls)).toEqual([[8, 12], []]);
+    const rough = tracing();
+    paintShape(rough.ctx, arrow, PEN_R, { strokeStyle: "dashed", roughness: 1 }, 5);
+    expect(dashAtStrokes(rough.calls)).toEqual([[8, 12], [], []]);
+    const dotted = tracing();
+    paintShape(dotted.ctx, arrow, PEN_R, { strokeStyle: "dotted", roughness: 1 }, 5);
+    expect(dashAtStrokes(dotted.calls)).toEqual([[0, 10], [0, 9], [0, 9]]);
+    // Trait plein : un seul tracé pour le fût et les ailes, comme au socle.
+    const solid = tracing();
+    paintShape(solid.ctx, arrow, PEN_R);
+    expect(named(solid.calls, "stroke")).toHaveLength(1);
+  });
+
+  it("roughjs en cache : une génération par élément entre deux rendus ; un changement d'aspect la rappelle", () => {
+    const spy = vi.spyOn(RoughGenerator.prototype, "rectangle");
+    try {
+      let look: unknown = { roughness: 1 };
+      const src: SceneSource = {
+        element: (id) => ({ ...VIEWS[id], look }) as ElementView,
+        outline: () => null,
+      };
+      const r = new Canvas2DRenderer(asCtx(new FakeCtx()), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D });
+      const page = { id: "p", elementIds: ["r"] };
+      r.paintContent(tracing().ctx, page, BOX, 1);
+      r.paintContent(tracing().ctx, page, BOX, 1);
+      expect(spy).toHaveBeenCalledTimes(1);
+      look = { roughness: 2 };
+      r.paintContent(tracing().ctx, page, BOX, 1);
+      expect(spy).toHaveBeenCalledTimes(2);
+      r.invalidate({ ids: ["r"], removed: [], full: false } as never);
+      r.paintContent(tracing().ctx, page, BOX, 1);
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("opacité du trait vif : style.opacity du canvas d'interaction, remise à \"\" sans opacité", () => {

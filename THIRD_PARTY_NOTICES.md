@@ -262,7 +262,17 @@ mesuré au chantier personnalisation-2 (T8) : `assets/index-*.js` passe de 172 4
 | points-on-curve | 0.2.0 | MIT | https://github.com/pshihn/bezier-points |
 | points-on-path | 0.2.1 | MIT | https://github.com/pshihn/points-on-path |
 
-## Texte de licence : roughjs 4.6.6 (MIT ; hachure-fill, path-data-parser, points-on-curve, points-on-path : même auteur, même licence)
+Mentions de copyright, relevées dans le fichier `LICENSE` de chaque paquet de `node_modules` :
+
+| paquet | mention |
+|---|---|
+| roughjs | Copyright (c) 2019 Preet Shihn |
+| hachure-fill | Copyright (c) 2023 Preet Shihn |
+| path-data-parser | Copyright (c) 2020 Preet Shihn |
+| points-on-curve | Copyright (c) 2020 Preet Shihn |
+| points-on-path | Copyright (c) 2020 Preet |
+
+## Texte de licence : roughjs 4.6.6 (MIT ; hachure-fill, path-data-parser, points-on-curve, points-on-path : même licence, mentions ci-dessus)
 
 ```
 MIT License
