@@ -491,7 +491,7 @@ export function createEngine(deps: EngineDeps): Engine {
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   /** Style de texte des outils Texte et Tableau : couleur du stylo, taille par défaut. */
-  const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}) });
+  const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}), ...(item.textAlign !== "left" ? { textAlign: item.textAlign } : {}) });
   const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
   const textTool: TextTool = deps.tools.text?.(ctx, textStyle) ?? inertText();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => item) ?? inertTool();

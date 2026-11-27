@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Command, ShapeKind } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import type { InputSample } from "../input/sampler";
-import { DEFAULT_ITEM_STYLE } from "../item-style";
+import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../item-style";
 import { constrainEnd, createShapeTool } from "./shape";
 import type { ToolContext } from "./tool";
 
@@ -214,5 +214,30 @@ describe("outil Formes : arrondi (OG11 T9b)", () => {
   it("roundness : seul le rectangle porte l'arrondi", () => {
     expect(drawn("rect").look).toEqual({ roundness: "round" });
     for (const k of ["ellipse", "line", "arrow"] as const) expect(drawn(k).look).toBeUndefined();
+  });
+});
+
+describe("outil Formes : style courant du lot 2 (T28)", () => {
+  const cur: ItemStyle = { ...DEFAULT_ITEM_STYLE, ...PEN, background: "#ffff00", fillStyle: "hachure", startArrowhead: "triangle", endArrowhead: "none" };
+  const drawn = (kind: ShapeKind, style: ItemStyle): Extract<Command, { type: "AddShape" }> => {
+    const { ctx, runs } = setup();
+    const tool = createShapeTool(ctx, kind, () => style);
+    tool.begin(1, [at(10, 10)]);
+    tool.extend(1, [at(110, 80)], []);
+    tool.close(1, "end");
+    const c = runs[0];
+    if (c?.type !== "AddShape") throw new Error("AddShape attendue");
+    return c;
+  };
+  it("rectangle neuf : hachures du style courant", () => {
+    expect(drawn("rect", cur).look).toEqual({ fillStyle: "hachure" });
+    expect(drawn("ellipse", cur).look).toEqual({ fillStyle: "hachure" });
+    expect(drawn("rect", { ...cur, background: null }).look).toBeUndefined();
+    expect(drawn("line", cur).look).toEqual({ startArrowhead: "triangle", endArrowhead: "none" });
+  });
+  it("flèche neuve : pointes du style courant", () => {
+    expect(drawn("arrow", cur).look).toEqual({ startArrowhead: "triangle", endArrowhead: "none" });
+    expect(drawn("arrow", { ...cur, startArrowhead: "none", endArrowhead: "arrow" }).look).toBeUndefined();
+    expect(drawn("rect", cur).look).not.toHaveProperty("startArrowhead");
   });
 });
