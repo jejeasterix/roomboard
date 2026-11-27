@@ -34,6 +34,7 @@
 // Personnalisation 1a : mode de page (`AddPage.mode`, `SetPageMode`, `blank(mode)`), `MovePage`, `DuplicatePage` au modèle
 // de `commands.rs` (mêmes refus, aucune étape sans effet) ; `mode` brut gardé (valeur inconnue lue Page, U3) et `height`
 // lue ; accroche et lignes de grille bornées au cadre de `pageFrame` en Page, sans borne en Infini (règle de T7).
+// Lot 2 : `Restack` au modèle de `cmd_restack` (mêmes refus dans le même ordre, ids gardés, même ordre : aucune étape).
 import type {
   ContainerKind,
   AssetInfo,
@@ -800,6 +801,34 @@ class FakeDocument implements CoreDocument {
         return this.step((s) => {
           s.pages.splice(s.pages.findIndex((p) => p.id === cmd.page) + 1, 0, copy);
           return { pages: [copy.id], ids: copy.elements.map((e) => e.id), removed: [] };
+        });
+      }
+      case "Restack": {
+        // `cmd_restack` : ids dédoublonnés ; premier inconnu (ordre donné), pages mêlées, bloc vide ou hors de la pile ;
+        // même ordre : aucune étape ; éléments déplacés tels quels (DA2) ; `Change.ids` = bloc, du bas vers le haut.
+        const found: Found[] = [];
+        for (const id of new Set(cmd.ids)) {
+          const f = this.find(id);
+          if (!f) throw new Error(`élément inconnu : ${id}`);
+          found.push(f);
+        }
+        const page = found[0]?.page;
+        if (!page) throw new Error("rang de page hors bornes");
+        if (found.some((f) => f.page !== page)) throw new Error("objets de pages différentes");
+        found.sort((x, y) => x.index - y.index);
+        const to = cmd.to;
+        if (!Number.isInteger(to) || to < 0 || to + found.length > page.elements.length) throw new Error("rang de page hors bornes");
+        if (found.every((f, k) => f.index === to + k)) return this.unchanged();
+        const ids = found.map((f) => f.element.id);
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === page.id);
+          if (p) {
+            const set = new Set(ids);
+            const moved = p.elements.filter((e) => set.has(e.id));
+            const rest = p.elements.filter((e) => !set.has(e.id));
+            p.elements.splice(0, p.elements.length, ...rest.slice(0, to), ...moved, ...rest.slice(to));
+          }
+          return { pages: [page.id], ids, removed: [] };
         });
       }
       case "CommitStroke": {

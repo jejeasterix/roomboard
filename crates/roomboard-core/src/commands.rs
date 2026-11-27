@@ -52,6 +52,13 @@ pub enum Command {
     DuplicatePage {
         page: String,
     },
+    /// Ordre des objets (décision 16) : les `ids` (une même page, sinon `MixedPages`) passent en un bloc contigu, ordre
+    /// relatif de la pile gardé, `to` = rang du bas du bloc dans la pile finale (0 = arrière-plan) ; ids gardés (DA2) ;
+    /// une étape ; même ordre : aucune (D38).
+    Restack {
+        ids: Vec<String>,
+        to: u32,
+    },
     CommitStroke {
         page: String,
         points: Vec<f32>,
@@ -327,6 +334,7 @@ pub enum CommandError {
     BadImageParams,
     BadModel3d,
     BadIndex,
+    MixedPages,
 }
 
 impl std::fmt::Display for CommandError {
@@ -398,6 +406,7 @@ impl std::fmt::Display for CommandError {
                 "objet 3D invalide (format glb, gltf, obj, stl ou ply, boîte finie > 0, pitch de −85° à 85°, yaw dans ]−180°, 180°], 256 fichiers liés au plus, chemins de 1 à 1 024 caractères normalisés et uniques attendus)"
             ),
             CommandError::BadIndex => write!(f, "rang de page hors bornes"),
+            CommandError::MixedPages => write!(f, "objets de pages différentes"),
         }
     }
 }
@@ -646,6 +655,7 @@ impl Document {
             Command::SetPageMode { page, mode } => self.cmd_set_page_mode(&page, mode),
             Command::MovePage { page, to } => self.cmd_move_page(&page, to),
             Command::DuplicatePage { page } => self.cmd_duplicate_page(&page),
+            Command::Restack { ids, to } => self.cmd_restack(&ids, to),
             Command::CommitStroke {
                 page,
                 points,
@@ -1330,6 +1340,62 @@ impl Document {
     fn cmd_duplicate_page(&mut self, page: &str) -> Result<Change, CommandError> {
         let tmp = self.extract_page(page)?;
         self.insert_pages(&tmp, page)
+    }
+
+    /// Retire les `ids` puis réinsère leurs recopies complètes (`id` et `group` compris, DA2), dans l'ordre de la pile,
+    /// en un bloc dont le bas est au rang final `to`, dans une transaction : une étape ; sélection et cache des contours
+    /// restent valides. Ids dédoublonnés ; premier id inconnu (ordre donné) : `UnknownElement` ; pages mêlées :
+    /// `MixedPages` ; bloc vide ou hors de la pile : `BadIndex` ; même ordre : aucune étape (D38). `Change.ids` : le
+    /// bloc, du bas vers le haut.
+    fn cmd_restack(&mut self, ids: &[String], to: u32) -> Result<Change, CommandError> {
+        let (page, arr, moves) = {
+            let txn = self.read();
+            let mut seen = BTreeSet::new();
+            let mut found = Vec::with_capacity(ids.len());
+            for id in ids.iter().filter(|id| seen.insert(id.as_str())) {
+                let f = self
+                    .find_element(&txn, id)
+                    .ok_or_else(|| CommandError::UnknownElement(id.clone()))?;
+                found.push((id.clone(), f));
+            }
+            let Some((_, head)) = found.first() else {
+                return Err(CommandError::BadIndex);
+            };
+            let (page, arr) = (head.page_id.clone(), head.elements.clone());
+            if found.iter().any(|(_, f)| f.page_id != page) {
+                return Err(CommandError::MixedPages);
+            }
+            found.sort_by_key(|(_, f)| f.index);
+            let n = found.len() as u32;
+            if to.checked_add(n).is_none_or(|end| end > arr.len(&txn)) {
+                return Err(CommandError::BadIndex);
+            }
+            if found.iter().zip(to..).all(|((_, f), rank)| f.index == rank) {
+                return Ok(self.unchanged());
+            }
+            let moves: Vec<(String, u32, MapPrelim)> = found
+                .into_iter()
+                .map(|(id, f)| (id, f.index, f.element.as_prelim(&txn)))
+                .collect();
+            (page, arr, moves)
+        };
+        let mut moved = Vec::with_capacity(moves.len());
+        let kept = moves
+            .into_iter()
+            .map(|(id, i, prelim)| {
+                moved.push(id);
+                (i, prelim)
+            })
+            .collect();
+        {
+            let mut txn = self.transact_local();
+            reinsert_kept(&arr, &mut txn, kept, to);
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: moved,
+            ..Default::default()
+        }))
     }
 
     fn cmd_commit_stroke(
@@ -2112,6 +2178,129 @@ pub(crate) mod tests {
             Err(CommandError::UnknownPage("nope".into()))
         );
         assert_eq!(n.since(), 0);
+    }
+
+    fn four(d: &mut Document) -> (String, [String; 4]) {
+        let p = first(d);
+        let ids = [100.0, 200.0, 300.0, 400.0].map(|y| commit(d, &p, hline(y)));
+        (p, ids)
+    }
+
+    fn restack(d: &mut Document, ids: &[&String], to: u32) -> Result<Change, CommandError> {
+        d.apply(Command::Restack {
+            ids: ids.iter().map(|s| s.to_string()).collect(),
+            to,
+        })
+    }
+
+    /// Discrimine le patron écarté (recopie par `copy_elements` : ids neufs, groupes renumérotés, toujours posée en
+    /// haut) : le bloc garde ses ids, son ordre relatif et son chemin de groupe (DA2), et `to` place le bas du bloc.
+    #[test]
+    fn restack_block_to_front_keeps_order_and_ids() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        d.apply(Command::Group {
+            ids: vec![a.clone(), c.clone()],
+        })
+        .expect("groupe");
+        let views = [&a, &c].map(|id| d.element(id).expect("vue"));
+        let n = writes(&d);
+        let ch = restack(&mut d, &[&c, &a], 2).expect("premier plan");
+        assert_eq!(
+            d.element_ids(&p),
+            vec![b.clone(), e.clone(), a.clone(), c.clone()]
+        );
+        assert_eq!(
+            [&a, &c].map(|id| d.element(id).expect("vue")),
+            views,
+            "tous les champs gardés, groupe compris"
+        );
+        assert_eq!(n.since(), 1, "un réordonnancement = une transaction");
+        assert_eq!(ch.pages, vec![p.clone()]);
+        assert_eq!(ch.ids, vec![a.clone(), c.clone()]);
+        assert!(ch.removed.is_empty(), "sélection gardée : rien de retiré");
+    }
+
+    #[test]
+    fn restack_to_back() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        restack(&mut d, &[&e, &b], 0).expect("arrière-plan");
+        assert_eq!(
+            d.element_ids(&p),
+            vec![b.clone(), e.clone(), a.clone(), c.clone()]
+        );
+        restack(&mut d, &[&a], 1).expect("un rang");
+        assert_eq!(d.element_ids(&p), vec![b, a, e, c]);
+    }
+
+    #[test]
+    fn restack_same_order_no_step() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        let n = writes(&d);
+        let v = d.version();
+        let ch = restack(&mut d, &[&c, &b, &b], 1).expect("même ordre");
+        assert_eq!((n.since(), d.version(), ch.version), (0, v, v));
+        assert!(ch.pages.is_empty() && ch.ids.is_empty());
+        // Un bloc à trou n'est pas le même ordre, même posé au rang de son bas.
+        restack(&mut d, &[&a, &c], 0).expect("bloc à trou");
+        assert_eq!(d.element_ids(&p), vec![a, c, b, e]);
+        assert_eq!(n.since(), 1);
+    }
+
+    #[test]
+    fn restack_mixed_pages_refused() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        let q = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        let x = commit(&mut d, &q, hline(100.0));
+        let n = writes(&d);
+        assert_eq!(restack(&mut d, &[&a, &x], 0), Err(CommandError::MixedPages));
+        assert_eq!(n.since(), 0);
+        assert_eq!(
+            CommandError::MixedPages.to_string(),
+            "objets de pages différentes"
+        );
+        assert_eq!(d.element_ids(&p), vec![a, b, c, e]);
+        assert_eq!(d.element_ids(&q), vec![x]);
+    }
+
+    #[test]
+    fn restack_one_step_undo() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        restack(&mut d, &[&a, &b], 2).expect("premier plan");
+        assert_eq!(
+            d.element_ids(&p),
+            vec![c.clone(), e.clone(), a.clone(), b.clone()]
+        );
+        assert!(d.undo());
+        assert_eq!(
+            d.element_ids(&p),
+            vec![a.clone(), b.clone(), c.clone(), e.clone()]
+        );
+        assert!(d.redo());
+        assert_eq!(d.element_ids(&p), vec![c, e, a, b]);
+    }
+
+    #[test]
+    fn restack_out_of_range_bad_index() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        let n = writes(&d);
+        assert_eq!(restack(&mut d, &[&a, &b], 3), Err(CommandError::BadIndex));
+        assert_eq!(
+            restack(&mut d, &[&a], u32::MAX),
+            Err(CommandError::BadIndex)
+        );
+        assert_eq!(restack(&mut d, &[], 0), Err(CommandError::BadIndex));
+        assert_eq!(
+            restack(&mut d, &[&a, &"absent".to_string()], 0),
+            Err(CommandError::UnknownElement("absent".into()))
+        );
+        assert_eq!(n.since(), 0);
+        assert_eq!(d.element_ids(&p), vec![a, b, c, e]);
     }
 
     /// Discrimine le patron écarté : avec des ids neufs, l'ancien id n'aurait plus de contour ; avec les ids gardés

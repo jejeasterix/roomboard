@@ -9,7 +9,7 @@ import type { Command } from "../../web/src/core/api";
 import { CliError } from "./contract";
 
 export const COMMAND_TYPES = [
-  "AddPage", "RemovePage", "SetPageMode", "MovePage", "DuplicatePage",
+  "AddPage", "RemovePage", "SetPageMode", "MovePage", "DuplicatePage", "Restack",
   "CommitStroke", "Erase", "Delete", "AddShape", "SetText", "Transform", "AddImage", "AddMedia",
   "SetMedia", "AddModel3d", "SetModel3dView", "SetBackdrop", "FormatText", "SetGrid", "AddTable", "SetTableCell",
   "InsertTableLine", "RemoveTableLine", "SetTableSizes", "SetTableFill", "MergeTableCells", "SplitTableCell",
