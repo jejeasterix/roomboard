@@ -5,6 +5,7 @@ import { fromEnvelope, type ItemsRefusal } from "./clipboard";
 import { droppedFromFile } from "./drop-web";
 import type { DroppedFile } from "./files";
 import { isEditable } from "./editable";
+import { tsvGrid } from "./html-table";
 
 export interface PasteEventLike {
   readonly target: EventTarget | null;
@@ -37,6 +38,8 @@ export interface PasteSink {
   pasteItems(items: Uint8Array | ItemsRefusal): Promise<boolean>;
   /** C10b (F19) : tableau HTML collé ; faux si illisible (repli sur les images jointes, PC9). */
   pasteTable(html: string): Promise<boolean>;
+  /** Point 15 : texte à tabulations collé (sans HTML) ; faux si illisible. Facultatif : un puits sans lui ignore le texte. */
+  pasteText?(text: string): Promise<boolean>;
   importFiles(files: readonly DroppedFile[], at: null): Promise<unknown>;
 }
 
@@ -54,6 +57,12 @@ export function handlePaste(e: PasteEventLike, sink: PasteSink): Promise<void> |
       if (!done && files.length > 0) await sink.importFiles(files, null);
     });
   }
+  const tsv = pastedTabText(e);
+  if (tsv !== null && sink.pasteText !== undefined) {
+    return sink.pasteText(tsv).then(async (done) => {
+      if (!done && files.length > 0) await sink.importFiles(files, null);
+    });
+  }
   if (files.length === 0) return null;
   return sink.importFiles(files, null).then(() => undefined);
 }
@@ -63,4 +72,11 @@ export function pastedTableHtml(e: PasteEventLike): string | null {
   if (isEditable(e.target)) return null;
   const html = e.clipboardData?.getData?.("text/html") ?? "";
   return TABLE_TAG.test(html) ? html : null;
+}
+
+/** Texte à tabulations collé (point 15) qui donne une grille ; null sur une cible éditable ou sans tabulation. */
+export function pastedTabText(e: PasteEventLike): string | null {
+  if (isEditable(e.target)) return null;
+  const text = e.clipboardData?.getData?.("text/plain") ?? "";
+  return text.includes("\t") && tsvGrid(text) !== null ? text : null;
 }

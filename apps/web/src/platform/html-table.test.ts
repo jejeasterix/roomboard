@@ -82,7 +82,8 @@ describe("texte tabulé collé (point 15, D22)", () => {
   it("sans tabulation, ou vide : null ; une seule cellule : null", () => {
     expect(tsvGrid("bonjour\nmonde")).toBeNull();
     expect(tsvGrid("")).toBeNull();
-    expect(tsvGrid("\t")).not.toBeNull();
+    expect(tsvGrid("\t")).toBeNull();
+    expect(tsvGrid("a\t")).not.toBeNull();
   });
   it("bornes : 64 × 64 gardées, source comptée ; texte coupé signalé", () => {
     const line = Array.from({ length: 70 }, () => "v").join("\t");

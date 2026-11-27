@@ -24,7 +24,7 @@ import type { PdfEngine } from "../engine/render/pdf-port";
 import { createClipboard, INTERNAL_ONLY_MESSAGE, NEWER_ITEMS_MESSAGE, TOO_BIG_ITEMS_MESSAGE, type Clipboard, type ItemsRefusal } from "../platform/clipboard";
 import { PDF_EXTENSION, RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type FileHost, type HostKind, type Notify, type OpenedFile, type Point, type SaveTarget, type ShellPort } from "../platform/files";
 import { baseName } from "../platform/host-tauri";
-import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from "../platform/html-table";
+import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, tsvGrid, type TableGrid } from "../platform/html-table";
 import { decodeImage, type ImageDecoder, type ImageTarget } from "../platform/image-import";
 import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
 import { NOT_OFFICE_PAGE_MESSAGE, originalChangedMessage, type OfficeOpenFile, type OriginalChange } from "../platform/office-import";
@@ -177,6 +177,8 @@ export interface Workspace {
   /** Tableau HTML collé (C10b, F19) dans l'onglet actif, centre de la vue ; vrai si le collage est pris (tableau posé
    *  ou refusé pour sa taille), faux sans tableau lisible (PC9). */
   pasteTable(html: string): Promise<boolean>;
+  /** Point 15 : texte à tabulations collé (sans HTML), même chemin que le HTML ; faux sans grille lisible. */
+  pasteText(text: string): Promise<boolean>;
   /** C3 : une sélection existe dans l'onglet actif (écouteurs `copy` et `cut`). */
   hasSelection(): boolean;
   /** C3 (Z8) : copie la sélection ; `cut` : puis la supprime, en une étape. */
@@ -758,6 +760,18 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         return true;
       }
       const grid = tableFromHtml(html, parseHtml);
+      if (grid === null) return false;
+      await insertTableGrid(imageTarget(t), grid, null, 0, say);
+      return true;
+    },
+    async pasteText(text) {
+      const t = tabs.active()?.session;
+      if (t === undefined) return false;
+      if (text.length > PASTE_MAX_CHARS) {
+        await say(PASTE_TOO_BIG);
+        return true;
+      }
+      const grid = tsvGrid(text);
       if (grid === null) return false;
       await insertTableGrid(imageTarget(t), grid, null, 0, say);
       return true;

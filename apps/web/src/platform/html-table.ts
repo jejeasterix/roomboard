@@ -147,3 +147,57 @@ export function tableFromHtml(html: string, parse: (s: string) => Document): Tab
   for (let r = 0; r < nRows; r++) for (let c = 0; c < cols; c++) cells.push(texts[r * cap + c] ?? "");
   return { rows: nRows, cols, cells, merges, sourceRows: trs.length, sourceCols, cutCells: cut };
 }
+
+/** Texte à tabulations (Excel, Word) → grille (point 15, D22) : au moins une tabulation et deux cellules, sinon null.
+ *  Guillemets d'Excel (`"a\nb"`, `""` pour un guillemet) ; `\r\n` ; lignes vides de fin ignorées ; lignes courtes
+ *  complétées ; mêmes bornes que le HTML (64 × 64, source comptée à part, texte coupé à 2 000 caractères). */
+export function tsvGrid(text: string): TableGrid | null {
+  if (!text.includes("\t")) return null;
+  const records: string[][] = [];
+  let row: string[] = [];
+  let i = 0;
+  const n = text.length;
+  while (i <= n) {
+    let field = "";
+    if (text[i] === '"') {
+      i++;
+      for (;;) {
+        if (i >= n) break;
+        if (text[i] === '"') {
+          if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+          i++;
+          break;
+        }
+        field += text[i];
+        i++;
+      }
+      while (i < n && text[i] !== "\t" && text[i] !== "\n" && text[i] !== "\r") field += text[i++];
+    } else {
+      while (i < n && text[i] !== "\t" && text[i] !== "\n" && text[i] !== "\r") field += text[i++];
+    }
+    row.push(field);
+    if (i >= n) { records.push(row); break; }
+    const ch = text[i];
+    if (ch === "\t") { i++; continue; }
+    if (ch === "\r" && text[i + 1] === "\n") i++;
+    i++;
+    records.push(row);
+    row = [];
+    if (i >= n) break;
+  }
+  while (records.length > 0 && (records[records.length - 1] ?? []).every((f) => f === "")) records.pop();
+  const sourceCols = records.reduce((m, r) => Math.max(m, r.length), 0);
+  if (records.length === 0 || records.length * sourceCols < 2) return null;
+  const nRows = Math.min(records.length, TABLE_MAX_LINES);
+  const cols = Math.min(sourceCols, TABLE_MAX_LINES);
+  let cut = false;
+  const cells: string[] = [];
+  for (let r = 0; r < nRows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const [t, wasCut] = cutText(records[r]?.[c] ?? "");
+      cut ||= wasCut;
+      cells.push(t);
+    }
+  }
+  return { rows: nRows, cols, cells, merges: [], sourceRows: records.length, sourceCols, cutCells: cut };
+}
