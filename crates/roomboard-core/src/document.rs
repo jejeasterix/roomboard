@@ -43,6 +43,8 @@ pub enum DecodeError {
 /// de points gardent quand même l'entrée : un écart force le recalcul.
 struct CachedOutline {
     width_bits: u32,
+    /// OG23 : pression constante (`variability`) ; un changement de ce champ recalcule le contour.
+    constant: bool,
     points: usize,
     outline: Rc<[f32]>,
 }
@@ -586,19 +588,25 @@ impl Document {
         id: &str,
         style: &StrokeStyle,
         pts: &[InkPoint],
+        constant: bool,
     ) -> Rc<[f32]> {
         let width_bits = style.width.to_bits();
         if let Some(c) = self.outlines.borrow().get(id) {
-            if c.width_bits == width_bits && c.points == pts.len() {
+            if c.width_bits == width_bits && c.constant == constant && c.points == pts.len() {
                 return Rc::clone(&c.outline);
             }
         }
         self.outline_misses.set(self.outline_misses.get() + 1);
-        let outline: Rc<[f32]> = ink_outline(pts, &InkStyle { width: style.width }).into();
+        let ink = InkStyle {
+            width: style.width,
+            constant,
+        };
+        let outline: Rc<[f32]> = ink_outline(pts, &ink).into();
         self.outlines.borrow_mut().insert(
             id.to_string(),
             CachedOutline {
                 width_bits,
+                constant,
                 points: pts.len(),
                 outline: Rc::clone(&outline),
             },
@@ -999,19 +1007,19 @@ mod tests {
             width: 12.0,
         };
         let m = d.outline_cache_misses();
-        let o4 = d.cached_outline(&a, &thin, &pts);
+        let o4 = d.cached_outline(&a, &thin, &pts, false);
         assert_eq!(d.outline_cache_misses(), m + 1);
-        let o4_again = d.cached_outline(&a, &thin, &pts);
+        let o4_again = d.cached_outline(&a, &thin, &pts, false);
         assert_eq!(d.outline_cache_misses(), m + 1, "même clé : servi du cache");
         assert_eq!(bits(&o4_again), bits(&o4));
-        let o12 = d.cached_outline(&a, &thick, &pts);
+        let o12 = d.cached_outline(&a, &thick, &pts, false);
         assert_eq!(d.outline_cache_misses(), m + 2, "autre largeur : recalcul");
         assert_eq!(
             bits(&o12),
-            bits(&ink_outline(&pts, &InkStyle { width: 12.0 }))
+            bits(&ink_outline(&pts, &InkStyle { width: 12.0, constant: false }))
         );
         let short = &pts[..pts.len() - 5];
-        let o_short = d.cached_outline(&a, &thick, short);
+        let o_short = d.cached_outline(&a, &thick, short, false);
         assert_eq!(
             d.outline_cache_misses(),
             m + 3,
@@ -1019,7 +1027,7 @@ mod tests {
         );
         assert_eq!(
             bits(&o_short),
-            bits(&ink_outline(short, &InkStyle { width: 12.0 }))
+            bits(&ink_outline(short, &InkStyle { width: 12.0, constant: false }))
         );
         assert_eq!(d.outline_cache_len(), 1, "une entrée par id");
     }

@@ -12,13 +12,14 @@ use crate::asset::{is_asset_id, AssetRef};
 use crate::copy::reinsert_kept;
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
-    apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, look_fields,
+    apply_transform, compose, constant_ink, finite_positive, fits_f32, group_to_any, invert, look_fields,
     out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group, read_style,
     style_fields, transform_to_any, Look, PageLayout, RawBackdrop, StrokeStyle, Transform,
     FIT_WIDTH, IDENTITY, INFINITE_MODE, LOOK_KEYS, PAGE_HEIGHT, PORTRAIT_HEIGHT,
 };
 use crate::grid::{self, GridInput};
-use crate::ink::erase::erase;
+use crate::ink::erase::erase_with;
+use crate::ink::outline::InkStyle;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
 use crate::query::path_hits_stroke;
 use crate::rich_text::{self, SpanInput, TextAttr};
@@ -570,13 +571,13 @@ fn min_singular(t: &Transform) -> f64 {
 fn erase_stroke(
     t: &Transform,
     pts: &[InkPoint],
-    width: f32,
+    style: &InkStyle,
     path: &[f32],
     radius: f32,
 ) -> Option<Vec<Vec<InkPoint>>> {
     if let Some(s) = similarity_scale(t) {
         let local_path = world_to_local_path(t, path)?;
-        return erase(pts, width, &local_path, (f64::from(radius) / s) as f32);
+        return erase_with(pts, style, &local_path, (f64::from(radius) / s) as f32);
     }
     let inv = invert(t)?;
     let map = |m: &Transform, p: &InkPoint| {
@@ -588,8 +589,11 @@ fn erase_stroke(
         }
     };
     let world: Vec<InkPoint> = pts.iter().map(|p| map(t, p)).collect();
-    let world_width = (f64::from(width) * min_singular(t)) as f32;
-    let pieces = erase(&world, world_width, path, radius)?;
+    let world_style = InkStyle {
+        width: (f64::from(style.width) * min_singular(t)) as f32,
+        constant: style.constant,
+    };
+    let pieces = erase_with(&world, &world_style, path, radius)?;
     Some(
         pieces
             .into_iter()
@@ -1565,10 +1569,14 @@ impl Document {
                 let id = out_string(e.get(&txn, "id")).unwrap_or_default();
                 // Chemin et rayon en unités monde (T63) : la conversion vers le repère du trait est faite par
                 // `erase_stroke` et `path_hits_stroke`, jamais en appliquant le rayon tel quel en local.
+                let ink = InkStyle {
+                    width: style.width,
+                    constant: constant_ink(&txn, &e),
+                };
                 let pieces = match mode {
-                    EraseMode::Partial => erase_stroke(&transform, &pts, style.width, path, radius),
+                    EraseMode::Partial => erase_stroke(&transform, &pts, &ink, path, radius),
                     EraseMode::Object => {
-                        let poly = self.cached_outline(&id, &style, &pts);
+                        let poly = self.cached_outline(&id, &style, &pts, ink.constant);
                         path_hits_stroke(&transform, &poly, path, radius).then(Vec::new)
                     }
                 };

@@ -390,6 +390,9 @@ pub struct Look {
     /// Lien `http://`, `https://` ou `mailto:` de 2 048 caractères au plus (`valid_link`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
+    /// OG23 : `constant` (épaisseur constante, la pression n'amincit pas) ; la pression variable est le neutre.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variability: Option<String>,
 }
 
 /// Styles de trait lisibles ; le trait plein est le neutre (champ absent).
@@ -405,6 +408,9 @@ pub const END_ARROWHEAD_DEFAULT: &str = "arrow";
 
 /// Alignements lisibles ; la gauche est le neutre (champ absent).
 pub const TEXT_ALIGNS: [&str; 2] = ["center", "right"];
+
+/// Seule valeur lue de `variability` (OG23) ; absent = pression variable, le neutre.
+pub const VARIABILITY_CONSTANT: &str = "constant";
 
 /// Longueur maximale d'un lien, en caractères (même compte que le faux cœur : points de code).
 pub const LINK_MAX_CHARS: usize = 2048;
@@ -428,8 +434,8 @@ fn arrowhead(v: &Option<String>, default: &str) -> Option<String> {
         .filter(|s| ARROWHEADS.contains(&s.as_str()) && s != default)
 }
 
-/// Clés `Y.Map` des dix champs d'aspect.
-pub(crate) const LOOK_KEYS: [&str; 10] = [
+/// Clés `Y.Map` des onze champs d'aspect.
+pub(crate) const LOOK_KEYS: [&str; 11] = [
     "strokeStyle",
     "roughness",
     "seed",
@@ -440,6 +446,7 @@ pub(crate) const LOOK_KEYS: [&str; 10] = [
     "endArrowhead",
     "textAlign",
     "link",
+    "variability",
 ];
 
 impl Look {
@@ -470,6 +477,7 @@ impl Look {
                 .clone()
                 .filter(|s| TEXT_ALIGNS.contains(&s.as_str())),
             link: self.link.clone().filter(|s| valid_link(s)),
+            variability: self.variability.clone().filter(|s| s == VARIABILITY_CONSTANT),
         }
     }
 }
@@ -499,6 +507,7 @@ pub(crate) fn look_fields(l: &Look) -> Vec<(&'static str, In)> {
         ("endArrowhead", &l.end_arrowhead),
         ("textAlign", &l.text_align),
         ("link", &l.link),
+        ("variability", &l.variability),
     ];
     for (key, s) in strings {
         if let Some(s) = s {
@@ -526,8 +535,14 @@ pub(crate) fn read_look<T: ReadTxn>(txn: &T, e: &MapRef) -> Look {
         end_arrowhead: out_string(e.get(txn, "endArrowhead")),
         text_align: out_string(e.get(txn, "textAlign")),
         link: out_string(e.get(txn, "link")),
+        variability: out_string(e.get(txn, "variability")),
     }
     .sanitized()
+}
+
+/// OG23 : le trait `e` est à pression constante (`variability: "constant"` ; toute autre valeur est lue variable).
+pub(crate) fn constant_ink<T: ReadTxn>(txn: &T, e: &MapRef) -> bool {
+    out_string(e.get(txn, "variability")).is_some_and(|s| s == VARIABILITY_CONSTANT)
 }
 
 /// Vue de l'aspect : `None` quand il est neutre (omis du JSON).
