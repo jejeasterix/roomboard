@@ -116,6 +116,7 @@ if [ "$E2E" = 1 ]; then
   node scripts/essais/c1-profils-navigateur.mjs
   node scripts/essais/c10a-tableau-navigateur.mjs
   node scripts/essais/c10b-tableau-navigateur.mjs
+  node scripts/essais/personnalisation-3-tableau-navigateur.mjs
   node scripts/essais/c9-grille-navigateur.mjs
   node scripts/essais/c7b-texte-riche-navigateur.mjs
   node scripts/essais/c3-groupes-navigateur.mjs
