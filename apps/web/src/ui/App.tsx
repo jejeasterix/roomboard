@@ -338,8 +338,9 @@ export function App(props: AppProps): JSX.Element {
       tabEl?.click();
       return;
     }
-    if (wasFolded) tabEl?.click();
-    island.querySelector<HTMLElement>("[data-island-collapse]")?.click();
+    // Barre repliée : toucher l'onglet la déplie (SideBar `openTab`) ; sans onglet, le bouton Déplier.
+    if (wasFolded && tabEl !== null) tabEl.click();
+    else island.querySelector<HTMLElement>("[data-island-collapse]")?.click();
     if (wasFolded) (tab === "pages" ? island.querySelector<HTMLElement>('.rb-pages-list [aria-current="page"]') : tabEl)?.focus();
   };
   if (props.sidebar !== undefined) props.sidebar.toggle = toggleSidebar;
@@ -501,14 +502,16 @@ export function App(props: AppProps): JSX.Element {
       { defer: true },
     ),
   );
-  const BY_ROLE: Readonly<Record<string, (bar: Bar, collapsed?: Accessor<boolean>) => JSX.Element>> = {
-    pages: (bar, collapsed) => {
+  const BY_ROLE: Readonly<Record<string, (bar: Bar, collapsed?: Accessor<boolean>, expand?: () => void) => JSX.Element>> = {
+    pages: (bar, collapsed, expand) => {
       createEffect(() => setSidebarOpen(collapsed === undefined || !collapsed()));
       onCleanup(() => setSidebarOpen(false));
       return (
         <SideBar
           bar={bar}
           collapsed={collapsed ?? (() => false)}
+          caps={props.active.capabilities}
+          {...(expand !== undefined ? { expand } : {})}
           view={view}
           host={host}
           pages={pagesPort}
@@ -520,8 +523,8 @@ export function App(props: AppProps): JSX.Element {
     },
     [MENU_ROLE]: (bar) => <MenuBar bar={bar} items={() => itemsForMode(bar, props.active.capabilities(), mode())} view={view} size={size} host={host} />,
   };
-  const barOf = (bar: Bar, collapsed?: Accessor<boolean>): JSX.Element =>
-    Object.hasOwn(BY_ROLE, bar.role) ? BY_ROLE[bar.role]!(bar, collapsed) : toolbarOf(bar, collapsed);
+  const barOf = (bar: Bar, collapsed?: Accessor<boolean>, expand?: () => void): JSX.Element =>
+    Object.hasOwn(BY_ROLE, bar.role) ? BY_ROLE[bar.role]!(bar, collapsed, expand) : toolbarOf(bar, collapsed);
   /** design-l2 : ce qui change la largeur d'un îlot centré (pages) ou sa rangée contextuelle (outil) : remesure. */
   /** T16 (design-l4) : haut des panneaux passagers (`--rb-pop-top` de rb.css), sous l'îlot d'outils descendu. */
   const [popTop, setPopTop] = createSignal(88);
@@ -538,7 +541,7 @@ export function App(props: AppProps): JSX.Element {
       {props.stages}
       <IslandLayer
         bars={shownFloating}
-        render={(bar, collapsed) => barOf(bar, collapsed)}
+        render={(bar, collapsed, expand) => barOf(bar, collapsed, expand)}
         head={
           <TabsBar
             tabs={tabs}

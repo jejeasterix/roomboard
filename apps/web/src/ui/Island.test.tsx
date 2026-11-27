@@ -271,10 +271,10 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     expect(ids(".rb-islands > .rb-island")).toEqual(["outils", "pages"]);
   });
 
-  it("personnalisation-1a : bar.anchor du profil prime : outils en side-end, pages mobile en haut-droite", () => {
+  it("personnalisation-1a : bar.anchor du profil prime : outils en side-end, pages mobile : l'ancre de coin se replie en haut-centre (T19)", () => {
     const { container } = layer([{ ...bar("outils", "tools"), anchor: "side-end" }, { ...bar("pages", "pages"), anchor: "top-end" }]);
     expect(container.querySelector('[data-island="outils"]')!.getAttribute("data-anchor")).toBe("side-end");
-    expect(container.querySelector('.rb-islands > [data-island="pages"]')!.getAttribute("data-anchor")).toBe("top-end");
+    expect(container.querySelector('.rb-islands > [data-island="pages"]')!.getAttribute("data-anchor")).toBe("top-center");
   });
 
   it("design-l2 L2-12 (discrimine) : calque : îlots centrés placés par left / top en px entiers, jamais par la grille", () => {

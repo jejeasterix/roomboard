@@ -228,13 +228,14 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
     const lr = l.getBoundingClientRect();
     const br = b.getBoundingClientRect();
     if (!getComputedStyle(l).flexDirection.startsWith("column")) {
-      return { visible: l.clientWidth, button: br.width, first: lr.left <= br.left + 0.5 && br.right <= lr.right + 0.5, axis: "largeur" };
+      return { visible: l.clientWidth, button: br.width, first: lr.left <= br.left + 0.5 && br.right <= lr.right + 0.5, axis: "largeur", room: NaN };
     }
     const isl = l.closest(".rb-island");
     const room = isl ? (Number.parseFloat(isl.style.maxBlockSize) || Infinity) - isl.getBoundingClientRect().height : 0;
     const max = Number.parseFloat(getComputedStyle(l).maxBlockSize) || Infinity;
-    return { visible: Math.min(max, l.clientHeight + Math.max(0, room)), button: br.height, first: lr.top <= br.top + 0.5 && br.bottom <= lr.bottom + 0.5, axis: "hauteur" };
+    return { visible: Math.min(max, l.clientHeight + Math.max(0, room)), button: br.height, first: lr.top <= br.top + 0.5 && br.bottom <= lr.bottom + 0.5, axis: "hauteur", room };
   });
+  check(list.axis === "hauteur" && Number.isFinite(list.room), `S4 : liste verticale (axe « ${list.axis} »), place restante finie (${list.room})`);
   check(list.button > 0 && list.visible >= 3 * list.button && list.first, `S4 : liste des pages de ${Math.round(list.visible)} px visibles en ${list.axis} (≥ 3 miniatures de ${Math.round(list.button)} px), la miniature « 1 » entière`);
   if (unfolded) await page.click('[data-island="pages"] [data-island-collapse]'); // T16 : repliée, la scène reste libre
 

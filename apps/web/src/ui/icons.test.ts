@@ -45,7 +45,6 @@ const ISLAND_ICONS: Readonly<Record<string, string>> = { menu: "menu", collapse:
 const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "eraser-part", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
 /** personnalisation-1a (T6, GC4) : icônes Lucide du lot 1, recopiées telles quelles (trait 2 d'origine, rendu à 1,5 par la feuille de style). */
 const LOT1: Readonly<Record<string, IconNode>> = {
-  "panel-left": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M9 3v18" }]],
   copy: [["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" }], ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" }]],
   "rectangle-horizontal": [["rect", { width: "20", height: "12", x: "2", y: "6", rx: "2" }]],
   "rectangle-vertical": [["rect", { width: "12", height: "20", x: "6", y: "2", rx: "2" }]],
@@ -69,10 +68,10 @@ const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", too
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 72 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots et le lot 1 de personnalisation-1a", () => {
+  it("ICONS : 71 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots et le lot 1 de personnalisation-1a", () => {
     const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2)]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(72);
+    expect(Object.keys(ICONS)).toHaveLength(71);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -149,7 +148,8 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
       expect(NOTICE, name).toContain(`\`${name}\``);
     }
     expect(ACTION_ICONS["page-duplicate"]).toBe("copy");
-    expect(ACTION_ICONS["page-number"]).toBe("panel-left");
+    expect(ACTION_ICONS["page-number"]).toBe("dock-left");
+    expect(ICONS["panel-left"]).toBeUndefined();
   });
   it("personnalisation-1a T14 : layers, bring-to-front, send-to-back à l'identique de Lucide, nommées dans la notice", () => {
     for (const [name, node] of Object.entries(LOT2)) {

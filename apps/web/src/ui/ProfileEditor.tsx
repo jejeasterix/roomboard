@@ -72,7 +72,7 @@ import {
   type ToolItem,
 } from "../toolbar";
 import { Icon, IconButton } from "./IconButton";
-import { anchorOf } from "./island-place";
+import { MOVABLE_ROLES, anchorOf } from "./island-place";
 import { iconFor } from "./icons";
 import { POINTER_SUMMARY } from "./PointerSwitch";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
@@ -144,6 +144,8 @@ const ANCHOR_LABELS: Readonly<Record<BarAnchor, string>> = {
 const ROLE_ANCHOR = "default";
 type AnchorChoice = BarAnchor | typeof ROLE_ANCHOR;
 const ANCHOR_OPTIONS: readonly RadioOption<AnchorChoice>[] = BAR_ANCHORS.map((a) => ({ value: a, label: ANCHOR_LABELS[a] }));
+/** Barre mobile (outils) : ancres centrées et latérales seulement ; un coin la poserait sur le menu, les panneaux ou l'historique. */
+const MOVABLE_ANCHOR_OPTIONS: readonly RadioOption<AnchorChoice>[] = ANCHOR_OPTIONS.filter((o) => !["top-start", "top-end", "bottom-start"].includes(o.value));
 /** H10 : la barre latérale ne se pose pas en haut ni en bas : Flottante (défaut du rôle), À gauche, À droite. */
 const SIDE_ANCHOR_OPTIONS: readonly RadioOption<AnchorChoice>[] = [
   { value: ROLE_ANCHOR, label: "Flottante" },
@@ -304,7 +306,7 @@ function BarBlock(props: {
   const docks = createMemo((): readonly RadioOption<Dock>[] =>
     DOCKS.map((d) => ({ value: d, label: DOCK_LABELS[d], icon: DOCK_ICONS[d], ...(detail() && Object.hasOwn(ANNOTATION_DOCK_DETAIL, d) ? { detail: ANNOTATION_DOCK_DETAIL[d]! } : {}) })),
   );
-  const anchors = (): readonly RadioOption<AnchorChoice>[] => (props.bar.role === "pages" ? SIDE_ANCHOR_OPTIONS : ANCHOR_OPTIONS);
+  const anchors = (): readonly RadioOption<AnchorChoice>[] => (props.bar.role === "pages" ? SIDE_ANCHOR_OPTIONS : MOVABLE_ROLES.has(props.bar.role) ? MOVABLE_ANCHOR_OPTIONS : ANCHOR_OPTIONS);
   const anchorValue = (): AnchorChoice => {
     const a = props.bar.anchor;
     if (props.bar.role === "pages") return a === "side-start" || a === "side-end" ? a : ROLE_ANCHOR;
@@ -328,10 +330,12 @@ function BarBlock(props: {
           value={anchorValue()}
           choose={(a) => props.edit((p) => setAnchor(p, props.bar.id, a === ROLE_ANCHOR ? null : a))}
         />
+        <Show when={MOVABLE_ROLES.has(props.bar.role)}>
         <label class="rb-check" style={{ display: "flex", "align-items": "center", gap: "var(--rf-space-sm)", "min-block-size": "var(--rb-btn-s)" }}>
           <input type="checkbox" data-edit="collapsed" checked={props.bar.collapsed} onChange={(e) => props.edit((p) => setCollapsed(p, props.bar.id, e.currentTarget.checked))} />
           <span>Repliée au démarrage</span>
         </label>
+        </Show>
       </Show>
       <div
         class="rb-add-wrap"

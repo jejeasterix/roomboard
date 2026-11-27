@@ -26,8 +26,8 @@ grep -q "node --test scripts/tests/nettete.test.mjs" scripts/verifier.sh || ko "
 grep -q "scripts/essais/design-l4-navigateur.mjs" scripts/verifier.sh || ko "design-l4-navigateur absent de verifier.sh"
 # design L3 : ligne à part, comme design L4.
 grep -q "scripts/essais/design-l3-navigateur.mjs" scripts/verifier.sh || ko "design-l3-navigateur absent de verifier.sh"
-# design L2 : ligne à part, comme design L3.
 grep -q "scripts/essais/personnalisation-1a-navigateur.mjs" scripts/verifier.sh || ko "personnalisation-1a-navigateur absent de verifier.sh"
+# design L2 : ligne à part, comme design L3.
 grep -q "scripts/essais/design-l2-navigateur.mjs" scripts/verifier.sh || ko "design-l2-navigateur absent de verifier.sh"
 if grep -E 'essais/.*-navigateur\.mjs.*--captures?' scripts/verifier.sh >/dev/null; then ko "--e2e ne doit passer aucune option de capture"; fi
 # Les essais ne sont lancés que dans le bloc --e2e.

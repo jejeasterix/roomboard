@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Toolbar as Bar } from "../toolbar";
 import {
-  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, sheetLane, tabsWidth,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, sheetLane, sideCorners, tabsWidth,
   type Anchor, type Corners,
 } from "./island-place";
 
@@ -23,7 +23,8 @@ describe("island-place : ancres (design-l2 L2-5, H11)", () => {
   it("personnalisation-1a : pages → side-start par défaut ; bar.anchor side-end prime sur le rôle", () => {
     expect(anchorOf(barOf("pages"))).toBe("side-start");
     expect(anchorOf(barOf("pages", "side-end"))).toBe("side-end");
-    expect(anchorOf(barOf("tools", "bottom-start"))).toBe("bottom-start");
+    expect(anchorOf(barOf("history", "bottom-start"))).toBe("bottom-start");
+    expect(anchorOf(barOf("tools", "bottom-start"))).toBe("bottom-center"); // T19 : barre mobile, coin replié
   });
   it("isCentered : seulement top-center et bottom-center", () => {
     expect((["top-start", "top-center", "top-end", "bottom-start", "bottom-center", "side-start", "side-end"] as const).map(isCentered)).toEqual([false, true, false, false, true, false, false]);
@@ -167,5 +168,32 @@ describe("design-l2 T11 : #etat dans la rangée du haut", () => {
     expect(tabsWidth(MID, 80, 108, null, 100)).toBe(1280 - 16 - 108 - 8 - 80 - 100 - 8);
     expect(tabsWidth(MID, 80, 108, { x: 360, y: 16 }, 0)).toBe(360 - 8 - 80);
     expect(tabsWidth(MID, 80, 108, { x: 360, y: 16 }, 1000)).toBe(144);
+  });
+});
+
+describe("island-place : correctifs de relecture (T19)", () => {
+  it("une ancre de coin lue sur une barre mobile se replie vers l'ancre centrée de sa rangée ; les autres rôles la gardent", () => {
+    expect((["top-start", "top-end", "top-center", "bottom-start", "bottom-center", "side-start", "side-end"] as Anchor[]).map((a) => anchorOf(barOf("tools", a)))).toEqual([
+      "top-center", "top-center", "top-center", "bottom-center", "bottom-center", "side-start", "side-end",
+    ]);
+    expect(anchorOf(barOf("pages", "top-end"))).toBe("top-center");
+    expect(anchorOf(barOf("menu", "top-end"))).toBe("top-end");
+    expect(anchorOf(barOf("history", "bottom-start"))).toBe("bottom-start");
+  });
+
+  it("sideCorners : l'îlot d'outils n'est jamais son propre surplomb ; deux passes de placement : position stable", () => {
+    const base: Corners = { ...TOP, foot: 56 };
+    const size = { w: 56, h: 300 };
+    let at = laneOf("side-start", size, MID, sideCorners(base, "tools", null));
+    for (let pass = 0; pass < 3; pass++) {
+      const placed = { x: at.x, y: at.y, w: size.w, h: size.h };
+      const next = laneOf("side-start", size, MID, sideCorners(base, "tools", placed));
+      expect(next.y, `passe ${pass}`).toBe(at.y);
+      at = next;
+    }
+    // un autre rôle (pages) passe encore sous l'îlot d'outils qui le surplombe
+    const tools = { x: 170, y: 80, w: 940, h: 56 };
+    expect(laneOf("side-start", { w: 260, h: 600 }, MID, sideCorners(base, "pages", tools)).y).toBe(144);
+    expect(sideCorners(base, "pages", null).above).toEqual([]);
   });
 });

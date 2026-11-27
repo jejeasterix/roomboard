@@ -532,8 +532,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
 - Reprises de la maquette `docs/design/maquettes/01-tableau.html` (design L2, tracés Lucide au même commit), noms
   RoomBoard : `menu` (Lucide `menu`), `collapse` (Lucide `chevron-up`).
 - Lus au commit par `gh api` (personnalisation-1a, lot 1), recopiés tels quels, noms RoomBoard identiques aux noms Lucide :
-  `panel-left` (barre latérale des pages), `copy` (Dupliquer la page), `rectangle-horizontal`, `rectangle-vertical`,
-  `infinity`, `rows-2`, `rows-3`, `rows-4`.
+  `copy` (Dupliquer la page), `rectangle-horizontal`, `rectangle-vertical`,
+  `infinity`, `rows-2`, `rows-3`, `rows-4`. L'onglet Pages de la barre latérale et `page-number` réutilisent `dock-left` (même tracé que Lucide `panel-left`).
 - Lus au commit par `gh api` (personnalisation-1a, lot 2, onglet Calques), recopiés tels quels, noms RoomBoard identiques aux
   noms Lucide : `layers` (onglet Calques), `bring-to-front` (Premier plan), `send-to-back` (Arrière-plan).
 
