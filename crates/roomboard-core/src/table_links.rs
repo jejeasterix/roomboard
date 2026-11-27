@@ -808,4 +808,97 @@ mod tests {
             "l'original garde son lien"
         );
     }
+
+    // D6 : un tableau déplacé emporte ses objets liés, dans le cœur (la CLI pilote `Transform` sans moteur) ; une
+    // seule étape d'annulation (G12).
+    #[test]
+    fn transform_table_carries_links() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1050.0, 1040.0);
+        d.apply(Command::PlaceInCell {
+            ids: vec![o.clone()],
+            matrix: IDENTITY,
+            cell: Some(link(&d, &t, 0, 0)),
+            sizes: vec![],
+        })
+        .expect("logé");
+        let at = tx(&d, &o);
+        let c = d
+            .apply(Command::Transform {
+                ids: vec![t.clone()],
+                matrix: [1.0, 0.0, 0.0, 1.0, 50.0, 20.0],
+            })
+            .expect("déplacé");
+        assert_eq!(
+            (tx(&d, &o)[4], tx(&d, &o)[5]),
+            (at[4] + 50.0, at[5] + 20.0)
+        );
+        assert_eq!(raw_link(&d, &o), Some(link(&d, &t, 0, 0)), "lien gardé");
+        let mut want = vec![t.clone(), o.clone()];
+        want.sort();
+        assert_eq!(c.ids, want);
+        assert!(d.undo());
+        assert_eq!(tx(&d, &o), at, "une annulation ramène l'objet");
+        assert_eq!(tx(&d, &t)[4], 0.0, "et le tableau, dans la même étape");
+    }
+
+    // G9 : sans objet lié, la `Transform` d'un tableau est celle d'aujourd'hui.
+    #[test]
+    fn transform_table_without_links_unchanged() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1050.0, 1040.0);
+        let at = tx(&d, &o);
+        let c = d
+            .apply(Command::Transform {
+                ids: vec![t.clone()],
+                matrix: [1.0, 0.0, 0.0, 1.0, 50.0, 20.0],
+            })
+            .expect("déplacé");
+        assert_eq!(c.ids, vec![t.clone()]);
+        assert_eq!(tx(&d, &o), at);
+    }
+
+    // D6, H24 : objet lié déplacé seul : lien gardé si son centre reste dans sa case, retiré sinon, dans la transaction
+    // de la `Transform` (jamais par une seconde commande) : une annulation rend position et lien.
+    #[test]
+    fn transform_out_of_cell_unlinks() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 10.0, 10.0, 50.0, 40.0);
+        d.apply(Command::PlaceInCell {
+            ids: vec![o.clone()],
+            matrix: IDENTITY,
+            cell: Some(link(&d, &t, 0, 0)),
+            sizes: vec![],
+        })
+        .expect("logé");
+        d.apply(Command::Transform {
+            ids: vec![o.clone()],
+            matrix: [1.0, 0.0, 0.0, 1.0, 100.0, 0.0],
+        })
+        .expect("dedans");
+        assert_eq!(d.element(&o).expect("o").cell, Some(link(&d, &t, 0, 0)));
+        let inside = tx(&d, &o);
+        let c = d
+            .apply(Command::Transform {
+                ids: vec![o.clone()],
+                matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 500.0],
+            })
+            .expect("dehors");
+        assert_eq!(d.element(&o).expect("o").cell, None);
+        assert_eq!(raw_link(&d, &o), None, "clé retirée");
+        assert_eq!(c.ids, vec![o.clone()]);
+        assert!(d.undo());
+        assert_eq!(tx(&d, &o), inside, "une annulation rend la position");
+        assert_eq!(
+            raw_link(&d, &o),
+            Some(link(&d, &t, 0, 0)),
+            "et le lien, dans la même étape"
+        );
+    }
 }
