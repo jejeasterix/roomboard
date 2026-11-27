@@ -1,12 +1,12 @@
 # État — personnalisation-2
 
-Statut : en cours
+Statut : en cours — lot 1 en fusion, lot 2 sur feat/personnalisation-2b
 Gabarit : chantier (18 tâches : lot 1 = 10, lot 2 = 8 ; lot 1 fusionnable seul)
 Objectif : RoomBoard reçoit un panneau d'options par outil et un menu général ☰ copiés du comportement d'Excalidraw, remplis de nos commandes, tactile d'abord et clavier ensuite.
-Avancement : 8/21 tâches terminées (lot 1 : T1–T11 + correctifs T2b, T8b ; lot 2 : T12–T19)
-Étage : 3 (vague 3) — depuis 2026-11-27 10:37
+Avancement : lot 1 clos (T1–T11 + correctifs T2b, T4b, T8b, T9b, T20–T27) ; lot 2 : T12–T17 + T28 fusionnés dans feat/personnalisation-2b, T18 (lien) non fait, T19 en cours
+Étage : 4 (lot 1) — depuis 2026-11-27 13:06
 Lot : —
-Tâche : T4 — Pont Wasm, API, faux cœur — depuis 10:22
+Tâche : T19 — essai et captures du lot 2 — depuis 13:06
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2   Branche : feat/personnalisation-2   Base : origin/main @ 45484db
 Branche principale locale au lancement : 45484db
@@ -17,6 +17,10 @@ Arrêt ferme : 2026-11-27 15:21 (bilan et poussée à 15:11)
 Rapide : voir complète
 Complète (origin/main, verifier.sh --e2e, 16 min) : OK · cargo 1356 · web 3628 (178 fichiers) · cli 263 (29 fichiers)
 Tailles Wasm à 45484db : principal 1 375 581 o (plafond 1 572 864) · formats 2 794 511 o (plafond 3 145 728)
+
+## Fin du lot 1
+verifier.sh --e2e sur 75cfe6d : e2e OK, OK · cargo 1410 · web 3765 (184 fichiers) · cli 265 (29) · Wasm principal 1 394 336 o, formats 2 794 511 o · personnalisation-2 : OK, CLI : OK
+Double relecture : conformité + qualité UI + qualité TS, aucun bloquant ; majeurs corrigés par T20, T21 ; essais anciens : amorce foldOptions dans s34, c3, c4, c6a, c8, c13 ; T22 (menu sous le panneau, panneau compact, calage, design-l2/l3), T24, T25, T26.
 
 ## Compteurs
 contre-relecture cadrage 1/2 (aucun bloquant, 7 importantes arbitrées) · relecture plan 1/3 (1 bloquant + 7 importants corrigés ; tour 2 sauté faute de temps, lot 1 relu en entier) · vagues sans progrès 0/2 · correctifs de fin 0/2
