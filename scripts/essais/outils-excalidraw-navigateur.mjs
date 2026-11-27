@@ -545,13 +545,17 @@ async function s8(browser, base, tmp) {
   await tapStage(page, A[0] + 60, 300);
   await waitAttr(page, "data-selection", "1");
   await page.waitForTimeout(600);
+  // C4b : le double toucher sur une forme ne convertit plus (réservé au texte, lot 2b) ; le bouton du panneau convertit.
   await doubleTouch(page, cdp, [A[0] + 60, 300]);
+  await page.waitForTimeout(400);
+  check((await attr(page, "data-line-edit")) === "" && closedLines((await saved(page, tmp, "s8-double.roomboard")).elements).length === 0, "S8 : double toucher sur un rectangle : aucune conversion");
+  await press(page, "doigt", `${OPT} [data-section="points"] [data-option-value="line-edit"]`);
   await waitNonEmpty(page, "data-line-edit");
   s = await saved(page, tmp, "s8-ligne.roomboard");
   const l = closedLines(s.elements)[0];
   lire("S8.polygon", l?.shape.polygon === true ? 1 : 0);
   lire("S8.vertices", l ? vertices(l) : 0);
-  check(l !== undefined && l.id === r0.id && l.shape.shape === "line", "S8 : double toucher sur un rectangle : même id, shape « line », polygon true");
+  check(l !== undefined && l.id === r0.id && l.shape.shape === "line", "S8 : bouton « Modifier les points » sur un rectangle : même id, shape « line », polygon true");
   check(r0.shape.fill !== null, `S8 : le rectangle de départ est rempli (${JSON.stringify(r0.shape.fill)})`);
   check(vertices(l) === 4 && JSON.stringify(l.shape.fill) === JSON.stringify(r0.shape.fill), `S8 : 4 sommets, fond gardé (${JSON.stringify(l.shape.fill)})`);
   await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
@@ -703,7 +707,7 @@ async function captures2a(browser, base, tmp) {
     await tapStage(h.page, A[0] + 60, 300);
     await waitAttr(h.page, "data-selection", "1");
     await h.page.waitForTimeout(600);
-    await doubleTouch(h.page, h.cdp, [A[0] + 60, 300]);
+    await press(h.page, "doigt", `${OPT} [data-section="points"] [data-option-value="line-edit"]`);
     await waitNonEmpty(h.page, "data-line-edit");
     await loin(h.page);
     await shoot(h.page, "apres-forme-points", { x: 0, y: 0, width: 1060, height: 520 });

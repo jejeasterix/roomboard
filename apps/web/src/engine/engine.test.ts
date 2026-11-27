@@ -2921,6 +2921,31 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect((doc.element(id) as { shape: { shape: string } }).shape.shape).toBe("rect");
   });
 
+  it("la conversion passe par commit : un lot runAll d'avant s'annule encore en une étape (C4b)", () => {
+    const { engine, doc, rect } = og12();
+    const id = rect(300, 300, 400, 350);
+    const page = engine.state().page;
+    const add = (x: number) => ({ type: "SetText" as const, page, id: null, x, y: 10, content: "t", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    const n0 = doc.elementIds(page).length;
+    engine.runAll([add(0), add(300), add(600)]);
+    engine.select([id]);
+    expect(engine.editLinePoints()).toBe(true);
+    engine.undo(); // la conversion
+    expect((doc.element(id) as { shape: { shape: string } }).shape.shape).toBe("rect");
+    expect(doc.elementIds(page).length).toBe(n0 + 3);
+    engine.undo(); // tout le lot, d'un geste
+    expect(doc.elementIds(page).length).toBe(n0);
+  });
+
+  it("conversion refusée par le cœur : l'erreur arrive à l'état (C4b)", () => {
+    const { engine, doc, rect } = og12();
+    const id = rect(300, 300, 400, 350);
+    engine.select([id]);
+    vi.spyOn(doc, "apply").mockImplementation(() => { throw new Error("refus"); });
+    expect(engine.editLinePoints()).toBe(false);
+    expect(engine.state().error).toBe("refus");
+  });
+
   it("Ctrl+Entrée sur un rectangle refusé par le cœur : ni éditeur, ni étape", () => {
     const { engine, doc, rect } = og12();
     const id = rect(300, 300, 400, 350);

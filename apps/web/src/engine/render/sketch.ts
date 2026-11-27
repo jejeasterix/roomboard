@@ -9,7 +9,7 @@
 import rough from "roughjs/bin/rough";
 import type { Op, OpSet, Options } from "roughjs/bin/core";
 import type { ShapeData, StrokeStyle } from "../../core/api";
-import { arrowWings, flattenPath, isClosedShape, lineGeomOf, linePath } from "../../core/shapes";
+import { arrowWings, flattenPath, isClosedShape, isFillable, lineGeomOf, linePath } from "../../core/shapes";
 import { elbowedOf, endArrowheadOf, fillStyleOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, type Arrowhead, type Look, type StrokeKind } from "../../core/look";
 
 const gen = rough.generator();
@@ -104,11 +104,6 @@ export function wingDashOf(kind: StrokeKind, w: number): number[] {
 export function headWings(tipX: number, tipY: number, fromX: number, fromY: number, width: number): [number, number, number, number] | null {
   const w = arrowWings(tipX - fromX, tipY - fromY, width);
   return w ? [w[0] + fromX, w[1] + fromY, w[2] + fromX, w[3] + fromY] : null;
-}
-
-/** Formes à fond : rectangle, ellipse, losange et ligne fermée (OG12 lot 2a). */
-function isFillable(s: ShapeData): boolean {
-  return s.shape === "rect" || s.shape === "ellipse" || s.shape === "diamond" || isClosedShape(s);
 }
 
 /** Un fond non transparent avec hachures passe par roughjs même sans rugosité (Architecte). */

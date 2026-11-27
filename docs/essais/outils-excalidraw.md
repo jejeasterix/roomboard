@@ -12,7 +12,8 @@ Cœur : `crates/roomboard-core/tests/fleches.rs`. Éditeur : `apps/web/src/engin
 
 Excalidraw nomme l'action « Modifier la ligne » (`toggleLinearEditor`). RoomBoard dit « Modifier les points » : le geste porte
 sur les points d'une flèche ou d'une ligne (déplacer, ajouter, retirer), pas sur la ligne entière, et le mot « ligne » prêterait
-à confusion avec l'outil Ligne (DA-7). Raccourci : Ctrl+Entrée ; au doigt, double toucher ou bouton du panneau.
+à confusion avec l'outil Ligne (DA-7). Raccourci : Ctrl+Entrée ; au doigt, double toucher (sur une ligne ou une flèche) ou bouton du panneau.
+La conversion d'une forme (rectangle, losange, ellipse) en ligne fermée se lance seulement par le bouton « Modifier les points » du panneau (tactile) et par Ctrl+Entrée (clavier) : le double toucher ou double clic sur une forme ne convertit pas (Excalidraw le réserve au texte dans une forme, lot 2b ; un double toucher accidentel sur un nœud de carte mentale détacherait ses connecteurs). Le double toucher sur une ligne, une flèche ou une ligne fermée déjà convertie garde « Modifier les points ». Une ligne fermée sélectionnée seule se comporte comme une forme (cadre ordinaire, déplacement) ; ses sommets s'éditent par « Modifier les points ».
 
 ## Flèche
 
@@ -95,7 +96,7 @@ appliqué à la création, non appliqué au suivi d'une cible déplacée (le cœ
 |---|---|---|---|
 | glisser, Maj : carré ou cercle | `App.tsx` | copié | `outils-excalidraw-navigateur.mjs` S1 (pose des rectangles) |
 | double toucher = texte lié, Entrée | `App.tsx` | lot 2 (lot 2b) | — |
-| « Modifier les points » vers une forme libre | `linearElementEditor.ts`, `actionTogglePolygon` (`polygon`) | adapté : conversion en ligne fermée (même id, fond gardé), fermeture implicite du dernier sommet vers le départ (écart, DA-1), ellipse en 16 sommets droits ; Ctrl+Entrée, double toucher, bouton du panneau | `outils-excalidraw-navigateur.mjs` S8 (`Lire : S8.polygon=1`, `S8.after=5`, `S8.ellipse=16`), S9 ; `tests/formes.rs::shape_to_polygon_rect_in_one_step_undo_restores` |
+| « Modifier les points » vers une forme libre | `linearElementEditor.ts`, `actionTogglePolygon` (`polygon`) | adapté : conversion en ligne fermée (même id, fond gardé), fermeture implicite du dernier sommet vers le départ (écart, DA-1), ellipse en 16 sommets droits ; Ctrl+Entrée, bouton du panneau (pas de double toucher sur la forme) | `outils-excalidraw-navigateur.mjs` S8 (`Lire : S8.polygon=1`, `S8.after=5`, `S8.ellipse=16`), S9 ; `tests/formes.rs::shape_to_polygon_rect_in_one_step_undo_restores` |
 | losange | `element/src/shape.ts` (`diamond`), `Tools.tsx` | copié (`ShapeKind::Diamond`) ; au doigt : toucher dans un coin de la boîte, hors du losange, ne sélectionne rien | `outils-excalidraw-navigateur.mjs` S7 (`Lire : S7.diamond=1`, `S7.corner=none`) ; `tests/formes.rs::diamond_hits_inside_not_box_corners` |
 
 ## Crayon

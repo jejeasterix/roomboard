@@ -8,7 +8,7 @@ import { PDF_PAGE_KIND } from "../../core/api";
 import { endArrowheadOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, type Arrowhead, type Look, type TextAlign } from "../../core/look";
 import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, Model3dData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
-import { arrowWings, catmullRom, flattenPath, isClosedShape, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
+import { arrowWings, catmullRom, flattenPath, isFillable, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, pageFrame, visibleGridRect, visiblePageRect, type PageRect } from "../page";
 import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
@@ -363,7 +363,7 @@ export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: S
     return;
   }
   traceShape(ctx, s, style.width, roundnessOf(look) === "round", look);
-  if (s.fill !== null && (s.shape === "rect" || s.shape === "ellipse" || s.shape === "diamond" || isClosedShape(s))) {
+  if (s.fill !== null && isFillable(s)) {
     ctx.fillStyle = s.fill;
     ctx.fill();
   }

@@ -10,7 +10,7 @@ import {
   endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf,
   elbowedOf, type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
 } from "../core/look";
-import { isPointsShape, isSegment } from "../core/shapes";
+import { isBoxShape, isSegment } from "../core/shapes";
 import type { DeviceSettings } from "../device-settings";
 import type { Engine, EngineState } from "../engine/engine";
 import { DEFAULT_ITEM_STYLE, type ArrowType, type ItemStyle } from "../engine/item-style";
@@ -131,8 +131,12 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     const t = targets();
     if (t.length !== 1 || t[0]!.kind !== "shape") return false;
     const s = t[0]!.shape;
-    return (isSegment(s.shape) && !elbowedOf(t[0]!.look)) || isPointsShape(s.shape);
+    return (isSegment(s.shape) && !elbowedOf(t[0]!.look)) || isBoxShape(s.shape);
   };
+  /** Bouton « Modifier les points » : cible seule, hors édition. */
+  const showEditPoints = createMemo(() => lineTarget() && !props.state().lineEditing);
+  /** Bouton « Retirer le point » : en édition, au moins un point choisi. */
+  const showRemovePoint = createMemo(() => props.state().lineEditing != null && (props.state().linePointsSelected ?? 0) > 0);
   const off = (k: OptionKey): boolean => disabledIn(k, editing());
   const keys = createMemo((): readonly OptionKey[] =>
     props.hidden?.() !== true && showsPanel(props.state().tool, props.state().selection.length, props.annotating())
@@ -405,13 +409,13 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     ),
     actions: () => (
       <>
-      <Show when={(lineTarget() && !props.state().lineEditing) || (props.state().lineEditing && (props.state().linePointsSelected ?? 0) > 0)}>
+      <Show when={showEditPoints() || showRemovePoint()}>
         {/* OG23 rangera cette section dans son accordéon par cet attribut */}
         <div class="rb-pick-row" data-section="points">
-          <Show when={lineTarget() && !props.state().lineEditing}>
+          <Show when={showEditPoints()}>
           <IconButton keepFocus icon="edit-points" label="Modifier les points (Ctrl+Entrée)" attrs={{ "data-option-value": "line-edit", class: "rb-opt-btn" }} onPress={() => void props.engine().editLinePoints()} />
           </Show>
-          <Show when={props.state().lineEditing && (props.state().linePointsSelected ?? 0) > 0}>
+          <Show when={showRemovePoint()}>
           <IconButton keepFocus icon="point-remove" label="Retirer le point (Suppr)" attrs={{ "data-option-value": "point-remove", class: "rb-opt-btn" }} onPress={() => void props.engine().removeLinePoints()} />
           </Show>
         </div>
