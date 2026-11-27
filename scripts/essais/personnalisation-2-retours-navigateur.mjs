@@ -1377,15 +1377,15 @@ async function capturesB(browser, base, nom, wanted) {
   if (want("copie")) {
     const { ctx, page, cdp } = await newPage(browser, base, { scale: 2 });
     await useTool(page, "doigt", "rect");
-    await touchDrag(page, cdp, [380, 230], [560, 380]);
+    await touchDrag(page, cdp, [520, 230], [700, 380]);
     await useTool(page, "doigt", "select");
-    await marquee(page, [340, 190], [620, 430]);
+    await marquee(page, [480, 190], [760, 430]);
     if (!avant) {
       await openSection(page, "doigt", "actions");
       await press(page, "doigt", DC);
     }
     await frames(page);
-    await touchHold(page, cdp, [425, 230], [625, 230], async () => shoot(page, "copie", await clipAround(page, 1000, 560)));
+    await touchHold(page, cdp, [565, 230], [765, 230], async () => shoot(page, "copie", await clipAround(page, 1000, 560)));
     await ctx.close();
   }
   if (want("image")) {
