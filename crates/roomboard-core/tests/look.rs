@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use roomboard_core::commands::{Command, CommandError, EraseMode};
 use roomboard_core::document::Document;
 use roomboard_core::element::{apply_transform, Look, StrokeStyle};
-use roomboard_core::format::load;
 use roomboard_core::fill::FillTarget;
+use roomboard_core::format::load;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput};
 use roomboard_core::shape::ShapeKind;
 use roomboard_core::style::StylePatch;
@@ -1357,7 +1357,10 @@ fn set_style_variability_stroke_only() {
     let c = set_style(&mut d, &[&r, &s], on).expect("style");
     assert_eq!(c.ids, vec![s.clone()], "rectangle ignoré");
     assert_eq!(look_of(&d, &s).variability.as_deref(), Some("constant"));
-    assert_eq!(raw_field(&d, &s, "variability").as_deref(), Some("constant"));
+    assert_eq!(
+        raw_field(&d, &s, "variability").as_deref(),
+        Some("constant")
+    );
     assert!(!raw_keys(&d, &r).contains(&"variability".to_string()));
     let off = StylePatch {
         variability: Some(None),
@@ -1434,7 +1437,10 @@ fn old_stroke_has_no_variability_key() {
         "hors domaine : jamais écrit"
     );
     let k = add_stroke(&mut d, constant());
-    assert_eq!(raw_field(&d, &k, "variability").as_deref(), Some("constant"));
+    assert_eq!(
+        raw_field(&d, &k, "variability").as_deref(),
+        Some("constant")
+    );
 }
 
 // --- OG23 (T10) : `dragCopy` (seul `true` lu et écrit, booléen ; absent = déplacer, le neutre). ---
@@ -1480,7 +1486,11 @@ fn set_style_drag_copy_one_step() {
     let i = "img-1".to_string();
     let all = [&r, &s, &t, &i];
     let c = set_style(&mut d, &[&r, &s, &t, &i, &z], drag_copy(true)).expect("pose");
-    assert_eq!(c.ids, vec![r.clone(), s.clone(), t.clone(), i.clone()], "zone ignorée sans erreur");
+    assert_eq!(
+        c.ids,
+        vec![r.clone(), s.clone(), t.clone(), i.clone()],
+        "zone ignorée sans erreur"
+    );
     for id in all {
         assert_eq!(look_of(&d, id).drag_copy, Some(true));
         assert_eq!(raw_any(&d, id, "dragCopy"), Some(Any::Bool(true)));
@@ -1511,7 +1521,11 @@ fn drag_copy_unreadable_is_neutral() {
     let d = blank();
     let mut d = d;
     let r = add_rect(&mut d, Look::default());
-    for v in [In::Any(Any::Bool(false)), In::from("true"), In::Any(Any::from(1.0))] {
+    for v in [
+        In::Any(Any::Bool(false)),
+        In::from("true"),
+        In::Any(Any::from(1.0)),
+    ] {
         let e = with_raw_field(&d, &r, "dragCopy", v);
         assert_eq!(look_of(&e, &r).drag_copy, None);
         assert_eq!(e.element(&r).expect("vue").look, None);
@@ -1524,7 +1538,9 @@ fn drag_copy_kept_by_extract() {
     let page = first_page(&d);
     let id = add_rect(&mut d, Look::default());
     set_style(&mut d, &[&id], drag_copy(true)).expect("pose");
-    let frag = d.extract(&page, std::slice::from_ref(&id)).expect("extraction");
+    let frag = d
+        .extract(&page, std::slice::from_ref(&id))
+        .expect("extraction");
     let ins = d
         .insert_fragment(&frag, &page, 10.0, 10.0)
         .expect("insertion");

@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
+use roomboard_core::arrange::ArrangeHow;
 use roomboard_core::asset::AssetRef;
 use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
 use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, EraseMode};
@@ -15,7 +16,6 @@ use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
 use roomboard_core::grid::{GridInput, GridLevelView, GridLines};
 use roomboard_core::image::{ImageParamsInput, TransparentInput};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
-use roomboard_core::arrange::ArrangeHow;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
 use roomboard_core::media::{LinkedAsset, MediaType};
@@ -2312,7 +2312,11 @@ impl Document {
         })
     }
 
-    pub fn arrange_inner(&mut self, ids: Vec<String>, how: ArrangeHow) -> Result<Change, CommandError> {
+    pub fn arrange_inner(
+        &mut self,
+        ids: Vec<String>,
+        how: ArrangeHow,
+    ) -> Result<Change, CommandError> {
         self.run(Command::Arrange { ids, how })
     }
 
@@ -3101,7 +3105,11 @@ mod tests {
             input(&[10.0, 0.0, 0.0, 4.0, 7.0]),
             Ok(Some((false, Some(4.0), Some(7.0))))
         );
-        for bad in [&[10.0, 0.0, 1.0, 4.0][..], &[10.0, 0.0, 1.0, 4.0, 7.0, 1.0], &[10.0, 0.0]] {
+        for bad in [
+            &[10.0, 0.0, 1.0, 4.0][..],
+            &[10.0, 0.0, 1.0, 4.0, 7.0, 1.0],
+            &[10.0, 0.0],
+        ] {
             assert_eq!(input(bad), Err(CommandError::BadImageParams), "{bad:?}");
         }
     }
@@ -3119,11 +3127,19 @@ mod tests {
             drag_copy: Some(b),
             ..StylePatch::default()
         };
-        let c = d.set_style_inner(vec![id.clone()], patch(true)).expect("pose");
+        let c = d
+            .set_style_inner(vec![id.clone()], patch(true))
+            .expect("pose");
         assert_eq!(c.ids, vec![id.clone()]);
-        let look = |d: &Document| d.core.element(&id).and_then(|e| e.look).and_then(|l| l.drag_copy);
+        let look = |d: &Document| {
+            d.core
+                .element(&id)
+                .and_then(|e| e.look)
+                .and_then(|l| l.drag_copy)
+        };
         assert_eq!(look(&d), Some(true));
-        d.set_style_inner(vec![id.clone()], patch(false)).expect("retrait");
+        d.set_style_inner(vec![id.clone()], patch(false))
+            .expect("retrait");
         assert_eq!(look(&d), None);
     }
 
@@ -4206,7 +4222,14 @@ mod tests {
             ..Look::default()
         };
         assert_eq!(l.sanitized(), want);
-        let named = [None, s("none"), s("arrow"), None, s("javascript:alert(1)"), None];
+        let named = [
+            None,
+            s("none"),
+            s("arrow"),
+            None,
+            s("javascript:alert(1)"),
+            None,
+        ];
         let l = look_of(None, None, None, None, None, named).expect("aspect");
         assert!(l.is_neutral());
     }
@@ -4297,7 +4320,9 @@ mod tests {
             .ids[0]
                 .clone()
         });
-        let x0 = |d: &Document, id: &String| d.core.snap_box(std::slice::from_ref(id)).expect("boîte").x0;
+        let x0 = |d: &Document, id: &String| {
+            d.core.snap_box(std::slice::from_ref(id)).expect("boîte").x0
+        };
         let v = d.core.version();
         let ch = d
             .arrange_inner(vec![a.clone(), b.clone()], ArrangeHow::AlignLeft)

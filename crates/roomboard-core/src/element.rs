@@ -482,7 +482,10 @@ impl Look {
                 .clone()
                 .filter(|s| TEXT_ALIGNS.contains(&s.as_str())),
             link: self.link.clone().filter(|s| valid_link(s)),
-            variability: self.variability.clone().filter(|s| s == VARIABILITY_CONSTANT),
+            variability: self
+                .variability
+                .clone()
+                .filter(|s| s == VARIABILITY_CONSTANT),
             drag_copy: self.drag_copy.filter(|b| *b),
         }
     }
@@ -545,7 +548,8 @@ pub(crate) fn read_look<T: ReadTxn>(txn: &T, e: &MapRef) -> Look {
         text_align: out_string(e.get(txn, "textAlign")),
         link: out_string(e.get(txn, "link")),
         variability: out_string(e.get(txn, "variability")),
-        drag_copy: matches!(e.get(txn, "dragCopy"), Some(Out::Any(Any::Bool(true)))).then_some(true),
+        drag_copy: matches!(e.get(txn, "dragCopy"), Some(Out::Any(Any::Bool(true))))
+            .then_some(true),
     }
     .sanitized()
 }

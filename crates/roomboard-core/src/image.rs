@@ -130,12 +130,20 @@ fn read_crop(o: Option<Out>, w: f64, h: f64) -> Option<[u32; 4]> {
     crop_of(c, w, h).flatten()
 }
 
-fn read_transparent<T: ReadTxn>(txn: &T, o: Option<Out>, w: f64, h: f64) -> Option<TransparentView> {
+fn read_transparent<T: ReadTxn>(
+    txn: &T,
+    o: Option<Out>,
+    w: f64,
+    h: f64,
+) -> Option<TransparentView> {
     let Some(Out::YMap(m)) = o else {
         return None;
     };
     // Départ présent mais non numérique : NaN, refusé par `transparent_of` comme un départ hors de l'image.
-    let seed = |key: &str| m.get(txn, key).map(|v| out_f64(Some(v)).unwrap_or(f64::NAN));
+    let seed = |key: &str| {
+        m.get(txn, key)
+            .map(|v| out_f64(Some(v)).unwrap_or(f64::NAN))
+    };
     transparent_of(
         &TransparentInput {
             color: out_string(m.get(txn, "color"))?,
@@ -879,7 +887,9 @@ mod tests {
             };
             let w = writes(&d);
             assert_eq!(
-                set(&mut d, &id, want.clone(), IDENTITY).expect("sans départ").ids,
+                set(&mut d, &id, want.clone(), IDENTITY)
+                    .expect("sans départ")
+                    .ids,
                 vec![id.clone()],
                 "{x:?} {y:?}"
             );
@@ -893,7 +903,11 @@ mod tests {
                 set(&mut d, &id, want, IDENTITY).expect("même état").ids,
                 Vec::<String>::new()
             );
-            assert_eq!(w.since(), 1, "plus rien à retirer : aucune transaction ({x:?} {y:?})");
+            assert_eq!(
+                w.since(),
+                1,
+                "plus rien à retirer : aucune transaction ({x:?} {y:?})"
+            );
         }
     }
 

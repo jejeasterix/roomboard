@@ -216,7 +216,12 @@ fn flip_h_text_moves_box_keeps_matrix() {
     assert_eq!(after[0], 1.0, "texte jamais inversé");
     assert_eq!(after[..4], tm[..4], "matrice du texte : translation seule");
     let ta = sbox(&d, &t);
-    assert!(close(ta.x0, 2.0 * cx - tb.x1), "place du texte : {} contre {}", ta.x0, 2.0 * cx - tb.x1);
+    assert!(
+        close(ta.x0, 2.0 * cx - tb.x1),
+        "place du texte : {} contre {}",
+        ta.x0,
+        2.0 * cx - tb.x1
+    );
     assert!(close(ta.y0, tb.y0));
     let ra = sbox(&d, &r);
     assert!(close(ra.x0, 2.0 * cx - rb.x1));
@@ -231,7 +236,10 @@ fn rotate_cw_wide_rect_becomes_tall() {
     let b = sbox(&d, &r);
     assert!(close(b.x1 - b.x0, 50.0), "largeur {}", b.x1 - b.x0);
     assert!(close(b.y1 - b.y0, 200.0), "hauteur {}", b.y1 - b.y0);
-    assert!(close(mid_x(&b), mid_x(&b0)) && close(mid_y(&b), mid_y(&b0)), "centre gardé");
+    assert!(
+        close(mid_x(&b), mid_x(&b0)) && close(mid_y(&b), mid_y(&b0)),
+        "centre gardé"
+    );
 }
 
 #[test]
@@ -240,7 +248,10 @@ fn rotate_ccw_then_cw_restores() {
     let r = add_rect(&mut d, 30.0, 40.0, 230.0, 90.0);
     let m0 = matrix(&d, &r);
     arrange(&mut d, &[&r], ArrangeHow::RotateCcw).expect("tourner à gauche");
-    assert!((0..6).any(|i| !close(matrix(&d, &r)[i], m0[i])), "la matrice a changé");
+    assert!(
+        (0..6).any(|i| !close(matrix(&d, &r)[i], m0[i])),
+        "la matrice a changé"
+    );
     arrange(&mut d, &[&r], ArrangeHow::RotateCw).expect("tourner à droite");
     let m = matrix(&d, &r);
     for i in 0..6 {
@@ -266,8 +277,15 @@ fn rotate_cw_table_center_follows() {
     let (px, py) = (mid_x(&tb), mid_y(&tb));
     let (nx, ny) = (cx - (py - cy), cy + (px - cx));
     let ta = sbox(&d, &t);
-    assert!(close(mid_x(&ta), nx) && close(mid_y(&ta), ny), "centre du tableau tourné");
-    assert_eq!(matrix(&d, &r)[..4], [0.0, 1.0, -1.0, 0.0], "rectangle tourné");
+    assert!(
+        close(mid_x(&ta), nx) && close(mid_y(&ta), ny),
+        "centre du tableau tourné"
+    );
+    assert_eq!(
+        matrix(&d, &r)[..4],
+        [0.0, 1.0, -1.0, 0.0],
+        "rectangle tourné"
+    );
 }
 
 /// Discrimine le patron écarté (seuls les ids demandés) : un membre d'un groupe désigné, tout le groupe bouge du même dx.
@@ -293,7 +311,11 @@ fn arrange_extends_partial_group() {
     moved.sort();
     assert_eq!(change.ids, moved);
     let ga = d.element(&a).and_then(|e| e.group).expect("groupe de a");
-    assert_eq!(d.element(&b).and_then(|e| e.group), Some(ga), "groupe intact");
+    assert_eq!(
+        d.element(&b).and_then(|e| e.group),
+        Some(ga),
+        "groupe intact"
+    );
 }
 
 #[test]
@@ -354,12 +376,16 @@ fn with_raw_zone(d: &Document, id: &'static str) -> Document {
         let Some(Out::YArray(els)) = page.get(&txn, "elements") else {
             panic!("éléments")
         };
-        let nums = |v: &[f64]| Any::Array(v.iter().copied().map(Any::from).collect::<Vec<_>>().into());
+        let nums =
+            |v: &[f64]| Any::Array(v.iter().copied().map(Any::from).collect::<Vec<_>>().into());
         let ring = nums(&[0.0, 0.0, 200.0, 0.0, 200.0, 200.0, 0.0, 200.0]);
         let fields: Vec<(&'static str, In)> = vec![
             ("id", In::from(id)),
             ("kind", In::from("fill")),
-            ("transform", In::Any(nums(&[1.0, 0.0, 0.0, 1.0, 100.0, 100.0]))),
+            (
+                "transform",
+                In::Any(nums(&[1.0, 0.0, 0.0, 1.0, 100.0, 100.0])),
+            ),
             ("w", In::from(200.0)),
             ("h", In::from(200.0)),
             ("color", In::from("#ff0000")),
@@ -384,12 +410,18 @@ fn arrange_fill_zone_unchanged() {
     let mut d = with_raw_zone(&d, "zone-brute");
     let zone = "zone-brute".to_string();
     assert_eq!(d.element(&zone).expect("zone").kind, "fill");
-    assert!(d.snap_box(std::slice::from_ref(&zone)).is_some(), "zone lisible, avec sa boîte");
+    assert!(
+        d.snap_box(std::slice::from_ref(&zone)).is_some(),
+        "zone lisible, avec sa boîte"
+    );
     let zm = matrix(&d, &zone);
     let change = arrange(&mut d, &[&zone, &a, &b], ArrangeHow::AlignRight).expect("aligner");
     assert_eq!(matrix(&d, &zone), zm, "zone immobile");
     assert_eq!(change.ids, vec![a.clone()], "seul a bouge");
-    assert!(close(sbox(&d, &a).x1, 750.0), "la zone ne compte pas dans la boîte de la sélection");
+    assert!(
+        close(sbox(&d, &a).x1, 750.0),
+        "la zone ne compte pas dans la boîte de la sélection"
+    );
     let change = arrange(&mut d, &[&zone, &a, &b], ArrangeHow::FlipH).expect("retourner");
     assert!(!change.ids.contains(&zone));
     assert_eq!(matrix(&d, &zone), zm, "zone immobile au retournement");

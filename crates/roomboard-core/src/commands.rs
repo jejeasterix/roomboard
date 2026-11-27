@@ -12,10 +12,10 @@ use crate::asset::{is_asset_id, AssetRef};
 use crate::copy::reinsert_kept;
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
-    apply_transform, compose, constant_ink, finite_positive, fits_f32, group_to_any, invert, look_fields,
-    out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group, read_style,
-    style_fields, transform_to_any, Look, PageLayout, RawBackdrop, StrokeStyle, Transform,
-    FIT_WIDTH, IDENTITY, INFINITE_MODE, LOOK_KEYS, PAGE_HEIGHT, PORTRAIT_HEIGHT,
+    apply_transform, compose, constant_ink, finite_positive, fits_f32, group_to_any, invert,
+    look_fields, out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group,
+    read_style, style_fields, transform_to_any, Look, PageLayout, RawBackdrop, StrokeStyle,
+    Transform, FIT_WIDTH, IDENTITY, INFINITE_MODE, LOOK_KEYS, PAGE_HEIGHT, PORTRAIT_HEIGHT,
 };
 use crate::grid::{self, GridInput};
 use crate::ink::erase::erase_with;

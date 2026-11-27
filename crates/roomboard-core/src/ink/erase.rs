@@ -202,12 +202,18 @@ mod tests {
         let pieces = erase(&pts, width, &[50.0, -40.0, 50.0, 40.0], radius).expect("touché");
         assert_eq!(pieces.len(), 2, "largeur {width}");
         let xs = |piece: &[InkPoint]| -> Vec<f32> {
-            outline(piece, &InkStyle { width, constant: false })
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|c| c[0])
-                .collect()
+            outline(
+                piece,
+                &InkStyle {
+                    width,
+                    constant: false,
+                },
+            )
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| c[0])
+            .collect()
         };
         let left = xs(&pieces[0]).into_iter().fold(f32::MIN, f32::max);
         let right = xs(&pieces[1]).into_iter().fold(f32::MAX, f32::min);

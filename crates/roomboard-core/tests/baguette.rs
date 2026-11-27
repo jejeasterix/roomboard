@@ -135,7 +135,11 @@ fn transparent_without_seed_keeps_bytes() {
     set(&mut d, &id, white(None, None)).expect("couleur");
     let a = save(&d, &meta()).expect("save");
     let mut r = load(&a).expect("load");
-    assert_eq!(save(&r, &meta()).expect("resave"), a, "réenregistré : mêmes octets");
+    assert_eq!(
+        save(&r, &meta()).expect("resave"),
+        a,
+        "réenregistré : mêmes octets"
+    );
     let v = r.version();
     set(&mut r, &id, white(None, None)).expect("même état");
     assert_eq!(r.version(), v, "lu sans départ : rien à réécrire");
