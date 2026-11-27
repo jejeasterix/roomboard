@@ -125,6 +125,10 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-island[data-wrap="1"] > .rb-bar { flex-wrap: wrap; overflow-x: visible; }
 .rb-island .rb-bar[data-collapsed="1"] { display: none; }
 /* Poignée et Replier (L2-8, maquette 01 .grip) : hors profil ; la poignée prend le doigt sans faire défiler la page. */
+.rb-island-chrome { display: grid; place-items: center; flex: none; align-self: stretch; inline-size: 48px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
+.rb-island-chrome[data-island-grip] { inline-size: 24px; color: var(--rf-gray-500); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.rb-island-chrome:hover { background: var(--rf-gray-50); }
+.rb-island-chrome:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 /* OG19 (H0) : îlot centré compacté (data-compact, island-place.ts compactOf) quand sa largeur ne tient pas sur la rangée :
    boutons à icône et Replier de 4 px plus étroits, jamais sous --rb-btn-s (44, cible tactile), hauteur gardée (la rangée
    reste alignée) ; écarts de 2 px. Valeurs entières : l'icône de 24 reste au pixel entier. */
@@ -133,10 +137,6 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-island[data-compact="1"] > .rb-bar > button.rb-ib { inline-size: var(--rb-btn-w); min-width: var(--rb-btn-w); }
 .rb-island[data-compact="1"] > .rb-bar > .rb-sep { margin: 0 2px; }
 .rb-island[data-compact="1"] > .rb-island-chrome:not([data-island-grip]) { inline-size: var(--rb-btn-s); }
-.rb-island-chrome { display: grid; place-items: center; flex: none; align-self: stretch; inline-size: 48px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
-.rb-island-chrome[data-island-grip] { inline-size: 24px; color: var(--rf-gray-500); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
-.rb-island-chrome:hover { background: var(--rf-gray-50); }
-.rb-island-chrome:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 /* L2-13 : rangée contextuelle en îlot séparé sous la barre (posé par Island.tsx), dans [data-toolbar] ; vide : cachée ;
    séparateur de tête masqué. */
 .rb-context { position: absolute; display: flex; align-items: center; gap: 4px; box-sizing: border-box; inline-size: max-content; padding: 4px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); }

@@ -22,12 +22,11 @@ Décisions :
   pixel entier (marges de 10), aucune fonction cachée.
 - **D3 — Pas de bouton « plus » à la Excalidraw.** Il cacherait à 1280 des outils que les essais existants et les
   enseignants touchent directement (Tableau, Pot, Fonds, navigation) ; la compaction suffit à 1280 × 800.
-- **D4 — Îlot déplacé, glissé, ou poussé par le panneau des profils : jamais compacté.** La position choisie par
-  l'utilisateur garde la taille du profil.
+- **D4 — Îlot déplacé ou glissé : compacté selon la fenêtre, comme sur sa voie ; poussé par le panneau des profils :
+  jamais (sa voie passe à la ligne).** Raison (relecture) : sans cela, un cran de flèche lui rendait 1006 px par-dessus les panneaux.
 
 Conséquences : à 1280, l'îlot des onglets prend sa largeur minimale (144 px, H8), le titre s'abrège ; un `#etat` non vide
-élargit le groupe de gauche et peut renvoyer l'îlot dans la voie suivante (règle d'avant). Au glisser, l'îlot reprend sa
-largeur naturelle.
+élargit le groupe de gauche et peut renvoyer l'îlot dans la voie suivante (règle d'avant).
 
 ## 2. Raccourci dans l'infobulle (H1-11 de 1b)
 

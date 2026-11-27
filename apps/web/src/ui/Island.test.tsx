@@ -92,7 +92,7 @@ describe("Island (design-l2 L2-7 à L2-16)", () => {
     expect(island().style.getPropertyValue("max-inline-size")).toBe("1248px");
   });
 
-  it("OG19 (H0) : 1006 px naturels, 884 compacts à 1280 : compacté, sur la rangée du haut ; déplacé ou à 1920 : taille naturelle", () => {
+  it("OG19 (H0) : 1006 px naturels, 884 compacts à 1280 : compacté, sur la rangée du haut, déplacé compris ; 1920, 1024 ou panneau des profils : taille naturelle", () => {
     natural(1006, 884);
     const { island, setArea, onPlaced } = setup();
     expect(island().getAttribute("data-compact")).toBe("1");
@@ -105,8 +105,15 @@ describe("Island (design-l2 L2-7 à L2-16)", () => {
     expect(island().hasAttribute("data-compact")).toBe(false);
     expect(pos(island())[1]).toBe("80px");
     cleanup();
-    const moved = setup({ saved: { at: { x: 40, y: 200 }, collapsed: null } });
-    expect(moved.island().hasAttribute("data-compact")).toBe(false);
+    // Déplacé d'un cran (flèche →) : il reste compact, sans déborder sur les panneaux (1280 - 16 - 108 = 1156).
+    const moved = setup({ saved: { at: { x: 264, y: 16 }, collapsed: null } });
+    expect(moved.island().getAttribute("data-compact")).toBe("1");
+    expect(pos(moved.island())).toEqual(["264px", "16px"]);
+    expect(264 + 884).toBeLessThanOrEqual(1156);
+    cleanup();
+    // Panneau des profils ouvert : sa voie passe à la ligne, jamais compactée.
+    const sheet = setup({ sheet: { x: 16, y: 80, maxWidth: 600 } });
+    expect(sheet.island().hasAttribute("data-compact")).toBe(false);
   });
 
   it("design-l2 L2-30 (a) : poignée et Replier hors de la partie qui défile ([data-toolbar])", () => {

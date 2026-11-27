@@ -149,9 +149,10 @@ export function Island(props: IslandProps): JSX.Element {
   let el: HTMLDivElement | undefined;
   let stopDrag: (() => void) | null = null;
 
-  /** OG19 (H0) : compacté sur sa voie seulement (ni déplacé, ni glissé, ni poussé par le panneau des profils). */
+  /** OG19 (H0) : compacté selon la fenêtre, déplacé ou glissé compris (sinon un cran de flèche lui rendrait sa largeur
+   *  naturelle par-dessus les panneaux) ; jamais dans la voie du panneau des profils, qui passe à la ligne. */
   const compact = createMemo((): boolean => {
-    if (!compactable || at() !== null || drag() !== null || sheetLane_() !== null) return false;
+    if (!compactable || sheetLane_() !== null) return false;
     const area = props.area();
     return area.w > 0 && compactOf(props.anchor, natural(), compactSize(), area, props.corners());
   });

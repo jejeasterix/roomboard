@@ -62,13 +62,14 @@ const DROP_ICON = "drop";
 function Button(props: { item: ToolItem; ctx: Ctx; onPress: () => void }): JSX.Element {
   const st = createMemo(() => itemState(props.item, props.ctx.view()));
   const primary = props.item.kind === "action" && PRIMARY_ACTIONS.has(props.item.action ?? "");
+  const keys = props.item.kind === "action" ? buttonShortcut(props.item.action) : null;
   return (
     <IconButton
       icon={iconFor(props.item, st().icon)}
       label={st().label}
       pressed={st().pressed}
       disabled={st().disabled}
-      shortcut={props.item.kind === "action" ? buttonShortcut(props.item.action) : null}
+      shortcut={keys}
       attrs={primary ? { "data-item": props.item.id, class: "rb-primary" } : { "data-item": props.item.id }}
       onPress={() => props.onPress()}
     />
