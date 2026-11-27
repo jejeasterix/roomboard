@@ -61,6 +61,7 @@ fn socle_document() -> Document {
         style: pen(),
         fill: Some("#fde68a".into()),
         look: Look::default(),
+        line: roomboard_core::linear::LineInit::default(),
     })
     .expect("forme");
     d.apply(Command::SetText {

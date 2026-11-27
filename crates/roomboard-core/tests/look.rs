@@ -79,6 +79,7 @@ fn add_rect(d: &mut Document, look: Look) -> String {
         style: pen(),
         fill: None,
         look,
+        line: roomboard_core::linear::LineInit::default(),
     })
     .expect("forme")
     .ids[0]
@@ -665,6 +666,7 @@ fn set_style_skips_inapplicable() {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: roomboard_core::linear::LineInit::default(),
         })
         .unwrap()
         .ids[0]
@@ -929,6 +931,7 @@ fn add_kind(d: &mut Document, shape: ShapeKind, look: Look) -> String {
         style: pen(),
         fill: None,
         look,
+        line: roomboard_core::linear::LineInit::default(),
     })
     .expect("forme")
     .ids[0]
@@ -1167,7 +1170,7 @@ fn lot2_out_of_domain_refused() {
             ..Default::default()
         },
         StylePatch {
-            start_arrowhead: s("circle"),
+            start_arrowhead: s("diamond"),
             ..Default::default()
         },
         StylePatch {

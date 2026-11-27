@@ -7,12 +7,14 @@ import { NO_CHANGE } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import { orientMatrix } from "../../core/image-params";
 import { arrowWings } from "../../core/shapes";
+import { catmullRom } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, arrowhead, paintText, HANDLE_FILL, MODEL3D_CARD_LABEL, paintShape, PLACEHOLDER_FILL, SELECTION_COLOR, traceRings, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, arrowhead, paintText, HANDLE_FILL, MODEL3D_CARD_LABEL, paintShape, traceShape, PLACEHOLDER_FILL, SELECTION_COLOR, traceRings, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import type { RichLine } from "../text-layout";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
+import { headWings } from "./sketch";
 import type { ImageSource } from "./image-cache";
 import type { MediaFrames } from "./media-frames";
 import type { ModelFrames } from "./model-frames";
@@ -1716,5 +1718,93 @@ describe("Canvas2DRenderer — cadre de page (DA4, T9)", () => {
     expect(scene.rects[1]).toEqual([0, 0, 1920, 1080]);
     r.drawLive(partial, far);
     expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
+  });
+});
+
+/** Contexte factice qui note aussi les courbes et les arcs (T6, OG12). */
+class PathCtx extends FakeCtx {
+  readonly calls: string[] = [];
+  readonly arcs: number[][] = [];
+  bezierCurveTo(a: number, b: number, c: number, d: number, e: number, f: number): void { this.calls.push(`bezier ${[a, b, c, d, e, f].join(",")}`); }
+  arc(x: number, y: number, r: number): void { this.arcs.push([x, y, r]); this.calls.push(`arc ${x},${y},${r}`); }
+  override moveTo(x = 0, y = 0): void { super.moveTo(x, y); this.calls.push(`move ${x},${y}`); }
+  override lineTo(x = 0, y = 0): void { super.lineTo(x, y); this.calls.push(`line ${x},${y}`); }
+  override rect(x = 0, y = 0, w = 0, h = 0): void { super.rect(); this.calls.push(`rect ${x},${y},${w},${h}`); }
+  override fill(): void { super.fill(); this.calls.push("fill"); }
+  override stroke(): void { super.stroke(); this.calls.push("stroke"); }
+}
+
+describe("canvas2d : lignes à points, pointes neuves, calque d'édition (OG12 T6)", () => {
+  const line = { shape: "line" as const, w: 100, h: 0, fill: null, points: [50, -80] };
+  it("traceShape : polyligne par moveTo et lineTo", () => {
+    const c = new PathCtx();
+    traceShape(asCtx(c), line, 2);
+    expect(c.calls).toEqual(["move 0,0", "line 50,-80", "line 100,0"]);
+  });
+  it("traceShape : courbe en deux bezierCurveTo (contrôles de catmullRom)", () => {
+    const c = new PathCtx();
+    traceShape(asCtx(c), line, 2, false, { roundness: "round" });
+    const exp = catmullRom([[0, 0], [50, -80], [100, 0]]).map(([, c1, c2, p]) => `bezier ${[...c1, ...c2, ...p].join(",")}`);
+    expect(exp).toHaveLength(2);
+    expect(c.calls).toEqual(["move 0,0", ...exp]);
+  });
+  it("arrowhead bar : segment perpendiculaire de longueur max(12, 3 × w) centré sur la pointe", () => {
+    const c = new PathCtx();
+    expect(arrowhead(asCtx(c), "bar", 100, 0, 0, 0, 4)).toBe(true);
+    expect(c.calls).toEqual(["move 100,6", "line 100,-6"]);
+  });
+  it("arrowhead circle : disque plein de rayon max(4, 1,5 × w) un rayon en arrière", () => {
+    const c = new PathCtx();
+    expect(arrowhead(asCtx(c), "circle", 100, 0, 0, 0, 4, "#112233")).toBe(true);
+    expect(c.arcs).toEqual([[94, 0, 6]]);
+    expect(c.calls).toContain("fill");
+    const o = new PathCtx();
+    expect(arrowhead(asCtx(o), "circle_outline", 100, 0, 0, 0, 4)).toBe(true);
+    expect(o.arcs).toEqual([[94, 0, 6]]);
+    expect(o.calls).not.toContain("fill");
+  });
+  it("flèche à points : les ailes suivent le dernier segment", () => {
+    const c = new PathCtx();
+    traceShape(asCtx(c), { ...line, shape: "arrow" }, 4);
+    const w = headWings(100, 0, 50, -80, 4)!;
+    expect(c.calls).toEqual(["move 0,0", "line 50,-80", "line 100,0", `move ${w[0]},${w[1]}`, "line 100,0", `line ${w[2]},${w[3]}`]);
+  });
+  it("paintShape : pointe de début barre sur le premier segment d'une flèche à points", () => {
+    const c = new PathCtx();
+    paintShape(asCtx(c), { ...line, shape: "arrow" }, { color: "#000000", width: 4 }, { startArrowhead: "bar" });
+    // Orientée par le premier segment (0, 0) → (50, -80), non par la corde vers (100, 0).
+    const d = Math.hypot(50, 80);
+    expect(c.calls).toContain(`move ${(-80 / d) * 6},${(-50 / d) * 6}`);
+  });
+  it("paintShape : sans points ni aspect, mêmes appels qu'avant (segment)", () => {
+    const c = new PathCtx();
+    paintShape(asCtx(c), { shape: "line", w: 10, h: 5, fill: null }, { color: "#000000", width: 2 });
+    expect(c.calls.filter((l) => l.startsWith("move") || l.startsWith("line"))).toEqual(["move 0,0", "line 10,5"]);
+  });
+  it("calque : poignées de points, surlignage avec 4 ancres, quatre « + »", () => {
+    const c = new PathCtx();
+    const el = { id: "t", kind: "shape" as const, transform: [1, 0, 0, 1, 10, 20] as const, style: { color: "#000000", width: 2 }, shape: { shape: "rect" as const, w: 80, h: 40, fill: null } };
+    const src = { element: (id: string) => (id === "t" ? el : null), outline: () => null } as unknown as SceneSource;
+    const r = new Canvas2DRenderer(asCtx(c), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D });
+    r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set(), {
+      ...EMPTY_OVERLAY,
+      points: [{ x: 0, y: 0, kind: "point", selected: false }, { x: 50, y: 0, kind: "point", selected: true }, { x: 25, y: 0, kind: "mid", selected: false }],
+      bind: { id: "t", anchors: [[1, 2], [3, 4], [5, 6], [7, 8]] },
+      links: [{ dir: "up", x: 1, y: 1 }, { dir: "right", x: 2, y: 2 }, { dir: "down", x: 3, y: 3 }, { dir: "left", x: 4, y: 4 }],
+    });
+    // 3 poignées + 4 ancres + 4 « + » = 11 disques.
+    expect(c.arcs).toHaveLength(11);
+    expect(c.arcs.filter((a) => a[2] === 5)).toHaveLength(2);
+    expect(c.arcs.filter((a) => a[2] === 4)).toHaveLength(1 + 4);
+    expect(c.arcs.filter((a) => a[2] === 14)).toHaveLength(4);
+  });
+  it("calque : une image accrochable est surlignée par sa boîte d'accroche (OG12 C2)", () => {
+    const c = new PathCtx();
+    const el = { id: "i", kind: "image" as const, transform: [1, 0, 0, 1, 10, 20] as const };
+    const src = { element: (id: string) => (id === "i" ? el : null), outline: () => null, bounds: () => ({ x0: 10, y0: 20, x1: 110, y1: 80 }) } as unknown as SceneSource;
+    const r = new Canvas2DRenderer(asCtx(c), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D });
+    r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set(), { ...EMPTY_OVERLAY, bind: { id: "i", anchors: [[1, 2], [3, 4], [5, 6], [7, 8]] } });
+    expect(c.calls).toContain("rect 10,20,100,60");
+    expect(c.calls).toContain("stroke");
   });
 });

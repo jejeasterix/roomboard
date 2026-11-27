@@ -8,7 +8,7 @@ import { PDF_PAGE_KIND } from "../../core/api";
 import { endArrowheadOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, type Arrowhead, type Look, type TextAlign } from "../../core/look";
 import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, Model3dData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
-import { arrowWings, normalizeShape } from "../../core/shapes";
+import { arrowWings, catmullRom, flattenPath, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, pageFrame, visibleGridRect, visiblePageRect, type PageRect } from "../page";
 import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
@@ -237,9 +237,21 @@ function corner(ctx: CanvasRenderingContext2D, x0: number, y0: number, qx: numbe
   ctx.bezierCurveTo(x0 + k * (qx - x0), y0 + k * (qy - y0), x + k * (qx - x), y + k * (qy - y), x, y);
 }
 
+/** Avant-dernier point du chemin aplati : d'où arrive le dernier segment (la pointe de fin s'y oriente). */
+function headFrom(pts: readonly (readonly [number, number])[], curve: boolean): readonly [number, number] {
+  const flat = flattenPath(pts, curve);
+  return flat[flat.length - 2] ?? [0, 0];
+}
+
+/** Second point du chemin aplati : où part le premier segment (la pointe de début s'y oriente). */
+function headSecond(pts: readonly (readonly [number, number])[], curve: boolean): readonly [number, number] {
+  const flat = flattenPath(pts, curve);
+  return flat[1] ?? [0, 0];
+}
+
 /** Chemin d'une forme dans son repère local (boîte (0, 0)-(w, h) ou segment (0, 0)-(w, h)) ; `round` (OG11) : rectangle
  *  aux angles arrondis en Bézier (jamais `roundRect`), rayon `cornerRadius`. */
-export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: number, round = false): void {
+export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: number, round = false, look?: Look, noHead = false): void {
   ctx.beginPath();
   if (s.shape === "rect" && round) {
     const { w, h } = s;
@@ -259,9 +271,14 @@ export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: n
   } else if (s.shape === "ellipse") {
     ctx.ellipse(s.w / 2, s.h / 2, s.w / 2, s.h / 2, 0, 0, Math.PI * 2);
   } else {
+    // OG12 : chemin à points intérieurs (polyligne) ou courbe (Bézier de Catmull-Rom) ; jamais `quadraticCurveTo`.
+    const g = lineGeomOf(s, look);
+    const pts = linePath(s.w, s.h, g.inner);
     ctx.moveTo(0, 0);
-    ctx.lineTo(s.w, s.h);
-    const head = s.shape === "arrow" ? arrowWings(s.w, s.h, width) : null;
+    if (g.curve && pts.length > 2) for (const [, c1, c2, p] of catmullRom(pts)) ctx.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], p[0], p[1]);
+    else for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
+    const [fx, fy] = headFrom(pts, g.curve);
+    const head = s.shape === "arrow" && !noHead ? headWings(s.w, s.h, fx, fy, width) : null;
     if (head) {
       ctx.moveTo(head[0], head[1]);
       ctx.lineTo(s.w, s.h);
@@ -276,6 +293,27 @@ export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: n
 export function arrowhead(
   ctx: CanvasRenderingContext2D, kind: Arrowhead, tipX: number, tipY: number, fromX: number, fromY: number, width: number, color?: string,
 ): boolean {
+  if (kind === "bar") {
+    const l = Math.max(12, 3 * width) / 2;
+    const d = Math.hypot(tipX - fromX, tipY - fromY) || 1;
+    const nx = -(tipY - fromY) / d;
+    const ny = (tipX - fromX) / d;
+    ctx.beginPath();
+    ctx.moveTo(tipX + nx * l, tipY + ny * l);
+    ctx.lineTo(tipX - nx * l, tipY - ny * l);
+    return true;
+  }
+  if (kind === "circle" || kind === "circle_outline") {
+    const r = Math.max(4, 1.5 * width);
+    const d = Math.hypot(tipX - fromX, tipY - fromY) || 1;
+    ctx.beginPath();
+    ctx.arc(tipX - ((tipX - fromX) / d) * r, tipY - ((tipY - fromY) / d) * r, r, 0, Math.PI * 2);
+    if (kind === "circle") {
+      if (color !== undefined) ctx.fillStyle = color;
+      ctx.fill();
+    }
+    return true;
+  }
   const head = kind === "none" ? null : headWings(tipX, tipY, fromX, fromY, width);
   if (!head) return false;
   ctx.beginPath();
@@ -304,18 +342,20 @@ export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: S
   const endKind = endArrowheadOf(look);
   if (s.shape === "arrow" && (startKind !== "none" || endKind !== "arrow" || dash.length > 0)) {
     // Pointes personnalisées ou trait en tirets : le fût seul (tirets compris), puis chaque pointe à part, pleine (ou pointillés resserrés).
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(s.w, s.h);
+    traceShape(ctx, s, style.width, false, look, true);
     strokeWith(ctx, style, dash);
     const wd = wingDashOf(strokeKindOf(look), style.width);
-    for (const [k, tx, ty, fx, fy] of [[endKind, s.w, s.h, 0, 0], [startKind, 0, 0, s.w, s.h]] as const) {
+    const g = lineGeomOf(s, look);
+    const pts = linePath(s.w, s.h, g.inner);
+    const [pfx, pfy] = headFrom(pts, g.curve);
+    const [psx, psy] = headSecond(pts, g.curve);
+    for (const [k, tx, ty, fx, fy] of [[endKind, s.w, s.h, pfx, pfy], [startKind, 0, 0, psx, psy]] as const) {
       if (k === "none") continue;
       if (arrowhead(ctx, k, tx, ty, fx, fy, style.width, style.color)) strokeWith(ctx, style, wd);
     }
     return;
   }
-  traceShape(ctx, s, style.width, roundnessOf(look) === "round");
+  traceShape(ctx, s, style.width, roundnessOf(look) === "round", look);
   if (s.fill !== null && (s.shape === "rect" || s.shape === "ellipse")) {
     ctx.fillStyle = s.fill;
     ctx.fill();
@@ -670,7 +710,8 @@ export class Canvas2DRenderer implements Renderer {
       ctx.save();
       ctx.transform(1, 0, 0, 1, n.tx, n.ty);
       applyOpacity(ctx, s.look);
-      paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill }, s.style, s.look, s.seed);
+      const pts = s.points !== undefined && s.points.length > 0 ? s.points.map((v, i) => v - (i % 2 === 0 ? s.x0 : s.y0)) : undefined;
+      paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill, ...(pts ? { points: pts } : {}) }, s.style, s.look, s.seed);
       ctx.restore();
     }
   }
@@ -703,6 +744,80 @@ export class Canvas2DRenderer implements Renderer {
       if (o.handles) {
         ctx.setLineDash([]);
         paintHandles(ctx, o.frame, px);
+      }
+      ctx.restore();
+    }
+    this.paintLineChrome(ctx, o, px);
+  }
+
+  /** OG12 : surlignage de la cible d'accroche (contour à 2 px écran, quatre ancres de 8 px), poignées de points
+   *  (disque de 10 px, milieu de 8 px à demi-opacité) et poignées « + » (disque de 28 px, signe de 12 px au trait de 1,5 px). */
+  private paintLineChrome(ctx: CanvasRenderingContext2D, o: EditOverlay, px: number): void {
+    const disc = (x: number, y: number, diameter: number): void => {
+      ctx.beginPath();
+      ctx.arc(x, y, (diameter / 2) * px, 0, Math.PI * 2);
+    };
+    if (o.bind) {
+      const el = this.source.element(o.bind.id);
+      if (el) {
+        ctx.save();
+        ctx.strokeStyle = SELECTION_COLOR;
+        ctx.lineWidth = 2 * px;
+        if (el.kind === "shape" || el.kind === "text") {
+          const [a, b, c, d, e, f] = el.transform;
+          ctx.transform(a, b, c, d, e, f);
+          if (el.kind === "shape") traceShape(ctx, el.shape, el.style.width, roundnessOf(el.look) === "round", el.look);
+          else {
+            ctx.beginPath();
+            ctx.rect(0, 0, el.text.boxWidth, el.text.boxHeight);
+          }
+        } else {
+          // Image, tableau, média, modèle 3D : la boîte d'accroche (cadre monde de l'élément).
+          const b = this.source.bounds?.([el.id]) ?? null;
+          ctx.beginPath();
+          if (b !== null) ctx.rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.fillStyle = SELECTION_COLOR;
+      for (const [x, y] of o.bind.anchors) {
+        disc(x, y, 8);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    if (o.points && o.points.length > 0) {
+      ctx.save();
+      ctx.lineWidth = px;
+      ctx.strokeStyle = SELECTION_COLOR;
+      for (const p of o.points) {
+        const mid = p.kind === "mid";
+        ctx.globalAlpha = mid ? 0.5 : 1;
+        ctx.fillStyle = p.selected ? SELECTION_COLOR : HANDLE_FILL;
+        disc(p.x, p.y, mid ? 8 : 10);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (o.links && o.links.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = SELECTION_COLOR;
+      for (const k of o.links) {
+        ctx.fillStyle = HANDLE_FILL;
+        ctx.lineWidth = px;
+        disc(k.x, k.y, 28);
+        ctx.fill();
+        ctx.stroke();
+        ctx.lineWidth = 1.5 * px;
+        ctx.beginPath();
+        ctx.moveTo(k.x - 6 * px, k.y);
+        ctx.lineTo(k.x + 6 * px, k.y);
+        ctx.moveTo(k.x, k.y - 6 * px);
+        ctx.lineTo(k.x, k.y + 6 * px);
+        ctx.stroke();
       }
       ctx.restore();
     }

@@ -56,6 +56,7 @@ fn fragment_document() -> Document {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: roomboard_core::linear::LineInit::default(),
         })
         .unwrap()
         .ids[0]

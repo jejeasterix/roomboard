@@ -6,10 +6,10 @@ import { presetsOf, TABLE_FILLS, type Profile } from "../toolbar";
 
 export type OptionKey =
   | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "strokeStyle" | "roughness" | "roundness"
-  | "font" | "fontSize" | "textAlign" | "arrowheads" | "opacity" | "layers" | "actions";
+  | "font" | "fontSize" | "textAlign" | "arrowType" | "arrowheads" | "opacity" | "layers" | "actions";
 export const OPTION_ORDER: readonly OptionKey[] = [
   "strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "roundness",
-  "font", "fontSize", "textAlign", "arrowheads", "opacity", "layers", "actions",
+  "font", "fontSize", "textAlign", "arrowType", "arrowheads", "opacity", "layers", "actions",
 ];
 /** Lot 2 : tailles et polices proposées (Excalidraw : S, M, L, XL ; ici les tailles du texte de la barre). */
 export const TEXT_SIZES: readonly number[] = [24, 36, 48, 72];
@@ -24,8 +24,8 @@ const BY_TOOL: Readonly<Partial<Record<string, readonly OptionKey[]>>> = {
   pen: ["strokeColor", "strokeWidth", "opacity"],
   rect: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "roundness", "opacity"],
   ellipse: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity"],
-  line: FORM,
-  arrow: [...FORM.slice(0, 4), "arrowheads", "opacity"],
+  line: [...FORM.slice(0, 4), "roundness", "opacity"],
+  arrow: [...FORM.slice(0, 4), "arrowType", "arrowheads", "opacity"],
   text: ["strokeColor", "font", "fontSize", "textAlign", "opacity"],
 };
 const BY_KIND: Readonly<Record<string, (e: ElementView) => readonly OptionKey[]>> = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
+import { appShortcut, editAction, inEditable, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -210,5 +210,35 @@ describe("appShortcut (personnalisation-1b, Q28)", () => {
     expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true, altKey: true }))).toBeNull();
     expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true, isComposing: true }))).toBeNull();
     expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+  });
+});
+
+describe("OG12 : lineEditKey, linkedKey, isCtrlKey", () => {
+  it("lineEditKey : Ctrl ou Cmd+Entrée, rien d'autre", () => {
+    expect(lineEditKey(k("Enter", { ctrlKey: true }))).toBe(true);
+    expect(lineEditKey(k("Enter", { metaKey: true }))).toBe(true);
+    expect(lineEditKey(k("Enter", { ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(lineEditKey(k("Enter", { ctrlKey: true, altKey: true }))).toBe(false);
+    expect(lineEditKey(k("Enter"))).toBe(false);
+    expect(lineEditKey(k("Enter", { ctrlKey: true, isComposing: true }))).toBe(false);
+    expect(lineEditKey(k("Enter", { ctrlKey: true, target: { tagName: "INPUT" } as unknown as KeyLike["target"] }))).toBe(false);
+  });
+  it("linkedKey : Alt+Maj+flèche", () => {
+    expect(linkedKey(k("ArrowRight", { altKey: true, shiftKey: true }))).toBe("right");
+    expect(linkedKey(k("ArrowUp", { altKey: true, shiftKey: true }))).toBe("up");
+    expect(linkedKey(k("ArrowDown", { altKey: true, shiftKey: true }))).toBe("down");
+    expect(linkedKey(k("ArrowLeft", { altKey: true, shiftKey: true }))).toBe("left");
+    expect(linkedKey(k("ArrowRight", { altKey: true }))).toBeNull();
+    expect(linkedKey(k("ArrowRight", { altKey: true, shiftKey: true, ctrlKey: true }))).toBeNull();
+    expect(linkedKey(k("a", { altKey: true, shiftKey: true }))).toBeNull();
+    expect(linkedKey(k("ArrowRight", { altKey: true, shiftKey: true, target: { tagName: "INPUT" } as unknown as KeyLike["target"] }))).toBeNull();
+  });
+  it("orderKey inchangé pour Ctrl+↑", () => {
+    expect(orderKey(k("ArrowUp", { ctrlKey: true }))).not.toBeNull();
+  });
+  it("isCtrlKey : Control ou Meta", () => {
+    expect(isCtrlKey({ key: "Control" })).toBe(true);
+    expect(isCtrlKey({ key: "Meta" })).toBe(true);
+    expect(isCtrlKey({ key: "Shift" })).toBe(false);
   });
 });
