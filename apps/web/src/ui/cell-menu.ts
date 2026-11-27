@@ -46,7 +46,7 @@ export function placeCellMenu(
 
 /** Cible tactile minimale (G8). */
 export const MENU_BUTTON_PX = 44;
-const ICON_OF: Readonly<Record<CellMenuItem["id"], string>> = { fit: "fit", "cell-image": "image", unplace: "close" };
+const ICON_OF: Readonly<Record<CellMenuItem["id"], string>> = { fit: "fit", "cell-image": "wallpaper", unplace: "close" };
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 export function createCellMenu(host: HTMLElement): CellMenuHost {
