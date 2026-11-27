@@ -447,8 +447,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-opt-head > .rb-icon { flex: none; margin-inline-start: auto; color: var(--rf-navy-500); transition: transform 120ms; }
 .rb-opt-head[aria-expanded="true"] > .rb-icon { transform: rotate(180deg); }
 .rb-opt-body[hidden] { display: none; }
-.rb-options .rb-radios[data-edit="strokeWidth"] .rb-radio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; }
-.rb-options .rb-radios[data-edit="strokeWidth"] .rb-radio-label { position: static; inline-size: auto; block-size: auto; clip-path: none; white-space: nowrap; font-size: 12px; line-height: 16px; }
+.rb-options .rb-radios[data-edit="strokeWidth"] .rb-radio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 14px; }
+.rb-options .rb-radios[data-edit="strokeWidth"] .rb-radio-label { position: static; inline-size: auto; block-size: auto; clip-path: none; white-space: nowrap; font-size: 14px; line-height: 20px; }
 .rb-pick-row { display: flex; flex-wrap: wrap; gap: 4px; }
 /* Lot 2 (T15) : quatre choix tiennent sur une rangée du panneau ; la pointe de début est l'icône de fin retournée ; grisé en saisie. */
 .rb-options .rb-radios[data-look="segment"]:has(> .rb-radio:nth-child(4)) { flex-wrap: nowrap; }
