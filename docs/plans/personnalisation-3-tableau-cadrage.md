@@ -31,25 +31,41 @@ collage Excel/Word) — 15 points validés par Jérôme (« Oui, toute la liste 
 | 14 | tableau de tri (étiquettes acceptées) | **non** |
 | 15 | coller depuis Excel ou Word | **fait pour le HTML** : Excel et Word posent un `text/html` à `<table>` → nouveau tableau, fusions, plafonds 64 × 64 (F18-F22, `paste.ts:43`, `html-table.ts:103`) ; `.xlsx` en valeurs (F23). **Manque** : texte tabulé seul (`text/plain` à tabulations, ignoré aujourd'hui, `paste.ts:3`) |
 
+### Découpage minimal du lot A (démo : une photo glissée agrandit sa case)
+
+Environ 5 h restent pour tout le chantier. Ordre d'exécution du lot A : d'abord l'indispensable, puis le reste dans l'ordre du tableau ; ce qui n'est pas fait devient une hypothèse « à revoir » écrite dans l'état, jamais un comportement à moitié livré.
+
+| point | indispensable à la démo | peut tomber (devient hypothèse) |
+|---|---|---|
+| socle | champ `cell` lu et écrit (D1, D36) ; `PlaceInCell` (tailles, matrice, lien) et `SetTableLineSizes` ; `follow_cells` sur `InsertTableLine`, `RemoveTableLine`, `SetTableSizes`, `SetTableCell` ; emport par `Transform` (D6) ; exports Wasm et `case` ; parité du faux cœur et contrat pour ces commandes ; `COMMAND_TYPES` et un passage de `cli-essai.mjs` (S16) | montée dans la pile par `reinsert_kept` (une image posée avant le tableau reste dessous : visible, un tableau sans remplissage est transparent) ; renumérotation à la copie (objets copiés libres) ; `cell` gardé par la gomme (morceaux libres) |
+| 1 | `cell-drop.ts` (`expand`, `target`, `drop`) branché sur la Sélection ; mode agrandir (D8) ; `requiredSizes` pour la case visée ; cadre de case visée ; S1 au doigt | Alt+Entrée (`place`) ; zones fusionnées (refus de loger dans une zone : déplacement libre) |
+| 2 | — | mode rétrécir entier (D9, S2) |
+| 3 | — | lien d'un tracé au stylo (D10, S3) : le tracé reste libre |
+| 4 | sortir retire le lien (`PlaceInCell` sans `cell`), retrait par `Transform` hors de la case (D6) | réduction de la case quittée (D11) : la case garde sa taille |
+| 5 | — | fond de case entier (D12, S5) |
+| garde-fous | refus de loger dans une case ombrée fermée et de loger un tableau (D35, D36) | refus d'Ombrer une case à objet (D35) |
+
+Durée de l'indispensable : ≈ 1 h 45 (socle L, point 1 M, point 4 S). Le reste de A : ≈ 1 h 30.
+
 ## 2. Décisions
 
 | # | point | décision | source | réversible ? |
 |---|---|---|---|---|
 | D1 | modèle d'un objet dans une case | **objet de la page lié par id** : champ facultatif `cell` de l'élément = `Any::Array` positionnel `[tableId, rowId, colId]`, remplacé en bloc ; illisible ou visant un tableau, une ligne ou une colonne absents = objet libre, valeur gardée. Voir DA1 | U7 « propriété, pas élément » (`usage-cadrage.md:60`) ; U3 (`:56`, jamais `Any::Map`) ; `element.rs:308` (`read_group`) | oui jusqu'à la release (U3) |
 | D2 | où vit la géométrie | la **page** calcule tailles et matrices (elle seule mesure le texte, `text-layout.ts:27`) ; le **cœur** écrit en une transaction et fait **suivre** les objets liés quand une ligne ou une colonne bouge. Voir DA2 | T5/DAC2 (hauteur mesurée par la page, `commands.rs:158`) ; historique « une transaction = une étape » (`history.rs:1-4`) | oui |
-| D3 | commande de logement | nouvelle `PlaceInCell { ids, matrix, cell: Option<[table,row,col]>, sizes: [[table, axis, line, size]] }` : tailles, puis suivi des autres objets liés, puis `matrix` composée sur `ids`, puis `cell` posé ou retiré, puis `ids` montés juste au-dessus du tableau visé s'ils sont dessous ; une étape | DAU10 (une commande par opération) ; `cmd_restack` (`commands.rs:1452`) | oui |
+| D3 | commande de logement | nouvelle `PlaceInCell { ids, matrix, cell: Option<[table,row,col]>, sizes: [[table, axis, line, size]] }` : tailles, puis suivi des autres objets liés, puis `matrix` composée sur `ids`, puis `cell` posé ou retiré, puis `ids` montés juste au-dessus du tableau visé s'ils sont dessous, par `reinsert_kept` (`copy.rs:96`) **après** l'écriture de `matrix` et `cell` (la recopie emporte tous les champs) ; une étape. Refus `BadTable` si `ids` contient un tableau (anti-cycle), ou si la case visée porte un ombrage fermé (DA1) | DAU10 (une commande par opération) ; `copy.rs:96` | oui |
 | D4 | tailles ligne par ligne | nouvelle `SetTableLineSizes { id, cols: [[id, w]], rows: [[id, h]] }`, même écrivain que `PlaceInCell.sizes` ; `SetTableSizes` reste tel quel | `commands.rs:184` | oui |
-| D5 | suivi des objets liés | après toute commande qui change la géométrie d'un tableau (`InsertTableLine`, `RemoveTableLine`, `SetTableSizes`, `SetTableLineSizes`, `PlaceInCell`, `SetTableCell` qui grandit une ligne, `ReorderTableLines`) : chaque objet lié est translaté du déplacement du coin de sa case (repère du tableau, partie linéaire de sa matrice) ; ligne ou colonne retirée : lien retiré, objet laissé en place | point 3 de la demande ; D1 | oui |
-| D6 | le tableau emporte ses objets | `Transform` d'un tableau compose aussi ses objets liés absents de `ids` (cœur, donc CLI comprise) ; la Sélection élargit de même la sélection d'un tableau à ses objets (aperçu, Suppr, Copier) | U7 (transformer un groupe = `Transform{ids}`) ; `groups.ts:24` | oui |
-| D7 | 1 — logement au glisser | au relâché d'un déplacement par la Sélection, si le **pointeur** est sur une case d'un tableau absent de la sélection : `PlaceInCell` vers cette case ; **Alt tenue = déplacement libre** (déjà « brut, sans magnétisme », G8) ; plusieurs objets = un bloc (boîte réunie) | `select.ts:96-101` (Alt) ; demande | oui |
-| D8 | 1 — case qui grandit | mode « agrandir » (défaut) : colonne = max(largeur, objet + 2 × `TABLE_PADDING`), ligne = max(hauteur, objet + 2 × marge, texte exigé) ; zone fusionnée : la dernière colonne et la dernière ligne de la zone prennent l'écart ; l'objet est **centré** dans la case | demande (« comme MyViewBoard ») ; `table-geom.ts:18` | oui |
-| D9 | 2 — réglage inverse | champ de tableau `fit` = `"shrink"` (absent = agrandir) ; l'objet est réduit à l'échelle uniforme min(1, boîte intérieure / objet), centré, la case ne bouge pas ; `SetTableOptions { id, fit?, header? }` | demande | oui |
+| D5 | suivi des objets liés | après toute commande qui change la géométrie d'un tableau (`InsertTableLine`, `RemoveTableLine`, `SetTableSizes`, `SetTableLineSizes`, `PlaceInCell`, `SetTableCell` qui grandit une ligne, `ReorderTableLines`) : chaque objet lié est translaté du déplacement du coin de sa case (repère du tableau, partie linéaire de sa matrice) ; ligne ou colonne retirée : lien retiré, objet laissé en place (**hypothèse H22**, aucune source) ; case couverte après une fusion : le lien reste sur ses ids, l'objet compte pour la zone de l'ancre (taille exigée, cible du glisser) et suit le coin de sa propre case (ses lignes existent toujours) ; après division, il retrouve sa case sans écriture | point 3 de la demande ; D1 | oui |
+| D6 | le tableau emporte ses objets | `Transform` d'un tableau compose aussi ses objets liés absents de `ids` (cœur, donc CLI comprise) ; la Sélection élargit de même la sélection d'un tableau à ses objets (aperçu, Suppr, Copier). **Objet lié transformé sans son tableau** (glisser Alt, flèches d'OG23, poignées, `Transform` de la CLI) : le cœur retire `cell` si le centre de sa boîte sort du rectangle de sa case (zone) ; reste dedans : lien gardé, nouveau décalage gardé ; aucune taille ne change (seul `cell-drop` réduit, D11) | U7 (transformer un groupe = `Transform{ids}`) ; `groups.ts:24` | oui |
+| D7 | 1 — logement au glisser | au relâché d'un déplacement par la Sélection, si le **pointeur** est sur une case d'un tableau absent de la sélection et que la sélection ne contient aucun tableau : `PlaceInCell` vers cette case ; **Alt tenue = déplacement libre** (déjà « brut, sans magnétisme », G8) ; plusieurs objets = un bloc (boîte réunie) | `select.ts:96-101` (Alt) ; demande | oui |
+| D8 | 1 — case qui grandit | mode « agrandir » (défaut) : colonne = max(largeur, objet + 2 × `TABLE_PADDING`), ligne = max(hauteur, objet + 2 × marge, texte exigé) ; zone fusionnée : la dernière colonne et la dernière ligne de la zone prennent l'écart. **Règle d'ancrage unique** : au logement, l'objet est posé dans la boîte intérieure selon l'alignement de la case (`ha`/`va`, défaut haut-gauche comme le texte ; en mode agrandir, la case épouse l'objet, donc haut-gauche = plein cadre) ; ensuite, au suivi (D5), il garde son décalage au coin haut-gauche de sa case ; changer l'alignement plus tard ne déplace que le texte | demande (« comme MyViewBoard ») ; `table-geom.ts:18`, `:225` | oui |
+| D9 | 2 — réglage inverse | champ de tableau `fit` = `"shrink"` (absent = agrandir) ; l'objet est réduit à l'échelle uniforme min(1, boîte intérieure / objet), posé par la règle d'ancrage de D8, la case ne bouge pas ; `SetTableOptions { id, fit?, header? }` | demande | oui |
 | D10 | 3 — tracé dans une case | `CommitStroke` gagne `cell` facultatif : posé si la boîte du tracé tient dans une seule case (tolérance : demi-épaisseur) du tableau le plus haut sous son premier point ; le tracé reste où il a été écrit (pas recentré) | demande ; `pen.ts:119` | oui |
-| D11 | 4 — sortir | relâché hors de toute case (ou dans un autre tableau) : `PlaceInCell` sans `cell` ; la ligne et la colonne quittées reprennent la taille exigée **seulement si** leur taille vaut exactement celle que l'objet avait imposée (± 0,5) : max(texte exigé, autres objets + marges, `TABLE_ROW_HEIGHT` / `TABLE_COL_WIDTH`) ; une taille réglée à la main n'est jamais réduite | demande ; hypothèse H4 | oui |
-| D12 | 5 — image de fond | clé de case `bg` = empreinte d'asset ; `SetCellImage { id, row, col, from: Option<imageId> }` : prend l'asset de l'image logée, la supprime, une étape ; `None` retire le fond ; dessin sous le texte, en « couvrir » découpé à la case (zone) ; geste : bouton « Mettre en fond » sur une image logée | `document.rs:276` (`cited_assets` lit toute chaîne conforme, à toute profondeur : l'asset est gardé, même par un ancien lecteur) | oui |
+| D11 | 4 — sortir | relâché hors de toute case (ou dans un autre tableau) : `PlaceInCell` sans `cell` ; la ligne et la colonne quittées reprennent la taille exigée **seulement si** leur taille vaut exactement celle que l'objet avait imposée (± 0,5) : max(texte exigé, autres objets + marges, `TABLE_ROW_HEIGHT` / `TABLE_COL_WIDTH`) ; une taille réglée à la main n'est jamais réduite. **Vers une autre case** (même tableau ou autre) : une seule `PlaceInCell` porte la réduction de la case quittée et l'agrandissement de la case visée. **Colonne réduite** : ses textes se replient, les lignes touchées reprennent leur hauteur exigée (`requiredSizes`, D34) dans la même liste `sizes`, comme D13 | demande ; hypothèse H4 | oui |
+| D12 | 5 — image de fond | clé de case `bg` = empreinte d'asset ; `SetCellImage { id, row, col, from: Option<imageId> }` : prend l'asset de l'image logée, la supprime, une étape ; `None` retire le fond ; dessin sous le texte, en « couvrir » découpé à la case (zone) ; geste : **outil Tableau**, appui long sur la case (menu de case, D31) → « Mettre en fond » (prend l'image logée la plus haute de la case), ou Alt+I sur la case active | `document.rs:276` (`cited_assets` lit toute chaîne conforme, à toute profondeur : l'asset est gardé, même par un ancien lecteur) | oui |
 | D13 | 6 — tirer une bordure | outil Tableau : souris, bordure prise à ± 6 px écran (curseur `col-resize` / `row-resize`) ; doigt, deux **poignées de 44 px** au milieu des bords droit et bas de la case active ; une `SetTableLineSizes` au relâché (colonnes rétrécies : lignes regrandies à la hauteur exigée, même commande) ; minimum : 2 × marge + 24 en largeur, hauteur exigée en hauteur | D-DS3 (cibles 44 px, `design-cadrage.md:110`) ; D38 (une écriture au relâché) | oui |
 | D14 | 7 — ajuster au contenu | double appui (≤ 300 ms, ≤ 8 px) sur une bordure ou une poignée : colonne = max(ligne de texte la plus longue sans retour, objets) + marges, bornée à 4 × `TABLE_COL_WIDTH` ; ligne = hauteur exigée ; une étape | `rowHeightsFor` (`table-geom.ts:238`) | oui |
-| D15 | 8 — alignement | clés de case `ha` (`center`, `right` ; absent = gauche) et `va` (`middle`, `bottom` ; absent = haut) ; `SetTableLook { id, from, to, ha?, va?, border? }` sur la plage ; le décalage vit dans `cellTextBoxes` et `paintText` ; un objet logé suit l'alignement de sa case au logement | demande | oui |
+| D15 | 8 — alignement | clés de case `ha` (`center`, `right` ; absent = gauche) et `va` (`middle`, `bottom` ; absent = haut) ; `SetTableLook { id, from, to, ha?, va?, border? }` sur la plage ; **un seul calcul de décalage**, `cellTextFrame(t, cell, spans, size, measure): { x, y, w, h, ha }` dans `table-geom.ts`, lu par `cellTextBoxes` et `paintText` (dessin), `fill-target.ts:72-73` (le pot cherche le mot depuis ce cadre, plus depuis le coin) et la saisie de cellule (`tools/table.ts:197-207` : boîte décalée de `va`, `text-align` de l'éditeur) ; `layoutRich` gagne `ha` (décalage par ligne) ; un objet logé suit l'alignement au logement seulement (D8) | demande ; `fill-target.ts:72-73` ; `tools/table.ts:197-207` | oui |
 | D16 | 9 — bordures | clé de case `border` = `[couleur, épaisseur, style]` (`solid`, `dashed`, `dotted`, `none`), posée sur toutes les cellules de la plage ; un bord commun prend le réglage de la cellule la plus en bas ou à droite qui en a un ; `none` efface ce bord ; sans réglage : trait d'aujourd'hui | demande ; U3 (tableau positionnel) | oui |
 | D17 | 10 — en-tête | champ de tableau `header` = `true` : première ligne en gras, fond `--rf` neutre clair, jamais triée ; bouton « En-tête » (bascule, une étape) | demande | oui |
 | D18 | 11 — déplacer une ligne | `ReorderTableLines { id, axis, order: [ids] }` : réécrit les entrées de `rows` ou `cols` dans l'ordre (clés inconnues recopiées) ; les cellules, indexées par ids, ne bougent pas ; refus `BadTable` si une fusion serait coupée ; geste : poignée de 44 px (icône Lucide `grip-vertical` / `grip-horizontal`) à gauche de la ligne active et au-dessus de la colonne active | DA4 (`move_to` absent de yrs) ; `table.rs:1-8` (cellules par ids) | oui |
@@ -63,11 +79,14 @@ collage Excel/Word) — 15 points validés par Jérôme (« Oui, toute la liste 
 | D26 | panneau d'options | OG23 n'a pas livré d'accordéon (aucun sur `origin/main`, `OptionsPanel.tsx`) : section neuve `table` du panneau, contenu dans un composant à part `ui/TableOptions.tsx` (Objets, Alignement, Bordures, En-tête, Trier, Accepte) ; l'accordéon, s'il arrive avant, l'enveloppe | brief ; décision 0311 (panneau Excalidraw) ; `tool-options.ts:89` | oui |
 | D27 | isolation de la Sélection | glisser vers une case dans `engine/tools/cell-drop.ts`, branché par un paramètre facultatif de `createSelectTool`. Voir DA3 | brief (OG23 en parallèle) | oui |
 | D28 | performance | `tableAt` lit les tableaux par `elementIdsOfKind(page, "table")` (aujourd'hui `element(id)` sur tous, O(N²)) ; la cible du glisser est cherchée sur les tableaux lus une fois au `begin` ; aucune boucle neuve dans `emit` | piège `roomboard-tablecounts-relit-chaque-element-dans-emit` ; `table-geom.ts:168` | oui |
-| D29 | Wasm | tout le calcul (mesure, tri, TSV, ordre, ajustement) en TS ; le cœur n'écrit que des valeurs données ; coût estimé +20 à +40 Ko sur le module principal, 0 sur `formats`. Voir DA4 | brief ; F26 | oui |
+| D29 | Wasm | tout le calcul (mesure, tri, TSV, ordre, ajustement) en TS ; le cœur n'écrit que des valeurs données ; chaque commande neuve a son export `#[wasm_bindgen]`, sa version `_inner` (`roomboard-wasm/src/lib.rs:1072`, `:1982`) et son `case` dans `wasm-core.ts` (`:525-585`, `:645`) ; `commit_stroke` (`lib.rs:1317`, `:2219`) gagne `cell` ; coût estimé +30 à +60 Ko sur le module principal (8 exports et leur colle comptés), 0 sur `formats`. Voir DA4 | brief ; F26 ; `lib.rs:1072` | oui |
 | D30 | empreinte S6 | non touchée : le chemin du pot n'appelle ni `tableAt` ni les commandes neuves ; la vue d'un élément lit une clé de plus (`cell`) ; banc rejoué en témoin à la clôture de A | `zone-s6-banc.test.ts:1-3` ; `docs/essais/c8-porte-s6.md` | oui |
 | D31 | tactile et clavier | glisser par événements de pointeur du moteur (jamais HTML5, U12, U24) ; appui long (500 ms) sur une case = menu de la case (Mettre en fond, Sortir, Trier) ; raccourcis en § 4 (H12), ajoutés à `shortcuts.ts` | U12, U24 ; D-DS3 | oui |
 | D32 | design | îlots et jetons existants, icônes Lucide de la table `icons.ts` (`grip-vertical`, `grip-horizontal`, `align-*`, `square-dashed`, `heading`, `arrow-down-a-z`, `image`), traits 1,5 calés (D-DS4, § 10) ; aperçu de case visée : cadre 2 px couleur d'accent ; **porte visuelle** à la fin de A et de B | `design-cadrage.md:110-111`, § 10 | oui |
 | D33 | taille des points et ordre de coupe | S ≈ 20 min, M ≈ 40, L ≈ 75 (écriture, tests et relecture). A : 1 L · 2 S · 3 M · 4 M · 5 M (≈ 3 h 15). B : 6 M · 7 S · 8 M · 9 M · 10 S · 11 M (≈ 3 h 20). C : 12 S · 13 S (après 11) · 14 M · 15 S (≈ 1 h 40). Total ≈ 8 h 15 : **tout ne tient pas**. Ordre de coupe, du premier coupé au dernier : 14, 13, 12, 15, 11, 9, 8, 7, 10, 6, 5. Attendu en 5 h 30 : A entier, puis 6, 10, 7 (et 8 si le temps reste) | brief (ordre A, B, C) | oui |
+| D34 | taille exigée | une seule fonction `requiredSizes(t: TableData, linked: readonly LinkedBox[], colWidths: readonly number[], measure: Measure): { rows: number[]; cols: number[] }` dans `table-geom.ts` : ligne = max sur ses cases de max(hauteur du texte, hauteur de l'objet logé le plus haut + 2 × marge, `TABLE_ROW_HEIGHT`) ; colonne = max(largeur de l'objet le plus large + 2 × marge, 2 × marge + 24). **Case à texte et objet** : ils partagent la boîte intérieure, l'objet dessiné par-dessus le texte (il est au-dessus dans la pile), la case prend le max des deux, jamais la somme. Appelée par Uniformiser (`tools/table.ts:243-249` : largeur = max(moyenne, colonne exigée), hauteur = max(moyenne, ligne exigée)), D11, D13, D14 ; `rowHeightsFor` reste pour l'import (aucun objet) | `tools/table.ts:243-249` ; `table-geom.ts:238` | oui |
+| D35 | case ombrée et objet logé | **cas écarté** (DA1, H23) : l'ombrage ne couvre que le texte et le fond ; loger dans une case à ombrage fermé est refusé (`PlaceInCell` : `BadTable` ; `cell-drop` : déplacement libre) ; « Ombrer » une plage qui porte un objet logé est refusé par l'outil Tableau avec le message « retirez d'abord les objets de la case » ; un document fait autrement (CLI) dessine l'objet par-dessus le cache, sans plantage. Cacher un objet sous un cache : hors périmètre | contre-relecture tour 1 ; `table-paint.ts:1-6` | oui |
+| D36 | tableau dans un tableau | `cell` sur un élément `table` : refusé à l'écriture (`BadTable`), ignoré à la lecture (anti-cycle) | contre-relecture tour 1 | oui |
 
 ## 3. Carte d'impact
 
@@ -79,18 +98,20 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 |---|---|---|---|
 | `src/table.rs:1-8` (en-tête du schéma), `:29-69` (vues) | oui | clés `bg`, `ha`, `va`, `border`, `open`, `fit`, `header`, `accept` ; `TableView` / `TableCellView` les publient | V |
 | `src/table.rs:135` (`read_raw`), `:188` (`read_cell`) | oui | lecture tolérante des clés neuves | V |
+| `src/table.rs:315` (`view` : saute les cases sans texte, remplissage ni ombrage) | oui | une case qui n'a que `bg`, `ha`, `va`, `border` ou `open` est listée | V |
 | `src/table.rs` (nouveau : `follow_cells`, `cmd_set_table_line_sizes`, `cmd_place_in_cell`, `cmd_reorder_table_lines`, `cmd_set_table_look`, `cmd_set_table_options`, `cmd_set_cell_image`, `cmd_set_table_shade_open`, `cmd_set_table_accept`) | oui | D3-D5, D9, D12, D15-D21 | S |
 | `src/commands.rs:63` (`CommitStroke`) | oui | `cell` facultatif (D10) | V |
 | `src/commands.rs:140-240` (`Command`) | oui | 8 variantes neuves | V |
-| `src/commands.rs:1043` (`cmd_transform`) | oui | emporte les objets liés (D6) | V |
+| `src/commands.rs:1043` (`cmd_transform`) | oui | emporte les objets liés ; retire `cell` d'un objet sorti de sa case (D6) | V |
 | `src/commands.rs:1575`, `:1612` (morceaux de la gomme) | oui | un morceau garde `cell` comme `group` | V |
-| `src/commands.rs:1452` (`cmd_restack`) | non (réutilisé) | montée au-dessus du tableau (D3) | V |
+| `src/commands.rs:1452` (`cmd_restack`) | non | la montée passe par `reinsert_kept` (D3) | V |
 | `src/element.rs:193` (`ElementView.group`), `:308` (`read_group`) | oui | `cell` lu à côté de `group` | V |
-| `src/copy.rs:75` (`renumber`) | oui | `cell[0]` renuméroté si le tableau est copié avec ; sinon lien retiré | V |
+| `src/copy.rs:61-90` (`copy_elements` : copie, Dupliquer la page, insertion de pages et de fragments) | oui | ids neufs **tous générés d'abord** (table ancien → neuf des éléments copiés), puis `cell[0]` remplacé ; tableau absent de la copie : lien retiré ; un objet sous son tableau (après `Restack`) est recopié avant lui, d'où la génération préalable | V |
+| `src/copy.rs:96` (`reinsert_kept`) | non (réutilisé) | montée des objets dans `PlaceInCell` (D3) | V |
 | `src/document.rs:278` (`cited_assets`) | non | lit déjà toute chaîne d'asset à toute profondeur (D12) | V |
 | `src/history.rs` | non | une transaction = une étape | V |
 | `src/query.rs` (`hitTest`, `bounds`) | non | objets liés = éléments ordinaires | V |
-| `crates/roomboard-wasm/src/lib.rs` | oui | les commandes passent par l'enum sérialisée (pas de fonction neuve) ; à vérifier au plan | S |
+| `crates/roomboard-wasm/src/lib.rs:1072`, `:1982` (patron export + `_inner`), `:1317`, `:2219` (`commit_stroke`) | oui | 8 exports `#[wasm_bindgen]` et leurs `_inner` ; `commit_stroke` gagne `cell` (3 chaînes facultatives) | V |
 | `crates/roomboard-formats` | non | aucun lecteur ni écrivain touché ; `.iwb`/`.ubz` n'exportent pas les tableaux (`board-io.ts:259`) | V |
 
 ### Contrat et faux cœur (`apps/web/src/core`)
@@ -98,9 +119,9 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 | endroit | touché ? | pourquoi | V/S |
 |---|---|---|---|
 | `api.ts` (`Command`, `ElementView`, `TableCell`, `TableData`) | oui | commandes et champs neufs | V |
-| `fake-core.ts` (`FakeTable`, `apply`) | oui | parité complète des commandes neuves (F29) | V |
-| `wasm-core.ts` (`toElementView`) | oui | `cell` et clés de case projetés | S |
-| `wasm-core.contract.test.ts` | oui | contrat faux ↔ vrai pour chaque commande neuve | V |
+| `fake-core.ts` (`FakeTable`, `apply`) | oui | parité des 8 commandes neuves **et** des commandes existantes qui changent : `Transform` (emport, sortie de case, `:894`), `InsertTableLine`, `RemoveTableLine`, `SetTableSizes`, `SetTableCell` (suivi D5, `:946`, `:1033`), `Erase` (morceau garde `cell`, `:1303`), `extract`, `insertFragment`, `DuplicatePage` (renumérotation de `cell`, `:1817`), `CommitStroke` (`cell`) | V |
+| `wasm-core.ts` (`toElementView` ; `case` des commandes, `:525-585`, `:645`) | oui | `cell` et clés de case projetés ; un `case` par commande neuve ; `CommitStroke` passe `cell` | V |
+| `wasm-core.contract.test.ts` | oui | contrat faux ↔ vrai pour chaque commande neuve et pour chaque commande existante de la ligne au-dessus (suivi, emport, sortie, gomme, copie, Dupliquer la page) | V |
 
 ### Moteur, outils, rendu (`apps/web/src/engine`)
 
@@ -108,16 +129,17 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 |---|---|---|---|
 | `tools/cell-drop.ts` (nouveau) | oui | DA3 | S |
 | `tools/select.ts:96` (signature), `:148-165` (`begin`), `:183-204` (`close`), `:206` (`live`) | oui | 4 points d'appel du module (DA3) ; rien d'autre | V |
-| `tools/table.ts` | oui | poignées de bordure et de déplacement, double appui, appui long, raccourcis, `SetTableLook`, tri, `TableAction` étendu | V |
+| `tools/table.ts` | oui | poignées de bordure et de déplacement, double appui, appui long, raccourcis, `SetTableLook`, tri, `TableAction` étendu ; saisie de cellule (`:197-207`) ouverte dans `cellTextFrame` (D15) ; Uniformiser (`:243-249`) par `requiredSizes` (D34) ; « Ombrer » refusé sur une case à objet (D35) | V |
 | `tools/pen.ts:119` | oui | `cell` au commit (D10) | V |
 | `tools/eraser.ts` | non | la gomme passe par `Erase` du cœur | V |
-| `table-geom.ts:168` (`tableAt`), `:225` (`cellInnerBox`), `:238` (`rowHeightsFor`) | oui | `elementIdsOfKind` (D28) ; boîte alignée ; `naturalWidth` (D14) ; `cellContaining` (D10) | V |
+| `table-geom.ts:168` (`tableAt`), `:225` (`cellInnerBox`), `:238` (`rowHeightsFor`) | oui | `elementIdsOfKind` (D28) ; `cellTextFrame` (D15) ; `requiredSizes` (D34) ; `naturalWidth` (D14) ; `cellContaining` (D10) | V |
+| `text-layout.ts` (`layoutRich`) | oui | paramètre `ha` : décalage horizontal par ligne (D15) | V |
 | `groups.ts:24` (`expandToGroups`) | non (réutilisé) | élargissement par `cell-drop.expand` après lui | V |
-| `render/table-paint.ts:22` (`paintTableGrid`), `:53` (`cellTextBoxes`) | oui | bordures par case, en-tête, fond image, cache ouvert, alignement | V |
+| `render/table-paint.ts:75` (`paintTableGrid`), `:127` (`cellTextBoxes`) | oui | bordures par case, en-tête, fond image, cache ouvert, alignement | V |
 | `render/canvas2d.ts:314-373` (`paintText`) | oui | décalage horizontal par ligne (alignement) ; image de fond par `image-cache` | V |
 | `render/overlay.ts` | oui | cadre de la case visée, poignées du tableau | S |
 | `engine.ts` (`key`, fabrique des outils) | oui | raccourcis Alt+Entrée de la Sélection ; passage de `cell-drop` | V |
-| `fill-target.ts:58` | non | le pot garde sa règle sur la cellule | V |
+| `fill-target.ts:72-73` | oui | le mot visé se cherche depuis `cellTextFrame`, plus depuis le coin haut-gauche (D15) | V |
 | `zone-s6-banc.test.ts` | non | témoin rejoué (D30) | V |
 
 ### Interface (`apps/web/src/ui`, `apps/web/src/app`, `apps/web/src/platform`)
@@ -130,6 +152,7 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 | `ui/icons.ts` | oui | icônes Lucide neuves (D32) ; `icons.test.ts` | V |
 | `ui/shortcuts.ts` | oui | raccourcis (H12) | V |
 | `app/board-session.ts:377` | oui | `cell-drop` et mesure passés à la Sélection | V |
+| `app/text-editor.ts` | oui | `text-align` de la saisie de cellule (D15) ; fichier aussi touché par personnalisation-2b | V |
 | `app/stage-tags.ts` | oui | `data-table` gagne le nombre d'objets logés du tableau actif (lu au `cellState`, jamais par `emit`) | S |
 | `platform/paste.ts:43`, `html-table.ts` | oui | `text/plain` tabulé (D22) | V |
 | `platform/table-insert.ts:24` | non (réutilisé) | grille → tableau | V |
@@ -167,6 +190,10 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 - Un morceau de gomme garde `cell` → `commands.rs` « partial_erase_keeps_cell ».
 - Le panneau d'options s'ouvre avec l'outil Tableau → `tool-options.test.ts` « showsPanel(table) », `OptionsPanel.test.tsx`.
 - Coller un texte à tabulations crée un tableau (avant : ignoré) → `paste.test.ts` « text/plain tabulé ».
+- Uniformiser ne réduit plus une ligne ou une colonne sous la taille d'un objet logé → `table.test.ts` « uniform garde les objets ».
+- Dupliquer la page, copier ou insérer des pages renumérote `cell` → `copy.rs` « duplicate_page_keeps_cell_links », « object_below_its_table_is_relinked ».
+- Un objet lié déplacé hors de sa case perd son lien → `commands.rs` « transform_out_of_cell_unlinks ».
+- « Ombrer » est refusé sur une case qui porte un objet → `table.test.ts` « shade refusé sur case à objet ».
 
 ### Chantiers en cours
 
@@ -193,11 +220,13 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 | case qui contient une boîte (tracé) | `table-geom.ts` | `cellContaining(doc, page, box: Bounds): { table, row, col } \| null` | étendre |
 | largeur naturelle d'une colonne | `text-layout.ts:27` `Measure` | `naturalWidth(t: TableData, col: number, measure: Measure): number` dans `table-geom.ts` | étendre |
 | écrire des tailles par ligne | `table.rs:74` `Line.map` | `write_line_sizes(txn, raw, sizes)` partagé par `SetTableLineSizes` et `PlaceInCell` | étendre |
-| monter un objet au-dessus du tableau | `commands.rs:1452` `cmd_restack` | son corps de déplacement, sans transaction propre | réutiliser |
 | transformer avec le tableau | `commands.rs:1043` `cmd_transform` | cibles élargies aux objets liés | étendre |
 | morceau de gomme | `commands.rs:1575` (copie de `group`) | même copie pour `cell` | étendre |
-| copie d'un tableau et de ses objets | `copy.rs:75` `renumber` | table des ids d'éléments copiés, `cell[0]` remplacé | étendre |
+| copie d'un tableau et de ses objets | `copy.rs:61` `copy_elements`, `:75` `renumber` | ids générés d'abord, puis `cell[0]` remplacé | étendre |
 | asset du fond de case gardé à l'enregistrement | `document.rs:278` `cited_assets` | aucun changement | réutiliser |
+| montée d'objets dans la pile | `copy.rs:96` `reinsert_kept` | appelé après l'écriture de `matrix` et `cell` | réutiliser |
+| taille exigée par le texte et les objets | `table-geom.ts:238` `rowHeightsFor`, `:231` `cellHeight` | `requiredSizes` (D34) les appelle pour le texte | étendre |
+| décalage d'alignement unique | `table-geom.ts:225` `cellInnerBox` | `cellTextFrame` (D15) le prolonge | étendre |
 | dessin d'image | `render/image-cache` | `ImageSource` déjà passé au peintre | réutiliser |
 | collage → tableau | `table-insert.ts:24` `gridTable`, `html-table.ts:35` `cutText` | `tsvGrid(text: string): TableGrid \| null` dans `html-table.ts` | étendre |
 | révélation au toucher | `select.ts:178` (F10) | commande `SetTableShadeOpen` au lieu de `SetTableShade` null | étendre |
@@ -211,7 +240,7 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 
 - H1 Noms des champs du fichier (`cell`, `fit`, `header`, `bg`, `ha`, `va`, `border`, `open`, `accept`) : figés à la première release (U3).
 - H2 Lâcher un objet sur une case le loge sans demander ; Alt pour l'éviter. Alternative : seulement en survol de 300 ms.
-- H3 L'objet logé est centré dans la case (MyViewBoard supposé, non vérifié) ; un tracé écrit dans la case reste où il est.
+- H3 L'objet logé est posé selon l'alignement de la case, haut-gauche par défaut (règle unique de D8) ; un tracé écrit dans la case reste où il est.
 - H4 Sortir un objet ne réduit une ligne ou une colonne que si sa taille vaut celle que l'objet avait imposée.
 - H5 Plusieurs objets peuvent loger dans une case : la case prend le plus grand, ils se superposent au centre.
 - H6 Redimensionner un tableau par les poignées de la Sélection déforme ses objets avec lui (même `Transform`).
@@ -220,7 +249,9 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 - H9 La révélation garde le cache (`open`) : un ancien lecteur montre la case fermée.
 - H10 Tri : refusé si une fusion couvre plusieurs lignes ; comparaison numérique en `fr`.
 - H11 Une étiquette du tableau de tri = un texte ; une image ne peut pas en être une.
-- H12 Raccourcis (outil Tableau, case active, saisie fermée) : Alt+Maj+←/→ largeur ± 8, Alt+Maj+↑/↓ hauteur ± 8 ; Alt+A ajuster ; Alt+Maj+L / C / R alignement horizontal, Alt+Maj+H / M / B vertical ; Alt+B bordure, Alt+Maj+B aucune ; Alt+E en-tête ; Ctrl+Maj+↑/↓ déplacer la ligne, Ctrl+Maj+←/→ la colonne ; Alt+O cacher / ouvrir ; Alt+T trier croissant, Alt+Maj+T décroissant ; Alt+F bascule agrandir / rétrécir. Outil Sélection : Alt+Entrée loger la sélection dans la case sous son centre, Alt+Maj+Entrée la sortir, Alt+I mettre l'image logée en fond. Alt+← (retour du navigateur) évité.
+- H12 Raccourcis (outil Tableau, case active, saisie fermée) : Alt+Maj+←/→ largeur ± 8, Alt+Maj+↑/↓ hauteur ± 8 ; Alt+A ajuster ; Alt+Maj+L / C / R alignement horizontal, Alt+Maj+H / M / B vertical ; Alt+B bordure, Alt+Maj+B aucune ; Alt+E en-tête ; Ctrl+Maj+↑/↓ déplacer la ligne, Ctrl+Maj+←/→ la colonne ; Alt+O cacher / ouvrir ; Alt+T trier croissant, Alt+Maj+T décroissant ; Alt+F bascule agrandir / rétrécir. Alt+I mettre l'image logée en fond. Outil Sélection : Alt+Entrée loger la sélection dans la case sous son centre, Alt+Maj+Entrée la sortir. Alt+← (retour du navigateur) évité.
+- H23 Cacher un objet sous un cache est écarté (D35) : l'ombrage couvre texte et fond ; Ombrer une case à objet est refusé.
+- H24 Un objet lié déplacé sans son tableau garde son lien tant que son centre reste dans sa case (D6).
 - H13 Ordre de coupe (D33) : l'ordre de Jérôme prime sur le coût ; 15 et 12 (S) pourraient passer avant 11 si Jérôme préfère.
 
 **Niveau 2**
@@ -231,7 +262,8 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 - H17 Appui long : 500 ms, ouvre un menu de case.
 - H18 Fond de case en « couvrir », jamais déformé.
 - H19 Cache ouvert dessiné par un liseré hachuré de 4 px.
-- H20 Coût Wasm estimé +20 à +40 Ko (non mesuré).
+- H20 Coût Wasm estimé +30 à +60 Ko (non mesuré).
+- H22 Ligne ou colonne retirée : ses objets restent sur la page, libres, à leur place (aucune source ; autre choix : les supprimer avec la ligne).
 - H21 Collage tabulé : au moins une tabulation et deux cellules, sinon ignoré comme aujourd'hui.
 
 ## 5. Décisions d'architecture
@@ -240,7 +272,7 @@ Le profil n'a pas de ligne « Surfaces d'impact » : rubriques déduites du grap
 Contexte : enfant de la case (objet rangé dans la `Y.Map` de la cellule) ou objet de la page lié par id.
 Décision : objet de la page, champ facultatif `cell = [tableId, rowId, colId]`, comme `group` (U7). L'enfant obligerait rendu, collision, gomme, Sélection, exports, copie et CLI à parcourir un niveau neuf, et un ancien lecteur cacherait l'objet.
 Conséquences : un ancien lecteur montre l'objet à sa dernière place (dans la case), sans planter ni le perdre ; rendu, collision et exports n'ont rien à faire ; un seul nouveau travail : garder l'objet dans sa case quand le tableau bouge (DA2).
-Prix : le lien peut se rompre (tableau supprimé ailleurs) ; lecture tolérante : objet libre.
+Prix : le lien peut se rompre (tableau supprimé ailleurs) ; lecture tolérante : objet libre. Un objet logé reste un élément au-dessus du tableau : l'ombrage ne peut pas le cacher, d'où D35 (logement refusé dans une case ombrée fermée, Ombrer refusé sur une case à objet). `cell` sur un tableau est refusé et ignoré (D36).
 
 **DA2 — La page calcule, le cœur écrit et fait suivre.**
 Contexte : une étape par geste ; la mesure du texte n'existe que dans la page ; la CLI pilote le cœur sans moteur.
@@ -254,7 +286,7 @@ Conséquences : `select.ts` change en 4 lignes (élargir après `expandToGroups`
 
 **DA4 — Wasm : le calcul en TS, le cœur en écrivain.**
 Contexte : module principal 1 429 407 o pour 1 572 864 (marge 143 457 o) ; `formats` 2 794 527 o pour 3 145 728.
-Décision : mesure, ajustement, tri, ordre, TSV, choix de la case en TS ; dans le cœur, 8 variantes de `Command`, `follow_cells`, lectures tolérantes : estimé +20 à +40 Ko au principal, 0 à `formats`.
+Décision : mesure, ajustement, tri, ordre, TSV, choix de la case en TS ; dans le cœur, 8 variantes de `Command` avec chacune son export `#[wasm_bindgen]`, sa version `_inner` et son `case` de `wasm-core.ts`, `commit_stroke` élargi, `follow_cells`, lectures tolérantes : estimé +30 à +60 Ko au principal (marge 143 Ko), 0 à `formats`.
 Conséquences : chaque lot relève les deux tailles avant et après ; au-delà de 1 540 000 o, le lot s'arrête et le plan déplace une commande en composition de commandes existantes ; aucun seuil ne bouge.
 
 **DA5 — Options du tableau : section `table` du panneau, composant `ui/TableOptions.tsx`.**
@@ -266,11 +298,11 @@ Conséquences : 3 lignes dans les fichiers partagés ; un accordéon livré plus
 
 Joués par `scripts/essais/personnalisation-3-navigateur.mjs` (`verifier.sh --e2e`), au doigt (`pointerType: "touch"`) puis au clavier ; sinon test unitaire nommé.
 
-- **S1 (1)** Créer un tableau 3 × 3, poser une image de 400 × 300 hors du tableau, la glisser au doigt sur la case (1, 1) : la colonne 1 fait 416, la ligne 1 fait 316, la colonne 2 et la ligne 2 se décalent, l'image est centrée ; Ctrl+Z : tout revient en une fois. Au clavier : sélectionner l'image, la placer au-dessus de la case, Alt+Entrée : même résultat.
-- **S2 (2)** Régler le tableau sur « rétrécir » (panneau, ou Alt+F en outil Tableau), glisser la même image : la case garde 240 × 64, l'image est réduite à 48 × 36 et centrée.
+- **S1 (1)** Créer un tableau 3 × 3, poser une image de 400 × 300 hors du tableau, la glisser au doigt sur la case (1, 1) : la colonne 1 fait 416, la ligne 1 fait 316, la colonne 2 et la ligne 2 se décalent, l'image remplit la boîte intérieure ; Ctrl+Z : tout revient en une fois. Au clavier : sélectionner l'image, la placer au-dessus de la case, Alt+Entrée : même résultat.
+- **S2 (2)** Régler le tableau sur « rétrécir » (panneau, ou Alt+F en outil Tableau), glisser la même image : la case garde 240 × 64, l'image est réduite à l'échelle 0,16 (boîte intérieure 224 × 48, `table-geom.ts:225`) : 64 × 48, posée en haut à gauche de la boîte.
 - **S3 (3)** Avec le stylo, écrire un mot dans la case (1, 0) ; outil Tableau, case (0, 0) active, « + Ligne » (insertion après la ligne 0) : le mot descend de 64 avec sa case ; un trait qui déborde sur deux cases reste libre ; déplacer le tableau à la Sélection : le mot suit ; enregistrer, rouvrir : le lien est là (`cell` dans l'état de la CLI).
 - **S4 (4)** Glisser l'image de S1 hors du tableau : elle est libre, la colonne 1 revient à 240 et la ligne 1 à 64 ; une colonne élargie à la main ne bouge pas. Au clavier : Alt+Maj+Entrée.
-- **S5 (5)** Image logée, appui long sur elle puis « Mettre en fond » (ou Alt+I) : l'image devient le fond de la case, sous le texte saisi ensuite ; l'export PDF montre le fond ; Ctrl+Z rend l'image libre.
+- **S5 (5)** Image logée ; outil Tableau, appui long sur la case puis « Mettre en fond » (au clavier : case active, Alt+I) : l'image devient le fond de la case, sous le texte saisi ensuite ; l'export PDF montre le fond ; Ctrl+Z rend l'image libre.
 - **S6 (6)** Outil Tableau, case active, tirer au doigt la poignée du bord droit de 100 px : la colonne s'élargit de 100, une étape ; à la souris, tirer une bordure à ± 6 px ; au clavier, Alt+Maj+→ : + 8.
 - **S7 (7)** Double appui sur la poignée du bord droit d'une colonne contenant « Photosynthèse » : la colonne prend la largeur du mot plus les marges ; Alt+A : même effet.
 - **S8 (8)** Plage de deux cases, panneau « centre » et « milieu » (ou Alt+Maj+C puis Alt+Maj+M) : le texte est centré dans les deux, à l'écran et dans le PDF.
@@ -282,10 +314,12 @@ Joués par `scripts/essais/personnalisation-3-navigateur.mjs` (`verifier.sh --e2
 - **S14 (14)** Colonne « Mammifères » acceptant « chat, chien » : glisser le texte « chat » : il loge ; glisser « truite » : il revient à sa place, aucune étape d'annulation.
 - **S15 (15)** Coller `a\tb\nc\td` en `text/plain` : un tableau 2 × 2 neuf ; un collage Excel (HTML) reste traité par F19 (test `paste.test.ts`).
 - **S16 (CLI)** `cli-essai.mjs` : `AddTable`, `AddShape`, `PlaceInCell`, `InsertTableLine` à la ligne 0 : la forme descend de la hauteur insérée ; `save`, réouverture, `state` : `cell` présent ; `undo` : une étape par commande.
+- **S18 (garde-fous)** Tests du cœur et de `cell-drop` : loger dans une case ombrée fermée → refus ; Ombrer une case à objet → refus et message ; `PlaceInCell` d'un tableau → `BadTable` ; objet lié déplacé hors de sa case par `Transform` → lien retiré ; dupliquer la page → objets liés au tableau copié.
 - **S17 (U3)** Test du cœur : un document à objets logés, bordures et fond relu par le faux lecteur « sans les clés » (clés inconnues ignorées) donne les mêmes éléments aux mêmes places ; « recharger garde les octets » pour `cell`, `border`, `accept`.
 
 ## 7. Hors périmètre
 
+- Cacher un objet logé sous un cache (D35) : demande un saut des objets liés au rendu, à `hitTest` (`query.rs`) et au PDF.
 - Coller dans un tableau existant à la case active (F19 : toujours un tableau neuf).
 - Étiquette d'image pour le tableau de tri (H11).
 - Écrire les tableaux, fonds et bordures dans `.iwb` / `.ubz` (non exportés aujourd'hui, `board-io.ts:259`).
