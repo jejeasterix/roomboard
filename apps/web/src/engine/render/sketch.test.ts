@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { OP, RecordingContext2D } from "./record-ctx";
-import { cornerRadius, dashOf, newSeed, seedOf, sketchShape } from "./sketch";
+import { RoughGenerator } from "roughjs/bin/generator";
+import { cornerRadius, dashOf, newSeed, seedOf, sketchShape, type SketchPlan } from "./sketch";
 
 /** Contexte réel minimal du contexte enregistreur (couleurs `#rrggbb`, mesure à 10 par caractère). */
 class Real {
@@ -40,7 +41,10 @@ describe("sketch (OG11, DA-3)", () => {
     expect(fill).toHaveBeenCalled();
     const round = rec();
     sketchShape(ctx(round), rect, pen, { roughness: 1, roundness: "round" }, 5);
-    expect(JSON.stringify(ops(round))).not.toBe(JSON.stringify(ops(rec())));
+    const sharp = rec();
+    sketchShape(ctx(sharp), rect, pen, { roughness: 1, roundness: "sharp" }, 5);
+    expect(ops(round).length).toBeGreaterThan(0);
+    expect(JSON.stringify(ops(round))).not.toBe(JSON.stringify(ops(sharp)));
     const ell = rec();
     const ellStroke = vi.spyOn(ell, "stroke");
     sketchShape(ctx(ell), { shape: "ellipse", w: 80, h: 40, fill: null }, pen, { roughness: 1 }, 5);
@@ -53,6 +57,36 @@ describe("sketch (OG11, DA-3)", () => {
     const dash = vi.spyOn(dashed, "setLineDash");
     sketchShape(ctx(dashed), rect, pen, { roughness: 1, strokeStyle: "dashed" }, 5);
     expect(dash).toHaveBeenCalledWith([8, 12]);
+  });
+
+  it("adjustRoughness : petites formes, rugosité réduite puis plafonnée à 2,5 ; grandes formes inchangées", () => {
+    const small = { shape: "rect" as const, w: 10, h: 10, fill: null };
+    const at = (s: typeof rect, r: number): string => {
+      const c = rec();
+      sketchShape(ctx(c), s, pen, { roughness: r as 1 }, 9);
+      return JSON.stringify(ops(c));
+    };
+    // Petite forme : min(r / 2, 2,5) ; 9 et 12 plafonnent au même 2,5, pas sur une grande forme.
+    expect(at(small, 9)).toBe(at(small, 12));
+    expect(at(rect, 9)).not.toBe(at(rect, 12));
+    expect(at(small, 2)).not.toBe(at(small, 4));
+  });
+
+  it("cache : le tracé mémorisé est rejoué sans nouvel appel du générateur", () => {
+    const memo = new Map<string, SketchPlan>();
+    const spy = vi.spyOn(RoughGenerator.prototype, "rectangle");
+    try {
+      const a = rec();
+      const b = rec();
+      sketchShape(ctx(a), rect, pen, { roughness: 1 }, 42, { id: "x", cache: memo });
+      sketchShape(ctx(b), rect, pen, { roughness: 1 }, 42, { id: "x", cache: memo });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(ops(b))).toBe(JSON.stringify(ops(a)));
+      sketchShape(ctx(b), { ...rect, w: 201 }, pen, { roughness: 1 }, 42, { id: "x", cache: memo });
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("seedOf : FNV-1a 32 bits stable ; newSeed : entier 32 bits non signé", () => {
