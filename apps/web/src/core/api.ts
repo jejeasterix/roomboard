@@ -19,6 +19,9 @@
 // C5 : SetImageParams (état voulu complet des réglages et nouvelle matrice, une étape, D38) ; ImageData porte les réglages
 // (neutres absents, I4) ; la boîte locale d'une image est sa boîte affichée (image-params.ts, displaySize).
 
+import type { Look } from "./look";
+export type { Look, LookPatch } from "./look";
+
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
 export type EraseMode = "partial" | "object";
@@ -278,6 +281,8 @@ interface ElementBase {
   readonly transform: Matrix;
   /** C3 (Z1) : chemin de groupes, extérieur d'abord ; absent sans groupe. */
   readonly group?: readonly string[];
+  /** OG11 : aspect facultatif (absent = neutre). */
+  readonly look?: Look;
 }
 export interface StrokeElement extends ElementBase { readonly kind: "stroke"; readonly style: StrokeStyle }
 export interface ShapeElement extends ElementBase { readonly kind: "shape"; readonly style: StrokeStyle; readonly shape: ShapeData }
