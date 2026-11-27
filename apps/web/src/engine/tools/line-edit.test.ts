@@ -176,6 +176,16 @@ describe("Modifier les points : ligne fermée (OG12 lot 2a)", () => {
     editor.close(1, "end");
     expect(runs).toEqual([{ type: "SetLinePoints", id, points: [0, 0, 100, 0, 100, 50, 0, 50, -40, 25], start: null, end: null }]);
   });
+  it("aperçu d'une ligne fermée : polygon gardé", () => {
+    const { editor } = setup({ closed: SQ });
+    editor.begin(1, [at(100, 50)]);
+    editor.extend(1, [at(150, 50)], []);
+    expect(editor.live().overlay?.shapes[0]?.polygon).toBe(true);
+    const o = setup({ inner: [100, 0] });
+    o.editor.begin(1, [at(100, 0)]);
+    o.editor.extend(1, [at(100, 40)], []);
+    expect(o.editor.live().overlay?.shapes[0]?.polygon).toBeUndefined();
+  });
   it("un sommet tiré près d'un objet ne se lie pas", () => {
     const a = setup({ closed: SQ });
     vi.spyOn(a.doc, "bindTarget").mockReturnValue(HIT as never);
