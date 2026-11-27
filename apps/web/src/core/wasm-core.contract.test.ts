@@ -159,7 +159,7 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
   });
 
   it("toPageView et toAssetInfo : null pour rien, erreur pour une forme fausse", () => {
-    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff" };
+    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", mode: "page" };
     expect(toPageView(undefined)).toBeNull();
     expect(toPageView({ ...page, backdrop: undefined })).toEqual({ ...page, backdrop: null, grid: null });
     const b = { asset: "a".repeat(64), kind: "pdf-page", w: undefined, h: 5, fit: "contain", rect: undefined };
@@ -729,7 +729,7 @@ describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
     const d = f.blank();
     const p = first(d);
     const before = d.page(p);
-    expect(before).toEqual({ id: p, width: 1920, height: 1080, background: "#ffffff", backdrop: null, grid: null });
+    expect(before).toEqual({ id: p, width: 1920, height: 1080, background: "#ffffff", backdrop: null, grid: null, mode: "page" });
     const fond = { asset: png, w: 1000, h: 500, fit: "width" };
     expect(d.apply({ type: "SetBackdrop", page: p, backdrop: fond }).pages).toEqual([p]);
     const rect = { x0: 0, y0: 0, x1: 1920, y1: 960 };
@@ -1179,7 +1179,7 @@ const c9Factories = factories; // T6 : vrai module branché, contrat C9 commun a
 
 describe("contrôle de forme C9 (grille)", () => {
   it("toPageView : grille contrôlée, undefined → null, forme fausse → erreur", () => {
-    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined };
+    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined, mode: "page" };
     const g = { visible: true, snap: false, above: true, levels: [gridLevel("hexagon", 40)] };
     expect(toPageView({ ...page, grid: g })?.grid).toEqual(g);
     expect(toPageView({ ...page, grid: undefined })?.grid).toBeNull();
@@ -1190,7 +1190,7 @@ describe("contrôle de forme C9 (grille)", () => {
   });
 
   it("toPageView : grille ou niveau qui n'est pas un objet, tête sans visible → erreur", () => {
-    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined };
+    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined, mode: "page" };
     const g = { visible: true, snap: false, above: true, levels: [gridLevel("squares", 40)] };
     expect(() => toPageView({ ...page, grid: "x" })).toThrow("PageView invalide");
     expect(() => toPageView({ ...page, grid: { ...g, levels: ["x"] } })).toThrow("PageView invalide");
@@ -2809,7 +2809,7 @@ describe.each(factories)("contrat C12 : $name", ({ f }) => {
 
 describe("contrôle de forme C12 (fond pdf-page)", () => {
   it("toPageView : page absente → null, entier gardé, chaîne → erreur", () => {
-    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined };
+    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined, mode: "page" };
     const b = { asset: "a".repeat(64), kind: "pdf-page", w: 612, h: 792, fit: "width", rect: undefined };
     expect(toPageView({ ...page, backdrop: b })?.backdrop?.page).toBeNull();
     expect(toPageView({ ...page, backdrop: { ...b, page: 2 } })?.backdrop?.page).toBe(2);
@@ -2855,14 +2855,14 @@ describe.each(factories)("contrat C16 : $name", ({ f }) => {
 
 describe("contrôle de forme C16 (original du fond)", () => {
   it("toPageView : original absent → null, chaîne gardée, nombre → erreur", () => {
-    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined };
+    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined, mode: "page" };
     const b = { asset: "a".repeat(64), kind: "pdf-page", page: 0, w: 612, h: 792, fit: "width", rect: undefined };
     expect(toPageView({ ...page, backdrop: b })?.backdrop?.original).toBeNull();
     expect(toPageView({ ...page, backdrop: { ...b, original: "b".repeat(64) } })?.backdrop?.original).toBe("b".repeat(64));
     expect(() => toPageView({ ...page, backdrop: { ...b, original: 3 } })).toThrow("PageView invalide");
   });
   it("toPageView : original non conforme (chemin, majuscules) → null, le fond reste lisible (parité avec le cœur)", () => {
-    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined };
+    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined, mode: "page" };
     const b = { asset: "a".repeat(64), kind: "pdf-page", page: 0, w: 612, h: 792, fit: "width", rect: undefined };
     for (const bad of ["../x", "B".repeat(64), ""]) {
       expect(toPageView({ ...page, backdrop: { ...b, original: bad } })?.backdrop?.original, bad).toBeNull();
