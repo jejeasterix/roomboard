@@ -123,7 +123,7 @@ describe("OptionsPanel (OG11, T10)", () => {
     const labels = [...container.querySelectorAll('[data-option="strokeColor"] .rb-pick')].map((b) => b.getAttribute("aria-label"));
     expect(labels).toEqual(["Noir", "Rouge", "Bleu", "Vert"]);
     const bg = [...container.querySelectorAll('[data-option="background"] .rb-pick')].map((b) => b.getAttribute("aria-label"));
-    expect(bg).toEqual(["Transparent", "Jaune", "Vert", "Bleu", "Rose"]);
+    expect(bg).toEqual(["Transparent", "Jaune", "Vert", "Bleu"]);
   });
   it("bascule : aria-expanded suit le repli ; libellés Plein et Droits", () => {
     const { container } = mount({ tool: "rect", selection: [] });
@@ -466,18 +466,14 @@ describe("OptionsPanel accordéon et couleurs (OG23, T5)", () => {
     expect(head(mx.container, "roughness").textContent).toContain("· Mixte");
   });
   it("S ouvre Trait replié puis le sélecteur", async () => {
-    const m = mount({ tool: "rect", selection: [] });
-    m.settings.setOptionSection("strokeColor", false);
-    m.unmount();
-    const r = mount({ tool: "rect", selection: [], });
-    r.settings.setOptionSection("strokeColor", false);
-    fireEvent.click(head(r.container, "strokeColor")); // ouvert
-    fireEvent.click(head(r.container, "strokeColor")); // replié
-    expect(head(r.container, "strokeColor").getAttribute("aria-expanded")).toBe("false");
+    const { container, settings } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(head(container, "strokeColor")); // ouverte par défaut : on la replie
+    expect(head(container, "strokeColor").getAttribute("aria-expanded")).toBe("false");
+    expect(settings.optionSections().strokeColor).toBe(false);
     fireEvent.keyDown(window, { key: "s", code: "KeyS" });
-    expect(head(r.container, "strokeColor").getAttribute("aria-expanded")).toBe("true");
+    expect(head(container, "strokeColor").getAttribute("aria-expanded")).toBe("true");
     await Promise.resolve();
-    expect(r.container.querySelector("[data-color-picker]")).not.toBeNull();
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull();
   });
   it("4 pastilles et palette sur une ligne", () => {
     const { container } = mount({ tool: "rect", selection: [] });

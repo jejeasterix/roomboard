@@ -125,9 +125,15 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "stroke-solid": [["path", { d: "M4 12h16" }]],
   "stroke-dashed": [["path", { d: "M4 12h3" }], ["path", { d: "M10.5 12h3" }], ["path", { d: "M17 12h3" }]],
   "stroke-dotted": [["path", { d: "M4 12h.01" }], ["path", { d: "M8 12h.01" }], ["path", { d: "M12 12h.01" }], ["path", { d: "M16 12h.01" }], ["path", { d: "M20 12h.01" }]],
-  "sloppiness-0": [["path", { d: "M4 16c4-8 12-8 16 0" }]],
-  "sloppiness-1": [["path", { d: "M4 16c3-7 6-9 8-6s5 3 8 6" }]],
-  "sloppiness-2": [["path", { d: "M4 15c2-6 4-7 5-4s2 4 4 1 3-5 4-2 2 4 3 5" }]],
+  // OG23 (T5) : largeur d'un trait (dessinée, grille 24) ; netteté du coin : net, doublé, triplé (dessinée).
+  "width-thin": [["path", { d: "M4 12h16", "stroke-width": "1.5" }]],
+  "width-medium": [["path", { d: "M4 12h16", "stroke-width": "3" }]],
+  "width-thick": [["path", { d: "M4 12h16", "stroke-width": "5" }]],
+  "sloppiness-0": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }]],
+  "sloppiness-1": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }], ["path", { d: "M7.5 18.5V9a1.5 1.5 0 0 1 1.5-1.5h10" }]],
+  "sloppiness-2": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }], ["path", { d: "M7.5 18.5V9a1.5 1.5 0 0 1 1.5-1.5h10" }], ["path", { d: "M10 18V11.5a1 1 0 0 1 1-1h8" }]],
+  // Lucide @7981a0798a, ISC : palette.
+  "palette": [["path", { d: "M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" }], ["circle", { cx: "13.5", cy: "6.5", r: ".5" }], ["circle", { cx: "17.5", cy: "10.5", r: ".5" }], ["circle", { cx: "6.5", cy: "12.5", r: ".5" }], ["circle", { cx: "8.5", cy: "7.5", r: ".5" }]],
   "corner-sharp": [["path", { d: "M6 18V6h12" }]],
   "corner-round": [["path", { d: "M6 18v-6a6 6 0 0 1 6-6h6" }]],
   // OG11 lot 2 (T15) : Lucide @7981a0798a, ISC (chevron-up, chevron-down, align-left, align-center, align-right).
