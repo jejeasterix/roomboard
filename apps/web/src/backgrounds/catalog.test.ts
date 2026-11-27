@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GRID_KINDS } from "../core/api";
+import { ICONS } from "../ui/icons";
 import { ALL_THEMES, DEFAULT_SECTION, loadPack, SECTIONS } from "./catalog";
 import { DRAWN } from "./drawn";
 import { PHOTOS } from "./photos";
@@ -19,6 +20,16 @@ describe("personnalisation-1b : catalogue des fonds (Q7 à Q10)", () => {
     expect(themesOf("lessons")).toEqual(["organisation", "reflexion", "mathematiques", "ecriture", "sport"]);
     expect(themesOf("images")).toEqual(["nature", "mer-ciel", "matieres", "saisons", "abstrait"]);
     expect(themesOf("mine")).toEqual([]);
+  });
+
+  it("OG19 : chaque section a son icône, aucune deux ne se ressemblent (même cadre 18 × 18 quadrillé)", () => {
+    const names = SECTIONS.map((s) => s.icon);
+    expect(new Set(names).size, names.join(", ")).toBe(names.length);
+    for (const n of names) expect(Object.hasOwn(ICONS, n), n).toBe(true);
+    // « grid » et « table » : le même cadre de 18 × 18 coupé de traits ; une seule section le porte.
+    const framed = (n: string): boolean => ICONS[n]!.some(([tag, a]) => tag === "rect" && a["width"] === "18" && a["height"] === "18" && a["x"] === "3" && a["y"] === "3");
+    expect(names.filter(framed), names.join(", ")).toHaveLength(1);
+    expect(SECTIONS.find((s) => s.id === "lessons")?.icon).toBe("layout-template");
   });
 
   it("DRAWN : au moins 110 fonds dessinés, ids uniques en [a-z0-9-]", () => {
