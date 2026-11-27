@@ -149,3 +149,15 @@ describe("Modifier les points (OG12 T9)", () => {
 function runs0(s: { runs: Command[] }): Extract<Command, { type: "SetLinePoints" }> {
   return s.runs[0] as Extract<Command, { type: "SetLinePoints" }>;
 }
+
+describe("Modifier les points : liaisons (OG12 C2)", () => {
+  it("le second bout ne se lie pas à l'objet du premier", () => {
+    const a = setup({ start: BIND });
+    vi.spyOn(a.doc, "bindTarget").mockReturnValue(HIT as never);
+    a.editor.begin(1, [at(200, 0)]);
+    a.editor.extend(1, [at(300, 50)], []);
+    a.editor.close(1, "end");
+    expect(runs0(a).start).toEqual(BIND);
+    expect(runs0(a).end).toBeNull();
+  });
+});

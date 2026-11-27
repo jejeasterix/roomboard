@@ -424,7 +424,7 @@ const HIT_A = { id: "A", fixed: [1, 0.3] as const, onOutline: true, anchors: [[5
 const HIT_B = { id: "B", fixed: [0, 0.5] as const, onOutline: true, anchors: [[450, 0], [500, 25], [450, 50], [400, 25]] as const };
 const atT = (x: number, y: number, t: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t });
 
-function setupLines() {
+function setupLines(pointer: "touch" | "mouse" = "touch") {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
@@ -445,7 +445,7 @@ function setupLines() {
     },
     ctrl: () => false,
     bindingEnabled: () => true,
-    pointerType: () => "touch",
+    pointerType: () => pointer,
     editPoints: (id) => { edits.push(id); },
   };
   const tool = createSelectTool(ctx);
@@ -541,4 +541,22 @@ describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () =>
     tool.close(4, "end");
     expect(edits).toEqual([id]);
   });
+});
+
+describe("OG12 C2 : double toucher sur une poignée de la ligne sélectionnée", () => {
+  for (const pointer of ["touch", "mouse"] as const) {
+    for (const [nom, x] of [["milieu", 100], ["près d'un bout", 196]] as const) {
+      it(`${pointer} : double appui sur la poignée du ${nom} : editPoints`, () => {
+        const { tool, edits, runs, add } = setupLines(pointer);
+        const id = add("line", 0, 0, 200, 0);
+        tool.setSelection([id]);
+        tool.begin(1, [atT(x, 0, 0)]);
+        tool.close(1, "end");
+        tool.begin(2, [atT(x, 0, 100)]);
+        tool.close(2, "end");
+        expect(edits).toEqual([id]);
+        expect(runs).toEqual([]);
+      });
+    }
+  }
 });
