@@ -774,6 +774,7 @@ async function s8(browser, base, mode, tmp) {
     const cell = page.locator("[data-color-picker] [role=gridcell]").nth(7);
     chosen = await cell.getAttribute("aria-label");
     const cb = await cell.boundingBox();
+    lire("S8.1 case 7 et fenêtre du sélecteur", `${JSON.stringify(cb)} ${JSON.stringify(await page.evaluate(() => { const r = document.querySelector(".rb-color-pop").getBoundingClientRect(); const e = document.elementFromPoint(280, 134); return [r.top, r.bottom, innerHeight, e?.tagName, e?.className, e?.closest("[class*=island]")?.className]; }))}`);
     await tapAt(page, cb.x + cb.width / 2, cb.y + cb.height / 2);
     await popup("[data-color-picker]").waitFor({ state: "hidden", timeout: 15000 });
   } else {

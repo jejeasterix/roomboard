@@ -448,6 +448,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-opacity output { flex: none; min-inline-size: 3.5em; font-size: 14px; color: var(--rf-gray-800); }
 
 /* T16 : sélecteur de couleur complet, popover à droite du bouton « Autres couleurs ». */
+/* Sélecteur ouvert : le panneau passe au-dessus des autres îlots (le sélecteur, posé en `fixed`, peut les recouvrir, T31). */
+.rb-options[data-picker] { z-index: 1; }
 .rb-color-pop { position: fixed; z-index: 30; box-sizing: border-box; max-block-size: calc(100vh - 16px); overflow-y: auto; padding: 8px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); pointer-events: auto; }
 .rb-color-picker { display: grid; gap: 8px; }
 .rb-color-grid { display: grid; gap: 2px; }

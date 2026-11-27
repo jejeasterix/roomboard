@@ -363,4 +363,11 @@ describe("OptionsPanel : avant la saisie, focus, sélecteur borné (T31)", () =>
       if (h) Object.defineProperty(HTMLElement.prototype, "offsetHeight", h); else delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
     }
   });
+  it("sélecteur ouvert : le panneau porte data-picker (passe au-dessus des autres îlots)", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const aside = container.querySelector("[data-options]")!;
+    expect(aside.hasAttribute("data-picker")).toBe(false);
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    expect(aside.hasAttribute("data-picker")).toBe(true);
+  });
 });

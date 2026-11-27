@@ -407,6 +407,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         class="rb-island rb-options"
         data-options
         data-collapsed={collapsed() ? "" : undefined}
+        data-picker={picker() !== null ? "" : undefined}
         aria-label="Options de l'outil"
         style={{ left: `${pos().x}px`, top: `${pos().y}px`, "--rb-btn-size": `${btn()}px`, ...(area().h > 0 ? { "max-block-size": `${Math.max(0, area().h - pos().y - 88)}px` } : {}), ...(collapsed() ? {} : { width: `${optionsWidth(btn())}px` }) }}
       >
