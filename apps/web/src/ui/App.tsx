@@ -460,17 +460,19 @@ export function App(props: AppProps): JSX.Element {
         size={size}
         sheetOpen={() => panel() === "editor"}
         watch={islandWatch}
-      />
-      <OptionsPanel
-        engine={() => board().engine}
-        state={state}
-        element={(id) => ws.active().board.doc.element(id)}
-        presets={() => profile().presets}
-        size={size}
-        profileId={() => profile().id}
-        settings={optionSettings}
-        annotating={annotating}
-        sideStart={() => null}
+        extra={
+          <OptionsPanel
+          engine={() => board().engine}
+          state={state}
+          element={(id) => ws.active().board.doc.element(id)}
+          presets={() => profile().presets}
+          size={size}
+          profileId={() => profile().id}
+          settings={optionSettings}
+          annotating={annotating}
+          sideStart={() => null}
+        />
+        }
       />
       <Toasts />
       <Show when={selectedMedia()}>

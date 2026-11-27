@@ -317,6 +317,8 @@ export interface IslandLayerProps {
   /** L2-16 : panneau des profils ouvert. */
   readonly sheetOpen: Accessor<boolean>;
   readonly watch?: Accessor<unknown>;
+  /** T22 : îlot posé dans la zone du calque (panneau d'options) : mêmes bornes que les îlots, au-dessus de la barre latérale. */
+  readonly extra?: JSX.Element;
 }
 
 /** Largeur du panneau des profils, lue dans `--rb-sheet-w` (rb.css) ; illisible : `SHEET_W`. */
@@ -402,6 +404,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   };
   return (
     <div ref={layer} class="rb-islands">
+      {props.extra}
       <div ref={topStart} class="rb-corner" data-corner="top-start">
         <div ref={menu} class="rb-corner-menu">
           {islands(starts)}

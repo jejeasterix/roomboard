@@ -139,3 +139,18 @@ describe("island-place : panneau d'options (OG11, T10)", () => {
     expect(placeOptions({ w: 1280, h: 100 }, null, 400).y).toBe(84);
   });
 });
+
+describe("optionsWidth (T22)", () => {
+  it("segments à largeur entière et icône (24) à x entier : 2 et 3 segments, trois tailles", async () => {
+    const { optionsWidth } = await import("./island-place");
+    for (const btn of [44, 48, 64]) {
+      const inner = optionsWidth(btn) - 2 * 12 - 2 * 4;
+      expect(inner).toBeGreaterThanOrEqual(5 * btn + 4 * 4 - 2 * 4);
+      for (const n of [2, 3]) {
+        expect(inner % n).toBe(0);
+        expect(((inner / n) - 24) % 2).toBe(0);
+      }
+    }
+    expect(optionsWidth(44)).toBe(260);
+  });
+});

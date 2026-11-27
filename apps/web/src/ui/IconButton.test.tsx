@@ -179,3 +179,21 @@ describe("IconButton (L1-4)", () => {
     expect(tips()).toHaveLength(0);
   });
 });
+
+describe("Espace sur un bouton (T22)", () => {
+  it("la touche Espace d'un bouton n'atteint pas la fenêtre (le moteur ne la prend pas pour la main) ; ailleurs elle passe", () => {
+    const seen: KeyboardEvent[] = [];
+    const on = (e: KeyboardEvent): void => { seen.push(e); e.preventDefault(); };
+    window.addEventListener("keydown", on);
+    const { btn } = one();
+    const ev = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+    btn.dispatchEvent(ev);
+    expect(seen).toHaveLength(0);
+    expect(ev.defaultPrevented).toBe(false);
+    btn.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(seen).toHaveLength(1);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+    expect(seen).toHaveLength(2);
+    window.removeEventListener("keydown", on);
+  });
+});
