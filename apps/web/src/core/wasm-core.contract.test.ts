@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import type { AssetRef, CellIds, CellLink, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage } from "./api";
 import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
@@ -2005,6 +2005,167 @@ describe.skipIf(loaded === null)("contrat C10b : vrai module seulement", () => {
     expect([t.cols.length, t.rows.length, t.merges.length, t.merges[0]?.cols]).toEqual([4, 3, 1, 2]);
     expect(t.cells.filter((c) => c.shade !== null)).toHaveLength(3);
     expect(t.cells[0]?.text).toBe("Lundi");
+    d.free();
+  });
+});
+
+// personnalisation-3 (lot A) : lien de case, PlaceInCell, SetTableLineSizes, suivi (D5), emport (D6), refus (D35, D36).
+// Le suivi est joué sur chaque commande de tableau qui change une taille (InsertTableLine, RemoveTableLine,
+// SetTableSizes, SetTableCell qui grandit, SetTableLineSizes) : une fausse liaison qui le coderait commande par commande
+// et en oublierait une diverge du cœur ; la copie libre garde l'invariant « `cell` retiré à la copie ».
+type P3Cells = { readonly t: string; readonly o: string; readonly link: (r: number, c: number) => CellLink };
+const p3Placed = (d: CoreDocument): P3Cells => {
+  const p = first(d);
+  const t = addTable(d, p, { x: 0, y: 0, cols: 3, rows: 3 });
+  const o = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 1000, y0: 1000, x1: 1400, y1: 1300, style, fill: null }).ids[0] ?? "";
+  const link = (r: number, c: number): CellLink => {
+    const v = tableOf(d, t);
+    return [t, v.rows[r]?.id ?? "", v.cols[c]?.id ?? ""];
+  };
+  return { t, o, link };
+};
+const p3Place11 = (d: CoreDocument, s: P3Cells): Change => {
+  const v = tableOf(d, s.t);
+  const at = d.element(s.o)?.transform ?? [1, 0, 0, 1, 0, 0];
+  return d.apply({
+    type: "PlaceInCell",
+    ids: [s.o],
+    matrix: [1, 0, 0, 1, 248 - at[4], 72 - at[5]],
+    cell: s.link(1, 1),
+    sizes: [[s.t, "col", v.cols[1]?.id ?? "", 416], [s.t, "row", v.rows[1]?.id ?? "", 316]],
+  });
+};
+
+describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
+  it("PlaceInCell (S1) : colonne 416, ligne 316, lien posé, une étape ; annuler ramène tout", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const before = d.element(s.o)?.transform;
+    const c = p3Place11(d, s);
+    expect(c.ids).toEqual([s.o, s.t].sort());
+    expect(tableOf(d, s.t).cols.map((x) => x.width)).toEqual([240, 416, 240]);
+    expect(tableOf(d, s.t).rows.map((x) => x.height)).toEqual([64, 316, 64]);
+    expect(d.element(s.o)?.cell).toEqual(s.link(1, 1));
+    d.undo();
+    expect(d.element(s.o)?.cell).toBeUndefined();
+    expect(d.element(s.o)?.transform).toEqual(before);
+    d.free();
+  });
+
+  it("PlaceInCell refusé (S18) : un tableau, une case ombrée ; aucun id : aucune étape", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const t2 = addTable(d, first(d), { x: 2000, y: 0 });
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "PlaceInCell", ids: [t2], matrix: [1, 0, 0, 1, 0, 0], cell: s.link(0, 0), sizes: [] }))).toBe(TABLE_MESSAGE));
+    const [, r, k] = s.link(0, 0);
+    d.apply({ type: "SetTableShade", id: s.t, from: { row: r, col: k }, to: { row: r, col: k }, shade: "#94a3b8" });
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "PlaceInCell", ids: [s.o], matrix: [1, 0, 0, 1, 0, 0], cell: s.link(0, 0), sizes: [] }))).toBe(TABLE_MESSAGE));
+    unchanged(d, () => d.apply({ type: "PlaceInCell", ids: ["zz"], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] }));
+    d.free();
+  });
+
+  it("personnalisation-3 suivi (S16, D5) : InsertTableLine en tête : l'objet descend de 64 ; ids [tableau, objet]", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Place11(d, s);
+    const y = d.element(s.o)?.transform[5] ?? 0;
+    expect(d.apply({ type: "InsertTableLine", id: s.t, axis: "row", at: 0 }).ids).toEqual([s.t, s.o]);
+    expect(d.element(s.o)?.transform[5]).toBe(y + 64);
+    d.free();
+  });
+
+  it("personnalisation-3 suivi (H22) : RemoveTableLine de sa ligne : lien retiré, objet en place", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Place11(d, s);
+    const at = d.element(s.o)?.transform;
+    expect(d.element(s.o)?.cell).toEqual(s.link(1, 1));
+    d.apply({ type: "RemoveTableLine", id: s.t, axis: "row", line: s.link(1, 1)[1] });
+    expect(d.element(s.o)?.cell).toBeUndefined();
+    expect(d.element(s.o)?.transform).toEqual(at);
+    d.free();
+  });
+
+  it("personnalisation-3 suivi : SetTableSizes, SetTableCell qui grandit, SetTableLineSizes", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    d.apply({ type: "PlaceInCell", ids: [s.o], matrix: [1, 0, 0, 1, 0, 0], cell: s.link(2, 2), sizes: [] });
+    const at = d.element(s.o)?.transform ?? [1, 0, 0, 1, 0, 0];
+    d.apply({ type: "SetTableSizes", id: s.t, colWidth: 300, rowHeight: 80 });
+    expect(d.element(s.o)?.transform.slice(4)).toEqual([at[4] + 120, at[5] + 32]);
+    const [, r0, c0] = s.link(0, 0);
+    d.apply({ type: "SetTableCell", id: s.t, row: r0, col: c0, content: "haut", rowHeight: 180 });
+    expect(d.element(s.o)?.transform[5]).toBe(at[5] + 132);
+    expect(d.apply({ type: "SetTableLineSizes", id: s.t, cols: [[c0, 400]], rows: [] }).ids).toEqual([s.t, s.o]);
+    expect(d.element(s.o)?.transform[4]).toBe(at[4] + 220);
+    unchanged(d, () => d.apply({ type: "SetTableLineSizes", id: s.t, cols: [[c0, 400]], rows: [] }));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableLineSizes", id: s.t, cols: [["zz", 10]], rows: [] }))).toBe(TABLE_MESSAGE));
+    d.free();
+  });
+
+  it("personnalisation-3 emport (D6) : Transform du tableau emporte l'objet ; sans lien, inchangé", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    expect(d.apply({ type: "Transform", ids: [s.t], matrix: [1, 0, 0, 1, 50, 20] }).ids).toEqual([s.t]);
+    d.apply({ type: "PlaceInCell", ids: [s.o], matrix: [1, 0, 0, 1, 0, 0], cell: s.link(0, 0), sizes: [] });
+    const at = d.element(s.o)?.transform ?? [1, 0, 0, 1, 0, 0];
+    expect(d.apply({ type: "Transform", ids: [s.t], matrix: [1, 0, 0, 1, 50, 20] }).ids).toEqual([s.t, s.o].sort());
+    expect(d.element(s.o)?.transform.slice(4)).toEqual([at[4] + 50, at[5] + 20]);
+    d.free();
+  });
+
+  it("personnalisation-3 sortie (D6, H24) : objet lié déplacé seul : lien gardé dedans, retiré dehors", () => {
+    const d = f.blank();
+    const p = first(d);
+    const t = addTable(d, p, { x: 0, y: 0, cols: 3, rows: 3 });
+    const o = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 10, y0: 10, x1: 50, y1: 40, style, fill: null }).ids[0] ?? "";
+    const v = tableOf(d, t);
+    const l: CellLink = [t, v.rows[0]?.id ?? "", v.cols[0]?.id ?? ""];
+    d.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: l, sizes: [] });
+    d.apply({ type: "Transform", ids: [o], matrix: [1, 0, 0, 1, 100, 0] });
+    expect(d.element(o)?.cell).toEqual(l);
+    d.apply({ type: "Transform", ids: [o], matrix: [1, 0, 0, 1, 0, 500] });
+    expect(d.element(o)?.cell).toBeUndefined();
+    d.free();
+  });
+
+  it("personnalisation-3 copie libre : DuplicatePage, Copier-Coller : jamais liée au tableau d'origine", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Place11(d, s);
+    const p = first(d);
+    expect(d.element(s.o)?.cell).toEqual(s.link(1, 1));
+    d.apply({ type: "DuplicatePage", page: p });
+    const p2 = d.pageIds().find((x) => x !== p) ?? "";
+    expect(d.elementIds(p2).length).toBeGreaterThan(1);
+    for (const id of d.elementIds(p2)) expect(d.element(id)?.cell?.[0]).not.toBe(s.t);
+    const frag = d.extract(p, [s.o]);
+    const ins = d.insertFragment(frag, p, 0, 0);
+    frag.free();
+    expect(ins.ids.length).toBeGreaterThan(0);
+    for (const id of ins.ids) expect(d.element(id)?.cell?.[0]).not.toBe(s.t);
+    d.free();
+  });
+
+  it("personnalisation-3 recharger garde cell (S17)", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Place11(d, s);
+    const want = d.element(s.o)?.cell;
+    expect(want).toEqual(s.link(1, 1));
+    const r = f.load(d.save(now, "0.1.0"));
+    d.free();
+    expect(r.element(s.o)?.cell).toEqual(want);
+    r.free();
+  });
+
+  it("personnalisation-3 cible absente (D1) : tableau supprimé : l'objet est libre", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Place11(d, s);
+    expect(d.element(s.o)?.cell).toEqual(s.link(1, 1));
+    d.apply({ type: "Delete", ids: [s.t] });
+    expect(d.element(s.o)?.cell).toBeUndefined();
     d.free();
   });
 });
