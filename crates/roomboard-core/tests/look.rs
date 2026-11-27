@@ -3,11 +3,12 @@
 //! fichier ancien recoupé ou réenregistré garde ses octets) ; une valeur illisible est lue neutre et gardée telle quelle.
 use std::path::PathBuf;
 
-use roomboard_core::commands::{Command, EraseMode};
+use roomboard_core::commands::{Command, CommandError, EraseMode};
 use roomboard_core::document::Document;
 use roomboard_core::element::{Look, StrokeStyle};
 use roomboard_core::format::load;
 use roomboard_core::shape::ShapeKind;
+use roomboard_core::style::StylePatch;
 use yrs::updates::decoder::Decode;
 use yrs::{
     Any, Array, ArrayRef, Doc, In, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Transact,
@@ -417,4 +418,317 @@ fn extract_keeps_look() {
         .insert_fragment(&frag, &page, 10.0, 10.0)
         .expect("insertion");
     assert_eq!(d.element(&ins.ids[0]).expect("copie").look, Some(dashed()));
+}
+
+// --- SetStyle (T2) ---
+
+fn set_style(
+    d: &mut Document,
+    ids: &[&String],
+    patch: StylePatch,
+) -> Result<roomboard_core::commands::Change, CommandError> {
+    d.apply(Command::SetStyle {
+        ids: ids.iter().map(|s| s.to_string()).collect(),
+        patch,
+    })
+}
+
+/// Discrimine la transaction par id : deux éléments changés, une seule étape (historique sans fusion, délai 0).
+#[test]
+fn set_style_one_step() {
+    let mut d = blank();
+    let a = add_rect(&mut d, Look::default());
+    let b = add_rect(&mut d, Look::default());
+    let p = StylePatch {
+        color: Some("#1d4ed8".into()),
+        stroke_style: Some(Some("dashed".into())),
+        ..Default::default()
+    };
+    let c = set_style(&mut d, &[&a, &b], p).expect("style");
+    assert_eq!(c.ids, vec![a.clone(), b.clone()]);
+    assert_eq!(d.element(&b).unwrap().style.unwrap().color, "#1d4ed8");
+    assert_eq!(
+        d.element(&a).unwrap().look.unwrap().stroke_style.as_deref(),
+        Some("dashed")
+    );
+    assert!(d.undo());
+    assert_eq!(d.element(&a).unwrap().style.unwrap().color, "#000000");
+    assert_eq!(d.element(&a).unwrap().look, None);
+    assert_eq!(d.element(&b).unwrap().style.unwrap().color, "#000000");
+    assert_eq!(d.element(&b).unwrap().look, None);
+}
+
+/// Discrimine la transaction ouverte d'avance et la graine retirée au même tracé : un patch qui redit chaque valeur
+/// déjà posée ne fait ni étape ni version.
+#[test]
+fn set_style_noop_no_step() {
+    let mut d = blank();
+    let a = add_rect(&mut d, dashed());
+    let v = d.version();
+    let same = StylePatch {
+        color: Some("#000000".into()),
+        width: Some(4.0),
+        fill: Some(None),
+        stroke_style: Some(Some("dashed".into())),
+        roughness: Some(1),
+        roundness: Some(Some("round".into())),
+        opacity: Some(50.0),
+    };
+    let c = set_style(&mut d, &[&a], same).expect("style");
+    assert!(c.ids.is_empty());
+    assert_eq!(d.version(), v);
+    assert_eq!(c.version, v);
+    assert_eq!(d.element(&a).unwrap().look, Some(dashed()), "graine gardée");
+    let c = set_style(
+        &mut d,
+        &[&a],
+        StylePatch {
+            stroke_style: Some(Some("dashed".into())),
+            ..Default::default()
+        },
+    )
+    .expect("style");
+    assert!(c.ids.is_empty());
+    assert_eq!(d.version(), v);
+}
+
+/// Seuls les éléments changés sont rendus ; l'autre n'entre pas dans le `Change`.
+#[test]
+fn set_style_reports_only_changed() {
+    let mut d = blank();
+    let a = add_rect(&mut d, dashed());
+    let b = add_rect(&mut d, Look::default());
+    let c = set_style(
+        &mut d,
+        &[&a, &b],
+        StylePatch {
+            stroke_style: Some(Some("dashed".into())),
+            ..Default::default()
+        },
+    )
+    .expect("style");
+    assert_eq!(c.ids, vec![b.clone()]);
+    assert_eq!(c.pages, vec![first_page(&d)]);
+}
+
+#[test]
+fn set_style_opacity_rounds() {
+    let mut d = blank();
+    let a = add_rect(&mut d, Look::default());
+    let op = |o: f64| StylePatch {
+        opacity: Some(o),
+        ..Default::default()
+    };
+    set_style(&mut d, &[&a], op(44.6)).expect("44.6");
+    assert_eq!(d.element(&a).unwrap().look.unwrap().opacity, Some(45));
+    assert_eq!(raw_field(&d, &a, "opacity").as_deref(), Some("45"));
+    set_style(&mut d, &[&a], op(95.0)).expect("95");
+    assert_eq!(
+        d.element(&a).unwrap().look.unwrap().opacity,
+        Some(95),
+        "95 écrit et relu (0..100)"
+    );
+    set_style(&mut d, &[&a], op(0.0)).expect("0");
+    assert_eq!(d.element(&a).unwrap().look.unwrap().opacity, Some(0));
+    set_style(&mut d, &[&a], op(99.6)).expect("99.6");
+    assert_eq!(d.element(&a).unwrap().look, None, "99.6 arrondi à 100");
+    assert_eq!(raw_field(&d, &a, "opacity"), None, "100 retire le champ");
+}
+
+/// Discrimine l'écriture d'une clé neutre, que `read_look` (passé par `sanitized`) lit `None` dans les deux cas :
+/// seule la clé brute absente prouve le retrait.
+#[test]
+fn set_style_neutral_removes_key() {
+    let mut d = blank();
+    let a = add_rect(&mut d, dashed());
+    let neutral = StylePatch {
+        fill: Some(None),
+        stroke_style: Some(None),
+        roughness: Some(0),
+        roundness: Some(None),
+        opacity: Some(100.0),
+        ..Default::default()
+    };
+    let c = set_style(&mut d, &[&a], neutral.clone()).expect("neutre");
+    assert_eq!(c.ids, vec![a.clone()]);
+    assert_eq!(d.element(&a).unwrap().look, None);
+    for k in LOOK_KEYS {
+        assert_eq!(
+            raw_field(&d, &a, k),
+            None,
+            "{k} gardé alors qu'il est neutre"
+        );
+    }
+    let v = d.version();
+    let c = set_style(&mut d, &[&a], neutral).expect("neutre deux fois");
+    assert!(c.ids.is_empty());
+    assert_eq!(d.version(), v);
+}
+
+#[test]
+fn set_style_out_of_range_refused() {
+    let mut d = blank();
+    let a = add_rect(&mut d, Look::default());
+    let v = d.version();
+    for bad in [150.0, 100.5, -1.0, f64::NAN, f64::INFINITY] {
+        let r = set_style(
+            &mut d,
+            &[&a],
+            StylePatch {
+                color: Some("#1d4ed8".into()),
+                opacity: Some(bad),
+                ..Default::default()
+            },
+        );
+        assert_eq!(r, Err(CommandError::BadStyle), "opacité {bad}");
+    }
+    let bads = [
+        StylePatch {
+            stroke_style: Some(Some("wavy".into())),
+            ..Default::default()
+        },
+        StylePatch {
+            roughness: Some(3),
+            ..Default::default()
+        },
+        StylePatch {
+            roundness: Some(Some("sharp".into())),
+            ..Default::default()
+        },
+        StylePatch {
+            color: Some("#zzzzzz".into()),
+            ..Default::default()
+        },
+        StylePatch {
+            fill: Some(Some("#12345".into())),
+            ..Default::default()
+        },
+        StylePatch {
+            width: Some(0.0),
+            ..Default::default()
+        },
+        StylePatch {
+            width: Some(f32::NAN),
+            ..Default::default()
+        },
+    ];
+    for p in bads {
+        let label = format!("{p:?}");
+        assert_eq!(
+            set_style(&mut d, &[&a], p),
+            Err(CommandError::BadStyle),
+            "{label}"
+        );
+    }
+    assert_eq!(CommandError::BadStyle.to_string(), "style invalide");
+    assert_eq!(d.element(&a).unwrap().look, None, "rien d'écrit");
+    assert_eq!(d.element(&a).unwrap().style.unwrap().color, "#000000");
+    assert_eq!(d.version(), v);
+}
+
+/// Un id inconnu en fin de liste : rien d'écrit sur le premier (le plan est calculé avant toute écriture).
+#[test]
+fn set_style_unknown_id_writes_nothing() {
+    let mut d = blank();
+    let a = add_rect(&mut d, Look::default());
+    let v = d.version();
+    let ghost = "absent".to_string();
+    let r = set_style(
+        &mut d,
+        &[&a, &ghost],
+        StylePatch {
+            color: Some("#1d4ed8".into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(r, Err(CommandError::UnknownElement(ghost)));
+    assert_eq!(d.element(&a).unwrap().style.unwrap().color, "#000000");
+    assert_eq!(d.version(), v);
+}
+
+#[test]
+fn set_style_skips_inapplicable() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let e = d
+        .apply(Command::AddShape {
+            page,
+            shape: ShapeKind::Ellipse,
+            x0: 0.0,
+            y0: 0.0,
+            x1: 10.0,
+            y1: 10.0,
+            style: pen(),
+            fill: None,
+            look: Look::default(),
+        })
+        .unwrap()
+        .ids[0]
+        .clone();
+    let s = add_stroke(&mut d, Look::default());
+    let v = d.version();
+    let c = set_style(
+        &mut d,
+        &[&e],
+        StylePatch {
+            roundness: Some(Some("round".into())),
+            ..Default::default()
+        },
+    )
+    .expect("ellipse");
+    assert!(c.ids.is_empty());
+    let c = set_style(
+        &mut d,
+        &[&s],
+        StylePatch {
+            fill: Some(Some("#ff0000".into())),
+            stroke_style: Some(Some("dotted".into())),
+            roughness: Some(2),
+            roundness: Some(Some("round".into())),
+            ..Default::default()
+        },
+    )
+    .expect("trait");
+    assert!(c.ids.is_empty());
+    assert_eq!(d.version(), v);
+    for k in ["fill", "strokeStyle", "roughness", "seed", "roundness"] {
+        assert_eq!(raw_field(&d, &s, k), None, "{k} posé sur un trait");
+    }
+    let c = set_style(
+        &mut d,
+        &[&s],
+        StylePatch {
+            opacity: Some(40.0),
+            ..Default::default()
+        },
+    )
+    .expect("opacité du trait");
+    assert_eq!(c.ids, vec![s.clone()]);
+    assert_eq!(d.element(&s).unwrap().look.unwrap().opacity, Some(40));
+}
+
+#[test]
+fn set_style_roughness_draws_seed() {
+    let mut d = blank();
+    let a = add_rect(&mut d, Look::default());
+    let rough = |r: u8| StylePatch {
+        roughness: Some(r),
+        ..Default::default()
+    };
+    set_style(&mut d, &[&a], rough(2)).expect("2");
+    let l = d.element(&a).unwrap().look.unwrap();
+    assert_eq!(l.roughness, Some(2));
+    assert!(l.seed.is_some(), "graine tirée");
+    set_style(&mut d, &[&a], rough(1)).expect("1");
+    let l = d.element(&a).unwrap().look.unwrap();
+    assert_eq!(l.roughness, Some(1));
+    assert!(l.seed.is_some());
+    set_style(&mut d, &[&a], rough(0)).expect("0");
+    assert_eq!(
+        d.element(&a).unwrap().look,
+        None,
+        "0 retire roughness et seed"
+    );
+    assert_eq!(raw_field(&d, &a, "roughness"), None);
+    assert_eq!(raw_field(&d, &a, "seed"), None);
 }
