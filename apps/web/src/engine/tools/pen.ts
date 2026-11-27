@@ -119,7 +119,10 @@ export function createPenTool(ctx: ToolContext, style: () => StrokeStyle & Parti
       if (how === "abort" || l.all.length < 3) return;
       // T8 (D10) : la case n'est cherchée qu'ici, au relâché (jamais pendant le tracé : chemin de l'encre intact).
       const cell = cellOfStroke(ctx, l);
-      ctx.run({ type: "CommitStroke", page: l.page, points: new Float32Array(l.all), style: l.style, ...(l.look ? { look: l.look } : {}), ...(cell ? { cell } : {}) });
+      const base = { type: "CommitStroke", page: l.page, points: new Float32Array(l.all), style: l.style, ...(l.look ? { look: l.look } : {}) } as const;
+      // Le cœur peut refuser le lien (case disparue, ombrée) : le trait n'est jamais perdu, il est alors commité libre.
+      if (cell && ctx.run({ ...base, cell }) !== null) return;
+      ctx.run(base);
     },
     live(): LivePart {
       const views: LiveStrokeView[] = [];
