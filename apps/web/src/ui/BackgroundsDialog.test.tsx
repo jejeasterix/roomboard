@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MyBackground } from "../app/my-backgrounds";
 import type { PackBackground } from "../backgrounds/catalog";
@@ -202,7 +203,7 @@ describe("personnalisation-1b : fenêtre des fonds (Q25 à Q29)", () => {
   it("aucune trace d'un service extérieur dans le texte visible ni dans le fichier du composant (Q33)", () => {
     const { container } = setup({ mine: MINE });
     const text = (container.textContent ?? "").toLowerCase();
-    const source = readFileSync(new URL("./BackgroundsDialog.tsx", import.meta.url), "utf8").toLowerCase();
+    const source = readFileSync(join(__dirname, "BackgroundsDialog.tsx"), "utf8").toLowerCase();
     for (const t of TRACES) {
       expect(text, t).not.toContain(t);
       expect(source, t).not.toContain(t);
