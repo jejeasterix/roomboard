@@ -757,6 +757,21 @@ export class Canvas2DRenderer implements Renderer {
       }
       ctx.restore();
     }
+    if (o.grips && o.grips.length > 0) {
+      // personnalisation-3 (D13) : disque blanc de 16 px écran cerclé d'accent (la cible tactile, 44 px, est dans l'outil).
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.fillStyle = HANDLE_FILL;
+      ctx.strokeStyle = SELECTION_COLOR;
+      ctx.lineWidth = 1.5 * px;
+      for (const g of o.grips) {
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, 8 * px, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
     this.paintLineChrome(ctx, o, px);
   }
 

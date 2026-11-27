@@ -9,7 +9,7 @@
 import type { Bounds, CellLink, Command, ElementView, LineSize, Matrix, TableElement } from "../../core/api";
 import { applyMatrix, invertMatrix } from "../../core/shapes";
 import type { GroupedView } from "../groups";
-import { cellContent, cellInnerBox, cellRect, linkedIn, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
+import { cellContent, cellInnerBox, cellRect, linkedBoxes, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { transformBounds, translateMatrix } from "./handles";
 import type { ToolContext } from "./tool";
@@ -73,14 +73,6 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     return hit;
   };
 
-  /** Boîtes locales (repère du tableau) des objets logés dans `tableId`, hors `selection`. */
-  const linkedBoxes = (tableId: string, transform: Matrix, selection: readonly string[]): LinkedBox[] =>
-    linkedIn(ctx.doc, ctx.page(), tableId, selection).flatMap((v) => {
-      const b = ctx.doc.bounds([v.id]);
-      const lb = b === null ? null : localBox(transform, b);
-      return v.cell === undefined || lb === null ? [] : [{ row: v.cell[1], col: v.cell[2], w: lb.x1 - lb.x0, h: lb.y1 - lb.y0 }];
-    });
-
   /** D11 : tailles de la case quittée par `selection` (lien commun) qui reviennent à la taille exigée sans elle, si
    *  elles valent celle que la sélection imposait (± 0,5) ; une taille réglée à la main n'est jamais réduite. */
   const shrinkLeft = (selection: readonly string[]): LineSize[] => {
@@ -95,7 +87,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     const row = t.rows[r];
     const col = t.cols[k];
     if (row === undefined || col === undefined || local === null) return [];
-    const others = linkedBoxes(link[0], tv.transform, selection);
+    const others = linkedBoxes(ctx.doc, ctx.page(), { id: link[0], transform: tv.transform }, selection);
     const widths = t.cols.map((c) => c.width);
     const mine = { row: row.id, col: col.id, w: local.x1 - local.x0, h: local.y1 - local.y0 };
     const withMe = requiredSizes(t, [...others, mine], widths, measure);
@@ -142,7 +134,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     if (r === undefined || k === undefined || local === null) return null;
     const link: CellLink = [hit.id, r.id, k.id];
     const mine: LinkedBox = { row: r.id, col: k.id, w: local.x1 - local.x0, h: local.y1 - local.y0 };
-    const others = linkedBoxes(hit.id, hit.transform, selection);
+    const others = linkedBoxes(ctx.doc, ctx.page(), hit, selection);
     const corner = cellRect(hit.table, hit.cell);
     const [tx, ty] = applyMatrix(hit.transform, corner.x0 + TABLE_PADDING, corner.y0 + TABLE_PADDING);
     // T7 (S2) : mode rétrécir : la case ne change pas ; l'objet est réduit (échelle uniforme, jamais agrandi) à la boîte

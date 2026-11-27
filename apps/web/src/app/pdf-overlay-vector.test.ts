@@ -459,3 +459,33 @@ describe("superposition vectorielle : image de fond de case (personnalisation-3,
     expect(indexOfSeq(list.ops, [0, 0, 0, 240, 64])).toBeGreaterThan(-1);
   });
 });
+
+describe("superposition vectorielle : en-tête de tableau (personnalisation-3, TB2, S10)", () => {
+  const mk = (header: boolean): TableData => ({
+    color: "#000000", size: 36, cols: [{ id: "c0", width: 240 }], rows: [{ id: "r0", height: 64 }],
+    cells: [], merges: [], ...(header ? { header: true } : {}),
+  });
+  const run = async (table: TableData) => {
+    const lists: RecordedList[] = [];
+    await createVectorOverlay({
+      doc: { elementIds: (p) => [`${p}-t`], citedAssets: () => [] },
+      assets: { get: () => undefined },
+      alive: () => true,
+      measure: new Real() as unknown as CanvasRenderingContext2D,
+      painter: (_ctx, images) => ({ paintContent: (ctx) => paintTableGrid(ctx, table, images) }),
+      fonts: async () => [new Uint8Array([9])],
+      toPng: async () => new Uint8Array(0),
+      write: async (l) => {
+        lists.push(l);
+        return new Uint8Array([7]);
+      },
+    }).pages([req("p")]);
+    return lists[0]!;
+  };
+  const has = (l: RecordedList): boolean => indexOfSeq(l.ops, [224, 224, 232]) > -1;
+
+  it("TB2 : le fond d'en-tête #E0E0E8 est écrit au PDF vectoriel par le même peintre ; sans en-tête : absent", async () => {
+    expect(has(await run(mk(true)))).toBe(true);
+    expect(has(await run(mk(false)))).toBe(false);
+  });
+});

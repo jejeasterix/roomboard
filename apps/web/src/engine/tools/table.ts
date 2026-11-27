@@ -13,31 +13,39 @@ import type { CellIds, Command, Matrix, TableAxis, TableData, TextSpan } from ".
 import { TABLE_MAX_LINES } from "../../core/api";
 import { sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
-import { composeMatrix, translateMatrix } from "../../core/shapes";
+import { applyMatrix, composeMatrix, invertMatrix, translateMatrix } from "../../core/shapes";
 import type { CellMenu, CellMenuItem } from "../../ui/cell-menu";
-import { screenToWorld } from "../camera";
+import { screenToWorld, worldToScreen } from "../camera";
 import { EMPTY_OVERLAY } from "../render/overlay";
 import {
   anchorOf,
   cellContent,
+  cellGrips,
   cellHeight,
   cellInnerBox,
   cellOf,
   cellRect,
+  EDGE_SLOP_PX,
   expandRange,
+  GRIP_PX,
+  linkedBoxes,
   linkedIn,
   mergeAt,
   rangeCells,
   rangeRect,
   rangeSize,
-  rowHeightsFor,
+  requiredSizes,
+  SIZE_STEP,
   step,
   tableAt,
+  tableEdgeAt,
   TABLE_COL_WIDTH,
   TABLE_ROW_HEIGHT,
   TABLE_SHADE_COLOR,
   type Cell,
   type CellRef,
+  type EdgeHit,
+  type Grip,
   type Range,
 } from "../table-geom";
 import type { Measure } from "../text-layout";
@@ -90,11 +98,32 @@ interface Press {
   held: boolean;
 }
 
+/** Bordure tirée (D13) : ligne ou colonne `index` du tableau `id`, coordonnée locale de départ, taille de départ. */
+interface Resize {
+  readonly pointerId: number;
+  readonly id: string;
+  readonly edge: EdgeHit;
+  readonly start: number;
+  readonly size0: number;
+  size: number;
+  /** Taille exigée (texte, objets logés), lue une fois à l'armement : le glisser ne relit pas le document. */
+  min: number;
+  /** Poignée ou bord hors tableau : tiré dès l'appui. Bord intérieur : tant que le doigt reste sous `HOLD_SLOP`, l'appui
+   *  garde son sens de cellule (activer, ouvrir la saisie au relâché) ; au-delà, c'est une bordure tirée. */
+  armed: boolean;
+  readonly sx: number;
+  readonly sy: number;
+}
+
 /** Appui long (G8) : durée et mouvement toléré en px écran. */
 const HOLD_MS = 500;
 const HOLD_SLOP = 8;
+/** Bord de case sous lequel la poignée n'est ni dessinée ni prise (px écran). */
+const GRIP_MIN_PX = 24;
 
-export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu, cellDrop?: Pick<CellDrop, "place">): TableTool {
+export const SHADE_REFUSED = "Retirez d'abord les objets de la case.";
+
+export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu, cellDrop?: Pick<CellDrop, "place">, notify?: (text: string) => void): TableTool {
   let active: CellRef | null = null;
   /** Autre coin de la plage (F14), dans le tableau de `active` ; null : aucune plage. */
   let corner: CellRef | null = null;
@@ -102,6 +131,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   /** Pointeur dont l'appui a seulement validé la saisie ou fermé la grille : ni plage, ni ouverture au relâché. */
   let swallowed: number | null = null;
   let opened: Opened | null = null;
+  let resize: Resize | null = null;
   const stopHold = (p: Press | null): void => {
     if (p?.hold != null) clearTimeout(p.hold);
     if (p !== null) p.hold = null;
@@ -146,14 +176,98 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   /** Zone de la cellule active (une cellule simple : elle-même). */
   const zoneOf = (at: Located): Range => mergeAt(at.table, at.cell) ?? { r0: at.cell.row, c0: at.cell.col, r1: at.cell.row, c1: at.cell.col };
 
-  /** Cadre de la plage, sinon de la cellule active (boîte monde de ses quatre coins), redemandé à chaque changement. */
+  /** Coordonnée locale (axe de la bordure) du point écran (sx, sy) dans le tableau de matrice `m`. */
+  const localAlong = (m: Matrix, axis: "col" | "row", sx: number, sy: number): number | null => {
+    const inv = invertMatrix(m);
+    if (inv === null) return null;
+    const [x, y] = screenToWorld(ctx.camera(), sx, sy);
+    const [lx, ly] = applyMatrix(inv, x, y);
+    return axis === "col" ? lx : ly;
+  };
+
+  /** Taille la plus petite de la ligne ou colonne (D13, D34) : taille exigée par le texte et les objets logés. */
+  const minSize = (id: string, transform: Matrix, t: TableData, edge: EdgeHit): number => {
+    const need = requiredSizes(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }), t.cols.map((c) => c.width), measure);
+    return (edge.axis === "col" ? need.cols : need.rows)[edge.index] ?? 0;
+  };
+
+  /** Écrit la taille (D13) en une SetTableLineSizes ; colonne : les lignes qui exigent plus regrandissent dans la même
+   *  commande. Même taille : aucune commande. */
+  const resizeTo = (id: string, transform: Matrix, t: TableData, edge: EdgeHit, size: number): void => {
+    const v = Math.max(size, minSize(id, transform, t, edge));
+    if (edge.axis === "row") {
+      const row = t.rows[edge.index];
+      if (row === undefined || row.height === v) return;
+      ctx.run({ type: "SetTableLineSizes", id, cols: [], rows: [[row.id, v]] });
+      return;
+    }
+    const col = t.cols[edge.index];
+    if (col === undefined || col.width === v) return;
+    const widths = t.cols.map((c, i) => (i === edge.index ? v : c.width));
+    const need = requiredSizes(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }), widths, measure);
+    const rows = t.rows.flatMap((r, i): (readonly [string, number])[] => ((need.rows[i] ?? 0) > r.height ? [[r.id, need.rows[i] ?? 0]] : []));
+    ctx.run({ type: "SetTableLineSizes", id, cols: [[col.id, v]], rows });
+  };
+
+  /** Poignées de la case active, sauf celles d'un bord plus court que `GRIP_MIN_PX` à l'écran (tableau dense : la cible
+   *  de 44 px recouvrirait les cases voisines ; la bordure reste prise à ± 6 px). */
+  const gripsOf = (at: Located): Grip[] => {
+    const r = cellRect(at.table, at.cell);
+    const zoom = ctx.camera().zoom * Math.hypot(at.transform[0], at.transform[1]);
+    return cellGrips(at.table, at.cell).filter((g) => (g.kind === "col" ? r.y1 - r.y0 : r.x1 - r.x0) * zoom >= GRIP_MIN_PX);
+  };
+
+  /** Bordure sous le point écran : poignée de la case active (44 px, au doigt), sinon un bord à ± 6 px (D13). */
+  const grabAt = (sx: number, sy: number, x: number, y: number): { id: string; transform: Matrix; table: TableData; edge: EdgeHit; grip: boolean } | null => {
+    const at = locate(active);
+    if (at !== null) {
+      for (const g of gripsOf(at)) {
+        const [wx, wy] = applyMatrix(at.transform, g.x, g.y);
+        const [gx, gy] = worldToScreen(ctx.camera(), wx, wy);
+        // La cible de 44 px ne dépasse pas le quart de la case de chaque côté du bord : au petit zoom ou dans un tableau
+        // dense elle ne recouvre ni le centre de la case ni celui de sa voisine (appui long, saisie).
+        const size = (i: number): number => (g.kind === "col" ? at.table.cols[i]?.width : at.table.rows[i]?.height) ?? Infinity;
+        // Tailles locales : l'échelle du tableau (transform) compte autant que le zoom pour les passer en px écran.
+        const room = 0.25 * Math.min(size(g.index), size(g.index + 1)) * ctx.camera().zoom * Math.hypot(at.transform[0], at.transform[1]);
+        const inward = Math.min(GRIP_PX / 2, room);
+        const dx = g.kind === "col" ? gx - sx : Math.abs(gx - sx);
+        const dy = g.kind === "row" ? gy - sy : Math.abs(gy - sy);
+        const okX = g.kind === "col" ? dx >= -inward && dx <= inward : dx <= GRIP_PX / 2;
+        const okY = g.kind === "row" ? dy >= -inward && dy <= inward : dy <= GRIP_PX / 2;
+        if (okX && okY) {
+          return { id: at.ref.id, transform: at.transform, table: at.table, edge: { axis: g.kind, index: g.index }, grip: true };
+        }
+      }
+    }
+    const e = tableEdgeAt(ctx.doc, ctx.page(), x, y, EDGE_SLOP_PX, ctx.camera().zoom);
+    return e === null ? null : { ...e, grip: false };
+  };
+
+  /** Cadre de la plage, sinon de la cellule active (boîte monde de ses quatre coins), redemandé à chaque changement ;
+   *  poignées de taille de la case active ; pendant un glisser de bordure, le cadre montre la taille d'arrivée (G7). */
   const refresh = (): void => {
     const at = locate(active);
     const r = at === null ? null : rangeOf(at);
-    live =
-      at === null
-        ? NO_LIVE
-        : { ...NO_LIVE, overlay: { ...EMPTY_OVERLAY, frame: transformBounds(at.transform, r === null ? cellRect(at.table, at.cell) : rangeRect(at.table, r)) } };
+    if (at === null) {
+      live = NO_LIVE;
+    } else {
+      const grips = gripsOf(at).map((g) => {
+        const [x, y] = applyMatrix(at.transform, g.x, g.y);
+        return { x, y, kind: g.kind };
+      });
+      const rz = resize?.armed === true ? resize : null;
+      const el = rz === null ? null : ctx.doc.element(rz.id);
+      const frame =
+        rz !== null && el?.kind === "table"
+          ? transformBounds(el.transform, {
+              x0: 0,
+              y0: 0,
+              x1: el.table.cols.reduce((s, c) => s + c.width, 0) + (rz.edge.axis === "col" ? rz.size - rz.size0 : 0),
+              y1: el.table.rows.reduce((s, x) => s + x.height, 0) + (rz.edge.axis === "row" ? rz.size - rz.size0 : 0),
+            })
+          : transformBounds(at.transform, r === null ? cellRect(at.table, at.cell) : rangeRect(at.table, r));
+      live = { ...NO_LIVE, overlay: { ...EMPTY_OVERLAY, frame, grips } };
+    }
     ctx.requestFrame?.();
   };
 
@@ -254,13 +368,15 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     if (ctx.run(cmd) === null) active = ref;
   };
 
-  /** Uniformiser (T11) : colonnes à la largeur moyenne ; lignes à max(hauteur moyenne, plus grande hauteur exigée).
-   *  Déjà uniforme à un arrondi près : aucune étape (T14). */
-  const uniform = (id: string, t: TableData): void => {
-    const w = t.cols.reduce((s, c) => s + c.width, 0) / t.cols.length;
-    const need = Math.max(...rowHeightsFor(t, t.cols.map(() => w), measure));
-    const mean = t.rows.reduce((s, r) => s + r.height, 0) / t.rows.length;
-    const h = Math.max(mean, need);
+  /** Uniformiser (T11, D34) : colonnes à la largeur moyenne, lignes à la hauteur moyenne, jamais sous la taille exigée
+   *  (texte et objets logés, `requiredSizes`). Déjà uniforme à un arrondi près : aucune étape (T14). */
+  const uniform = (id: string, transform: Matrix, t: TableData): void => {
+    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform });
+    const mean = t.cols.reduce((s, c) => s + c.width, 0) / t.cols.length;
+    const w = Math.max(mean, ...requiredSizes(t, linked, t.cols.map(() => mean), measure).cols);
+    const need = Math.max(...requiredSizes(t, linked, t.cols.map(() => w), measure).rows);
+    const meanH = t.rows.reduce((s, r) => s + r.height, 0) / t.rows.length;
+    const h = Math.max(meanH, need);
     if (t.cols.every((c) => sameSize(c.width, w)) && t.rows.every((r) => sameSize(r.height, h))) return;
     ctx.run({ type: "SetTableSizes", id, colWidth: w, rowHeight: h });
   };
@@ -279,7 +395,18 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   /** Ombrer ou retirer l'ombrage (F9) sur la plage, sinon la zone active. */
   const shadeOver = (at: Located, span: Range, shade: string | null): void => {
     const corners = cornersOf(at.table, span);
-    if (corners !== null) ctx.run({ type: "SetTableShade", id: at.ref.id, ...corners, shade });
+    if (corners === null) return;
+    // D35 : l'ombrage ne couvre pas un objet logé ; Ombrer est refusé avec un message.
+    if (shade !== null) {
+      const rows = new Set(at.table.rows.slice(span.r0, span.r1 + 1).map((r) => r.id));
+      const cols = new Set(at.table.cols.slice(span.c0, span.c1 + 1).map((c) => c.id));
+      const busy = linkedIn(ctx.doc, ctx.page(), at.ref.id).some((v) => v.cell !== undefined && rows.has(v.cell[1]) && cols.has(v.cell[2]));
+      if (busy) {
+        notify?.(SHADE_REFUSED);
+        return;
+      }
+    }
+    ctx.run({ type: "SetTableShade", id: at.ref.id, ...corners, shade });
   };
 
   /** Avant une action de la rangée : valide la saisie ouverte ; pendant une composition, rien (la touche appartient à
@@ -323,6 +450,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         },
       });
     }
+    items.push({ id: "header", label: at.table.header === true ? "Retirer l'en-tête" : "En-tête", run: () => api.act("header-toggle") });
     menu.open(p.sx, p.sy, items);
   };
 
@@ -344,6 +472,19 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       }
       swallowed = null;
       const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
+      const grab = grabAt(s.x, s.y, x, y);
+      if (grab !== null) {
+        const start = localAlong(grab.transform, grab.edge.axis, s.x, s.y);
+        const line = grab.edge.axis === "col" ? grab.table.cols[grab.edge.index]?.width : grab.table.rows[grab.edge.index]?.height;
+        if (start !== null && line !== undefined) {
+          const armed = grab.grip || tableAt(ctx.doc, ctx.page(), x, y) === null;
+          resize = { pointerId, id: grab.id, edge: grab.edge, start, size0: line, size: line, min: armed ? minSize(grab.id, grab.transform, grab.table, grab.edge) : 0, armed, sx: s.x, sy: s.y };
+          if (armed) {
+            refresh();
+            return;
+          }
+        }
+      }
       const hit = tableAt(ctx.doc, ctx.page(), x, y);
       if (hit !== null) {
         const ref = refAt(hit.id, hit.table, hit.cell.row, hit.cell.col);
@@ -364,6 +505,29 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       picker.open({ x: s.x, y: s.y }, (cols, rows) => create(x, y, cols, rows));
     },
     extend(pointerId, samples) {
+      const rz = resize;
+      if (rz !== null && rz.pointerId === pointerId && !rz.armed) {
+        const s1 = samples[samples.length - 1];
+        if (s1 && Math.hypot(s1.x - rz.sx, s1.y - rz.sy) > HOLD_SLOP) {
+          rz.armed = true;
+          const el0 = ctx.doc.element(rz.id);
+          if (el0?.kind === "table") rz.min = minSize(rz.id, el0.transform, el0.table, rz.edge);
+          stopHold(press);
+          if (press?.moved === true) setCorner(null);
+          press = null;
+          menu?.close();
+        }
+      }
+      if (rz !== null && rz.pointerId === pointerId && rz.armed) {
+        const s0 = samples[samples.length - 1];
+        const el = ctx.doc.element(rz.id);
+        if (!s0 || el?.kind !== "table") return;
+        const cur = localAlong(el.transform, rz.edge.axis, s0.x, s0.y);
+        if (cur === null) return;
+        rz.size = Math.max(rz.size0 + cur - rz.start, rz.min);
+        refresh();
+        return;
+      }
       const p = press;
       const s = samples[samples.length - 1];
       if (p === null || p.pointerId !== pointerId || !s) return;
@@ -386,6 +550,16 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         swallowed = null;
         return;
       }
+      const rz = resize;
+      if (rz !== null && rz.pointerId === pointerId && !rz.armed) resize = null;
+      else if (rz !== null && rz.pointerId === pointerId) {
+        resize = null;
+        const el = ctx.doc.element(rz.id);
+        if (how === "end" && rz.size !== rz.size0 && el?.kind === "table") resizeTo(rz.id, el.transform, el.table, rz.edge, rz.size);
+        refresh();
+        ctx.stateChanged?.();
+        return;
+      }
       const p = press;
       if (p === null || p.pointerId !== pointerId) return;
       press = null;
@@ -403,6 +577,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       menu?.close();
       gate.request();
       picker.close();
+      resize = null;
       press = null;
       swallowed = null;
       if (active !== null) setActive(null);
@@ -421,7 +596,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const zone = mergeAt(t, at.cell);
       // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
       const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked };
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true };
     },
     act(a) {
       if (!settle()) return;
@@ -445,7 +620,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           removeLines(ref, "col", t.cols.map((x) => x.id), span.c0, span.c1);
           break;
         case "uniform":
-          uniform(ref.id, t);
+          uniform(ref.id, at.transform, t);
           break;
         case "merge":
           merge(at, r);
@@ -459,9 +634,23 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         case "unshade":
           shadeOver(at, span, null);
           break;
+        case "header-toggle":
+          ctx.run({ type: "SetTableOptions", id: ref.id, header: t.header !== true });
+          break;
         case "fit-toggle":
           ctx.run({ type: "SetTableOptions", id: ref.id, fit: t.fit === "shrink" ? "grow" : "shrink" });
           break;
+        case "col-wider":
+        case "col-narrower":
+        case "row-taller":
+        case "row-shorter": {
+          const axis = a === "col-wider" || a === "col-narrower" ? "col" : "row";
+          const index = axis === "col" ? span.c1 : span.r1;
+          const now = axis === "col" ? t.cols[index]?.width : t.rows[index]?.height;
+          const sign = a === "col-wider" || a === "row-taller" ? 1 : -1;
+          if (now !== undefined) resizeTo(ref.id, at.transform, t, { axis, index }, now + sign * SIZE_STEP);
+          break;
+        }
         case "cell-image": {
           const image = topImage(ref);
           if (image !== null) ctx.run({ type: "SetCellImage", id: ref.id, row: ref.row, col: ref.col, from: image });

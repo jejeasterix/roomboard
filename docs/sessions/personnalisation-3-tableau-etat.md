@@ -1,9 +1,9 @@
 # État — personnalisation-3-tableau
 
-Statut : en cours
+Statut : en cours — lot A fusionné ; lot B partiel en fusion ; TB3–TB6 et lot C reportés (taille Wasm)
 Gabarit : lots (provisoire : 15 points en 3 lots A, B, C)
 Objectif : L'outil Tableau accueille des objets dans ses cases (la case s'adapte), se règle finement (bordures, alignement, en-tête) et sert en classe (case cachée, tri, tableau de tri, collage Excel/Word).
-Avancement : 0/3 lots clos · lot A 11/11 tâches
+Avancement : 1/3 lots clos (A, PR #72, main bf9eb292) · lot B 2/6 (TB1, TB2) en PR
 Étage : 4 (lot A) / 3 (lot B, worktree --B) — depuis 2026-11-27 22:20
 Lot : A « objets dans les cases » — 11/11 tâches terminées — depuis 2026-11-27 19:25
 Tâche : —
@@ -69,3 +69,14 @@ ouvertes : — · passées : —
 - Une suite lancée en fond par un sous-agent meurt à la fin de son tour : la rejouer soi-même.
 - Prémisses démenties : OG23 n'a pas livré d'accordéon (panneau absent pour l'outil Tableau) ; tableAt relit tous les éléments (O(N²)) ; runAll n'existe pas (une commande du cœur par geste).
 - Ouvriers voisins : OG14 (personnalisation-2b), OG23 (outil de sélection), OG24 (portrait), OG25 (gomme) : intégrer origin/main avant fusion.
+
+## Lot B (worktree …--B, branche --B2)
+| id | état | commit vert | preuve rejouée |
+|----|------|-------------|----------------|
+| TB1 | terminée (relue, 7 constats corrigés ; C10b réparé : échelle du tableau) | e64c9777 | essai S6 +100, Ctrl+Z 720, Alt+→ 728 ; C10a/C10b OK |
+| TB2 | terminée (relue, mineurs reportés) | 4bc9ae86 | essai S10 data-table-header 1/0/1 ; CLI T-B2 + CLI : OK |
+| TB3–TB6 | reportées : TB4–TB6 demandent du Rust, module à 1 571 221 o (marge 1 643 o) ; TB3 faute de temps | — | — |
+
+## Restes
+- [fort] Module Wasm principal à 1 571 221 o pour un plafond de 1 572 864 : toute commande Rust neuve (lot B 8, 9, 11 ; lot C 13, 14) demande d'abord un travail sur la taille.
+- [moyen] Points 7, 8, 9, 11 (lot B) et 12 (refermer le cache), 13, 14, 15 (collage tabulé) non faits.

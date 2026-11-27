@@ -24,7 +24,9 @@ export const TABLE_SHADE_HATCH_WIDTH = 2;
 export const TABLE_SHADE_HATCH_STEP = 16;
 
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "cell-image";
+/** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
+export const TABLE_HEADER_FILL = "#E0E0E8";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -44,6 +46,8 @@ export interface TableCellState {
   /** Zone fusionnée de la cellule active (F16) ; null ou absente hors zone. */
   readonly zone?: Range | null;
   readonly shaded?: boolean;
+  /** personnalisation-3 (D17) : la ligne 0 est un en-tête, `#stage[data-table-header]`. */
+  readonly header?: boolean;
   /** personnalisation-3 : nombre d'objets logés dans ce tableau (`cell[0]`), `#stage[data-table-linked]`. */
   readonly linked?: number;
 }
@@ -318,4 +322,90 @@ export function requiredSizes(t: TableData, linked: readonly LinkedBox[], colWid
     rows[z.r1] = Math.max(rows[z.r1] ?? 0, o.h + 2 * TABLE_PADDING - otherH);
   }
   return { rows, cols };
+}
+
+/** D13 : bordure prise à ± 6 px écran ; poignée tactile de 44 px (D-DS3) ; pas du clavier (H12). */
+export const EDGE_SLOP_PX = 6;
+export const GRIP_PX = 44;
+export const SIZE_STEP = 8;
+
+export interface EdgeHit { readonly axis: "col" | "row"; readonly index: number }
+
+/** Bord droit d'une colonne ou bas d'une ligne à ± `tol` du point local (colonnes d'abord) ; le bord gauche et le bord
+ *  haut du tableau (0) ne se tirent pas. */
+export function edgeAt(t: TableData, lx: number, ly: number, tol: number): EdgeHit | null {
+  const w = sum(t.cols.map((c) => c.width));
+  const h = sum(t.rows.map((r) => r.height));
+  if (!(lx >= -tol && ly >= -tol && lx <= w + tol && ly <= h + tol)) return null;
+  let acc = 0;
+  for (let i = 0; i < t.cols.length; i++) {
+    acc += t.cols[i]?.width ?? 0;
+    if (Math.abs(lx - acc) <= tol && ly >= 0 && ly <= h) return { axis: "col", index: i };
+  }
+  acc = 0;
+  for (let i = 0; i < t.rows.length; i++) {
+    acc += t.rows[i]?.height ?? 0;
+    if (Math.abs(ly - acc) <= tol && lx >= 0 && lx <= w) return { axis: "row", index: i };
+  }
+  return null;
+}
+
+/** Échelle d'une matrice (longueur de l'image du vecteur x) ; 1 si nulle. */
+const scaleOf = (m: Matrix): number => Math.hypot(m[0], m[1]) || 1;
+
+/** Bordure du tableau le plus haut à ± `tolPx` px écran de (x, y) monde (D13), au zoom `zoom`. */
+export function tableEdgeAt(
+  doc: Pick<CoreDocument, "elementIdsOfKind" | "element">,
+  page: string,
+  x: number,
+  y: number,
+  tolPx: number,
+  zoom: number,
+): { readonly id: string; readonly transform: Matrix; readonly table: TableData; readonly edge: EdgeHit } | null {
+  const ids = doc.elementIdsOfKind(page, "table");
+  for (let i = ids.length - 1; i >= 0; i--) {
+    const el = doc.element(ids[i] ?? "");
+    if (el?.kind !== "table") continue;
+    const inv = invertMatrix(el.transform);
+    if (inv === null) continue;
+    const [lx, ly] = applyMatrix(inv, x, y);
+    const edge = edgeAt(el.table, lx, ly, tolPx / (zoom * scaleOf(el.transform)));
+    if (edge !== null) return { id: el.id, transform: el.transform, table: el.table, edge };
+    // Un tableau plus haut qui contient le point le couvre : les bordures de ceux du dessous ne se prennent pas à travers.
+    if (lx >= 0 && ly >= 0 && lx <= sum(el.table.cols.map((c) => c.width)) && ly <= sum(el.table.rows.map((r) => r.height))) return null;
+  }
+  return null;
+}
+
+/** Poignée de taille de la case active (D13), repère local : milieu du bord droit (colonne) et du bord bas (ligne) de sa
+ *  zone ; `index` = dernière colonne ou dernière ligne de la zone. */
+export interface Grip { readonly kind: "col" | "row"; readonly x: number; readonly y: number; readonly index: number }
+export function cellGrips(t: TableData, c: Cell): Grip[] {
+  const r = cellRect(t, c);
+  const z = mergeAt(t, c) ?? single(c);
+  return [
+    { kind: "col", x: r.x1, y: (r.y0 + r.y1) / 2, index: z.c1 },
+    { kind: "row", x: (r.x0 + r.x1) / 2, y: r.y1, index: z.r1 },
+  ];
+}
+
+/** Boîtes locales des objets logés dans `table` (D34), hors `skip` : rectangle englobant, dans le repère du tableau, des
+ *  quatre coins de leur boîte monde. Lue au geste seulement (jamais par image). */
+export function linkedBoxes(
+  doc: Pick<CoreDocument, "elementIds" | "element" | "bounds">,
+  page: string,
+  table: { readonly id: string; readonly transform: Matrix },
+  skip: readonly string[] = [],
+): LinkedBox[] {
+  const inv = invertMatrix(table.transform);
+  if (inv === null) return [];
+  return linkedIn(doc, page, table.id, skip).flatMap((v) => {
+    const cell = v.cell;
+    const b = doc.bounds([v.id]);
+    if (cell === undefined || b === null) return [];
+    const pts = [applyMatrix(inv, b.x0, b.y0), applyMatrix(inv, b.x1, b.y0), applyMatrix(inv, b.x0, b.y1), applyMatrix(inv, b.x1, b.y1)];
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    return [{ row: cell[1], col: cell[2], w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }];
+  });
 }

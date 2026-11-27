@@ -577,6 +577,10 @@ try {
   const opts = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ type: "SetTableOptions", id: tab.id, fit: "shrink" }, { op: "state" }));
   const reluOpts = (opts.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id);
   verifie("T7 : SetTableOptions fit shrink, relu par state", opts.code === 0 && reluOpts?.table?.fit === "shrink", opts.brut);
+  // personnalisation-3 (TB2) : en-tête posé par SetTableOptions, relu par `state`.
+  const head = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ type: "SetTableOptions", id: tab.id, header: true }, { op: "state" }));
+  const reluHead = (head.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id);
+  verifie("T-B2 : SetTableOptions header, relu par state", head.code === 0 && reluHead?.table?.header === true, head.brut);
   // personnalisation-3 (T9) : image logée, SetCellImage, `state` : bg présent ; undo : image revenue.
   const asset = { id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", name: "photo.png", mime: "image/png", size: 3 };
   const poseImg = cli(["run", pl, "--save", "--ops", "-"], lignesOps(

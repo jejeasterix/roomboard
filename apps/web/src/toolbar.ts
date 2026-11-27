@@ -155,6 +155,7 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "table-split": { label: "Diviser" },
   "table-shade": { label: "Ombrer" },
   "table-unshade": { label: "Désombrer" },
+  "table-header": { label: "En-tête" },
 });
 
 /** Boutons de structure du tableau (C10a, DAC4 ; C10b, F15), dans l'ordre de la rangée contextuelle. */
@@ -168,6 +169,7 @@ export const TABLE_ACTIONS: readonly ActionId[] = Object.freeze([
   "table-split",
   "table-shade",
   "table-unshade",
+  "table-header",
 ]);
 
 /** Pastille de remplissage d'une cellule (T12, HC10-5) ; `color` null : retire le remplissage. */

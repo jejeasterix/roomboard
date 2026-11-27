@@ -12,7 +12,7 @@ import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from ".
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { cellKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
+import { cellKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isSegment } from "../core/shapes";
@@ -1253,6 +1253,12 @@ export function createEngine(deps: EngineDeps): Engine {
       // personnalisation-3 (T9) : Alt+I en outil Tableau met l'image logée de la case active en fond.
       if (ck === "cell-image" && tool === "table" && tableTool.cell() !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
         tableTool.act("cell-image");
+        return true;
+      }
+      // personnalisation-3 (H12) : Alt+flèches en outil Tableau, case active ; sinon elles passent.
+      const tk = tableKey(e);
+      if (tk !== null && tool === "table" && tableTool.cell() !== null) {
+        tableTool.act(tk);
         return true;
       }
       const order = orderKey(e);

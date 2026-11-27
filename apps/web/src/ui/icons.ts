@@ -217,6 +217,7 @@ export const ACTION_ICONS: Readonly<Record<ActionId, string>> = Object.freeze({
   "table-split": "table-cells-split",
   "table-shade": "droplet",
   "table-unshade": "droplet-off",
+  "table-header": "rows-2",
 });
 
 const own = (table: Readonly<Record<string, string>>, key: string | undefined): string | undefined =>
