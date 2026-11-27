@@ -29,6 +29,7 @@ import type {
   TextAttrs,
   TextSpan,
 } from "./api";
+import type { BindHit, LineBinding } from "./api";
 import { MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, UNKNOWN_BOX } from "./api";
 import { toLook, type Look } from "./look";
 import { isAssetId } from "./asset-store";
@@ -207,7 +208,17 @@ export function toElementView(v: unknown): ElementView | null {
         throw new Error(ELEMENT);
       }
       if (fill !== undefined && fill !== null && typeof fill !== "string") throw new Error(ELEMENT);
-      return { ...base, kind, style, shape: { shape, w, h, fill: typeof fill === "string" ? fill : null } };
+      const points = s["points"];
+      if (points !== undefined && !(Array.isArray(points) && points.length % 2 === 0 && points.every((x) => typeof x === "number"))) throw new Error(ELEMENT);
+      const bindingOf = (b: unknown): LineBinding | undefined => {
+        if (b === undefined || b === null) return undefined;
+        if (!isRecord(b) || typeof b["id"] !== "string" || typeof b["fx"] !== "number" || typeof b["fy"] !== "number") throw new Error(ELEMENT);
+        return { id: b["id"], fx: b["fx"], fy: b["fy"] };
+      };
+      const start = bindingOf(s["start"]);
+      const end = bindingOf(s["end"]);
+      return { ...base, kind, style, shape: { shape, w, h, fill: typeof fill === "string" ? fill : null,
+        ...(Array.isArray(points) && points.length > 0 ? { points: points as number[] } : {}), ...(start ? { start } : {}), ...(end ? { end } : {}) } };
     }
     case "text": {
       const style = toStyle(v["style"]);
@@ -531,8 +542,12 @@ class WasmCoreDocument implements CoreDocument {
   elementIds(page: string): string[] { return this.d.element_ids(page); }
   elementIdsOfKind(page: string, kind: string): readonly string[] { return this.d.element_ids_of_kind(page, kind); }
 
+  /** Bouchon OG12, remplacé par T10. */
+  bindTarget(): BindHit | null { return null; }
+
   apply(cmd: Command): Change {
     switch (cmd.type) {
+      case "SetLinePoints": case "AddLinked": throw new Error(`commande non prise en charge : ${cmd.type}`);
       case "AddPage": return toChange(this.d.add_page_after(cmd.after, cmd.mode));
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));

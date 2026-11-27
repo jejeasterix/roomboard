@@ -73,6 +73,7 @@ import type {
   TextSpan,
   FillData,
 } from "./api";
+import type { BindHit } from "./api";
 import {
   BAD_GROUP_MESSAGE,
   BAD_MEDIA_MESSAGE,
@@ -856,8 +857,12 @@ class FakeDocument implements CoreDocument {
     return p === undefined ? [] : p.elements.filter((e) => typeof e.id === "string" && rawKind(e) === kind).map((e) => e.id);
   }
 
+  /** Bouchon OG12, remplacé par T5. */
+  bindTarget(): BindHit | null { return null; }
+
   apply(cmd: Command): Change {
     switch (cmd.type) {
+      case "SetLinePoints": case "AddLinked": throw new Error(`commande non prise en charge : ${cmd.type}`);
       case "AddPage": {
         const after = cmd.after;
         // Le pont lit `mode` avant de lancer la commande : son refus passe avant celui de la page.

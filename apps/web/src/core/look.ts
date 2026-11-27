@@ -4,7 +4,7 @@ export type Roughness = 0 | 1 | 2;
 export type Roundness = "sharp" | "round";
 /** Lot 2 (T12) : remplissage ; le plein est le neutre. */
 export type FillKind = "solid" | "hachure" | "cross-hatch";
-export type Arrowhead = "none" | "arrow" | "triangle" | "triangle_outline";
+export type Arrowhead = "none" | "arrow" | "triangle" | "triangle_outline" | "bar" | "circle" | "circle_outline";
 export type TextAlign = "left" | "center" | "right";
 /** Vue du cœur (champs absents = neutres), noms d'Excalidraw. */
 export interface Look {
@@ -21,6 +21,8 @@ export interface Look {
   readonly textAlign?: "center" | "right";
   /** `http://`, `https://` ou `mailto:` (`validLink`). */
   readonly link?: string;
+  /** OG12 (n° 2) : flèche coudée ; `true` seul, jamais `false`. */
+  readonly elbowed?: true;
 }
 export interface LookPatch {
   readonly color?: string;
@@ -37,12 +39,13 @@ export interface LookPatch {
   readonly endArrowhead?: Arrowhead | null;
   readonly textAlign?: "center" | "right" | null;
   readonly link?: string | null;
+  readonly elbowed?: boolean | null;
 }
 /** Traits non pleins (le plein est le neutre : absent de `Look`). */
 export const STROKE_STYLES: readonly string[] = ["dashed", "dotted"];
 /** Copie d'`element.rs` (T12) : remplissages non pleins, pointes, alignements non gauches. */
 export const FILL_STYLES: readonly string[] = ["hachure", "cross-hatch"];
-export const ARROWHEADS: readonly string[] = ["none", "arrow", "triangle", "triangle_outline"];
+export const ARROWHEADS: readonly string[] = ["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline"];
 export const START_ARROWHEAD_DEFAULT: Arrowhead = "none";
 export const END_ARROWHEAD_DEFAULT: Arrowhead = "arrow";
 export const TEXT_ALIGNS: readonly string[] = ["center", "right"];
@@ -91,6 +94,7 @@ export function toLook(v: unknown): Look | undefined {
   if (align !== undefined) out.textAlign = align as "center" | "right";
   const link = v["link"];
   if (typeof link === "string" && validLink(link)) out.link = link;
+  if (v["elbowed"] === true) out.elbowed = true;
   return Object.keys(out).length === 0 ? undefined : out;
 }
 export const strokeKindOf = (l: Look | undefined): StrokeKind => l?.strokeStyle ?? "solid";
@@ -101,11 +105,13 @@ export const opacityOf = (l: Look | undefined): number => l?.opacity ?? 100;
 export const fillStyleOf = (l: Look | undefined): FillKind => l?.fillStyle ?? "solid";
 export const startArrowheadOf = (l: Look | undefined): Arrowhead => l?.startArrowhead ?? START_ARROWHEAD_DEFAULT;
 export const endArrowheadOf = (l: Look | undefined): Arrowhead => l?.endArrowhead ?? END_ARROWHEAD_DEFAULT;
+/** OG12 : flèche coudée ? */
+export const elbowedOf = (l: Look | undefined): boolean => l?.elbowed === true;
 export const textAlignOf = (l: Look | undefined): TextAlign => l?.textAlign ?? "left";
 
 /** undefined si neutre. */
 export function lookFrom(
-  s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number; fillStyle?: FillKind; startArrowhead?: Arrowhead; endArrowhead?: Arrowhead; textAlign?: TextAlign },
+  s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number; fillStyle?: FillKind; startArrowhead?: Arrowhead; endArrowhead?: Arrowhead; textAlign?: TextAlign; elbowed?: boolean },
   seed: number | null,
 ): Look | undefined {
   const out: { -readonly [K in keyof Look]: Look[K] } = {};
@@ -121,6 +127,7 @@ export function lookFrom(
   if (s.startArrowhead !== undefined && s.startArrowhead !== START_ARROWHEAD_DEFAULT) out.startArrowhead = s.startArrowhead;
   if (s.endArrowhead !== undefined && s.endArrowhead !== END_ARROWHEAD_DEFAULT) out.endArrowhead = s.endArrowhead;
   if (s.textAlign !== undefined && s.textAlign !== "left") out.textAlign = s.textAlign;
+  if (s.elbowed === true) out.elbowed = true;
   return Object.keys(out).length === 0 ? undefined : out;
 }
 

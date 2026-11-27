@@ -4184,7 +4184,7 @@ describe.each(factories)("contrat OG11 lot 2 : $name", ({ f }) => {
     const a = shape(d, p, "arrow");
     const v = d.version();
     for (const patch of [
-      { fillStyle: odd<"hachure">("solid") }, { fillStyle: odd<"hachure">("zigzag") }, { startArrowhead: odd<"arrow">("circle") },
+      { fillStyle: odd<"hachure">("solid") }, { fillStyle: odd<"hachure">("zigzag") }, { startArrowhead: odd<"arrow">("diamond") },
       { endArrowhead: odd<"arrow">("Arrow") }, { textAlign: odd<"center">("left") }, { textAlign: odd<"center">("justify") },
       { startArrowhead: "triangle", link: "javascript:alert(1)" },
     ] as LookPatch[]) {
