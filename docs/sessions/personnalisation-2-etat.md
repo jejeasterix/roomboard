@@ -3,10 +3,10 @@
 Statut : en cours
 Gabarit : chantier (18 tâches : lot 1 = 10, lot 2 = 8 ; lot 1 fusionnable seul)
 Objectif : RoomBoard reçoit un panneau d'options par outil et un menu général ☰ copiés du comportement d'Excalidraw, remplis de nos commandes, tactile d'abord et clavier ensuite.
-Avancement : 0/19 tâches terminées (lot 1 : T1–T11, lot 2 : T12–T19)
-Étage : 3 (vague 1) — depuis 2026-11-27 09:56
+Avancement : 8/21 tâches terminées (lot 1 : T1–T11 + correctifs T2b, T8b ; lot 2 : T12–T19)
+Étage : 3 (vague 3) — depuis 2026-11-27 10:37
 Lot : —
-Tâche : T1 — Cœur Look — depuis 09:56 ; T3 — Contrat TS Look — depuis 09:56 ; T7 — Raccourcis et menu ☰ — depuis 09:56
+Tâche : T4 — Pont Wasm, API, faux cœur — depuis 10:22
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2   Branche : feat/personnalisation-2   Base : origin/main @ 45484db
 Branche principale locale au lancement : 45484db
@@ -25,9 +25,15 @@ contre-relecture cadrage 1/2 (aucun bloquant, 7 importantes arbitrées) · relec
 Table complète : en tête de docs/plans/personnalisation-2-PLAN.md. Vagues : V1 T1,T3,T7 · V2 T2,T6,T8 · V3 T4 · V4 T5,T9 · V5 T10 · V6 T11 | lot 2 : V7 T12 · V8 T13,T14 · V9 T15 · V10 T16,T17 · V11 T18 · V12 T19
 | id | worktree | état | essais | commit vert | preuve rejouée |
 |----|----------|------|--------|-------------|----------------|
-| T1 | …--T1 | en cours | 1/3 | — | — |
-| T3 | …--T3 | en cours | 1/3 | — | — |
-| T7 | …--T7 | en cours | 1/3 | — | — |
+| T1 | retiré | terminée | 1/3 (+reprise limite) | a006b3b | core 495 ok, clippy/fmt ; revue : 4 mineurs → T2b |
+| T2 | retiré | terminée | 1/3 | b4ab828 | core 504 ok ; revue : 7 mineurs → T2b |
+| T2b | retiré | terminée (correctif) | 1/3 | 22bdb97 | core 510 ok, clippy/fmt |
+| T3 | retiré | terminée | 1/3 | bd77521 | 8 tests, tsc 0 |
+| T4 | …--T1 (réutilisé) | en cours | 1/3 (+reprise limite) | — | — |
+| T6 | retiré | terminée | 1/3 | f78ba64 | 12 tests, tsc 0 |
+| T7 | retiré | terminée | 1/3 | f626b3b | 110 tests, tsc 0 |
+| T8 | retiré | terminée | 1/3 (+reprise limite) | 2e030c2 | 287 tests ; revue : 2 majeurs → T8b |
+| T8b | retiré | terminée (correctif) | 1/3 | 2663f59 | 291 tests, tsc 0, licences 0 |
 
 ## Terminé quand
 toutes les tâches terminées (aucune bloquée) · double relecture sans bloquant · verifier.sh --e2e OK · scénarios S1…Sn réussis · captures 2x avant/après · PR fusionnée par merge --no-ff local et poussée
