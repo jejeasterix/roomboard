@@ -9,7 +9,7 @@
 import rough from "roughjs/bin/rough";
 import type { Op, OpSet, Options } from "roughjs/bin/core";
 import type { ShapeData, StrokeStyle } from "../../core/api";
-import { arrowWings, flattenPath, lineGeomOf, linePath } from "../../core/shapes";
+import { arrowWings, flattenPath, isClosedShape, lineGeomOf, linePath } from "../../core/shapes";
 import { elbowedOf, endArrowheadOf, fillStyleOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, type Arrowhead, type Look, type StrokeKind } from "../../core/look";
 
 const gen = rough.generator();
@@ -106,9 +106,14 @@ export function headWings(tipX: number, tipY: number, fromX: number, fromY: numb
   return w ? [w[0] + fromX, w[1] + fromY, w[2] + fromX, w[3] + fromY] : null;
 }
 
+/** Formes à fond : rectangle, ellipse, losange et ligne fermée (OG12 lot 2a). */
+function isFillable(s: ShapeData): boolean {
+  return s.shape === "rect" || s.shape === "ellipse" || s.shape === "diamond" || isClosedShape(s);
+}
+
 /** Un fond non transparent avec hachures passe par roughjs même sans rugosité (Architecte). */
 export function hatched(s: ShapeData, look: Look | undefined): boolean {
-  return s.fill !== null && (s.shape === "rect" || s.shape === "ellipse") && fillStyleOf(look) !== "solid";
+  return s.fill !== null && isFillable(s) && fillStyleOf(look) !== "solid";
 }
 
 /** OG12 : largeur et hauteur de la boîte du chemin (points intérieurs compris) d'une ligne ou flèche à points ; sinon (w, h). */
@@ -124,7 +129,7 @@ function keyOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number): stri
   const round = roundnessOf(look) === "round";
   const [ew, eh] = pathExtent(s);
   const roughness = adjustRoughness(s.shape, ew, eh, round, roughnessOf(look));
-  return JSON.stringify([s.shape, s.w, s.h, s.fill, style.color, style.width, strokeKindOf(look), roughness, round, seed, fillStyleOf(look), startArrowheadOf(look), endArrowheadOf(look), s.points ?? null, elbowedOf(look)]);
+  return JSON.stringify([s.shape, s.w, s.h, s.fill, style.color, style.width, strokeKindOf(look), roughness, round, seed, fillStyleOf(look), startArrowheadOf(look), endArrowheadOf(look), s.points ?? null, elbowedOf(look), ...(s.polygon === true ? [true] : [])]);
 }
 
 function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key: string): SketchPlan {
@@ -135,7 +140,7 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
   const [ew, eh] = pathExtent(s);
   const roughness = adjustRoughness(s.shape, ew, eh, round, roughnessOf(look));
   const fillKind = fillStyleOf(look);
-  const closed = s.shape === "rect" || s.shape === "ellipse";
+  const closed = isFillable(s);
   const opts: Options = {
     roughness,
     seed: seed === 0 ? 1 : seed,
@@ -157,6 +162,10 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
     add((round ? gen.path(roundedPath(s.w, s.h), opts) : gen.rectangle(0, 0, s.w, s.h, opts)).sets, dash);
   } else if (s.shape === "ellipse") {
     add(gen.ellipse(s.w / 2, s.h / 2, s.w, s.h, opts).sets, dash);
+  } else if (s.shape === "diamond") {
+    add(gen.polygon([[s.w / 2, 0], [s.w, s.h / 2], [s.w / 2, s.h], [0, s.h / 2]], opts).sets, dash);
+  } else if (isClosedShape(s)) {
+    add(gen.polygon(linePath(s.w, s.h, s.points ?? []).map((p) => [p[0], p[1]] as [number, number]), opts).sets, dash);
   } else {
     const g = lineGeomOf(s, look);
     const pts = linePath(s.w, s.h, g.inner);

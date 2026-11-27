@@ -1826,7 +1826,7 @@ describe("canvas2d : losange et ligne fermée (OG12 lot 2a)", () => {
     expect(closeAt).toBeGreaterThan(-1);
     const fillAt = f.log.findIndex((l) => l.startsWith("fill "));
     expect(fillAt).toBeGreaterThan(closeAt);
-    expect(fillAt).toBeLessThan(f.log.lastIndexOf("stroke"));
+    expect(fillAt).toBeLessThan(f.log.map((l) => l.startsWith("stroke ")).lastIndexOf(true));
   });
   it("ligne ouverte : ni fond ni fermeture", () => {
     const f = new FakeCtx();
