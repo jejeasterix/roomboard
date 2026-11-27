@@ -251,6 +251,13 @@ describe("rb.css (design-l2)", () => {
     expect(rule(".rb-pages-list")).toMatch(/flex-direction: column;.*overflow-y: auto;/);
     expect(rule(".rb-pages-list")).not.toMatch(/overflow-x: auto/);
     expect(rule(".rb-side .rb-page-thumb")).toMatch(/touch-action: none;/);
+    // T16 : îlot latéral en colonne (volet) ; replié : bande d'un bouton de large, onglets en icônes empilés, puis Déplier.
+    const side = '.rb-island[data-anchor^="side-"]';
+    expect(rule(side)).toMatch(/flex-direction: column;.*align-items: stretch;/);
+    expect(rule(`${side} > .rb-island-chrome`)).toMatch(/inline-size: auto;/);
+    expect(rule(`${side}[data-collapsed="1"] .rb-side-tabs`)).toContain("flex-direction: column;");
+    expect(rule(`${side}[data-collapsed="1"] .rb-side .rb-tab`)).toMatch(/inline-size: var\(--rb-btn\); block-size: var\(--rb-btn\);.*padding: 0;/);
+    expect(rule(`${side}[data-collapsed="1"] .rb-side .rb-tab-title`)).toContain("clip-path: inset(50%);");
     expect(rule(".rb-side .rb-page-thumb[aria-current=\"page\"]")).toContain("var(--rf-violet-600)");
     expect(own(/rb-side|rb-page-|rb-pages-list/).length).toBeGreaterThan(10);
     for (const r of own(/rb-side|rb-page-|rb-pages-list/)) expect(r, r).not.toMatch(/\b48px|\d\.\d+px|translate|blur/);
