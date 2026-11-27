@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editAction, isPanKey, keyAction, objectKey, type KeyLike } from "./keys";
+import { editAction, isPanKey, keyAction, objectKey, orderKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -122,5 +122,21 @@ describe("keyAction : réglette et cases (le focus y reste après un réglage)",
     for (const type of ["text", "number", "search", undefined]) {
       expect(keyAction(k("z", { ctrlKey: true, target: { tagName: "INPUT", type } }))).toBeNull();
     }
+  });
+});
+
+describe("orderKey (T15)", () => {
+  it("orderKey : les quatre combinaisons", () => {
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBe("front");
+    expect(orderKey(k("ArrowDown", { ctrlKey: true, shiftKey: true }))).toBe("back");
+    expect(orderKey(k("ArrowUp", { ctrlKey: true }))).toBe("forward");
+    expect(orderKey(k("ArrowDown", { metaKey: true }))).toBe("backward");
+  });
+  it("orderKey : nul en champ, en composition, avec Alt, sans Ctrl, autre touche", () => {
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, target: { tagName: "INPUT", type: "text" } }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, isComposing: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, altKey: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp"))).toBeNull();
+    expect(orderKey(k("ArrowLeft", { ctrlKey: true }))).toBeNull();
   });
 });

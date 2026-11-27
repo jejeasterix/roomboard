@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editAction, isPanKey, keyAction, objectKey, type KeyLike } from "../engine/input/keys";
+import { editAction, isPanKey, keyAction, objectKey, orderKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, shortcutText } from "./shortcuts";
 
@@ -8,12 +8,13 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   "file-new": ["file", "new"], "file-open": ["file", "open"], "file-save": ["file", "save"], "file-save-as": ["file", "saveAs"],
   undo: ["key", "undo"], redo: ["key", "redo"], group: ["key", "group"], ungroup: ["key", "ungroup"],
   duplicate: ["object", "duplicate"], delete: ["edit", "delete"], escape: ["edit", "escape"],
+  front: ["order", "front"], forward: ["order", "forward"], backward: ["order", "backward"], back: ["order", "back"],
   copy: ["native", "c"], cut: ["native", "x"], paste: ["native", "v"], pan: ["pan", " "], bold: ["rich", "b"],
 };
 const press = (keys: string): KeyLike => {
   const parts = keys.split("+");
   const k = parts.at(-1)!;
-  const key = k === "Suppr" ? "Delete" : k === "Échap" ? "Escape" : k === "Espace" ? " " : k.toLowerCase();
+  const key = k === "↑" ? "ArrowUp" : k === "↓" ? "ArrowDown" : k === "Suppr" ? "Delete" : k === "Échap" ? "Escape" : k === "Espace" ? " " : k.toLowerCase();
   return { key, ctrlKey: parts.includes("Ctrl"), metaKey: false, shiftKey: parts.includes("Maj"), altKey: false, isComposing: false, target: null };
 };
 
@@ -27,6 +28,7 @@ describe("shortcuts", () => {
       if (by === "file") expect(fileCommandOf(e), s.id).toBe(value);
       else if (by === "key") expect(keyAction(e), s.id).toBe(value);
       else if (by === "object") expect(objectKey(e), s.id).toBe(value);
+      else if (by === "order") expect(orderKey(e), s.id).toBe(value);
       else if (by === "edit") expect(editAction(e), s.id).toBe(value);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/[ ,]/)[0]!)), s.id).toBe(true);
       else {

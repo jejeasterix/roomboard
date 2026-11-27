@@ -11,7 +11,7 @@ import { fitWidth, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCa
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
-import { editAction, enterAction, isPanKey, keyAction, objectKey, type KeyLike } from "./input/keys";
+import { editAction, enterAction, isPanKey, keyAction, objectKey, orderKey, type KeyLike } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import type { LookPatch } from "../core/look";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -172,6 +172,12 @@ export interface Engine {
   deleteSelection(): boolean;
   /** OG11 (Ctrl+D) : copie de la sélection décalée de +10/+10, sélectionnée ; une étape ; faux sans sélection. */
   duplicateSelection(): boolean;
+  /** Lot 2 (T15, Disposition) : déplace la sélection dans l'ordre de la page, un `Restack`, une étape ; faux sans sélection
+   *  ou si l'ordre ne change pas. Le bloc garde son ordre relatif. */
+  bringToFront(): boolean;
+  sendToBack(): boolean;
+  bringForward(): boolean;
+  sendBackward(): boolean;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
    *  invalide est ignorée. */
   setFillColor(color: string | null): void;
@@ -619,6 +625,22 @@ export function createEngine(deps: EngineDeps): Engine {
     },
   };
 
+  /** Lot 2 (T15) : un `Restack` de la sélection ; `to` = rang du bas du bloc, calculé sur l'ordre de la page. */
+  function restack(how: "front" | "back" | "forward" | "backward"): boolean {
+    const sel = selectTool.selection();
+    if (sel.length === 0) return false;
+    const order = doc.elementIds(pageId);
+    const ranks = sel.map((id) => order.indexOf(id)).filter((r) => r >= 0).sort((a, b) => a - b);
+    const k = ranks.length;
+    if (k === 0) return false;
+    const low = ranks[0]!;
+    const high = ranks[k - 1]!;
+    // Rang du bas du bloc : en avant, d'un rang au-dessus du dernier objet voisin ; en arrière, d'un rang sous le premier.
+    const to = how === "front" ? order.length - k : how === "back" ? 0 : how === "forward" ? Math.min(high - (k - 1) + 1, order.length - k) : Math.max(low - 1, 0);
+    const change = run({ type: "Restack", ids: [...sel], to });
+    return change !== null && change.ids.length > 0;
+  }
+
   /** Champs du style courant en commande SetStyle (noms du cœur ; neutre = champ retiré). */
   function patchOf(p: Partial<ItemStyle>): LookPatch {
     return {
@@ -629,6 +651,10 @@ export function createEngine(deps: EngineDeps): Engine {
       ...(p.roughness !== undefined ? { roughness: p.roughness } : {}),
       ...(p.roundness !== undefined ? { roundness: p.roundness === "round" ? "round" : null } : {}),
       ...(p.opacity !== undefined ? { opacity: p.opacity } : {}),
+      ...(p.fillStyle !== undefined ? { fillStyle: p.fillStyle === "solid" ? null : p.fillStyle } : {}),
+      ...(p.startArrowhead !== undefined ? { startArrowhead: p.startArrowhead } : {}),
+      ...(p.endArrowhead !== undefined ? { endArrowhead: p.endArrowhead } : {}),
+      ...(p.textAlign !== undefined ? { textAlign: p.textAlign === "left" ? null : p.textAlign } : {}),
     };
   }
 
@@ -687,6 +713,10 @@ export function createEngine(deps: EngineDeps): Engine {
       engine.deleteElements(sel);
       return true;
     },
+    bringToFront: () => restack("front"),
+    sendToBack: () => restack("back"),
+    bringForward: () => restack("forward"),
+    sendBackward: () => restack("backward"),
     duplicateSelection() {
       const sel = selectTool.selection();
       if (sel.length === 0) return false;
@@ -763,6 +793,15 @@ export function createEngine(deps: EngineDeps): Engine {
       // OG11 (DA-6, déc. 39) : Ctrl+D duplique ; toujours pris (preventDefault), comme Excalidraw : pas de favori du navigateur.
       if (objectKey(e) === "duplicate") {
         engine.duplicateSelection();
+        return true;
+      }
+      // Lot 2 (T15) : Ctrl+↑/↓ (avec Maj : aux bouts) ordonnent la sélection ; pris même sans effet, hors champ.
+      const order = orderKey(e);
+      if (order !== null) {
+        if (order === "front") engine.bringToFront();
+        else if (order === "back") engine.sendToBack();
+        else if (order === "forward") engine.bringForward();
+        else engine.sendBackward();
         return true;
       }
       if (edit !== null) {

@@ -105,6 +105,23 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "sloppiness-2": [["path", { d: "M4 15c2-6 4-7 5-4s2 4 4 1 3-5 4-2 2 4 3 5" }]],
   "corner-sharp": [["path", { d: "M6 18V6h12" }]],
   "corner-round": [["path", { d: "M6 18v-6a6 6 0 0 1 6-6h6" }]],
+  // OG11 lot 2 (T15) : Lucide @7981a0798a, ISC (arrow-up-to-line, arrow-down-to-line, chevron-up, chevron-down, align-left, align-center, align-right).
+  "arrow-up-to-line": [["path", { d: "M5 3h14" }], ["path", { d: "m18 13-6-6-6 6" }], ["path", { d: "M12 7v14" }]],
+  "arrow-down-to-line": [["path", { d: "M12 17V3" }], ["path", { d: "m6 11 6 6 6-6" }], ["path", { d: "M19 21H5" }]],
+  "chevron-up": [["path", { d: "m18 15-6-6-6 6" }]],
+  "chevron-down": [["path", { d: "m6 9 6 6 6-6" }]],
+  "align-left": [["path", { d: "M21 5H3" }], ["path", { d: "M15 12H3" }], ["path", { d: "M17 19H3" }]],
+  "align-center": [["path", { d: "M21 5H3" }], ["path", { d: "M17 12H7" }], ["path", { d: "M19 19H5" }]],
+  "align-right": [["path", { d: "M21 5H3" }], ["path", { d: "M21 12H9" }], ["path", { d: "M21 19H7" }]],
+  // Dessinées pour RoomBoard (même grille, trait 1,5) : trois remplissages et quatre pointes (la pointe de début est la
+  // même icône retournée par la feuille de style).
+  "fill-solid": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M8 8h8v8H8z" }], ["path", { d: "M12 12h.01" }]],
+  "fill-hachure": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M3 9 9 3" }], ["path", { d: "M3 17 17 3" }], ["path", { d: "M7 21 21 7" }], ["path", { d: "M15 21 21 15" }]],
+  "fill-cross": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M3 9 9 3" }], ["path", { d: "M3 17 17 3" }], ["path", { d: "M7 21 21 7" }], ["path", { d: "M15 21 21 15" }], ["path", { d: "M21 9 15 3" }], ["path", { d: "M21 17 7 3" }], ["path", { d: "M17 21 3 7" }], ["path", { d: "M9 21 3 15" }]],
+  "head-none": [["path", { d: "M4 12h16" }]],
+  "head-arrow": [["path", { d: "M4 12h16" }], ["path", { d: "m14 6 6 6-6 6" }]],
+  "head-triangle": [["path", { d: "M4 12h10" }], ["path", { d: "M14 7v10l6-5z" }], ["path", { d: "M16 10.5v3l2-1.5z" }]],
+  "head-triangle-outline": [["path", { d: "M4 12h10" }], ["path", { d: "M14 7v10l6-5z" }]],
 });
 
 /** Outil → icône (§ 2 bis). */

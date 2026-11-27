@@ -25,6 +25,8 @@ export interface RadioChoicesProps<T extends string> {
   readonly value: T | null;
   /** Attribut posé sur chaque bouton avec sa valeur (sélecteur d'essai) ; `data-choice` reste. */
   readonly valueAttr?: string;
+  /** Groupe grisé (OG11 lot 2 : Police et Taille pendant une saisie) : boutons `disabled`, hors tabulation. */
+  readonly disabled?: boolean;
   choose(v: T): void;
 }
 
@@ -56,6 +58,7 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
               class="rb-radio"
               role="radio"
               aria-checked={on()}
+              disabled={props.disabled === true}
               tabIndex={on() || (i() === 0 && !known()) ? 0 : -1}
               data-choice={o.value}
               {...(props.valueAttr ? { [props.valueAttr]: o.value } : {})}

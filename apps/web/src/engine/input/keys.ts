@@ -50,6 +50,15 @@ export function objectKey(e: KeyLike): ObjectKey | null {
   return null;
 }
 
+/** Lot 2 (T15, Disposition) : Ctrl+Maj+↑ premier plan, Ctrl+↑ avancer, Ctrl+↓ reculer, Ctrl+Maj+↓ arrière-plan (cadrage 20). */
+export type OrderKey = "front" | "back" | "forward" | "backward";
+export function orderKey(e: KeyLike): OrderKey | null {
+  if (e.isComposing || e.altKey || !(e.ctrlKey || e.metaKey) || inEditable(e.target)) return null;
+  if (e.key === "ArrowUp") return e.shiftKey ? "front" : "forward";
+  if (e.key === "ArrowDown") return e.shiftKey ? "back" : "backward";
+  return null;
+}
+
 export type EditAction = "delete" | "escape";
 
 /** Suppr / Retour arrière (supprimer la sélection, D12) et Échap (la vider), hors champ, hors composition, sans modificateur. */

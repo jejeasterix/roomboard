@@ -594,6 +594,9 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   `down` (Lucide `chevron-down`).
 - Reprises de la maquette `docs/design/maquettes/01-tableau.html` (design L2, tracés Lucide au même commit), noms
   RoomBoard : `menu` (Lucide `menu`), `collapse` (Lucide `chevron-up`).
+- Panneau d'options lot 2 (OG11), lus au même commit, noms Lucide : `arrow-up-to-line`, `arrow-down-to-line`, `chevron-up`,
+  `chevron-down`, `align-left`, `align-center`, `align-right`. Dessinées pour RoomBoard (grille de 24, trait 1,5) :
+  `fill-solid`, `fill-hachure`, `fill-cross`, `head-none`, `head-arrow`, `head-triangle`, `head-triangle-outline`.
 
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :
