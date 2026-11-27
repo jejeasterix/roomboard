@@ -41,8 +41,9 @@ async function scenario(page, url, captures) {
   const edit = (action) => page.$(item(action));
   const mouse = stageMouse(page); // gestes en px de la scène (origine = coin de #stage)
   const click = async (action) => {
-    await openSideOf(page, item(action)); // barre latérale des pages repliée : la déplier d'abord
+    const opened = await openSideOf(page, item(action)); // barre latérale des pages repliée : la déplier d'abord
     await (await edit(action)).click();
+    if (opened) await page.click('[data-island="pages"] [data-island-collapse]'); // puis la replier : elle recouvrirait la scène
     await frames(page);
   };
   const pageTag = () => attr("data-page");
