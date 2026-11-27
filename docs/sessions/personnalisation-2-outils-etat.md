@@ -1,12 +1,10 @@
 # État — personnalisation-2-outils
 
-Statut : en cours
+Statut : clos
 Gabarit : lots (lot 1 : 12 tâches ; lot 2 : 10 tâches, hors du temps)
 Objectif : Chaque outil commun avec Excalidraw (sélection, main, formes, flèche, ligne, crayon, texte, image, gomme) se comporte comme dans Excalidraw, au doigt d'abord puis au clavier, avec des connecteurs liés aux objets façon carte mentale et une fiche de vérification par outil.
-Avancement : 1/2 lots clos (lot 1 fusionné, PR #71) ; lot 2a en clôture
-Étage : 4 (lot 2a) — depuis 2026-11-27 23:05
-Lot : 2a « losange et points des formes » — 8/8 tâches terminées — depuis 2026-11-27 21:55
-Tâche : verifier.sh --e2e sur la branche feat/personnalisation-2-outils-lot2, puis PR et fusion — depuis 2026-11-27 23:05
+Avancement : 2/2 lots clos (lot 1 PR #71 ; lot 2a, PR suivante) ; lot 2b au périmètre, non commencé
+Étage : 4 — depuis 2026-11-27 23:05
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2-outils   Branche : feat/personnalisation-2-outils   Base : origin/main @ cddbde49
 Branche principale locale au lancement : 59b75db0
@@ -64,6 +62,11 @@ Point de retour origin/main f6f3f43f · double relecture faite, 0 bloquant ouver
 | C4b conversion par bouton et Ctrl+Entrée seulement, annulation par lots, aperçu, simplifications | terminée | 517ba3b6 |
 Rejeux : V1 formes 9 fleches 27 web 4485 ; V2 web 4506 ; L6a+L7 web 4515 contrat 516 CLI OK ; L6b+L8 web 4525 ; C4 web 4534, fmt ok.
 Double relecture (9d8ac349) : 0 bloquant ; 5 major corrigés (C4a, C4b) ; décision : double toucher sur une forme ne convertit pas (réservé au texte dans une forme, lot 2b).
+
+Lot 2a : correctif barre (losange hors de la barre par défaut, 078bdcf0, f97bbae0) et essai (6347b69d, d4bd6591). verifier.sh --e2e OK sur d4bd6591 : cargo 1618, web 4535, cli 284, Wasm 1 523 873 o, formats 2 794 527 o.
+
+## Prochaine tâche (lot 2b)
+Écrire `docs/plans/personnalisation-2-outils-LOT2B-PLAN.md` depuis la section « Lot 2b (hors de ce plan) » du plan du lot 2a : losange dans la barre par défaut (menu « formes »), rotation, texte dans une forme (double toucher), îlot Modificateurs, Alt-glisser, segments fixes des coudées, étiquettes sur flèche, navigation Alt+flèche, pointes losange et cardinalité, lettres dans les infobulles, message BAD_FILL.
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · verifier.sh --e2e OK · scénarios réussis · PR fusionnée par merge --no-ff local et poussée
