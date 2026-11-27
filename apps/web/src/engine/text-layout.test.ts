@@ -195,3 +195,12 @@ describe("measureOrFallback (D11, constat C11a)", () => {
     expect(fonts).toEqual([textFont(24, { bold: true })]);
   });
 });
+
+describe("polices (OG11, lot 2)", () => {
+  it("police absente : chaîne inchangée", () => {
+    expect(textFont(24)).toBe('24px "Atkinson Hyperlegible", system-ui, sans-serif');
+    expect(textFont(24, { bold: true })).toBe('bold 24px "Atkinson Hyperlegible", system-ui, sans-serif');
+    expect(textFont(24, { font: "Georgia" })).toContain("Georgia, serif");
+    expect(textFont(24, { font: "Courier New" })).toBe('24px "Courier New", monospace');
+  });
+});
