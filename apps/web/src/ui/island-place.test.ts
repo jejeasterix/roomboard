@@ -66,6 +66,32 @@ describe("island-place : voies (design-l2 L2-30, L2-12)", () => {
     expect(l.maxHeight).toBe(0);
     expect(l.y).toBeGreaterThanOrEqual(0);
   });
+  it("T16 (discrimine) : laneOf side-* passe sous l'îlot d'outils descendu qui la surplombe ; étroite, sans le croiser, reste sous la rangée des coins", () => {
+    // 1280 × 900 : outils descendu sur la voie suivante (y 80), 940 px centrés : x 170–1110 (constat de T11).
+    const tools = { x: 170, y: 80, w: 940, h: 56 };
+    const c: Corners = { ...TOP, foot: 56, above: [tools] };
+    // dépliée (260 px, x 16–276) : croise l'outil, sous lui : y = 80 + 56 + 8 ; bas inchangé (au-dessus de la rangée du bas)
+    const open = laneOf("side-start", { w: 260, h: 600 }, MID, c);
+    expect(open).toEqual({ x: 16, y: 144, maxWidth: 1248, maxHeight: 900 - 144 - (16 + 56 + 8) });
+    // repliée (bande de 52 px, x 16–68) : l'outil ne la surplombe pas : sous la rangée des coins
+    expect(laneOf("side-start", { w: 52, h: 300 }, MID, c).y).toBe(80);
+    // side-end dépliée : x 1004–1264 croise 170–1110 : sous l'outil
+    expect(laneOf("side-end", { w: 260, h: 600 }, MID, c).y).toBe(144);
+    // invariant : aucune case de la voie ne recouvre l'outil
+    for (const w of [52, 260]) {
+      const l = laneOf("side-start", { w, h: 600 }, MID, c);
+      const h = Math.min(600, l.maxHeight!);
+      const cross = l.x < tools.x + tools.w && l.x + w > tools.x && l.y < tools.y + tools.h && l.y + h > tools.y;
+      expect(cross).toBe(false);
+    }
+  });
+  it("T16 : laneOf side-* : îlots surplombants empilés (outils sur deux rangées), positions entières ; îlot posé plus bas que la voie : ne la repousse pas", () => {
+    const c: Corners = { ...TOP, above: [{ x: 16, y: 80, w: 400, h: 56 }, { x: 16, y: 144, w: 400, h: 52.4 }] };
+    const l = laneOf("side-start", { w: 260, h: 600 }, MID, c);
+    expect(l.y).toBe(Math.ceil(144 + 52.4 + 8));
+    expect(Number.isInteger(l.y) && Number.isInteger(l.maxHeight)).toBe(true);
+    expect(laneOf("side-start", { w: 260, h: 600 }, MID, { ...TOP, above: [{ x: 16, y: 400, w: 300, h: 56 }] }).y).toBe(80);
+  });
   it("personnalisation-1a : MOVABLE_ROLES = tools et pages", () => {
     expect([...MOVABLE_ROLES].sort()).toEqual(["pages", "tools"]);
   });
