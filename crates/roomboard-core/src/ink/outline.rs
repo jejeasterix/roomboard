@@ -1,7 +1,8 @@
 //! Contour à largeur variable (D7, DA7) : la seule géométrie de l'encre, pour le rendu ET la collision.
 //! `freedraw` (portage MIT de perfect-freehand) n'est appelé qu'ici.
 use freedraw::{
-    get_stroke_outline_points, get_stroke_points, InputPoint, StrokeOptions, StrokePoint,
+    get_stroke_outline_points, get_stroke_points, get_stroke_radius, InputPoint, StrokeOptions,
+    StrokePoint,
 };
 
 use super::points::InkPoint;
@@ -28,6 +29,13 @@ fn options(style: &InkStyle, last: bool) -> StrokeOptions {
         last: Some(last),
         ..Default::default()
     }
+}
+
+/// Rayon du contour en un point de pression `pressure` : la formule de freedraw (`get_stroke_radius`, sans easing),
+/// avec `THINNING`, soit `width × (0,25 + 0,5 × pression)` ; `width / 2` à pression 0,5. La gomme partielle coupe
+/// avec ce rayon (OG20).
+pub fn outline_radius(width: f32, pressure: f32) -> f32 {
+    get_stroke_radius(f64::from(width), THINNING, f64::from(pressure), None) as f32
 }
 
 /// Contour d'un trait terminé : polygone fermé, x, y alternés, dans le repère des points.

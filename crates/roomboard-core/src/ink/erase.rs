@@ -1,6 +1,9 @@
-//! Gomme partielle (D12) : retire les points de la ligne médiane à moins de `radius + half_width` du chemin de la
-//! gomme et interpole les extrémités sur ce cercle. Un trait devient 0, 1 ou plusieurs morceaux.
+//! Gomme partielle (D12) : retire les points de la ligne médiane à moins de `radius + r` du chemin de la gomme, où `r`
+//! est le rayon du contour au point (pression comprise, OG20), et interpole les extrémités sur ce cercle. La calotte
+//! de chaque morceau (rayon `r`) s'arrête alors au bord de la gomme : le trou visible a son diamètre. Un trait devient
+//! 0, 1 ou plusieurs morceaux.
 use super::hit::dist_to_path;
+use super::outline::outline_radius;
 use super::points::InkPoint;
 
 fn lerp(a: InkPoint, b: InkPoint, t: f32) -> InkPoint {
@@ -27,14 +30,13 @@ fn densify(points: &[InkPoint], step: f32) -> Vec<InkPoint> {
     out
 }
 
-/// Point du segment [a, b] où la distance au chemin franchit `reach` (dichotomie, 24 pas).
-fn boundary(a: InkPoint, b: InkPoint, path: &[f32], reach: f32) -> InkPoint {
-    let inside_a = dist_to_path(path, a.x, a.y) <= reach;
+/// Point du segment [a, b] où `covered` change (dichotomie, 24 pas).
+fn boundary(a: InkPoint, b: InkPoint, covered: impl Fn(&InkPoint) -> bool) -> InkPoint {
+    let inside_a = covered(&a);
     let (mut lo, mut hi) = (0.0f32, 1.0f32);
     for _ in 0..24 {
         let mid = (lo + hi) / 2.0;
-        let m = lerp(a, b, mid);
-        if (dist_to_path(path, m.x, m.y) <= reach) == inside_a {
+        if covered(&lerp(a, b, mid)) == inside_a {
             lo = mid;
         } else {
             hi = mid;
@@ -43,15 +45,20 @@ fn boundary(a: InkPoint, b: InkPoint, path: &[f32], reach: f32) -> InkPoint {
     lerp(a, b, (lo + hi) / 2.0)
 }
 
+/// `width` : épaisseur du trait (`InkStyle::width`) dans le repère des points et du chemin.
 pub fn erase(
     points: &[InkPoint],
-    half_width: f32,
+    width: f32,
     path: &[f32],
     radius: f32,
 ) -> Option<Vec<Vec<InkPoint>>> {
-    let reach = radius + half_width;
-    let pts = densify(points, (reach / 2.0).max(0.25));
-    let covered = |p: &InkPoint| dist_to_path(path, p.x, p.y) <= reach;
+    let covered =
+        |p: &InkPoint| dist_to_path(path, p.x, p.y) <= radius + outline_radius(width, p.pressure);
+    // Pas sous la plus petite portée (pression 0) : aucun point couvert n'est sauté.
+    let pts = densify(
+        points,
+        ((radius + outline_radius(width, 0.0)) / 2.0).max(0.25),
+    );
     if !pts.iter().any(covered) {
         return None;
     }
@@ -62,7 +69,7 @@ pub fn erase(
         let c = covered(&p);
         if let Some((q, qc)) = prev {
             if qc != c {
-                let b = boundary(q, p, path, reach);
+                let b = boundary(q, p, covered);
                 cur.push(b);
                 if c {
                     pieces.push(std::mem::take(&mut cur));
@@ -83,6 +90,7 @@ pub fn erase(
 mod tests {
     use super::*;
     use crate::ink::hit::dist_to_path;
+    use crate::ink::outline::{outline, InkStyle};
 
     fn line(n: usize) -> Vec<InkPoint> {
         (0..=n)
@@ -96,12 +104,12 @@ mod tests {
 
     #[test]
     fn erase_miss_returns_none() {
-        assert_eq!(erase(&line(100), 2.0, &[50.0, 40.0, 60.0, 40.0], 5.0), None);
+        assert_eq!(erase(&line(100), 4.0, &[50.0, 40.0, 60.0, 40.0], 5.0), None);
     }
 
     #[test]
     fn erase_through_middle_gives_two_pieces() {
-        let pieces = erase(&line(100), 2.0, &[50.0, -20.0, 50.0, 20.0], 5.0).expect("touché");
+        let pieces = erase(&line(100), 4.0, &[50.0, -20.0, 50.0, 20.0], 5.0).expect("touché");
         assert_eq!(pieces.len(), 2);
         assert!(pieces[0].iter().all(|p| p.x < 50.0));
         assert!(pieces[1].iter().all(|p| p.x > 50.0));
@@ -109,20 +117,20 @@ mod tests {
 
     #[test]
     fn erase_start_gives_one_piece() {
-        let pieces = erase(&line(100), 2.0, &[0.0, -20.0, 0.0, 20.0], 5.0).expect("touché");
+        let pieces = erase(&line(100), 4.0, &[0.0, -20.0, 0.0, 20.0], 5.0).expect("touché");
         assert_eq!(pieces.len(), 1);
         assert!(pieces[0][0].x > 6.9);
     }
 
     #[test]
     fn erase_everything_gives_no_piece() {
-        assert_eq!(erase(&line(10), 2.0, &[5.0, 0.0], 50.0), Some(vec![]));
+        assert_eq!(erase(&line(10), 4.0, &[5.0, 0.0], 50.0), Some(vec![]));
     }
 
     #[test]
     fn cut_point_lies_on_reach_circle() {
         let path = [50.0, -20.0, 50.0, 20.0];
-        let pieces = erase(&line(100), 2.0, &path, 5.0).expect("touché");
+        let pieces = erase(&line(100), 4.0, &path, 5.0).expect("touché");
         let end = *pieces[0].last().expect("point");
         assert!(
             (dist_to_path(&path, end.x, end.y) - 7.0).abs() < 0.01,
@@ -158,7 +166,44 @@ mod tests {
                 pressure: 0.5,
             },
         ];
-        let pieces = erase(&pts, 1.0, &[50.0, -20.0, 50.0, 20.0], 5.0).expect("touché");
+        let pieces = erase(&pts, 2.0, &[50.0, -20.0, 50.0, 20.0], 5.0).expect("touché");
         assert_eq!(pieces.len(), 2);
+    }
+
+    /// OG20 : trou visible, mesuré sur le contour réel des deux morceaux (celui du rendu), le long d'un trait droit
+    /// coupé en travers à x = 50 ; il vaut le diamètre de la gomme, à toute pression et toute largeur.
+    #[test]
+    fn visible_hole_matches_eraser_diameter_on_real_outline() {
+        let radius = 5.0;
+        for width in [2.0f32, 8.0, 24.0] {
+            for pressure in [0.2f32, 0.5, 1.0] {
+                let pts: Vec<InkPoint> = (0..=200)
+                    .map(|i| InkPoint {
+                        x: i as f32 * 0.5,
+                        y: 0.0,
+                        pressure,
+                    })
+                    .collect();
+                let pieces =
+                    erase(&pts, width, &[50.0, -40.0, 50.0, 40.0], radius).expect("touché");
+                assert_eq!(pieces.len(), 2, "largeur {width}, pression {pressure}");
+                let xs = |piece: &[InkPoint]| -> Vec<f32> {
+                    outline(piece, &InkStyle { width })
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|c| c[0])
+                        .collect()
+                };
+                let left = xs(&pieces[0]).into_iter().fold(f32::MIN, f32::max);
+                let right = xs(&pieces[1]).into_iter().fold(f32::MAX, f32::min);
+                let hole = right - left;
+                assert!(
+                    (hole - 2.0 * radius).abs() < 0.05 * 2.0 * radius,
+                    "largeur {width}, pression {pressure} : trou {hole}, gomme {}",
+                    2.0 * radius
+                );
+            }
+        }
     }
 }
