@@ -23,6 +23,8 @@ composants Solid (`OptionsPanel.tsx`, `ColorPicker.tsx`, `ImagePanel.tsx`).
   ajoutée et `pick` s'appuie dessus.
 - Export PDF d'un trait transparent : garde explicite dans `record-ctx.ts` (une peinture d'alpha nul n'enregistre
   aucune opération) ; krilla écrirait sinon un `S` d'opacité 0.
+- Poignée « Déplacer » (T11) : fonctions dédiées `moveHandlePoint`, `hitMoveHandle` dans `handles.ts` au lieu de `HandleId += "move"` dans `hitHandle` (déc. 27, carte d'impact) : `hitHandle` sert aux huit poignées de taille et au rognage de l'image (`image-edit.ts:147`) ; une neuvième poignée hors du cadre y changerait la portée des huit autres.
+- `dragCopy` (T10) : posé sur les traits, formes, textes et images, les genres dont l'aspect est lu (`look_view`, `style.rs:166-170`) ; pas sur les tableaux, médias, objets 3D (déc. 26, 29 : « tout objet »). Raison : leur vue ne porte pas `look` ; l'étendre touche `table.rs`, `media.rs`, `model3d.rs` et sort de l'enveloppe de temps (G1). La bascule de T13 est grisée (`disabled`) quand aucune cible ne l'admet ; à consigner au bloc final.
 - `Arrange` avec `ids` vide : aucune étape (pas `BadIndex` comme `Restack`) ; `how` inconnu au pont : Error
   « disposition inconnue : <how> » (le faux cœur lève le même message ; la CLI refuse avant, code 2).
 
@@ -38,12 +40,12 @@ composants Solid (`OptionsPanel.tsx`, `ColorPicker.tsx`, `ImagePanel.tsx`).
 | T6 | A | Moteur : `arrange`, `nudge`, raccourcis, pression, trait transparent | T3, T4 | `apps/web/src/engine/engine.ts`, `apps/web/src/engine/engine.test.ts`, `apps/web/src/engine/item-style.ts`, `apps/web/src/engine/item-style.test.ts`, `apps/web/src/engine/tools/pen.ts`, `apps/web/src/engine/tools/pen.test.ts` | isolé | implementeur-tdd | `vitest run src/engine/engine.test.ts src/engine/item-style.test.ts src/engine/tools/pen.test.ts` : ≥ 1 test `flèche : une Transform, une étape`, ≥ 1 test `style courant : transparent jamais gardé`, ≥ 1 test `style ancien sans variability lu`, `0 failed` | S2, S3, S4 | #tache-t6 |
 | T7 | A | Panneau : Pression, Aligner, Transformer | T5, T6 | `apps/web/src/ui/OptionsPanel.tsx`, `apps/web/src/ui/OptionsPanel.test.tsx`, `apps/web/src/ui/icons.ts`, `apps/web/src/ui/rb.css` | isolé | implementeur-tdd | `vitest run src/ui` : ≥ 1 test `Aligner : 2 unités, Répartir à 3`, ≥ 1 test `Pression · Variable`, `0 failed` | S3, S4 | #tache-t7 |
 | T8 | A | Pipette de scène | T7 | `apps/web/src/ui/shortcuts.ts`, `apps/web/src/ui/shortcuts.test.ts`, `apps/web/src/ui/ColorPicker.tsx`, `apps/web/src/ui/ColorPicker.test.tsx`, `apps/web/src/ui/OptionsPanel.tsx`, `apps/web/src/ui/OptionsPanel.test.tsx`, `apps/web/src/ui/icons.ts`, `apps/web/src/engine/render/canvas2d.ts`, `apps/web/src/engine/render/canvas2d.test.ts`, `apps/web/src/engine/render/renderer.ts`, `apps/web/src/engine/engine.ts`, `apps/web/src/engine/engine.test.ts` | isolé | concepteur-critique | `vitest run src/ui/ColorPicker.test.tsx src/ui/OptionsPanel.test.tsx src/engine/engine.test.ts src/engine/render/canvas2d.test.ts` : ≥ 1 test `pipette : le toucher extérieur ne ferme pas`, ≥ 1 test `pickColor : un toucher, Échap annule`, `0 failed` | S2 | #tache-t8 |
-| T9 | A | Essai lot A, amorce, captures lot A | T4, T8 | `scripts/essais/personnalisation-2-retours-navigateur.mjs` (neuf), `scripts/essais/commun.mjs`, `scripts/essais/personnalisation-2-navigateur.mjs` (une ligne), `scripts/verifier.sh`, `scripts/tests/verifier-e2e.test.sh`, `scripts/tests/nettete.test.mjs`, `docs/design/captures/personnalisation-2-retours/*.png` | isolé | implementeur-tdd | `node scripts/essais/personnalisation-2-retours-navigateur.mjs --lot A` : `S1 OK` … `S4 OK`, code 0 ; `node ~/.claude/scripts/vm/suite-vm.cjs -- scripts/verifier.sh --e2e` code 0 | S1, S2, S3, S4, S7 | #tache-t9 |
-| T10 | B | Cœur, pont, contrat lot B : `dragCopy`, départ de la baguette | T9 | `crates/roomboard-core/src/element.rs`, `src/style.rs`, `src/image.rs`, `tests/look.rs`, `tests/pot_image.rs`, `tests/compat_c6b.rs`, `crates/roomboard-formats/src/pixels.rs`, `crates/roomboard-formats-wasm/src/lib.rs`, `crates/roomboard-wasm/src/lib.rs`, `apps/web/src/core/api.ts`, `apps/web/src/core/look.ts`, `apps/web/src/core/look.test.ts`, `apps/web/src/core/image-params.ts`, `apps/web/src/core/image-params.test.ts`, `apps/web/src/core/wasm-core.ts`, `apps/web/src/core/fake-core.ts`, `apps/web/src/core/fake-core.test.ts`, `apps/web/src/core/wasm-core.contract.test.ts`, `apps/web/src/platform/container.ts`, `apps/web/src/platform/pixel-runner.ts`, `apps/web/src/platform/pixel-runner.test.ts`, `apps/web/src/platform/pixel-worker.ts`, `apps/web/src/engine/render/image-cache.ts`, `apps/cli/src/formats.ts`, `apps/cli/src/ops.test.ts`, `scripts/essais/cli-essai.mjs` | isolé | concepteur-critique | `cargo test --workspace -j 4` : `test result: ok`, ≥ 1 test `seed_clears_only_the_touched_region`, ≥ 1 test `transparent_seed_out_of_image_refused` ; `ROOMBOARD_WASM_REQUIRED=1 vitest run src/core src/platform` ≥ 1 test `dragCopy` sur les deux cœurs ; `CLI : OK` avec la ligne `personnalisation-2-retours : dragCopy` ; formats ≤ 2 798 527 o | S5, S6 | #tache-t10 |
+| T9 | A | Essai lot A, amorce, captures lot A | T4, T8 | `scripts/essais/personnalisation-2-retours-navigateur.mjs` (neuf), `scripts/essais/commun.mjs`, `scripts/essais/personnalisation-2-navigateur.mjs` (une ligne), `scripts/verifier.sh`, `scripts/tests/verifier-e2e.test.sh`, `scripts/tests/nettete.test.mjs`, `docs/design/captures/personnalisation-2-retours/{avant,apres}-{panneau,selecteur,stylo,alignes}.png` (huit neufs) | isolé | implementeur-tdd | `node scripts/essais/personnalisation-2-retours-navigateur.mjs --lot A` : `S1 OK` … `S4 OK`, code 0 ; `node ~/.claude/scripts/vm/suite-vm.cjs -- scripts/verifier.sh --e2e` code 0 | S1, S2, S3, S4, S7 | #tache-t9 |
+| T10 | B | Cœur, pont, contrat lot B : `dragCopy`, départ de la baguette | T9 | `crates/roomboard-core/src/element.rs`, `crates/roomboard-core/src/style.rs`, `crates/roomboard-core/src/image.rs`, `crates/roomboard-core/tests/look.rs`, `crates/roomboard-core/tests/baguette.rs` (neuf), `crates/roomboard-core/tests/pot_image.rs` (littéral `TransparentInput` l. 70 : `x: None, y: None`), `crates/roomboard-core/tests/compat_c6b.rs` (idem l. 57), `crates/roomboard-formats/src/pixels.rs`, `crates/roomboard-formats-wasm/src/lib.rs`, `crates/roomboard-wasm/src/lib.rs`, `apps/web/src/core/api.ts`, `apps/web/src/core/look.ts`, `apps/web/src/core/look.test.ts`, `apps/web/src/core/image-params.ts`, `apps/web/src/core/image-params.test.ts`, `apps/web/src/core/wasm-core.ts`, `apps/web/src/core/fake-core.ts`, `apps/web/src/core/fake-core.test.ts`, `apps/web/src/core/wasm-core.contract.test.ts`, `apps/web/src/platform/container.ts`, `apps/web/src/platform/pixel-runner.ts`, `apps/web/src/platform/pixel-runner.test.ts`, `apps/web/src/platform/pixel-worker.ts`, `apps/web/src/engine/render/image-cache.ts`, `apps/cli/src/formats.ts`, `apps/cli/src/ops.test.ts`, `scripts/essais/cli-essai.mjs` | isolé | concepteur-critique | `cargo test --workspace -j 4` : `test result: ok`, ≥ 1 test `seed_clears_only_the_touched_region`, ≥ 1 test `transparent_seed_out_of_image_refused` ; `ROOMBOARD_WASM_REQUIRED=1 vitest run src/core src/platform` ≥ 1 test `dragCopy` sur les deux cœurs ; `CLI : OK` avec la ligne `personnalisation-2-retours : dragCopy` ; formats ≤ 2 798 527 o | S5, S6 | #tache-t10 |
 | T11 | B | Moteur : Glisser une copie, poignée Déplacer, badge | T10 | `apps/web/src/engine/engine.ts`, `apps/web/src/engine/engine.test.ts`, `apps/web/src/engine/tools/tool.ts`, `apps/web/src/engine/tools/select.ts`, `apps/web/src/engine/tools/select.test.ts`, `apps/web/src/engine/tools/handles.ts`, `apps/web/src/engine/render/overlay.ts`, `apps/web/src/engine/render/canvas2d.ts`, `apps/web/src/engine/render/canvas2d.test.ts`, `apps/web/src/engine/render/link-badge.ts`, `apps/web/src/engine/render/link-badge.test.ts` | isolé | concepteur-critique | `vitest run src/engine` : ≥ 1 test `dragCopy : l'original reste, une copie`, ≥ 1 test `poignée Déplacer : l'original bouge`, ≥ 1 test `duplicateSelection +10/+10` vert, `0 failed` | S5 | #tache-t11 |
 | T12 | B | Séance d'image : baguette depuis le point touché | T10 | `apps/web/src/engine/tools/image-edit.ts`, `apps/web/src/engine/tools/image-edit.test.ts`, `apps/web/src/ui/ImagePanel.tsx`, `apps/web/src/ui/ImagePanel.test.tsx` | isolé | implementeur-tdd | `vitest run src/engine/tools/image-edit.test.ts src/ui/ImagePanel.test.tsx` : ≥ 1 test `mode Depuis le point touché`, ≥ 1 test `start background arme la pipette`, `0 failed` | S6 | #tache-t12 |
 | T13 | B | Panneau lot B : section Image, bascule Glisser une copie | T11, T12 | `apps/web/src/ui/tool-options.ts`, `apps/web/src/ui/tool-options.test.ts`, `apps/web/src/ui/OptionsPanel.tsx`, `apps/web/src/ui/OptionsPanel.test.tsx`, `apps/web/src/ui/App.tsx`, `apps/web/src/ui/App.test.tsx`, `apps/web/src/ui/icons.ts`, `apps/web/src/ui/rb.css` | isolé | implementeur-tdd | `vitest run src/ui` : ≥ 1 test `bascule mixte`, ≥ 1 test `Rogner depuis le panneau ouvre la séance en rognage`, `0 failed` | S5, S6 | #tache-t13 |
-| T14 | B | Essai final, captures, non-régression | T13 | `scripts/essais/personnalisation-2-retours-navigateur.mjs`, `scripts/essais/fabriques/*` (fixture d'image neuve si besoin), `docs/design/captures/personnalisation-2-retours/*.png` | isolé | implementeur-tdd | `node scripts/essais/personnalisation-2-retours-navigateur.mjs` : `S1 OK` … `S6 OK`, code 0 ; `node ~/.claude/scripts/vm/suite-vm.cjs -- scripts/verifier.sh --e2e` code 0 | S5, S6, S7 | #tache-t14 |
+| T14 | B | Essai final, captures, non-régression | T13 | `scripts/essais/personnalisation-2-retours-navigateur.mjs`, `docs/design/captures/personnalisation-2-retours/avant-copie.png`, `avant-image.png`, `apres-copie.png`, `apres-image.png` (neufs) | isolé | implementeur-tdd | `node scripts/essais/personnalisation-2-retours-navigateur.mjs` : `S1 OK` … `S6 OK`, code 0 ; `node ~/.claude/scripts/vm/suite-vm.cjs -- scripts/verifier.sh --e2e` code 0 | S5, S6, S7 | #tache-t14 |
 
 **Vagues** (aucune tâche d'une vague ne recoupe une autre de la même vague) :
 - Lot A — V1 : T1, T2, T3 (parallèles, fichiers disjoints) · V2 : T4, T5 (parallèles) · V3 : T6 · V4 : T7 · V5 : T8 · V6 : T9.
@@ -72,6 +74,7 @@ composants Solid (`OptionsPanel.tsx`, `ColorPicker.tsx`, `ImagePanel.tsx`).
   ```
   Taille : `stat -c %s apps/web/src/wasm/roomboard_wasm_bg.wasm apps/web/src/wasm-formats/roomboard_formats_wasm_bg.wasm`.
 - G13. Commandes : `<wt>` est le worktree de la tâche donné par l'orchestrateur (`~/projets/roomboard-wt/personnalisation-2-retours--T<n>`) ; toute commande commence par `cd <wt> &&`. Fichiers d'essai fabriqués dans un dossier temporaire, jamais un fichier de Jérôme.
+- G15. Forme des preuves : chaque commande écrit sa sortie dans un fichier, puis montre les noms exigés. Cargo : `nice -n 10 cargo test -p <crate> [--test <nom>] -j 4 > ~/.cache/tmp/og23-T<n>-cargo.log 2>&1; grep -E "test result|FAILED|error\[" ~/.cache/tmp/og23-T<n>-cargo.log | tail -8; grep -E "(<nom1>|<nom2>) \.\.\. ok" ~/.cache/tmp/og23-T<n>-cargo.log`. Vitest : `nice -n 10 pnpm exec vitest run <fichiers> --reporter=verbose > ~/.cache/tmp/og23-T<n>-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T<n>-vitest.log; grep -E "<nom1>|<nom2>" ~/.cache/tmp/og23-T<n>-vitest.log`. Un nom exigé absent du `grep` = preuve manquante, même si la suite est verte.
 - G14. Hors champ : édition des points, connecteurs, Alt+glisser (OG12) ; section `table` (chantier Tableau) ; détourage par modèle ; rotation libre. Place réservée `editPoints` en commentaire dans `OPTION_ORDER`.
 
 ## Review Focus
@@ -263,8 +266,8 @@ puis le cache de `document.rs:597` reçoit `InkStyle { width: style.width, const
 
 **Test et commande bornée** :
 ```bash
-cd <wt> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && unset CARGO_TARGET_DIR && nice -n 10 cargo test -p roomboard-core -j 4 2>&1 | tail -30
-cd <wt> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && unset CARGO_TARGET_DIR && nice -n 10 cargo test -p roomboard-wasm -j 4 2>&1 | tail -15
+cd <wt> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && unset CARGO_TARGET_DIR && nice -n 10 cargo test -p roomboard-core -j 4 > ~/.cache/tmp/og23-T1-cargo.log 2>&1; grep -E "test result|FAILED|error\[" ~/.cache/tmp/og23-T1-cargo.log | tail -8; grep -E "(arrange_extends_partial_group|flip_h_text_moves_box_keeps_matrix|constant_outline_keeps_height|socle_fixture_resaves_identically|arrange_through_the_bridge_one_step) \.\.\. ok" ~/.cache/tmp/og23-T1-cargo.log
+cd <wt> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && unset CARGO_TARGET_DIR && nice -n 10 cargo test -p roomboard-wasm -j 4 > ~/.cache/tmp/og23-T1-cargo-2.log 2>&1; grep -E "test result|FAILED|error\[" ~/.cache/tmp/og23-T1-cargo-2.log | tail -8; grep -E "(arrange_extends_partial_group|flip_h_text_moves_box_keeps_matrix|constant_outline_keeps_height|socle_fixture_resaves_identically|arrange_through_the_bridge_one_step) \.\.\. ok" ~/.cache/tmp/og23-T1-cargo-2.log
 ```
 Preuve : `running N tests` avec N ≥ 12 pour `tests/arrange.rs`, `test arrange_extends_partial_group ... ok`,
 `test flip_h_text_moves_box_keeps_matrix ... ok`, `test constant_outline_keeps_height ... ok`,
@@ -290,14 +293,14 @@ sans avertissement, reconstruction G12 et taille du module principal ≤ 1 460 7
 - `tests/look.rs` : `constant_outline_keeps_height` (points x = 0..200 pas 10, pression 0,1 → 1,0 ; `variability: Some("constant")` ; demi-hauteur du contour près de x = 50 et x = 150 à moins de 5 % ; sans le champ : plus de 30 %), `set_style_variability_stroke_only` (rectangle ignoré, trait écrit, `Some(None)` retire, `"wavy"` → `BadStyle`), `erase_partial_constant_keeps_variability_and_radius` (morceaux avec `variability`, trou de la largeur de la gomme à 1 px près), `old_stroke_has_no_variability_key`.
 - `tests/scenarios.rs` : `arrange_is_one_undo_step` ; pont (`lib.rs`, module de tests) : `arrange_through_the_bridge_one_step`, `arrange_unknown_how_message` (`"disposition inconnue : spin"`).
 
-**Contraintes** (recopiées) : G1 ; G2 ; G3 ; G4 ; G6 (+20 000 o au plus au module principal) ; G8 (mention MIT en tête d'`arrange.rs`, entrée dans `THIRD_PARTY_NOTICES.md` pour `crates/roomboard-core/src/arrange.rs` et, d'avance, `apps/web/src/core/arrange.ts` que T4 écrit) ; G11 ; G12 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G3 ; G4 ; G6 (+20 000 o au plus au module principal) ; G8 (mention MIT en tête d'`arrange.rs`, entrée dans `THIRD_PARTY_NOTICES.md` pour `crates/roomboard-core/src/arrange.rs` et, d'avance, `apps/web/src/core/arrange.ts` que T4 écrit) ; G11 ; G12 ; G13.
 
 **Interdits** : aucune commande `Transform` multiple ; pas de nouvelle variante de `CommandError` ; ne pas toucher `apps/` (T3, T4) ; ne pas changer les assertions des tests d'OG20 (`outline.rs:175-214`, `erase.rs:140-226`).
 
 **Terminé** : tests neufs et anciens verts, clippy propre, taille dans l'enveloppe consignée au rapport, commit(s) selon G4.
 
 **Étapes** :
-- [ ] 1. Écrire `tests/arrange.rs` et les tests de `tests/look.rs` ci-dessus ; `cargo test -p roomboard-core --test arrange -j 4 2>&1 | tail -15` → `error[E0433]` (module `arrange` absent).
+- [ ] 1. Écrire `tests/arrange.rs` et les tests de `tests/look.rs` ci-dessus ; `cargo test -p roomboard-core --test arrange -j 4 > ~/.cache/tmp/og23-T1-cargo-3.log 2>&1; grep -E "test result|FAILED|error\[" ~/.cache/tmp/og23-T1-cargo-3.log | tail -8; grep -E "(arrange_extends_partial_group|flip_h_text_moves_box_keeps_matrix|constant_outline_keeps_height|socle_fixture_resaves_identically|arrange_through_the_bridge_one_step) \.\.\. ok" ~/.cache/tmp/og23-T1-cargo-3.log` → `error[E0433]` (module `arrange` absent).
 - [ ] 2. Créer `arrange.rs` (code ci-dessus) et `cmd_arrange`, brancher `Command::Arrange` dans `apply` ; relancer `--test arrange` → vert.
 - [ ] 3. `InkStyle.constant`, `options`, `outline_radius_with`, `erase_with`, commande perl, `cached_outline(…, constant)` et ses 4 appelants (`constant_ink(&txn, &e)`), `erase_stroke` ; `--test look` → vert.
 - [ ] 4. `Look.variability`, `LOOK_KEYS`, `sanitized` (`filter(|s| s == "constant")`), `look_fields` (dans la liste `strings`), `read_look` ; `StylePatch.variability`, `validate`, `writes_for` (`kind == "stroke"`).
@@ -329,7 +332,7 @@ Avant tout, garder le build d'avant pour les captures.
 
 **Test et commande bornée** :
 ```bash
-cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui/tool-options.test.ts src/device-settings.test.ts 2>&1 | tail -20
+cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui/tool-options.test.ts src/device-settings.test.ts --reporter=verbose > ~/.cache/tmp/og23-T2-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T2-vitest.log; grep -E "sectionOpen : défauts puis état gardé|4 pastilles|optionSections" ~/.cache/tmp/og23-T2-vitest.log
 ```
 Preuve : `Tests  N passed` avec ≥ 6 tests neufs, noms `sectionOpen : défauts puis état gardé`, `4 pastilles`, `0 failed`.
 
@@ -341,7 +344,7 @@ Preuve : `Tests  N passed` avec ≥ 6 tests neufs, noms `sectionOpen : défauts 
 - Mises à jour d'attentes décidées par le cadrage (déc. 9, 21) : `sectionsFor select + image` → `["opacity", "layers", "transform", "actions"]` ; `strokePicks : 5 couleurs distinctes` devient `4 couleurs distinctes` (mêmes assertions, `toHaveLength(4)`, `size` 4) ; `noms lisibles` → 4 noms ; `backgroundPicks` → 4 entrées. Aucune autre attente changée.
 - `device-settings.test.ts` : `optionSections : illisible = {}`, `setOptionSection écrit la seule clé touchée et la relit`, `stockage qui refuse : mémoire seule (rend false)`.
 
-**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G5 ; G13 ; G14 (commentaire `editPoints`).
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G4 ; G5 ; G13 ; G14 (commentaire `editPoints`).
 
 **Interdits** : ne pas toucher `OptionsPanel.tsx` (T5) ; pas de section `image` ici (T13).
 
@@ -413,7 +416,7 @@ export function nudgeKey(e: KeyLike): { dx: number; dy: number } | null {
 
 **Test et commande bornée** :
 ```bash
-cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/engine/input/keys.test.ts src/ui/shortcuts.test.ts 2>&1 | tail -20
+cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/engine/input/keys.test.ts src/ui/shortcuts.test.ts --reporter=verbose > ~/.cache/tmp/og23-T3-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T3-vitest.log; grep -E "arrangeKey AZERTY et QWERTY|arrangeKey lit code avec Alt|nudgeKey|chaque raccourci a son reconnaisseur" ~/.cache/tmp/og23-T3-vitest.log
 ```
 Preuve : ≥ 5 tests neufs passés, noms `arrangeKey AZERTY et QWERTY`, `arrangeKey lit code avec Alt`, `nudgeKey`, `chaque raccourci a son reconnaisseur` vert, `0 failed`.
 
@@ -424,7 +427,7 @@ Preuve : ≥ 5 tests neufs passés, noms `arrangeKey AZERTY et QWERTY`, `arrange
 - `nudgeKey` : ← = `{ dx: -1, dy: 0 }`, Maj+↓ = `{ dx: 0, dy: 5 }`, Ctrl+← = null, Alt+← = null.
 - `shortcuts.test.ts` : la fonction `press` reçoit `Alt` (`altKey: parts.includes("Alt")`), un `code` (`Key<LETTRE>` pour une lettre, la touche nommée sinon) et `NAMED` les flèches ← → ; `EXPECT` reçoit une ligne par raccourci neuf (`["arrange", "<how>"]`, `nudge: ["nudge", "-1,0"]`), et le reconnaisseur `arrange` (`arrangeKey(e)`) ou `nudge` (`${dx},${dy}`) ; `ariaShortcut("align-left", false)` = `"Alt+Shift+ArrowLeft"`.
 
-**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G9 (raccourcis clavier) ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G4 ; G9 (raccourcis clavier) ; G13.
 
 **Interdits** : ne pas toucher `engine.ts` (T6) ni `api.ts` (T4) ; aucune lettre autre que H, V, R (A, Q, Z, W, M, Y écartées).
 
@@ -444,7 +447,7 @@ et un trait transparent n'est pas tracé au PDF.
 **Fichiers** : voir la table (ligne T4).
 
 **Interfaces** :
-- Consomme : pont de T1 (`arrange(ids, how)`, 11e argument d'aspect, `set_style(…, variability_set, variability)`, `StrokeBuilder(width, constant)`) ; `ArrangeHow`, `ARRANGE_HOWS`, `isArrangeHow`, `arrangeUnknown` (`core/arrange.ts`, T3).
+- Consomme : pont de T1, livré (`arrange(ids, how)`, 11e argument d'aspect, `set_style(…, link_set, link, variability_set, variability)` : deux arguments de plus en fin, `StrokeBuilder(width, constant)`) ; lire la signature réelle dans `crates/roomboard-wasm/src/lib.rs` (`pub fn set_style`, `pub fn commit_stroke`, `pub fn arrange`) avant d'écrire `wasm-core.ts`, et la suivre à l'identique ; `ArrangeHow`, `ARRANGE_HOWS`, `isArrangeHow`, `arrangeUnknown` (`core/arrange.ts`, T3).
 - Produit :
   - `Command` += `{ readonly type: "Arrange"; readonly ids: readonly string[]; readonly how: ArrangeHow }` ; `export type { ArrangeHow } from "./arrange"` dans `api.ts`.
   - `Look.variability?: "constant"` ; `LookPatch.variability?: "constant" | null` ; `variabilityOf(l): "variable" | "constant"` ; `toLook` lit `variability` ; `lookFrom` accepte `variability?: "variable" | "constant"` (écrit `"constant"` seulement).
@@ -467,8 +470,8 @@ inconnu, pages mêlées « objets de pages différentes »). Le faux cœur porte
 
 **Test et commande bornée** (reconstruction G12 d'abord) :
 ```bash
-cd <wt>/apps/web && ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm exec vitest run src/core src/engine/render/webgl2.test.ts src/engine/render/record-ctx.test.ts 2>&1 | tail -20
-cd <wt> && nice -n 10 pnpm --filter @roomboard/cli build 2>&1 | tail -3 && cd apps/cli && nice -n 10 pnpm exec vitest run src/ops.test.ts src/session.test.ts src/pdf-node.test.ts src/pdf.test.ts 2>&1 | tail -20
+cd <wt>/apps/web && ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm exec vitest run src/core src/engine/render/webgl2.test.ts src/engine/render/record-ctx.test.ts --reporter=verbose > ~/.cache/tmp/og23-T4-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T4-vitest.log; grep -E "Arrange align-left|Arrange étend le groupe|Arrange how inconnu|variability|tryParseColor transparent|peinture transparente|how inconnu : usage|how absent|fillStyle transparent|trait transparent sans tracé" ~/.cache/tmp/og23-T4-vitest.log
+cd <wt> && nice -n 10 pnpm --filter @roomboard/cli build 2>&1 | tail -3 && cd apps/cli && nice -n 10 pnpm exec vitest run src/ops.test.ts src/session.test.ts src/pdf-node.test.ts src/pdf.test.ts --reporter=verbose > ~/.cache/tmp/og23-T4-vitest-2.log 2>&1; tail -6 ~/.cache/tmp/og23-T4-vitest-2.log; grep -E "Arrange align-left|Arrange étend le groupe|Arrange how inconnu|variability|tryParseColor transparent|peinture transparente|how inconnu : usage|how absent|fillStyle transparent|trait transparent sans tracé" ~/.cache/tmp/og23-T4-vitest-2.log
 cd <wt> && node scripts/essais/cli-essai.mjs 2>&1 | tail -8
 ```
 Preuve : tests du contrat `Arrange align-left : même boîtes sur les deux cœurs`, `Arrange étend le groupe`,
@@ -486,7 +489,7 @@ l'essai `CLI : OK`, ligne `personnalisation-2-retours : Arrange` présente.
 - `cli-essai.mjs`, bloc `personnalisation-2-retours` après le bloc Restack (l. 477) : `Arrange align-left` puis `undo` (une étape chacun, x0 égaux puis rendus) ; `flip-h` sur un texte et un rectangle (`state` : matrice du texte avec `transform[0] === 1`) ; `how: "spin"` → code 2 ; `SetStyle { variability: "constant" }` sur un trait lu par `state` (`look.variability === "constant"`) ; `export` PDF d'un rectangle `color: "transparent"` à fond jaune : code 0, puis les flux du fichier (`stream … endstream`, chacun passé à `zlib.inflateSync` dans un `try`, sinon brut) contiennent un opérateur `f` et aucun ` S\n` ni ` s\n` ; ligne `console.log("personnalisation-2-retours : Arrange")`.
 - `formats.ts:59` : note `.roomboard` complétée par `variability` ; et `Arrange` dans le texte des commandes si la ligne les cite.
 
-**Contraintes** (recopiées) : G1 ; G2 ; G3 ; G4 ; G5 ; G7 ; G8 (en-tête MIT de `core/arrange.ts`) ; G12 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G3 ; G4 ; G5 ; G7 ; G8 (en-tête MIT de `core/arrange.ts`) ; G12 ; G13.
 
 **Interdits** : aucune couleur nommée autre que `transparent` rendue lisible par `tryParseColor` (H25 de la CLI) ; ne
 pas toucher l'interface (T5, T7) ni le moteur (T6).
@@ -502,22 +505,26 @@ pas toucher l'interface (T5, T7) ni le moteur (T6).
 ### Tâche T5 — Panneau : accordéon, couleurs, Largeur, Style de tracé
 
 **Objectif** : chaque section a un en-tête bouton qui l'ouvre ou la replie (état gardé sur l'appareil), avec un résumé
-gris de sa valeur ; la rangée de couleurs tient sur une ligne (4 pastilles + « Autres couleurs ») ; le transparent est
-un damier, proposé au trait pour une sélection de rectangles et d'ellipses, et dans le sélecteur ; Largeur montre une
+gris de sa valeur ; la rangée de couleurs tient sur une ligne (4 pastilles + « Autres couleurs ») ; la pastille
+Transparent du fond devient un damier ; le sélecteur montre une case Transparent (fond toujours ; trait seulement pour une
+sélection de rectangles et d'ellipses) — **la rangée Trait ne reçoit aucune pastille Transparent** (déc. 9, 11, 12, S2.1) ; Largeur montre une
 icône d'épaisseur et un mot ; Style de tracé devient Net · À main levée · Très à main levée.
 
 **Fichiers** : `apps/web/src/ui/OptionsPanel.tsx`, `OptionsPanel.test.tsx`, `ColorPicker.tsx`, `ColorPicker.test.tsx`, `icons.ts`, `rb.css`.
 
+> État : T2 a déjà ajouté `pressure`, `align`, `transform` à `OptionKey` sans toucher `OptionsPanel.tsx` : `tsc` est rouge sur `LABEL` (l. 50) et `bodies` (l. 313) jusqu'à cette tâche.
+
 **Interfaces** :
 - Consomme : `OPTION_ORDER`, `sectionOpen`, `OPEN_BY_DEFAULT`, `sectionsFor(…, units)`, `strokePicks`, `backgroundPicks` (T2) ; `settings.optionSections()`, `settings.setOptionSection(key, open)` (T2) ; `state().selectionUnits` (existant).
 - Produit :
-  - Section : `<section class="rb-options-sec" data-option={k} data-open={open ? "" : undefined}>` ; en-tête `<button type="button" class="rb-opt-head" data-option-head={k} aria-expanded={open} aria-controls={`opt-body-${k}`}>` contenant `<span class="rb-opt-title">{LABEL[k]}</span>`, le résumé `<span class="rb-opt-sum">· {résumé}</span>` (sections à segments seulement : `strokeWidth`, `strokeStyle`, `roughness`, `roundness`, `fillStyle`, `textAlign`, plus `pressure` à T7 ; « Mixte » pour une valeur mixte) et le chevron `<Icon name="chevron-down" />` (tourné de 180° ouvert, CSS) ; corps `<div id="opt-body-${k}" class="rb-opt-body" hidden={!open}>` toujours monté.
+  - Section : `<section class="rb-options-sec" data-option={k} data-open={open ? "" : undefined}>` ; en-tête `<button type="button" class="rb-opt-head" data-option-head={k} aria-expanded={open} aria-controls={`opt-body-${k}`}>` contenant `<span class="rb-opt-title">{LABEL[k]}</span>`, le résumé `<span class="rb-opt-sum">· {résumé}</span>` (sections à segments seulement : `strokeWidth`, `strokeStyle`, `roughness`, `roundness`, `fillStyle`, `font`, `fontSize`, `textAlign`, plus `pressure` à T7 ; « Mixte » pour une valeur mixte ; aucun résumé pour `strokeColor`, `background`, `arrowheads`, `opacity`, `layers`, `actions`) et le chevron `<Icon name="chevron-down" />` (tourné de 180° ouvert, CSS) ; corps `<div id="opt-body-${k}" class="rb-opt-body" hidden={!open}>` toujours monté.
   - Signal local `openSections` initialisé par `settings.optionSections()` ; `toggleSection(k)` écrit `setOptionSection(k, next)`.
   - S et G (`onObjectKey`, l. 248-254) : si la section visée est repliée, l'ouvrir d'abord (`toggleSection`) puis `queueMicrotask(() => openPicker(key))`.
   - Rangée : `colors()` rend 4 pastilles puis `moreColors(k)` avec l'icône `palette` (sélecteur `[data-more-colors]` gardé).
-  - Transparent au trait : quand toutes les cibles sont des formes `rect` ou `ellipse` (`targets().length > 0 && every(...)`), la rangée Trait commence par la pastille Transparent (`{ color: null, label: "Transparent" }`) qui écrit `{ color: "transparent" }` ; ailleurs, jamais.
+  - Transparent au trait : seulement dans le sélecteur, quand toutes les cibles sont des formes `rect` ou `ellipse` (`strokeTransparentAllowed = () => targets().length > 0 && targets().every((t) => t.kind === "shape" && (t.shape.shape === "rect" || t.shape.shape === "ellipse"))`) ; la rangée Trait garde ses 4 pastilles de couleur, sans Transparent.
+  - Sections de T2 encore sans corps (`pressure`, `align`, `transform`, déjà dans `OptionKey`) : entrées provisoires dans `LABEL` (`pressure: "Pression"`, `align: "Aligner"`, `transform: "Transformer"`) et dans `bodies` (corps minimal `() => <div class="rb-pick-row" />`), pour que `tsc` et `OptionsPanel.test.tsx:69`, `:198` restent verts dès T5 ; T7 remplace ces trois corps.
   - Damier : `.rb-pick[data-transparent] .rb-pick-dot { background: repeating-conic-gradient(var(--rf-gray-200) 0 25%, #ffffff 0 50%) 0 0 / 8px 8px; }` (remplace la diagonale) ; `data-transparent` et `data-option-value="transparent"` gardés.
-  - `ColorPickerProps.transparent?: boolean` ; `choose(c: string | null)` ; case `<button type="button" class="rb-color-cell" data-transparent data-color-transparent aria-label="Transparent">` au-dessus de la grille quand `transparent` ; `OptionsPanel` passe `transparent={p.key === "background" || strokeTransparentAllowed()}` et `chooseFull(c: string | null)` écrit `{ background: c }` ou `{ color: c ?? "transparent" }`.
+  - `ColorPickerProps.transparent?: boolean` ; `choose(c: string | null)` ; case `<button type="button" class="rb-color-transparent" data-transparent data-color-transparent aria-label="Transparent">` au-dessus de la grille, **hors** de la classe `rb-color-cell` et du rôle `gridcell` (l'essai `personnalisation-2-navigateur.mjs:1094` compte 75 cellules ; la navigation aux flèches ne l'inclut pas) quand `transparent` ; `OptionsPanel` passe `transparent={p.key === "background" || strokeTransparentAllowed()}` et `chooseFull(c: string | null)` écrit `{ background: c }` ou `{ color: c ?? "transparent" }`.
   - `WIDTH_OPTIONS` avec `icon` `width-thin` / `width-medium` / `width-thick` et libellés Fin · Moyen · Épais (texte de 12 px sous l'icône : `.rb-options .rb-radios[data-edit="strokeWidth"] .rb-radio { flex-direction: column; font-size: 12px; }`).
   - `ROUGH` : libellés « Net », « À main levée », « Très à main levée », icônes `sloppiness-0..2` redessinées (coin net ; coin doublé d'un trait décalé ; coin triplé) ; valeurs `0`, `1`, `2` inchangées.
   - Icônes (`icons.ts`, Lucide @7981a0798a, ISC) : `"palette": [["path", { d: "M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" }], ["circle", { cx: "13.5", cy: "6.5", r: ".5" }], ["circle", { cx: "17.5", cy: "10.5", r: ".5" }], ["circle", { cx: "6.5", cy: "12.5", r: ".5" }], ["circle", { cx: "8.5", cy: "7.5", r: ".5" }]]` (les ronds `fill="currentColor"` si `Icon` le permet, sinon rayon gardé) ; dessinées (grille 24, trait 1,5) : `"width-thin": [["path", { d: "M4 12h16", "stroke-width": "1.5" }]]`, `"width-medium": [["path", { d: "M4 12h16", "stroke-width": "3" }]]`, `"width-thick": [["path", { d: "M4 12h16", "stroke-width": "5" }]]` ; `"sloppiness-0": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }]]`, `"sloppiness-1": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }], ["path", { d: "M7.5 18.5V9a1.5 1.5 0 0 1 1.5-1.5h10" }]]`, `"sloppiness-2"` : les deux précédents et `["path", { d: "M10 18V11.5a1 1 0 0 1 1-1h8" }]`.
@@ -527,26 +534,28 @@ icône d'épaisseur et un mot ; Style de tracé devient Net · À main levée ·
 
 **Test et commande bornée** :
 ```bash
-cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui 2>&1 | tail -25
+cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui --reporter=verbose > ~/.cache/tmp/og23-T5-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T5-vitest.log; grep -E "sections repliées par défaut|Entrée et Espace basculent|S ouvre Trait replié|4 pastilles et palette|trait transparent : sélecteur seulement|Transparent dans le sélecteur|75 cellules|7 sections" ~/.cache/tmp/og23-T5-vitest.log
 ```
-Preuve : ≥ 6 tests neufs passés (`sections repliées par défaut, état relu`, `en-tête : Entrée et Espace basculent`, `S ouvre Trait replié puis le sélecteur`, `4 pastilles et palette sur une ligne`, `trait transparent : rectangles seulement`, `Transparent dans le sélecteur`) ; `OptionsPanel rectangle : 7 sections`, `OptionsPanel.link.test.tsx`, `rb-css.test.ts`, `ColorPicker.test.tsx` anciens verts ; `0 failed`.
+Preuve : ≥ 6 tests neufs passés (`sections repliées par défaut, état relu`, `en-tête : Entrée et Espace basculent`, `S ouvre Trait replié puis le sélecteur`, `4 pastilles et palette sur une ligne`, `trait transparent : sélecteur seulement`, `Transparent dans le sélecteur`, `75 cellules de grille`) ; `pnpm --filter @roomboard/web exec tsc --noEmit` sans erreur ; `OptionsPanel rectangle : 7 sections`, `OptionsPanel.link.test.tsx`, `rb-css.test.ts`, `ColorPicker.test.tsx` anciens verts ; `0 failed`.
 
 **Tests à écrire d'abord** (`OptionsPanel.test.tsx`, aide `mount` existante, l. 20-50) :
 - `sections repliées par défaut, état relu` : outil `rect` : `[data-option-head="strokeWidth"]` `aria-expanded="true"`, `[data-option-head="strokeStyle"]` `"false"` et son corps `hidden` ; clic sur l'en-tête → `"true"` et `settings.optionSections().strokeStyle === true` ; remonter avec les mêmes réglages : ouvert.
 - `résumé de valeur` : en-tête `roughness` contient `Style de tracé` et `· Net` ; deux cibles de tracés différents : `· Mixte`.
 - `S ouvre Trait replié puis le sélecteur` : `settings.setOptionSection("strokeColor", false)`, `keydown` `s` sur `window` → `[data-option-head="strokeColor"]` ouvert et `[data-color-picker]` présent après `await Promise.resolve()`.
 - `4 pastilles et palette` : `[data-option="strokeColor"] .rb-pick` = 4, `[data-more-colors="strokeColor"] [data-icon="palette"]` présent (attribut d'`Icon` à vérifier dans `IconButton.tsx`).
-- `trait transparent : rectangles seulement` : deux rectangles → `[data-option="strokeColor"] [data-transparent]` présent, clic → `calls` contient `{ color: "transparent" }` ; un trait de stylo → absent ; outil `pen` sans cible → absent.
+- `trait transparent : sélecteur seulement, rectangles seulement` : deux rectangles → `[data-option="strokeColor"] [data-transparent]` absent de la rangée ; `[data-more-colors="strokeColor"]` ouvert → `[data-color-transparent]` présent, clic → `calls` contient `{ color: "transparent" }` ; un trait de stylo ou l'outil `pen` sans cible → `[data-color-transparent]` absent du sélecteur du Trait ; sélecteur de l'Arrière-plan : toujours présent.
+- Mise à jour décidée par le cadrage (déc. 9) : `OptionsPanel.test.tsx:121-126` attend 4 pastilles au lieu de 5 (même assertion, nombre changé) ; aucune autre attente changée.
+- `ColorPicker.test.tsx` : `75 cellules de grille avec la case Transparent` (`[role=gridcell]` = 75, `.rb-color-cell` = 75).
 - `ColorPicker.test.tsx` : `Transparent dans le sélecteur` (`transparent` vrai : `[data-color-transparent]` présent, clic → `choose(null)`) ; faux : absent.
 
-**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G5 (corps montés avec `hidden` : les tests qui lisent `[data-option-value]` restent verts sans retouche) ; G8 (icônes Lucide) ; G9 (en-têtes ≥ 44 px : `.rb-opt-head { min-block-size: var(--rb-btn-size); }`, Tab, Entrée, Espace) ; G10 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G4 ; G5 (corps montés avec `hidden` : les tests qui lisent `[data-option-value]` restent verts sans retouche) ; G8 (icônes Lucide) ; G9 (en-têtes ≥ 44 px : `.rb-opt-head { min-block-size: var(--rb-btn-size); }`, Tab, Entrée, Espace) ; G10 ; G13.
 
-**Interdits** : ne pas toucher `island-place.ts` (largeur inchangée) ni le moteur ; pas de sections Pression, Aligner, Transformer ici (T7) ; ne pas modifier les règles CSS lues par `rb-css.test.ts:326-340`.
+**Interdits** : ne pas toucher `island-place.ts` (largeur inchangée) ni le moteur ; Pression, Aligner, Transformer : corps provisoires seulement (T7) ; aucune pastille Transparent dans la rangée Trait ; ne pas modifier les règles CSS lues par `rb-css.test.ts:326-340`.
 
 **Terminé** : tests verts, tsc propre, commit.
 
 **Étapes** :
-- [ ] 1. Tests rouges. 2. En-têtes, corps `hidden`, mémoire, résumé, S/G. 3. Pastilles, damier, transparent au trait, `ColorPicker.transparent`. 4. Largeur, Style de tracé, icônes, CSS (la règle `.rb-options-sec:first-of-type h3` devient `.rb-options-sec:first-of-type .rb-opt-head`). 5. Vert, tsc, commit.
+- [ ] 1. Tests rouges. 2. Entrées provisoires `pressure`, `align`, `transform` (tsc vert). 3. En-têtes, corps `hidden`, mémoire, résumé, S/G. 4. Pastilles, damier, `ColorPicker.transparent`. 5. Largeur, Style de tracé, icônes, CSS (la règle `.rb-options-sec:first-of-type h3` devient `.rb-options-sec:first-of-type .rb-opt-head`) ; `.rb-color-transparent` (même taille qu'une cellule, damier). 6. Vert, tsc, commit.
 
 <a id="tache-t6"></a>
 ### Tâche T6 — Moteur : `arrange`, `nudge`, raccourcis, pression, trait transparent
@@ -561,7 +570,7 @@ sélection aux flèches, écoute les raccourcis de T3, porte `variability` au st
 - Consomme : `Command` `Arrange`, `LookPatch.variability`, `newStrokeBuilder(style, constant)` (T4) ; `arrangeKey`, `nudgeKey` (T3) ; `wholeUnits` (`app/layer-list.ts:141`).
 - Produit :
   - `Engine.arrange(how: ArrangeHow): boolean` : `ids = selectedBlock()` (l. 444) ; vide → false ; `run({ type: "Arrange", ids, how })`, vrai si la version a changé.
-  - `Engine.nudge(dx: number, dy: number): boolean` : sélection vide → false ; `run({ type: "Transform", ids: selectedBlock(), matrix: [1, 0, 0, 1, dx / camera.zoom, dy / camera.zoom] })` (px d'écran).
+  - `Engine.nudge(dx: number, dy: number): boolean` : sélection vide → false ; `run({ type: "Transform", ids: selectedBlock(), matrix: [1, 0, 0, 1, dx, dy] })` en unités de scène, quel que soit le zoom (comme Excalidraw, `ELEMENT_TRANSLATE_AMOUNT`).
   - `key(e)` : après `orderKey`, `arrangeKey(e)` (pris seulement avec une sélection, sinon la touche passe), puis `nudgeKey(e)` (idem) ; jamais pendant `imageEdit` en mode `crop`/`pick` ni pendant une saisie de texte (`textTool.editing()`).
   - `ItemStyle.variability: "variable" | "constant"` (défaut `"variable"`, `ok.variability`), `patchOf` : `variability` → `{ variability: v === "constant" ? "constant" : null }`.
   - `setItem(p, writeSelection)` : si `p.color === "transparent"`, la couleur n'entre pas dans `mergeItemStyle` mais part dans le `SetStyle` de la sélection (déc. 11).
@@ -573,21 +582,21 @@ sélection aux flèches, écoute les raccourcis de T3, porte `variability` au st
 
 **Test et commande bornée** :
 ```bash
-cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/engine/engine.test.ts src/engine/item-style.test.ts src/engine/tools/pen.test.ts 2>&1 | tail -20
+cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/engine/engine.test.ts src/engine/item-style.test.ts src/engine/tools/pen.test.ts --reporter=verbose > ~/.cache/tmp/og23-T6-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T6-vitest.log; grep -E "arrange align-left : une étape|arrange : groupe en bloc|flèche : une Transform|flèche sans sélection|Maj\+H retourne|transparent jamais gardé|sans variability lu|Constante : CommitStroke|duplicateSelection \+10" ~/.cache/tmp/og23-T6-vitest.log
 ```
 Preuve : ≥ 7 tests neufs passés dont `arrange align-left : une étape`, `arrange : groupe en bloc`, `flèche : une Transform, une étape`, `flèche sans sélection : la touche passe`, `Maj+H retourne`, `style courant : transparent jamais gardé`, `style ancien sans variability lu` ; `duplicateSelection +10/+10` et `item-style.test.ts:19` verts ; `0 failed`.
 
 **Tests à écrire d'abord** (aide `styleSetup`, `engine.test.ts:1956`) :
 - `arrange align-left : une étape` : trois rectangles, sélection, `engine.arrange("align-left")` vrai, `bounds` x0 égaux, `undo()` une fois rend tout.
 - `arrange : groupe en bloc` : grouper a et b, sélectionner a seul par `sel().setSelection([a])` et c ; a et b ont le même déplacement.
-- `flèche : une Transform, une étape` : `engine.key(key("ArrowRight"))` vrai, dx = 1 ; `key("ArrowDown", { shiftKey: true })` : dy = 5 ; deux `undo` rendent l'origine.
+- `flèche : une Transform, une étape` : `engine.key(key("ArrowRight"))` vrai, dx = 1 unité de scène (aussi à zoom 2) ; `key("ArrowDown", { shiftKey: true })` : dy = 5 ; deux `undo` rendent l'origine.
 - `flèche sans sélection : la touche passe` (`false`).
 - `Maj+H retourne` : `key("H", { shiftKey: true, code: "KeyH" })` sur un rectangle et une flèche : matrice de la flèche `m[0] === -1`.
 - `style courant : transparent jamais gardé` : deux rectangles sélectionnés, `setItemStyle({ color: "transparent" })` → les deux ont `style.color === "transparent"`, `engine.itemStyle().color` inchangé, `deps.itemStyle` (rappel de garde) n'a jamais reçu `transparent`.
 - `item-style.test.ts` : `style ancien sans variability lu` (`parseItemStyle(JSON sans le champ).variability === "variable"`), `variability invalide : illisible`.
 - `pen.test.ts` : `Constante : CommitStroke porte variability et le builder est constant` (faux `newStrokeBuilder` qui note son 2e argument).
 
-**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G9 (raccourcis clavier, hors champ) ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G4 ; G9 (raccourcis clavier, hors champ) ; G13.
 
 **Interdits** : ne pas toucher `select.ts` (lot B) ni l'interface ; `Ctrl+Maj+↑/↓` restent Premier plan / Arrière-plan.
 
@@ -599,7 +608,7 @@ Preuve : ≥ 7 tests neufs passés dont `arrange align-left : une étape`, `arra
 <a id="tache-t7"></a>
 ### Tâche T7 — Panneau : Pression, Aligner, Transformer
 
-**Objectif** : sections Pression (stylo et traits), Aligner (≥ 2 unités ; Répartir à ≥ 3), Transformer (toute
+**Objectif** : remplacer les trois corps provisoires de T5 par les sections Pression (stylo et traits), Aligner (≥ 2 unités ; Répartir à ≥ 3), Transformer (toute
 sélection), dans l'ordre … Transparence · Disposition · Aligner · Transformer · Actions.
 
 **Fichiers** : `apps/web/src/ui/OptionsPanel.tsx`, `OptionsPanel.test.tsx`, `icons.ts`, `rb.css`.
@@ -618,7 +627,7 @@ sélection), dans l'ordre … Transparence · Disposition · Aligner · Transfor
 
 **Test et commande bornée** :
 ```bash
-cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui 2>&1 | tail -25
+cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui --reporter=verbose > ~/.cache/tmp/og23-T7-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T7-vitest.log; grep -E "Pression · Variable|Pression : Constante|Aligner : 2 unités|Transformer : quatre boutons|ordre" ~/.cache/tmp/og23-T7-vitest.log
 ```
 Preuve : ≥ 5 tests neufs passés (`Pression · Variable`, `Pression : Constante écrit variability`, `Aligner : 2 unités, Répartir à 3`, `Transformer : quatre boutons, arrange appelé`, `ordre : Disposition, Aligner, Transformer, Actions`) ; anciens verts ; `0 failed`.
 
@@ -629,7 +638,7 @@ Preuve : ≥ 5 tests neufs passés (`Pression · Variable`, `Pression : Constant
 - `Transformer : quatre boutons, arrange appelé` : clic `flip-h` → `engine.arrange` appelé avec `"flip-h"`.
 - `ordre` : sélection de deux rectangles, 2 unités : `layers`, `align`, `transform`, `actions` en fin, dans cet ordre.
 
-**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G5 ; G8 ; G9 (boutons de 44 px) ; G10 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G4 ; G5 ; G8 ; G9 (boutons de 44 px) ; G10 ; G13.
 
 **Interdits** : ne pas toucher le moteur ; ne pas changer Disposition.
 
@@ -667,11 +676,11 @@ Référence du toucher unique : la pipette de la séance d'image (`apps/web/src/
 
 **Test et commande bornée** :
 ```bash
-cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui/ColorPicker.test.tsx src/ui/OptionsPanel.test.tsx src/ui/shortcuts.test.ts src/engine/engine.test.ts src/engine/render/canvas2d.test.ts 2>&1 | tail -20
+cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui/ColorPicker.test.tsx src/ui/OptionsPanel.test.tsx src/ui/shortcuts.test.ts src/engine/engine.test.ts src/engine/render/canvas2d.test.ts --reporter=verbose > ~/.cache/tmp/og23-T8-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T8-vitest.log; grep -E "pipette : le toucher extérieur ne ferme pas|I arme la pipette|pipette : écrit la section retenue|pickColor : un toucher|colorAt" ~/.cache/tmp/og23-T8-vitest.log
 ```
 Preuve : ≥ 5 tests neufs passés (`pipette : le toucher extérieur ne ferme pas`, `I arme la pipette`, `pipette : écrit la section retenue puis ferme`, `pickColor : un toucher, Échap annule`, `colorAt : #rrggbb, null hors tampon`) ; `0 failed`.
 
-**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G8 ; G9 (toucher d'abord, I au clavier) ; G13.
+**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G8 ; G9 (toucher d'abord, I au clavier) ; G10 (icône `pipette` sur la grille de 24, trait 1,5, `ICON_VIEWBOX`) ; G13 ; G15.
 
 **Interdits** : pas d'API `EyeDropper` ; le toucher lu n'atteint pas l'outil actif ; pas de changement de sélection.
 
@@ -725,7 +734,7 @@ Preuve : `S1 OK`, `S2 OK`, `S3 OK`, `S4 OK` (deux fois : doigt, clavier), `perso
 `c5-image`, `c6a-pot`, `c7b-texte-riche`, `c10a-tableau`, `c13-tableaux`, `c15-3d`, `design-l1/l2/l3`, `personnalisation-1a`)
 verts dans la suite ; `CLI : OK` ; tailles Wasm dans l'enveloppe G6 (sortie de la suite) ; suite code 0, aucun `FAIL `.
 
-**Contraintes** (recopiées) : G1 ; G3 (suite par `suite-vm.cjs`) ; G4 (captures ajoutées une par une) ; G5 ; G6 ; G9 (doigt d'abord, clavier ensuite) ; G10 (captures 2x) ; G12 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G3 (suite par `suite-vm.cjs`) ; G4 (captures ajoutées une par une) ; G5 ; G6 ; G9 (doigt d'abord, clavier ensuite) ; G10 (captures 2x) ; G12 ; G13.
 
 **Interdits** : aucune réécriture de fond d'un essai existant (une ligne d'amorce seule) ; `verifier.sh --e2e` ne réécrit
 jamais une capture (pas de `--captures` dans `verifier.sh`).
@@ -752,11 +761,11 @@ lisible par l'API TS, le faux cœur, le Worker de pixels et la CLI.
 
 **Interfaces** :
 - Produit (Rust) :
-  - `Look.drag_copy: Option<bool>` (`#[serde(rename = "dragCopy")]` par `rename_all`, seul `true` lu ; clé `dragCopy` booléenne, `In::Any(Any::Bool(true))`) ; `LOOK_KEYS` 11 → 12 ; `StylePatch.drag_copy: Option<bool>` (`Some(false)` retire, `Some(true)` pose, `stroke | shape | text | image`).
+  - `Look.drag_copy: Option<bool>` (`#[serde(rename = "dragCopy")]` par `rename_all`, seul `true` lu ; clé `dragCopy` booléenne, `In::Any(Any::Bool(true))`) ; `LOOK_KEYS` 11 → 12 ; `StylePatch.drag_copy: Option<bool>` (`Some(false)` retire, `Some(true)` pose, `stroke | shape | text | image` : écart déclaré en tête, tableaux, médias, objets 3D ignorés sans erreur).
   - `TransparentView` et `TransparentInput` += `x: Option<u32>` / `x: Option<f64>`, `y` idem (`#[serde(skip_serializing_if = "Option::is_none")]`) ; `transparent_of(t, w, h)` : les deux ou aucun, entiers, `0 ≤ x < w`, `0 ≤ y < h`, sinon `None` (donc `BadImageParams` à l'écriture, champ lu absent à la lecture) ; `transparent_prelim` écrit `x`, `y` seulement s'ils sont là.
   - `pixels::transparent_color_from(px: &mut [u8], w: u32, h: u32, t: &Transparent, seed: Option<(u32, u32)>) -> Result<(), PixelError>` : `seed: Some(p)` → masque `flood_region(px, w, h, &[p], …)` (le mode contigu ou global est ignoré) ; `None` → comportement d'aujourd'hui ; `transparent_color(px, w, h, t)` = `transparent_color_from(px, w, h, t, None)`.
   - `roomboard-formats-wasm` : `#[wasm_bindgen] pub fn image_transparent_seed(px: &mut [u8], w: u32, h: u32, r: u8, g: u8, b: u8, tolerance: u8, soft: u8, x: u32, y: u32) -> Result<(), JsError>`.
-  - Pont `roomboard-wasm` : `set_style(…, variability_set, variability, drag_copy: Option<bool>)` ; `image_params_input` admet `[tolérance, plume, contigu, x, y]` (5 nombres) en plus des 3.
+  - Pont `roomboard-wasm` : `set_style(…, variability_set, variability, drag_copy: Option<bool>)` (un argument de plus après ceux de T1 ; `wasm-core.ts` le suit) ; `image_params_input` admet `[tolérance, plume, contigu, x, y]` (5 nombres) en plus des 3.
 - Produit (TS) :
   - `Look.dragCopy?: true` ; `LookPatch.dragCopy?: boolean` ; `dragCopyOf(l): boolean` ; `toLook` lit `dragCopy === true`.
   - `TransparentColor` += `x?: number; y?: number` ; `normalizeParams` contrôle `x`, `y` contre `w`, `h` ; `pixelKey` inclut `x`, `y` ; `imageParamsArgs` envoie 5 nombres quand `x` est là.
@@ -775,8 +784,8 @@ réécrit à chaque appel. Référence : `crates/roomboard-core/src/image.rs:194
 
 **Test et commande bornée** (reconstruction G12 ensuite) :
 ```bash
-cd <wt> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && unset CARGO_TARGET_DIR && nice -n 10 cargo test --workspace -j 4 2>&1 | grep -E "test result|FAILED|error\[" | tail -20
-cd <wt>/apps/web && ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm exec vitest run src/core src/platform 2>&1 | tail -15
+cd <wt> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && unset CARGO_TARGET_DIR && nice -n 10 cargo test --workspace -j 4 > ~/.cache/tmp/og23-T10-cargo.log 2>&1; grep -E "test result|FAILED|error\[" ~/.cache/tmp/og23-T10-cargo.log | tail -8; grep -E "(seed_clears_only_the_touched_region|seed_none_matches_transparent_color|transparent_seed_out_of_image_refused|transparent_seed_read_back|transparent_without_seed_keeps_bytes|set_style_drag_copy_one_step|drag_copy_kept_by_extract) \.\.\. ok" ~/.cache/tmp/og23-T10-cargo.log
+cd <wt>/apps/web && ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm exec vitest run src/core src/platform --reporter=verbose > ~/.cache/tmp/og23-T10-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T10-vitest.log; grep -E "dragCopy|transparent x y|départ mis à l'échelle" ~/.cache/tmp/og23-T10-vitest.log
 cd <wt> && nice -n 10 pnpm --filter @roomboard/cli build 2>&1 | tail -3 && node scripts/essais/cli-essai.mjs 2>&1 | tail -6
 ```
 Preuve : `test result: ok` partout ; tests `seed_clears_only_the_touched_region`, `seed_none_matches_transparent_color`,
@@ -786,13 +795,13 @@ la ligne `personnalisation-2-retours : dragCopy` ; tailles (`stat`) : principal 
 
 **Tests à écrire d'abord** :
 - `pixels.rs` (module de tests, aide `ring()` existante : fond blanc, anneau rouge, intérieur blanc) : `seed_clears_only_the_touched_region` (départ (10, 10) : intérieur alpha 0, fond `WHITE` intact ; départ (0, 0) : fond alpha 0, intérieur intact) ; `seed_none_matches_transparent_color` (mêmes octets que `transparent_color` en contigu et en global).
-- `tests/pot_image.rs` ou un fichier neuf `tests/baguette.rs` : `transparent_seed_out_of_image_refused` (`x = w` → `BadImageParams`, aucune étape) ; `transparent_seed_read_back` ; `transparent_without_seed_keeps_bytes` (fichier sans `x`, `y` réenregistré : mêmes octets).
+- `crates/roomboard-core/tests/baguette.rs` (neuf) : `transparent_seed_out_of_image_refused` (`x = w` → `BadImageParams`, aucune étape) ; `transparent_seed_read_back` ; `transparent_without_seed_keeps_bytes` (fichier sans `x`, `y` réenregistré : mêmes octets).
 - `tests/look.rs` : `set_style_drag_copy_one_step` (pose, une étape ; `Some(false)` retire ; même valeur : aucune étape ; zone `fill` ignorée) ; `drag_copy_kept_by_extract` (`extract` puis `insert_fragment` gardent `dragCopy`).
 - `wasm-core.contract.test.ts` : `SetStyle dragCopy`, `SetImageParams transparent x y` (x hors image : même message sur les deux cœurs).
 - `pixel-runner.test.ts` : `départ mis à l'échelle du bitmap` (faux module : `image_transparent_seed` reçoit (5, 5) pour x = 10, y = 10, `size` (200, 200), bitmap 100 × 100).
 - `cli-essai.mjs`, même bloc que T4 : `SetStyle { dragCopy: true }` lu par `state`, puis `{ dragCopy: false }` : champ absent ; `SetImageParams` d'une image de fixture (`solidPng` de `commun.mjs`) avec `transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true, x: 0, y: 0 }` lu par `state` ; `x: 9999` → code 1 ; `console.log("personnalisation-2-retours : dragCopy")`.
 
-**Contraintes** (recopiées) : G1 ; G2 ; G3 ; G4 ; G6 (+20 000 o au principal, +4 000 o à `formats`) ; G7 ; G11 ; G12 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G3 ; G4 ; G6 (+20 000 o au principal, +4 000 o à `formats`) ; G7 ; G11 ; G12 ; G13.
 
 **Interdits** : aucune dépendance neuve ; aucune encre ne traverse la frontière page ↔ Rust natif ; ne pas changer les tests existants de `pixels.rs`.
 
@@ -823,7 +832,7 @@ l'original ; un badge `copy` au coin haut gauche signale la propriété.
   - `link-badge.ts` : `COPY_ICON_PATHS` (Lucide `copy` : `["M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"]` et le carré `rect 14×14 x8 y8 rx2` en chemin `"M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z"`), `copyBadgeBox(b: Bounds, camera: Camera, dpr = 1): LinkBadge` (rond de 18 px, coin bas-droit à 6 px du coin haut gauche de la boîte, au pixel de l'appareil), `paintCopyBadge(ctx, box, color)` (rond, icône de 12 px) ; `drawScene` : collecte `dragCopy` comme `linked`, peint après les badges de lien, jamais à l'export (`forExport`), absent des miniatures.
   - Icône `move` (Lucide) pour la poignée : `["M12 2v20", "m15 19-3 3-3-3", "m19 9 3 3-3 3", "M2 12h20", "m5 9-3 3 3 3", "m9 5 3-3 3 3"]` (chemins dans `link-badge.ts`, comme `LINK_ICON_PATHS`).
 - Réutilise : `apps/web/src/engine/engine.ts:984-995` `duplicateSelection` ; `core/api.ts:418` `extract` ; `engine.ts:186` `insertFragment` — une seule signature `duplicate(ids, dx, dy, strip)` sur `Engine` et `ToolContext` (étendre).
-- Réutilise : `apps/web/src/engine/tools/select.ts:105-236` (`moveDelta`, `matrixOf`, `live`) ; `tools/handles.ts` `hitHandle` — mode `copy`, poignée `move` (étendre).
+- Réutilise : `apps/web/src/engine/tools/select.ts:105-236` (`moveDelta`, `matrixOf`, `live`) ; `tools/handles.ts` `hitHandle` — mode `copy` (étendre) ; poignée : écart — `moveHandlePoint`/`hitMoveHandle` à côté de `hitHandle`, pas `HandleId += "move"` (raison en tête du plan) ; le rapport le reprend en `Réutilisation : écart — …`.
 - Réutilise : `apps/web/src/engine/render/link-badge.ts:27,47` — `copyBadgeBox`, `paintCopyBadge` à côté (étendre).
 - Réutilise : `apps/web/src/engine/engine.ts:1250` (écriture du style, une étape) — `setDragCopy(on)` sur la sélection, comme `setLink` (étendre).
 - Rapport de tâche : une ligne `Réutilisation : appelé <module>` ou `Réutilisation : écart — <pourquoi>` par ligne `Réutilise :`.
@@ -834,7 +843,7 @@ new Set(selection)`) ; en copie, l'original doit rester peint. Et `duplicateSele
 
 **Test et commande bornée** :
 ```bash
-cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/engine 2>&1 | tail -20
+cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/engine --reporter=verbose > ~/.cache/tmp/og23-T11-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T11-vitest.log; grep -E "dragCopy : l'original reste|dragCopy : un clic ne copie rien|poignée Déplacer|dragCopy : copie sans la propriété|Ctrl\+D garde dragCopy|setDragCopy|copyBadgeBox au pixel|badge de copie absent|duplicateSelection \+10" ~/.cache/tmp/og23-T11-vitest.log
 ```
 Preuve : ≥ 6 tests neufs passés (`dragCopy : l'original reste, une copie`, `dragCopy : copie sans la propriété, sélectionnée`, `dragCopy : un clic ne copie rien`, `poignée Déplacer : l'original bouge`, `Ctrl+D garde dragCopy`, `copyBadgeBox au pixel`) ; `duplicateSelection +10/+10, copie sélectionnée, une étape` vert ; `0 failed`.
 
@@ -844,7 +853,7 @@ Preuve : ≥ 6 tests neufs passés (`dragCopy : l'original reste, une copie`, `d
 - `link-badge.test.ts` : `copyBadgeBox au pixel` (dpr 2, coordonnées multiples de 0,5).
 - `canvas2d.test.ts` : `badge de copie absent à l'export`.
 
-**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G8 (icônes Lucide) ; G9 (poignée de 44 px au doigt et au stylet, 24 px à la souris ; Pointer Events, jamais de glisser HTML5) ; G10 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G4 ; G8 (icônes Lucide) ; G9 (poignée de 44 px au doigt et au stylet, 24 px à la souris ; Pointer Events, jamais de glisser HTML5) ; G10 ; G13.
 
 **Interdits** : pas de commande du cœur pour la copie (extrait + `insertFragment`) ; pas d'Alt+glisser (OG12) ; poignées de taille inchangées.
 
@@ -874,13 +883,13 @@ source ; le panneau peut s'ouvrir en rognage (`start: "crop"`) ou en baguette ar
 
 **Test et commande bornée** :
 ```bash
-cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/engine/tools/image-edit.test.ts src/ui/ImagePanel.test.tsx 2>&1 | tail -15
+cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/engine/tools/image-edit.test.ts src/ui/ImagePanel.test.tsx --reporter=verbose > ~/.cache/tmp/og23-T12-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T12-vitest.log; grep -E "pickPoint rend le point source|Depuis le point touché|start crop|start background" ~/.cache/tmp/og23-T12-vitest.log
 ```
 Preuve : ≥ 4 tests neufs passés (`pickPoint rend le point source`, `mode Depuis le point touché`, `start crop ouvre le rognage`, `start background arme la pipette`) ; anciens verts ; `0 failed`.
 
 **Tests à écrire d'abord** : `fakeEdit` (`ImagePanel.test.tsx:11`) reçoit `pickPoint: vi.fn(async () => (pick === null ? null : { color: pick, x: 3, y: 4 }))` ; `mode Depuis le point touché` (choisir `seed`, Pipette, Valider : `commit` reçoit `transparent` avec `x: 3, y: 4`) ; `start crop ouvre le rognage` (`startCrop` appelé une fois) ; `start background arme la pipette` (`pickPoint` appelé, sélecteur sur `seed`) ; `image-edit.test.ts` : `pickPoint rend le point source` (image 200 × 100 à l'origine, toucher (50, 20) : `{ x: 50, y: 20 }`).
 
-**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G5 (`c5-image-navigateur.mjs` vert) ; G9 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G4 ; G5 (`c5-image-navigateur.mjs` vert) ; G9 ; G13.
 
 **Interdits** : ne pas toucher `App.tsx` ni `OptionsPanel.tsx` (T13) ; Rogner, Retourner, Tourner inchangés.
 
@@ -902,7 +911,7 @@ la section Actions porte la bascule « Glisser une copie » (`aria-pressed`, mix
 - Produit :
   - `OptionKey` += `"image"` (dans `OPTION_ORDER` entre `opacity` et `layers`) ; `OPEN_BY_DEFAULT` += `image` ; `sectionsFor` : `image` quand l'unique cible est `kind === "image"`.
   - `OptionsPanelProps.openImage?: (start: "crop" | "background" | null) => void` ; corps `image` : trois boutons `IconButton` pleine largeur avec texte, `data-image-action` = `panel-crop` (`crop`), `panel-background` (`eraser`), `panel-retouch` (`sliders-horizontal`), libellés « Rogner », « Effacer le fond », « Retouches… ».
-  - Bascule dans `actions` : `<button type="button" class="rb-opt-toggle" data-option-value="drag-copy" aria-pressed={all ? "true" : some ? "mixed" : "false"} data-mixed={some && !all ? "" : undefined}>` icône `copy` + « Glisser une copie » ; clic → `setDragCopy(!all)` (mixte : pose partout).
+  - Bascule dans `actions` : `<button type="button" class="rb-opt-toggle" data-option-value="drag-copy" aria-pressed={all ? "true" : some ? "mixed" : "false"} data-mixed={some && !all ? "" : undefined}>` icône `copy` + « Glisser une copie » ; clic → `setDragCopy(!all)` (mixte : pose partout) ; `disabled` quand aucune cible n'est un trait, une forme, un texte ou une image (écart déclaré en tête).
   - `App.tsx` : signal `imageStart: "crop" | "background" | null` ; `openImage(start)` = `setImageStart(start); setPanel("image")` ; `<ImagePanel … start={imageStart() ?? undefined}>` puis remise à `null` à la fermeture.
   - Icône Lucide `crop` : `["M6 2v14a2 2 0 0 0 2 2h14", "M18 22V8a2 2 0 0 0-2-2H2"]` ; `copy` existe déjà (`icons.ts`).
 - Réutilise : `apps/web/src/engine/tools/image-edit.ts:18-35` ; `ui/ImagePanel.tsx:47-56` ; `ui/App.tsx:376` `imagePanelFor` — `OptionsPanelProps.openImage(start)` (étendre).
@@ -911,13 +920,13 @@ la section Actions porte la bascule « Glisser une copie » (`aria-pressed`, mix
 
 **Test et commande bornée** :
 ```bash
-cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui 2>&1 | tail -20
+cd <wt>/apps/web && nice -n 10 pnpm exec vitest run src/ui --reporter=verbose > ~/.cache/tmp/og23-T13-vitest.log 2>&1; tail -6 ~/.cache/tmp/og23-T13-vitest.log; grep -E "image seule|Rogner appelle openImage|bascule mixte|pose puis retire|Rogner depuis le panneau" ~/.cache/tmp/og23-T13-vitest.log
 ```
 Preuve : ≥ 5 tests neufs passés (`image seule : section Image ouverte`, `Rogner appelle openImage("crop")`, `bascule mixte`, `bascule : pose puis retire`, `Rogner depuis le panneau ouvre la séance en rognage` dans `App.test.tsx`) ; `SelectionRow.test.tsx` vert (bouton Image gardé) ; `0 failed`.
 
 **Tests à écrire d'abord** : `tool-options.test.ts` : `sectionsFor select + image` → `["opacity", "image", "layers", "transform", "actions"]` (attente mise à jour, déc. 30) ; `OptionsPanel.test.tsx` : les quatre tests ci-dessus ; `App.test.tsx` : `Rogner depuis le panneau ouvre la séance en rognage`.
 
-**Contraintes** (recopiées) : G1 ; G2 ; G4 ; G5 ; G8 ; G9 (bascule au doigt et Tab + Entrée, pas de raccourci propre, H12) ; G10 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G2 ; G4 ; G5 ; G8 ; G9 (bascule au doigt et Tab + Entrée, pas de raccourci propre, H12) ; G10 ; G13.
 
 **Interdits** : le bouton Image de la rangée Sélection reste (`SelectionRow.tsx:54`) ; pas de section Média ou 3D.
 
@@ -932,7 +941,7 @@ Preuve : ≥ 5 tests neufs passés (`image seule : section Image ouverte`, `Rogn
 **Objectif** : l'essai joue S5 et S6 au doigt puis au clavier, en plus de S1 à S4 ; captures 2x avant et après de
 « glisser une copie » et de « image rognée et fond effacé » ; suite complète verte (S7).
 
-**Fichiers** : `scripts/essais/personnalisation-2-retours-navigateur.mjs`, `scripts/essais/fabriques/*` (fixture d'image : fond blanc, disque rouge contenant un anneau blanc fermé, par `rgbPng` de `commun.mjs:255` si possible, sans fichier neuf), `docs/design/captures/personnalisation-2-retours/*.png`.
+**Fichiers** : `scripts/essais/personnalisation-2-retours-navigateur.mjs` (la fixture d'image — fond blanc, disque rouge contenant un anneau blanc fermé — est fabriquée dans l'essai par `rgbPng` de `commun.mjs:255`, aucun fichier de fixture neuf) ; `docs/design/captures/personnalisation-2-retours/avant-copie.png`, `avant-image.png`, `apres-copie.png`, `apres-image.png`.
 
 **Interfaces** :
 - Consomme : l'essai de T9 (aides, `--lot`, `--captures`, `--dist --nom avant`).
@@ -949,7 +958,7 @@ cd <wt> && node ~/.claude/scripts/vm/suite-vm.cjs -- scripts/verifier.sh --e2e 2
 Preuve : `S1 OK` … `S6 OK` (doigt et clavier), `personnalisation-2-retours : OK`, code 0 ; suite complète code 0 avec
 `personnalisation-2 : OK`, `c5-image` et les essais de S7.1 verts, `CLI : OK`, tailles Wasm dans l'enveloppe G6.
 
-**Contraintes** (recopiées) : G1 ; G3 ; G4 ; G5 ; G6 ; G9 ; G10 ; G12 ; G13.
+**Contraintes** (recopiées) : G15 (forme des preuves) ; G1 ; G3 ; G4 ; G5 ; G6 ; G9 ; G10 ; G12 ; G13.
 
 **Interdits** : aucune réécriture de fond d'un essai existant ; pas de `--captures` dans `verifier.sh`.
 
