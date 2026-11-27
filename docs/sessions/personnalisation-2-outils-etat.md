@@ -4,9 +4,9 @@ Statut : en cours
 Gabarit : lots (lot 1 : 12 tâches ; lot 2 : 10 tâches, hors du temps)
 Objectif : Chaque outil commun avec Excalidraw (sélection, main, formes, flèche, ligne, crayon, texte, image, gomme) se comporte comme dans Excalidraw, au doigt d'abord puis au clavier, avec des connecteurs liés aux objets façon carte mentale et une fiche de vérification par outil.
 Avancement : 0/2 lots clos
-Étage : 3 (vague 3) — depuis 2026-11-27 19:58
+Étage : 4 (lot 1) — depuis 2026-11-27 22:20
 Lot : 1 « flèche et ligne » — 12/12 tâches terminées + correctifs C1, C2, C3 — depuis 2026-11-27 19:58
-Tâche : intégration d'origin/main (f6f3f43f) — depuis 2026-11-27 21:37
+Tâche : fusion du lot 1 (PR #71) ; lot 2a en exécution sur feat/personnalisation-2-outils-lot2 — depuis 2026-11-27 22:20
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2-outils   Branche : feat/personnalisation-2-outils   Base : origin/main @ cddbde49
 Branche principale locale au lancement : 59b75db0
@@ -43,6 +43,10 @@ Plan 3428e8b7. Vagues : V1 T1∥T2∥T3 · V2 T4∥T5∥T6∥T7∥T8∥T9 · V3 
 
 Rejeux : V2 fleches 17/17 ; V3 contrat 494/494, CLI : OK ; après C1+C2 web 4370/4370, fleches 25 ; C3 fleches 27, Wasm 1 513 466 o, outils-excalidraw : OK sans ÉCART.
 Double relecture (d00d35c6) : 0 bloquant ; 3 major corrigés (C1, C2) ; minors corrigés sauf : pointe d'AddLinked neutre (écart n° 27 écrit), bind_box ≈ element_geom (constat d'architecture).
+
+## Conditions de merge (lot 1)
+Point de retour origin/main f6f3f43f · double relecture faite, 0 bloquant ouvert · aucune tâche bloquée · verifier.sh --e2e OK sur f8028fc0 (cargo 1597, web 4470, cli 284 ; réf. 1523/4218/284) · aucun test retiré ni sauté · scénarios S1-S6 réussis (outils-excalidraw : OK, CLI : OK) · CLI vérifiée (cli-essai.mjs) · pas de CI GitHub (profil) · PR #71.
+Écart de chaîne : plan du lot 2a non relu avant exécution (temps) ; la double relecture de fin de lot 2a en tient lieu.
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · verifier.sh --e2e OK · scénarios réussis · PR fusionnée par merge --no-ff local et poussée
