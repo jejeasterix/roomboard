@@ -1771,7 +1771,9 @@ describe("canvas2d : lignes à points, pointes neuves, calque d'édition (OG12 T
   it("paintShape : pointe de début barre sur le premier segment d'une flèche à points", () => {
     const c = new PathCtx();
     paintShape(asCtx(c), { ...line, shape: "arrow" }, { color: "#000000", width: 4 }, { startArrowhead: "bar" });
-    expect(c.calls).toContain("move 0,-6");
+    // Orientée par le premier segment (0, 0) → (50, -80), non par la corde vers (100, 0).
+    const d = Math.hypot(50, 80);
+    expect(c.calls).toContain(`move ${(-80 / d) * 6},${(-50 / d) * 6}`);
   });
   it("paintShape : sans points ni aspect, mêmes appels qu'avant (segment)", () => {
     const c = new PathCtx();
