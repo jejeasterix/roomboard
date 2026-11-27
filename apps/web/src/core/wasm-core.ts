@@ -34,6 +34,7 @@ import { isAssetId } from "./asset-store";
 import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
 import { isShapeKind } from "./shapes";
+import { BAD_ORDER_MESSAGE } from "./api";
 
 export type WasmModule = Pick<typeof Wasm, "Document" | "StrokeBuilder" | "version">;
 
@@ -524,6 +525,11 @@ class WasmCoreDocument implements CoreDocument {
       }
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
+      case "Restack": {
+        // u32 côté pont (wasm-bindgen tronquerait sans erreur) : le rang se contrôle ici, avant l'appel.
+        if (!Number.isInteger(cmd.to) || cmd.to < 0 || cmd.to > 0xffffffff) throw new Error(BAD_ORDER_MESSAGE);
+        return toChange(this.d.restack([...cmd.ids], cmd.to));
+      }
       case "Group": return toChange(this.d.group([...cmd.ids]));
       case "Ungroup": return toChange(this.d.ungroup([...cmd.ids]));
       case "AddShape": {

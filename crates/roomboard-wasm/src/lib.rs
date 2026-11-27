@@ -579,6 +579,12 @@ impl Document {
         to_js(&self.ungroup_inner(ids).map_err(cmd_err)?)
     }
 
+    /// Ordre des objets (OG11, DA-2) : bloc d'une même page posé au rang `to`, une étape ; même ordre : aucune étape ;
+    /// page mêlée, id inconnu, rang hors bornes : « ordre invalide ». `to` entier ≥ 0 contrôlé par `wasm-core.ts`.
+    pub fn restack(&mut self, ids: Vec<String>, to: u32) -> Result<JsValue, JsError> {
+        to_js(&self.restack_inner(ids, to).map_err(cmd_err)?)
+    }
+
     /// Document neuf d'une page qui porte une recopie des éléments `ids` de `page` (C3, Z5) ; aucune étape.
     pub fn extract(&self, page: &str, ids: Vec<String>) -> Result<Document, JsError> {
         self.extract_inner(page, &ids).map_err(cmd_err)
@@ -1581,6 +1587,10 @@ impl Document {
 
     pub fn ungroup_inner(&mut self, ids: Vec<String>) -> Result<Change, CommandError> {
         self.run(Command::Ungroup { ids })
+    }
+
+    pub fn restack_inner(&mut self, ids: Vec<String>, to: u32) -> Result<Change, CommandError> {
+        self.run(Command::Restack { ids, to })
     }
 
     pub fn extract_inner(&self, page: &str, ids: &[String]) -> Result<Document, CommandError> {
