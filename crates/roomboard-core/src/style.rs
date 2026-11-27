@@ -196,7 +196,9 @@ impl Document {
         let mut plan: Vec<(MapRef, &'static str, Option<In>)> = Vec::new();
         let mut pages: Vec<String> = Vec::new();
         let mut touched: Vec<String> = Vec::new();
-        let mut reroute: Vec<MapRef> = Vec::new();
+        let mut reroute: Vec<(String, MapRef)> = Vec::new();
+        // C1 : cibles possibles touchées (ni ligne ni flèche : elles rompraient leurs propres liaisons dans `follow`).
+        let mut targets: Vec<String> = Vec::new();
         {
             let txn = self.read();
             for id in ids {
@@ -232,7 +234,15 @@ impl Document {
                     any = true;
                 }
                 if switched && patch.elbowed == Some(Some(true)) {
-                    reroute.push(e.clone());
+                    reroute.push((found.page_id.clone(), e.clone()));
+                }
+                let segment = kind == "shape"
+                    && shape
+                        .as_deref()
+                        .and_then(crate::shape::ShapeKind::parse)
+                        .is_some_and(|k| k.is_segment());
+                if any && !segment && !targets.contains(id) {
+                    targets.push(id.clone());
                 }
                 if any && !touched.contains(id) {
                     touched.push(id.clone());
@@ -251,8 +261,12 @@ impl Document {
                 set_or_remove(&map, &mut txn, key, v);
             }
             // OG12 (n° 12 c) : passer à coudée reroute dans la même étape.
-            for e in &reroute {
-                crate::linear::reroute(self, &mut txn, e);
+            for (page, e) in &reroute {
+                crate::linear::reroute(self, &mut txn, page, e);
+            }
+            // C1 : épaisseur (écart) ou boîte d'une cible changée : ses lignes liées suivent dans la même étape.
+            if !targets.is_empty() {
+                crate::linear::follow(self, &mut txn, &targets, None);
             }
         }
         Ok(self.done(Change {
