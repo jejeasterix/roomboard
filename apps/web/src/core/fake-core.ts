@@ -35,6 +35,10 @@
 // de `commands.rs` (mêmes refus, aucune étape sans effet) ; `mode` brut gardé (valeur inconnue lue Page, U3) et `height`
 // lue ; accroche et lignes de grille bornées au cadre de `pageFrame` en Page, sans borne en Infini (règle de T7).
 // Lot 2 : `Restack` au modèle de `cmd_restack` (mêmes refus dans le même ordre, ids gardés, même ordre : aucune étape).
+// OG12 : points intérieurs, liaisons, suivi, rupture, copie liée, `SetLinePoints`, `AddLinked`, `bindTarget` au modèle de
+// `linear.rs`, `copy.rs` et `query.rs` (mêmes refus dans le même ordre, une étape par commande) ; écart assumé, exclu du
+// contrat commun : la route coudée (une flèche coudée garde ses bouts) ; règles copiées de linear.rs, adaptées
+// d'Excalidraw (MIT).
 import type {
   ContainerKind,
   AssetInfo,
@@ -73,7 +77,7 @@ import type {
   TextSpan,
   FillData,
 } from "./api";
-import type { BindHit } from "./api";
+import type { BindHit, LineBinding, LinkDir } from "./api";
 import {
   BAD_GROUP_MESSAGE,
   BAD_MEDIA_MESSAGE,
@@ -109,10 +113,11 @@ import {
 } from "./api";
 import { pageFrame, type PageRect } from "../engine/page";
 import { isAssetId } from "./asset-store";
-import { newSeed, STROKE_STYLES, toLook, type Look, type LookPatch } from "./look";
+import { elbowedOf, newSeed, STROKE_STYLES, toLook, type Look, type LookPatch } from "./look";
 import { ARROWHEADS, END_ARROWHEAD_DEFAULT, FILL_STYLES, START_ARROWHEAD_DEFAULT, TEXT_ALIGNS, validLink as validLookLink } from "./look";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
+import { ANCHOR_RATIOS, anchorPoint, BIND_RATIO_MAX, bindGap, invertMatrix, lineGeomOf, linePath, MAX_INNER_POINTS, type BindBox } from "./shapes";
 import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
 
 /** Réglages d'une image (C5), tels que le cœur les range à plat sur l'élément. */
@@ -257,6 +262,7 @@ function validStyle(p: LookPatch): number | undefined {
   };
   if (outside("fillStyle", FILL_STYLES) || outside("startArrowhead", ARROWHEADS) || outside("endArrowhead", ARROWHEADS) || outside("textAlign", TEXT_ALIGNS)) badStyle();
   if ("link" in p && !absent(p.link) && !(typeof p.link === "string" && validLookLink(p.link))) badStyle();
+  if ("elbowed" in p && !absent(p.elbowed) && typeof p.elbowed !== "boolean") badStyle();
   return opacityArg(p.opacity);
 }
 
@@ -309,7 +315,8 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
       if (changes) put("seed", newSeed());
     }
   }
-  if ("roundness" in p && shape?.shape === "rect") put("roundness", p.roundness ?? undefined);
+  // OG12 (T1) : `roundness` aussi sur une ligne ou une flèche (courbe).
+  if ("roundness" in p && (shape?.shape === "rect" || shape?.shape === "line" || shape?.shape === "arrow")) put("roundness", p.roundness ?? undefined);
   if (opacity !== undefined) put("opacity", opacity < 100 ? opacity : undefined);
   // T12 (`writes_for`) : une pointe égale à son défaut retire le champ, jamais elle ne s'écrit.
   if ("fillStyle" in p && shape && (shape.shape === "rect" || shape.shape === "ellipse")) put("fillStyle", p.fillStyle ?? undefined);
@@ -317,6 +324,18 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
     const head = <D extends string>(v: D | null | undefined, d: string): D | undefined => (absent(v) || v === d ? undefined : v);
     if ("startArrowhead" in p) put("startArrowhead", head(p.startArrowhead, START_ARROWHEAD_DEFAULT));
     if ("endArrowhead" in p) put("endArrowhead", head(p.endArrowhead, END_ARROWHEAD_DEFAULT));
+    // OG12 (T1) : `elbowed` sur une flèche seule, `true` seul écrit ; un changement vide les points intérieurs (la route
+    // coudée du cœur n'est pas reproduite : la flèche garde ses bouts).
+    if ("elbowed" in p) {
+      const want = p.elbowed === true;
+      if (elbowedOf(e.look) !== want) {
+        put("elbowed", want ? true : undefined);
+        if (shape.points) {
+          const { points: _x, ...r } = shape;
+          shape = r;
+        }
+      }
+    }
   }
   if ("textAlign" in p && kind === "text") put("textAlign", p.textAlign ?? undefined);
   if ("link" in p) put("link", p.link ?? undefined);
@@ -587,7 +606,7 @@ let counter = 0;
 const newId = (): string => `fake-${++counter}`;
 
 /** Recopie (Z4) : id neuf, chemin renuméroté par `groups` (commun à l'insertion), translation si le transform est lu. */
-function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy: number): FakeElement {
+function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy: number, id: string = newId()): FakeElement {
   const group = e.group?.map((g) => {
     let n = groups.get(g);
     if (n === undefined) {
@@ -600,8 +619,135 @@ function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy
   const moves = (dx !== 0 || dy !== 0) && e.unknown?.hasTransform !== false && e.malformed === undefined;
   const t = e.transform;
   const transform: Matrix = moves ? [t[0], t[1], t[2], t[3], t[4] + dx, t[5] + dy] : t;
-  return { ...rest, id: newId(), transform, ...withGroup(group) };
+  return { ...rest, id, transform, ...withGroup(group) };
 }
+
+/** OG12 (n° 10) : liaisons renvoyées vers la copie de leur cible (`fresh`), retirées si la cible n'est pas du lot. */
+function rebound(e: FakeElement, fresh: ReadonlyMap<string, string>): FakeElement {
+  const s = e.shape;
+  if (!s || (s.start === undefined && s.end === undefined)) return e;
+  const to = (b: LineBinding | undefined): LineBinding | undefined => {
+    const n = b === undefined ? undefined : fresh.get(b.id);
+    return b === undefined || n === undefined ? undefined : { ...b, id: n };
+  };
+  const { start, end, ...rest } = s;
+  const ns = to(start);
+  const ne = to(end);
+  return { ...e, shape: { ...rest, ...(ns ? { start: ns } : {}), ...(ne ? { end: ne } : {}) } };
+}
+
+/** Recopie d'un lot (`copy_prelims` du cœur) : table ancien → neuf du lot tirée d'abord (première occurrence d'un id
+ *  répété), puis chaque recopie, liaisons renvoyées vers les copies ou retirées. Seul chemin de recopie d'`extract`,
+ *  `insertFragment`, `insertPages`, `DuplicatePage` et `AddLinked`. */
+function copyElements(list: readonly FakeElement[], groups: Map<string, string>, dx: number, dy: number): FakeElement[] {
+  const fresh = new Map<string, string>();
+  const own = list.map((e) => {
+    const id = newId();
+    if (!fresh.has(e.id)) fresh.set(e.id, id);
+    return id;
+  });
+  return list.map((e, i) => rebound(copyElement(e, groups, dx, dy, own[i]!), fresh));
+}
+
+type Pt2 = [number, number];
+/** OG12 : boîte d'accroche (miroir de `bind_box`) ; null pour un trait, une ligne, une flèche, un `fill`, un inconnu. */
+function bindBoxOf(e: FakeElement): BindBox | null {
+  if (e.malformed || e.unknown || e.fill || e.local !== undefined) return null;
+  const box = (w: number, h: number, ellipse: boolean, width: number): BindBox | null =>
+    positive(w) && positive(h) ? { id: e.id, m: e.transform, w, h, ellipse, gap: bindGap(width) } : null;
+  if (e.shape) return isSegment(e.shape.shape) ? null : box(e.shape.w, e.shape.h, e.shape.shape === "ellipse", e.style.width);
+  if (e.text) return box(e.text.boxWidth, e.text.boxHeight, false, 0);
+  if (e.image) return box(...displaySize(e.image), false, 0);
+  if (e.table) return box(tableWidth(e.table), tableHeight(e.table), false, 0);
+  if (e.media) return box(e.media.w, e.media.h, false, 0);
+  if (e.model3d) return box(e.model3d.w, e.model3d.h, false, 0);
+  return null;
+}
+/** Points monde d'une ligne (`world_of`). */
+const worldOf = (e: FakeElement): Pt2[] =>
+  e.shape ? linePath(e.shape.w, e.shape.h, e.shape.points ?? []).map(([x, y]) => applyMatrix(e.transform, x, y)) : [];
+/** Écriture d'une ligne (miroir de `line_writes`) : partie linéaire gardée, départ = premier point, points intérieurs
+ *  locaux (absents s'il n'y en a pas), liaisons posées ou retirées ; refus du cœur rendus tels quels. */
+function withLine(e: FakeElement, world: readonly Pt2[], start: LineBinding | null, end: LineBinding | null): FakeElement | "badMatrix" | "badPoints" {
+  const s = e.shape;
+  const p0 = world[0];
+  const t = e.transform;
+  const inv = invertMatrix([t[0], t[1], t[2], t[3], 0, 0]);
+  if (!s || !p0 || !inv) return "badMatrix";
+  const local = world.map(([x, y]) => applyMatrix(inv, x - p0[0], y - p0[1]));
+  const [w, h] = local[local.length - 1]!;
+  const inner = local.slice(1, -1).flat();
+  if (!fitsF32([p0[0], p0[1], w, h]) || !fitsF32(inner)) return "badPoints";
+  const { points: _p, start: _s, end: _e, ...rest } = s;
+  return {
+    ...e,
+    transform: [t[0], t[1], t[2], t[3], p0[0], p0[1]],
+    shape: { ...rest, w, h, ...(inner.length > 0 ? { points: inner } : {}), ...(start ? { start } : {}), ...(end ? { end } : {}) },
+  };
+}
+const sameBinding = (a: LineBinding | undefined, b: LineBinding | undefined): boolean =>
+  a === b || (a !== undefined && b !== undefined && a.id === b.id && a.fx === b.fx && a.fy === b.fy);
+/** Aucune écriture effective (`differs` du cœur) : même matrice, même boîte, mêmes points, mêmes liaisons. */
+function sameLine(a: FakeElement, b: FakeElement): boolean {
+  const s = a.shape;
+  const t = b.shape;
+  if (!s || !t) return false;
+  const pa = s.points ?? [];
+  const pb = t.points ?? [];
+  return a.transform.every((v, i) => v === b.transform[i]) && s.w === t.w && s.h === t.h && pa.length === pb.length &&
+    pa.every((v, i) => v === pb[i]) && sameBinding(s.start, t.start) && sameBinding(s.end, t.end);
+}
+/** Liaison contrôlée (`checked_binding`) : rapport borné et boîte de sa cible. */
+interface Checked { readonly bind: LineBinding; readonly box: BindBox }
+/** Extrémités liées recalées sur leur ancre (n° 17). */
+function anchored(world: readonly Pt2[], start: Checked | null, end: Checked | null): Pt2[] {
+  const out = [...world];
+  if (start) out[0] = anchorPoint(start.box, start.bind.fx, start.bind.fy);
+  if (end) out[out.length - 1] = anchorPoint(end.box, end.bind.fx, end.bind.fy);
+  return out;
+}
+/** Flèche coudée : écart assumé (DA-3), elle garde ses seuls bouts, sans route. */
+const elbowArrow = (e: FakeElement): boolean => e.shape?.shape === "arrow" && elbowedOf(e.look);
+/** Points intérieurs valides d'`AddShape` (`valid_inner`). */
+const validInner = (p: readonly number[]): boolean =>
+  p.length % 2 === 0 && p.length <= 2 * MAX_INNER_POINTS && p.every((v) => Number.isFinite(v)) && fitsF32(p);
+/** Point du contour le plus proche de (qx, qy) local, sa distance locale, et le point dedans (`nearest_outline`). */
+function nearestOutline(b: BindBox, qx: number, qy: number): { readonly p: Pt2; readonly d: number; readonly contains: boolean } {
+  if (b.ellipse) {
+    const cx = b.w / 2;
+    const cy = b.h / 2;
+    const r = Math.sqrt(((qx - cx) / cx) ** 2 + ((qy - cy) / cy) ** 2);
+    const p: Pt2 = r < 1e-12 ? [cx, 0] : [cx + (qx - cx) / r, cy + (qy - cy) / r];
+    return { p, d: Math.hypot(qx - p[0], qy - p[1]), contains: r <= 1 };
+  }
+  const inside = qx >= 0 && qx <= b.w && qy >= 0 && qy <= b.h;
+  let p: Pt2;
+  if (inside) {
+    const d = [qy, b.w - qx, b.h - qy, qx];
+    let k = 0;
+    for (let i = 1; i < 4; i++) if (d[i]! < d[k]!) k = i;
+    p = k === 0 ? [qx, 0] : k === 1 ? [b.w, qy] : k === 2 ? [qx, b.h] : [0, qy];
+  } else {
+    p = [Math.min(Math.max(qx, 0), b.w), Math.min(Math.max(qy, 0), b.h)];
+  }
+  return { p, d: Math.hypot(qx - p[0], qy - p[1]), contains: inside };
+}
+/** Boîte monde alignée d'une boîte d'accroche (`world_box`). */
+function worldBox(b: BindBox): [number, number, number, number] {
+  const c = [[0, 0], [b.w, 0], [b.w, b.h], [0, b.h]].map(([x, y]) => applyMatrix(b.m, x!, y!));
+  const xs = c.map((q) => q[0]);
+  const ys = c.map((q) => q[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+/** Écart entre un nœud et son objet relié (`LINK_GAP`). */
+const LINK_GAP = 100;
+/** `LinkDir::unit` et `LinkDir::ratio` du cœur. */
+const LINK_DIRS: Readonly<Record<LinkDir, { readonly u: Pt2; readonly r: Pt2 }>> = {
+  up: { u: [0, -1], r: [0.5, 0] },
+  down: { u: [0, 1], r: [0.5, 1] },
+  left: { u: [-1, 0], r: [0, 0.5] },
+  right: { u: [1, 0], r: [1, 0.5] },
+};
 const finitePath = (path: Float32Array): boolean =>
   path.length >= 2 && path.length % 2 === 0 && path.every((v) => Number.isFinite(v));
 const positive = (v: number): boolean => Number.isFinite(v) && v > 0;
@@ -670,7 +816,7 @@ function strokeTouches(e: FakeElement, path: Float32Array, radius: number): bool
 /** Polygone monde (x, y alternés) d'une forme, d'un texte, d'une image, d'un tableau ou d'un inconnu ; null pour un trait. */
 function worldPolygon(e: FakeElement): number[] | null {
   const local = e.shape
-    ? shapePolygon(e.shape.shape, e.shape.w, e.shape.h, e.style.width)
+    ? shapePolygon(e.shape.shape, e.shape.w, e.shape.h, e.style.width, lineGeomOf(e.shape, e.look))
     : e.text
       ? boxPolygon(e.text.boxWidth, e.text.boxHeight)
       : e.image
@@ -857,12 +1003,170 @@ class FakeDocument implements CoreDocument {
     return p === undefined ? [] : p.elements.filter((e) => typeof e.id === "string" && rawKind(e) === kind).map((e) => e.id);
   }
 
-  /** Bouchon OG12, remplacé par T5. */
-  bindTarget(): BindHit | null { return null; }
+  /** OG12 : liaison demandée (`checked_binding`) : rapport fini, cible connue et accrochable, rapport borné à ±10 ; sinon
+   *  forme invalide. */
+  private checkedBinding(b: LineBinding): Checked {
+    if (!Number.isFinite(b.fx) || !Number.isFinite(b.fy)) throw new Error(MESSAGES.badShape);
+    const found = this.find(b.id);
+    const box = found ? bindBoxOf(found.element) : null;
+    if (!box) throw new Error(MESSAGES.badShape);
+    const clamp = (v: number): number => Math.min(BIND_RATIO_MAX, Math.max(-BIND_RATIO_MAX, v));
+    return { bind: { id: b.id, fx: clamp(b.fx), fy: clamp(b.fy) }, box };
+  }
+
+  /** OG12 : suivi et rupture (`linear::follow`, n° 7, 8), sur l'état `s` de l'étape de la commande qui a bougé `moved` ;
+   *  `m` : matrice du `Transform` (null : boîte d'un texte changée). Rend les ids réécrits. */
+  private follow(s: State, moved: ReadonlySet<string>, m: Matrix | null): string[] {
+    const boxIn = (b: LineBinding | null): BindBox | null => {
+      if (b === null) return null;
+      for (const p of s.pages) {
+        const t = p.elements.find((x) => x.id === b.id);
+        if (t) return bindBoxOf(t);
+      }
+      return null;
+    };
+    const out: string[] = [];
+    for (const p of s.pages) {
+      p.elements.forEach((e, i) => {
+        const sh = e.shape;
+        if (!sh || !isSegment(sh.shape) || (sh.start === undefined && sh.end === undefined)) return;
+        const sm = sh.start !== undefined && moved.has(sh.start.id);
+        const em = sh.end !== undefined && moved.has(sh.end.id);
+        const self = moved.has(e.id);
+        let start: LineBinding | null;
+        let end: LineBinding | null;
+        if (self) {
+          start = sm ? (sh.start ?? null) : null;
+          end = em ? (sh.end ?? null) : null;
+        } else if (sm || em) {
+          start = sh.start ?? null;
+          end = sh.end ?? null;
+        } else {
+          return;
+        }
+        let world = worldOf(e);
+        const last = world.length - 1;
+        if (!self && sm && em && m) world = world.map((q, k) => (k === 0 || k === last ? q : applyMatrix(m, q[0], q[1])));
+        // `settle` : bout lié recalé sur l'ancre de sa cible présente, laissé tel quel sinon ; coudée : ses bouts seuls.
+        const bs = boxIn(start);
+        const be = boxIn(end);
+        if (bs && start) world[0] = anchorPoint(bs, start.fx, start.fy);
+        if (be && end) world[last] = anchorPoint(be, end.fx, end.fy);
+        if (elbowArrow(e)) world = [world[0]!, world[last]!];
+        const next = withLine(e, world, start, end);
+        if (typeof next === "string" || sameLine(e, next)) return;
+        p.elements[i] = next;
+        out.push(e.id);
+      });
+    }
+    return out;
+  }
+
+  /** OG12 (n° 17, 18) : `bind_target` du cœur ; le plus petit qui contient le point passe devant le plus proche du
+   *  contour, s'il est plus petit que lui ou s'il est le même. */
+  bindTarget(page: string, x: number, y: number, tol: number): BindHit | null {
+    const p = this.state.pages.find((q) => q.id === page);
+    if (!p) return null;
+    interface Cand { readonly area: number; readonly dist: number; readonly contains: boolean; readonly near: boolean; readonly hit: BindHit }
+    const reach = Math.fround(tol); // le pont reçoit un f32
+    const cands: Cand[] = [];
+    for (const e of p.elements) {
+      const b = bindBoxOf(e);
+      const inv = b ? invertMatrix(b.m) : null;
+      if (!b || !inv) continue;
+      const [qx, qy] = applyMatrix(inv, x, y);
+      const scale = Math.max(Math.sqrt(Math.abs(b.m[0] * b.m[3] - b.m[1] * b.m[2])), 1e-12);
+      const { p: o, d, contains } = nearestOutline(b, qx, qy);
+      const near = d * scale <= reach;
+      if (!near && !contains) continue;
+      const fixed: readonly [number, number] = near ? [o[0] / b.w, o[1] / b.h] : [qx / b.w, qy / b.h];
+      const anchors = ANCHOR_RATIOS.map(([rx, ry]) => applyMatrix(b.m, rx * b.w, ry * b.h));
+      cands.push({ area: b.w * b.h * scale * scale, dist: d * scale, contains, near, hit: { id: b.id, fixed, onOutline: near, anchors } });
+    }
+    // `min_by` : le premier des égaux.
+    const least = (list: Cand[], key: (c: Cand) => number): Cand | undefined =>
+      list.reduce<Cand | undefined>((acc, c) => (acc === undefined || key(c) < key(acc) ? c : acc), undefined);
+    const inside = least(cands.filter((c) => c.contains), (c) => c.area);
+    const nearest = least(cands.filter((c) => c.near), (c) => c.dist);
+    const pick = inside && nearest ? (inside.area < nearest.area || inside.hit.id === nearest.hit.id ? inside : nearest) : (inside ?? nearest);
+    return pick?.hit ?? null;
+  }
+
+  /** OG12 (DA-2) : liaison vers un objet absent lue libre, sans écriture. */
+  private shapeView(s: ShapeData): ShapeData {
+    const gone = (b: LineBinding | undefined): boolean => b !== undefined && this.find(b.id) === undefined;
+    if (!gone(s.start) && !gone(s.end)) return s;
+    const { start, end, ...rest } = s;
+    return { ...rest, ...(start && !gone(start) ? { start } : {}), ...(end && !gone(end) ? { end } : {}) };
+  }
 
   apply(cmd: Command): Change {
     switch (cmd.type) {
-      case "SetLinePoints": case "AddLinked": throw new Error(`commande non prise en charge : ${cmd.type}`);
+      case "SetLinePoints": {
+        // OG12 : ordre de `cmd_set_line_points` : points, élément, ligne ou flèche, liaisons ; même résultat : aucune étape.
+        const pts = cmd.points;
+        const n = pts.length / 2;
+        if (pts.length % 2 !== 0 || n < 2 || n > MAX_INNER_POINTS + 2 || !pts.every((v) => Number.isFinite(v)) || !fitsF32(pts)) {
+          throw new Error("points invalides");
+        }
+        const found = this.find(cmd.id);
+        if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
+        const e = found.element;
+        if (!e.shape || !isSegment(e.shape.shape)) throw new Error(MESSAGES.badShape);
+        const sb = cmd.start ? this.checkedBinding(cmd.start) : null;
+        const eb = cmd.end ? this.checkedBinding(cmd.end) : null;
+        const given: Pt2[] = [];
+        for (let i = 0; i + 1 < pts.length; i += 2) given.push([pts[i]!, pts[i + 1]!]);
+        let world = anchored(given, sb, eb);
+        if (elbowArrow(e)) world = [world[0]!, world[world.length - 1]!];
+        const next = withLine(e, world, sb?.bind ?? null, eb?.bind ?? null);
+        if (next === "badMatrix") throw new Error(MESSAGES.badMatrix);
+        if (next === "badPoints") throw new Error("points invalides");
+        if (sameLine(e, next)) return this.unchanged();
+        const pageId = found.page.id;
+        return this.step((st) => {
+          const p = st.pages.find((q) => q.id === pageId);
+          const i = p ? p.elements.findIndex((x) => x.id === cmd.id) : -1;
+          if (p && i >= 0) p.elements[i] = next;
+          return { pages: [pageId], ids: [cmd.id], removed: [] };
+        });
+      }
+      case "AddLinked": {
+        // OG12 (n° 27, DA-4) : `cmd_add_linked` ; copie par `copyElements`, flèche coudée liée aux deux, une étape.
+        const dir = LINK_DIRS[cmd.dir];
+        if (dir === undefined) throw new Error(`direction inconnue : ${String(cmd.dir)}`);
+        const found = this.find(cmd.id);
+        if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
+        const e = found.element;
+        const src = e.shape && (e.shape.shape === "rect" || e.shape.shape === "ellipse") ? bindBoxOf(e) : null;
+        if (!src) throw new Error(MESSAGES.badShape);
+        const others = found.page.elements.map(bindBoxOf).filter((x): x is BindBox => x !== null && x.id !== cmd.id).map(worldBox);
+        const [x0, y0, x1, y1] = worldBox(src);
+        const sw = x1 - x0;
+        const sh = y1 - y0;
+        const [ux, uy] = dir.u;
+        let dx = ux * (sw + LINK_GAP);
+        let dy = uy * (sh + LINK_GAP);
+        const hits = (): boolean => others.some((o) => x0 + dx < o[2] && x1 + dx > o[0] && y0 + dy < o[3] && y1 + dy > o[1]);
+        for (let k = 0; k < 64 && hits(); k++) {
+          if (ux !== 0) dy += sh + LINK_GAP;
+          else dx += sw + LINK_GAP;
+        }
+        const { group: _g, ...copy } = copyElements([e], new Map(), dx, dy)[0]!;
+        const dst: BindBox = { ...src, id: copy.id, m: [src.m[0], src.m[1], src.m[2], src.m[3], src.m[4] + dx, src.m[5] + dy] };
+        const [fx, fy] = dir.r;
+        const start: LineBinding = { id: cmd.id, fx, fy };
+        const end: LineBinding = { id: copy.id, fx: 1 - fx, fy: 1 - fy };
+        const bare: FakeElement = { id: newId(), transform: IDENTITY, style: { color: e.style.color, width: e.style.width }, shape: { shape: "arrow", w: 0, h: 0, fill: null }, look: { elbowed: true } };
+        // Écart assumé (DA-3) : la flèche coudée garde ses seuls bouts, sans route.
+        const arrow = withLine(bare, [anchorPoint(src, fx, fy), anchorPoint(dst, end.fx, end.fy)], start, end);
+        if (typeof arrow === "string") throw new Error("points invalides");
+        const pageId = found.page.id;
+        return this.step((st) => {
+          st.pages.find((q) => q.id === pageId)?.elements.push(copy, arrow);
+          return { pages: [pageId], ids: [copy.id, arrow.id], removed: [] };
+        });
+      }
       case "AddPage": {
         const after = cmd.after;
         // Le pont lit `mode` avant de lancer la commande : son refus passe avant celui de la page.
@@ -917,7 +1221,7 @@ class FakeDocument implements CoreDocument {
         // `cmd_duplicate_page` = `extract_page` + `insert_pages` : copie juste après, ids neufs, champs gardés.
         const src = this.pageOf(cmd.page);
         const groups = new Map<string, string>();
-        const copy: FakePage = { ...src, id: newId(), elements: src.elements.map((e) => copyElement(e, groups, 0, 0)) };
+        const copy: FakePage = { ...src, id: newId(), elements: copyElements(src.elements, groups, 0, 0) };
         return this.step((s) => {
           s.pages.splice(s.pages.findIndex((p) => p.id === cmd.page) + 1, 0, copy);
           return { pages: [copy.id], ids: copy.elements.map((e) => e.id), removed: [] };
@@ -995,15 +1299,38 @@ class FakeDocument implements CoreDocument {
         const g = normalizeShape(cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1);
         if (![g.tx, g.ty, g.w, g.h].every((v) => Number.isFinite(Math.fround(v)))) throw new Error(MESSAGES.badShape);
         if (!positive(cmd.style.width)) throw new Error(MESSAGES.badWidth);
+        // OG12 (n° 12 a) : ordre de `cmd_add_shape` : ligne sur rectangle ou ellipse, points, page, liaisons.
+        const inner = cmd.points ?? [];
+        const hasLine = inner.length > 0 || !absent(cmd.start) || !absent(cmd.end);
+        if (hasLine && !isSegment(cmd.shape)) throw new Error(MESSAGES.badShape);
+        if (!validInner(inner)) throw new Error("points invalides");
         this.pageOf(cmd.page);
+        const sb = absent(cmd.start) ? null : this.checkedBinding(cmd.start);
+        const eb = absent(cmd.end) ? null : this.checkedBinding(cmd.end);
+        const shape: ShapeData = { shape: cmd.shape, w: g.w, h: g.h, fill: cmd.fill };
+        let placed: FakeElement | null = null;
+        if (hasLine) {
+          const given: Pt2[] = [[cmd.x0, cmd.y0]];
+          for (let i = 0; i + 1 < inner.length; i += 2) given.push([inner[i]!, inner[i + 1]!]);
+          given.push([cmd.x1, cmd.y1]);
+          const world = anchored(given, sb, eb);
+          const [p0, pn] = [world[0]!, world[world.length - 1]!];
+          if (!fitsF32([p0[0], p0[1], pn[0] - p0[0], pn[1] - p0[1]])) throw new Error(MESSAGES.badShape);
+          const next = withLine({ id: "", transform: IDENTITY, style: cmd.style, shape }, world, sb?.bind ?? null, eb?.bind ?? null);
+          if (typeof next === "string") throw new Error("points invalides");
+          placed = next;
+        }
+        // `elbowed` gardé sur une flèche seule.
+        const kept = look?.elbowed && cmd.shape !== "arrow" ? (({ elbowed: _x, ...r }) => r)(look) : look;
+        const written = kept && Object.keys(kept).length > 0 ? kept : undefined;
         return this.step((s) => {
           const id = newId();
           s.pages.find((p) => p.id === cmd.page)?.elements.push({
             id,
-            transform: translate(g.tx, g.ty),
+            transform: placed ? placed.transform : translate(g.tx, g.ty),
             style: cmd.style,
-            shape: { shape: cmd.shape, w: g.w, h: g.h, fill: cmd.fill },
-            ...(look ? { look } : {}),
+            shape: placed?.shape ?? shape,
+            ...(written ? { look: written } : {}),
           });
           return { pages: [cmd.page], ids: [id], removed: [] };
         });
@@ -1049,6 +1376,7 @@ class FakeDocument implements CoreDocument {
           const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
           const old = p?.elements[i];
           if (p && old) p.elements[i] = { ...old, style, text: { ...text, spans: want ?? editSpans(t.spans, cmd.content) } };
+          this.follow(s, new Set([id]), null); // OG12 (n° 7) : boîte changée, extrémités liées recalées
           return { pages: [pageId], ids: [id], removed: [] };
         });
       }
@@ -1074,7 +1402,9 @@ class FakeDocument implements CoreDocument {
               if (t) p.elements[i] = { ...e, transform: t };
             });
           }
-          return { pages, ids, removed: [] };
+          // OG12 (n° 7, 8) : suivi et rupture dans la même étape.
+          const followed = this.follow(s, new Set(ids), m);
+          return { pages, ids: [...ids, ...followed.filter((x) => !ids.includes(x))], removed: [] };
         });
       }
       case "AddImage": {
@@ -1225,6 +1555,7 @@ class FakeDocument implements CoreDocument {
           const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
           const old = p?.elements[i];
           if (p && old?.text) p.elements[i] = { ...old, text: { ...old.text, spans, boxHeight } };
+          if (cmd.boxHeight !== undefined) this.follow(s, new Set([id]), null); // OG12 (n° 7)
           return { pages: [pageId], ids: [id], removed: [] };
         });
       }
@@ -1652,7 +1983,7 @@ class FakeDocument implements CoreDocument {
     if (e.fill) return { ...base, kind: "fill", fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h } };
     if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
     const styled = { ...base, ...looked, style: e.style };
-    if (e.shape) return { ...styled, kind: "shape", shape: e.shape };
+    if (e.shape) return { ...styled, kind: "shape", shape: this.shapeView(e.shape) };
     if (e.text) return { ...styled, kind: "text", text: e.text };
     return { ...styled, kind: "stroke" };
   }
@@ -1842,7 +2173,7 @@ class FakeDocument implements CoreDocument {
     for (const id of ids) if (!p.elements.some((e) => e.id === id)) throw new Error(`élément inconnu : ${id}`);
     const wanted = new Set(ids);
     const groups = new Map<string, string>();
-    const elements = p.elements.filter((e) => wanted.has(e.id)).map((e) => copyElement(e, groups, 0, 0));
+    const elements = copyElements(p.elements.filter((e) => wanted.has(e.id)), groups, 0, 0);
     const out = new FakeDocument({ pages: [{ ...newPage(undefined), elements }], assets: new Map() });
     adoptMeta(out.state.assets, this.state.assets, out.citedAssets().map((a) => a.id));
     return out;
@@ -1855,7 +2186,7 @@ class FakeDocument implements CoreDocument {
     const from = src.state.pages[0]?.elements ?? [];
     if (from.length === 0) return this.unchanged();
     const groups = new Map<string, string>();
-    const copies = from.map((e) => copyElement(e, groups, dx, dy));
+    const copies = copyElements(from, groups, dx, dy);
     const cited = src.citedAssets().map((a) => a.id);
     return this.step((s) => {
       s.pages.find((q) => q.id === page)?.elements.push(...copies);
@@ -1872,7 +2203,7 @@ class FakeDocument implements CoreDocument {
     const pages: FakePage[] = src.state.pages.map((p) => ({
       ...p,
       id: newId(),
-      elements: p.elements.map((e) => copyElement(e, groups, 0, 0)),
+      elements: copyElements(p.elements, groups, 0, 0),
     }));
     const cited = src.citedAssets().map((a) => a.id);
     return this.step((s) => {
