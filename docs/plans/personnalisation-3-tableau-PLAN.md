@@ -18,46 +18,51 @@ n'est touchée qu'en 4 points (DA3) ; tout calcul en TS, le cœur en écrivain (
 
 | id | titre | dépend de | fichiers touchés | worktree | subagent | preuve | scénario | section |
 |----|-------|-----------|------------------|----------|----------|--------|----------|---------|
-| T1 | Cœur : lien `cell`, `PlaceInCell`, `SetTableLineSizes`, suivi, emport par `Transform`, exports Wasm | — | crates/roomboard-core/src/{element.rs,document.rs,table.rs,table_links.rs,commands.rs,copy.rs,lib.rs}, crates/roomboard-wasm/src/lib.rs | partagé | concepteur-critique | `cargo test -p roomboard-core table_links` ≥ 9 tests dont `place_in_cell_grows_and_links` ; `cargo test -p roomboard-wasm place_in_cell` ≥ 1 ; module principal ≤ 1 540 000 o | S1, S16, S17, S18 | #tache-t1 |
-| T2 | Contrat TS : `api.ts`, `wasm-core.ts`, faux cœur à parité, contrat, CLI | T1 | apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/cli/src/{ops.ts,ops.test.ts}, scripts/essais/cli-essai.mjs | partagé | concepteur-critique | vitest `wasm-core.contract.test.ts -t "personnalisation-3"` ≥ 14 tests (7 × 2 fabriques) ; `ops.test.ts` 38 commandes ; `cli-essai.mjs` affiche `CLI : OK` et `S16` | S16, S17, S18 | #tache-t2 |
-| T3 | Glisser vers une case : `cell-drop.ts`, `requiredSizes`, `tableAt`, Sélection (4 points), cadre de case visée | T2 | apps/web/src/engine/{table-geom.ts,table-geom.test.ts,groups.ts}, apps/web/src/engine/tools/{cell-drop.ts,cell-drop.test.ts,select.ts,select.test.ts}, apps/web/src/engine/render/{overlay.ts,canvas2d.ts}, apps/web/src/app/board-session.ts | partagé | implementeur-tdd | vitest `cell-drop.test.ts` ≥ 8 tests dont `S1 : image 400 × 300 sur la case (1, 1)` ; `table-geom.test.ts`, `select.test.ts`, `table.test.ts` verts | S1, S4, S18 | #tache-t3 |
-| T4 | Essai navigateur du lot A (noyau) + `verifier.sh --e2e` + captures 2x | T3 | scripts/essais/personnalisation-3-tableau-navigateur.mjs, scripts/verifier.sh, docs/design/captures/personnalisation-3-tableau/photo-case-agrandie.png | partagé | implementeur-tdd | `node scripts/essais/personnalisation-3-tableau-navigateur.mjs` affiche `personnalisation-3 tableau : OK` ; `bash scripts/tests/verifier-e2e.test.sh` vert | S1, S4 | #tache-t4 |
-| T5 | Compléments du socle : montée dans la pile, renumérotation à la copie, gomme qui garde `cell` | T2 | crates/roomboard-core/src/{table_links.rs,copy.rs,commands.rs}, apps/web/src/core/{fake-core.ts,wasm-core.contract.test.ts} | partagé | concepteur-critique | `cargo test -p roomboard-core duplicate_page_keeps_cell_links` 1 test ; `object_below_its_table_is_relinked`, `partial_erase_keeps_cell`, `place_in_cell_lifts_object_above_table` ; contrat `-t "personnalisation-3 copie"` ≥ 2 | S18 | #tache-t5 |
+| T1a | Cœur : lien `cell`, vue, `PlaceInCell`, `SetTableLineSizes`, suivi dans les 4 commandes, copie libre | — | crates/roomboard-core/src/{element.rs,document.rs,table.rs,table_links.rs,commands.rs,copy.rs,lib.rs} | partagé | concepteur-critique | `cargo test -p roomboard-core table_links` : 11 passés, dont `place_in_cell_grows_and_links`, `old_reader_ignores_new_keys` | S1, S16, S17, S18 | #tache-t1a |
+| T1b | Cœur : emport et sortie de case par `Transform` (D6), exports Wasm, mesure du module | T1a | crates/roomboard-core/src/{table_links.rs,commands.rs}, crates/roomboard-wasm/src/lib.rs | partagé | concepteur-critique | `cargo test -p roomboard-core table_links::tests::transform` : 3 passés ; `cargo test -p roomboard-wasm place_in_cell` : 1 passé ; commande M ≤ 1 540 000 o | S1, S18 | #tache-t1b |
+| T2a | Contrat TS : `api.ts`, `wasm-core.ts`, faux cœur à parité (suivi, emport, copie, enregistrement), contrat | T1b | apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts} | partagé | concepteur-critique | vitest `wasm-core.contract.test.ts -t "personnalisation-3"` : 20 passés (10 × 2 fabriques, « vrai module wasm » présent) | S1, S17, S18 | #tache-t2a |
+| T2b | CLI : `COMMAND_TYPES`, `ops.test.ts`, passage S16 de `cli-essai.mjs` | T2a | apps/cli/src/{ops.ts,ops.test.ts}, scripts/essais/cli-essai.mjs | partagé | implementeur-tdd | `ops.test.ts` « 38 commandes » vert ; `tsc` CLI propre ; `cli-essai.mjs` : lignes `S16` (≥ 4) puis `CLI : OK` | S16 | #tache-t2b |
+| T3 | Glisser vers une case : `cell-drop.ts`, `requiredSizes`, `tableAt`, Sélection (4 points), cadre de case visée | T2a | apps/web/src/engine/{table-geom.ts,table-geom.test.ts,groups.ts}, apps/web/src/engine/tools/{cell-drop.ts,cell-drop.test.ts,select.ts,select.test.ts}, apps/web/src/engine/render/{overlay.ts,canvas2d.ts}, apps/web/src/app/board-session.ts | partagé | implementeur-tdd | vitest `cell-drop.test.ts` : 9 passés dont `S1 : image 400 × 300 sur la case (1, 1)` et `D28 : aucun element() pendant le glisser` ; `table-geom.test.ts`, `select.test.ts`, `table.test.ts` verts | S1, S4, S18 | #tache-t3 |
+| T4 | Essai navigateur du lot A (noyau) + `data-table-linked` + `verifier.sh --e2e` + captures 2x | T3 | scripts/essais/personnalisation-3-tableau-navigateur.mjs, scripts/verifier.sh, docs/design/captures/personnalisation-3-tableau/photo-case-agrandie.png, apps/web/src/engine/table-geom.ts, apps/web/src/engine/tools/{table.ts,table.test.ts}, apps/web/src/app/stage-tags.ts | partagé | implementeur-tdd | `table.test.ts` `linked` vert ; essai : `personnalisation-3 tableau : OK` ; `bash scripts/tests/verifier-e2e.test.sh` vert ; c10a, c10b `OK` | S1, S4 | #tache-t4 |
+| T5 | Compléments du socle : montée dans la pile, renumérotation à la copie, gomme qui garde `cell` | T2b | crates/roomboard-core/src/{table_links.rs,copy.rs,commands.rs}, apps/web/src/core/{fake-core.ts,wasm-core.contract.test.ts} | partagé | concepteur-critique | `cargo test -p roomboard-core` : `duplicate_page_keeps_cell_links`, `object_below_its_table_is_relinked`, `partial_erase_keeps_cell`, `place_in_cell_lifts_object_above_table` (4 passés) ; contrat `-t "personnalisation-3 copie"` ≥ 2 ; commande M | S18 | #tache-t5 |
 | T6 | Sortie qui réduit la case quittée (D11) + raccourcis Alt+Entrée / Alt+Maj+Entrée | T4 | apps/web/src/engine/tools/{cell-drop.ts,cell-drop.test.ts,tool.ts,select.ts}, apps/web/src/engine/input/{keys.ts,keys.test.ts}, apps/web/src/engine/engine.ts, apps/web/src/ui/shortcuts.ts, scripts/essais/personnalisation-3-tableau-navigateur.mjs | partagé | implementeur-tdd | vitest `cell-drop.test.ts -t "D11"` ≥ 3 ; `keys.test.ts -t "cellKey"` ≥ 1 ; essai : `S4 : la colonne revient à 240` | S1, S4 | #tache-t6 |
-| T7 | Point 2 : mode « rétrécir » (`SetTableOptions`, `fit`, Alt+F) | T6 | crates/roomboard-core/src/{table.rs,table_links.rs,commands.rs}, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/cli/src/{ops.ts,ops.test.ts}, apps/web/src/engine/{table-geom.ts,input/keys.ts,engine.ts}, apps/web/src/engine/tools/{cell-drop.ts,cell-drop.test.ts,table.ts}, apps/web/src/ui/shortcuts.ts, scripts/essais/personnalisation-3-tableau-navigateur.mjs, docs/design/captures/personnalisation-3-tableau/objet-ajuste.png | partagé | implementeur-tdd | `cargo test -p roomboard-core set_table_options` ≥ 1 ; vitest `cell-drop.test.ts -t "S2"` ≥ 1 ; essai `S2 : image réduite à 64 × 48` ; module ≤ 1 540 000 o | S2 | #tache-t7 |
-| T8 | Point 3 : tracé au stylo lié à sa case (`CommitStroke.cell`) | T4 | crates/roomboard-core/src/commands.rs, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/web/src/engine/{table-geom.ts,table-geom.test.ts}, apps/web/src/engine/tools/{pen.ts,pen.test.ts}, scripts/essais/personnalisation-3-tableau-navigateur.mjs, docs/design/captures/personnalisation-3-tableau/trace-dans-case.png | partagé | implementeur-tdd | `cargo test -p roomboard-core commit_stroke_with_cell` ≥ 1 ; vitest `pen.test.ts -t "D10"` ≥ 2 ; essai `S3 : le mot descend de 64` ; module ≤ 1 540 000 o | S3 | #tache-t8 |
-| T9 | Point 5 : image de fond de case (`bg`, `SetCellImage`, appui long, Alt+I) | T6 | crates/roomboard-core/src/{table.rs,table_links.rs,commands.rs}, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/cli/src/{ops.ts,ops.test.ts}, apps/web/src/engine/table-geom.ts, apps/web/src/engine/render/table-paint.ts, apps/web/src/engine/tools/{table.ts,table.test.ts}, apps/web/src/engine/input/keys.ts, apps/web/src/engine/engine.ts, apps/web/src/ui/{cell-menu.ts,cell-menu.test.ts,shortcuts.ts}, apps/web/src/app/board-session.ts, scripts/essais/personnalisation-3-tableau-navigateur.mjs | partagé | implementeur-tdd | `cargo test -p roomboard-core set_cell_image` ≥ 2 ; vitest `table.test.ts -t "S5"` ≥ 2 ; essai `S5 : l'image devient le fond` ; module ≤ 1 540 000 o | S5 | #tache-t9 |
+| T7 | Point 2 : mode « rétrécir » (`SetTableOptions`, `fit`, Alt+F) et menu de case par appui long | T6, T2b | crates/roomboard-core/src/{table.rs,table_links.rs,commands.rs}, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/cli/src/{ops.ts,ops.test.ts}, scripts/essais/cli-essai.mjs, apps/web/src/engine/{table-geom.ts,input/keys.ts,engine.ts}, apps/web/src/engine/tools/{cell-drop.ts,cell-drop.test.ts,table.ts,table.test.ts}, apps/web/src/ui/{cell-menu.ts,cell-menu.test.ts,shortcuts.ts}, apps/web/src/app/board-session.ts, scripts/essais/personnalisation-3-tableau-navigateur.mjs, docs/design/captures/personnalisation-3-tableau/objet-ajuste.png | partagé | implementeur-tdd | `cargo test -p roomboard-core set_table_options` ≥ 1 ; vitest `cell-drop.test.ts -t "S2"` ≥ 1 ; `cell-menu.test.ts`, `table.test.ts -t "appui long"` ≥ 2 ; essai `S2 : image réduite à 64 × 48` (au doigt par le menu) ; commande M | S2 | #tache-t7 |
+| T8 | Point 3 : tracé au stylo lié à sa case (`CommitStroke.cell`) | T4 | crates/roomboard-core/src/commands.rs, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/web/src/engine/{table-geom.ts,table-geom.test.ts}, apps/web/src/engine/tools/{pen.ts,pen.test.ts}, scripts/essais/personnalisation-3-tableau-navigateur.mjs, docs/design/captures/personnalisation-3-tableau/trace-dans-case.png | partagé | implementeur-tdd | `cargo test -p roomboard-core commit_stroke_with_cell` ≥ 1 ; vitest `pen.test.ts -t "D10"` ≥ 2 ; essai `S3 : le mot descend de 64` ; commande M | S3 | #tache-t8 |
+| T9 | Point 5 : image de fond de case (`bg`, `SetCellImage`, menu de case, Alt+I), PDF compris | T7 | crates/roomboard-core/src/{table.rs,table_links.rs,commands.rs}, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/cli/src/{ops.ts,ops.test.ts}, scripts/essais/cli-essai.mjs, apps/web/src/engine/table-geom.ts, apps/web/src/engine/render/{table-paint.ts,table-paint.test.ts,canvas2d.ts,canvas2d.test.ts}, apps/web/src/engine/tools/{table.ts,table.test.ts}, apps/web/src/engine/input/keys.ts, apps/web/src/engine/engine.ts, apps/web/src/ui/shortcuts.ts, scripts/essais/personnalisation-3-tableau-navigateur.mjs | partagé | implementeur-tdd | `cargo test -p roomboard-core set_cell_image` ≥ 2 ; vitest `table.test.ts`, `table-paint.test.ts -t "S5"` ≥ 4 dont `S5 PDF` ; essai `S5 : l'image devient le fond` ; commande M | S5 | #tache-t9 |
 
-Ordre d'exécution : T1 → T2 → T3 → T4 (noyau indispensable, démo possible) → T5 → T6 → T7 → T8 → T9. Couper par la fin :
-T9, puis T8, puis T7, puis T6, puis T5 ; chaque tâche coupée devient une hypothèse « à revoir » de l'état (cadrage § 1,
+Ordre d'exécution : T1a → T1b → T2a → T2b → T3 → T4 (noyau indispensable, démo possible) → T5 → T6 → T7 → T8 → T9.
+Couper par la fin : T9, puis T8, puis T7, puis T6, puis T5 ; chaque tâche coupée devient une hypothèse « à revoir » de l'état (cadrage § 1,
 « Découpage minimal »).
 
 ## Carte des fichiers
 
 | fichier | rôle | tâches |
 |---|---|---|
-| `crates/roomboard-core/src/element.rs` | `read_cell_link`, `cell_link_to_any`, `ElementView.cell` | T1 |
-| `crates/roomboard-core/src/document.rs` | la vue d'un élément publie `cell` (jamais sur un tableau, D36) | T1 |
-| `crates/roomboard-core/src/table_links.rs` (nouveau) | `LineSize`, `Offsets`, `offsets`, `write_line_sizes`, `line_sizes_ok`, `follow_in`, `table_done_with`, `cmd_place_in_cell`, `cmd_set_table_line_sizes`, `with_linked`, `leaving_cells`, `cell_rect`, tests | T1, T5, T7, T9 |
-| `crates/roomboard-core/src/table.rs` | `table_of`, `ranks` en `pub(crate)` ; suivi dans `InsertTableLine`, `RemoveTableLine`, `SetTableSizes`, `SetTableCell` ; `fit` (T7), `bg` (T9) | T1, T7, T9 |
-| `crates/roomboard-core/src/commands.rs` | variantes `PlaceInCell`, `SetTableLineSizes` (T1), `SetTableOptions` (T7), `SetCellImage` (T9) ; `cmd_transform` (D6) ; `CommitStroke.cell` (T8) ; gomme (T5) | T1, T5, T7, T8, T9 |
-| `crates/roomboard-core/src/copy.rs` | `cell` retiré à la copie (T1), puis renuméroté (T5) | T1, T5 |
-| `crates/roomboard-wasm/src/lib.rs` | exports et `_inner` | T1, T7, T8, T9 |
-| `apps/web/src/core/api.ts` | `CellLink`, `LineSize`, commandes neuves, `ElementBase.cell` | T2, T7, T8, T9 |
-| `apps/web/src/core/wasm-core.ts` | `case` des commandes neuves, `toElementView` lit `cell` | T2, T7, T8, T9 |
-| `apps/web/src/core/fake-core.ts` | parité : `offsetsOf`, `followCells`, `writeTable`, `Transform`, `PlaceInCell`, `SetTableLineSizes` | T2, T5, T7, T8, T9 |
+| `crates/roomboard-core/src/element.rs` | `read_cell_link`, `cell_link_to_any`, `ElementView.cell` | T1a |
+| `crates/roomboard-core/src/document.rs` | la vue d'un élément publie `cell` vers une case existante (D1), jamais sur un tableau (D36) | T1a |
+| `crates/roomboard-core/src/table_links.rs` (nouveau) | `LineSize`, `Offsets`, `offsets`, `write_line_sizes`, `line_sizes_ok`, `follow_in`, `table_done_with`, `cmd_place_in_cell`, `cmd_set_table_line_sizes`, `with_linked`, `leaving_cells`, `cell_rect`, tests | T1a, T1b, T5, T7, T9 |
+| `crates/roomboard-core/src/table.rs` | `table_of`, `ranks` en `pub(crate)` ; suivi dans `InsertTableLine`, `RemoveTableLine`, `SetTableSizes`, `SetTableCell` ; `fit` (T7), `bg` (T9) | T1a, T7, T9 |
+| `crates/roomboard-core/src/commands.rs` | variantes `PlaceInCell`, `SetTableLineSizes` (T1a), `SetTableOptions` (T7), `SetCellImage` (T9) ; `cmd_transform` (D6, T1b) ; `CommitStroke.cell` (T8) ; gomme (T5) | T1a, T1b, T5, T7, T8, T9 |
+| `crates/roomboard-core/src/copy.rs` | `cell` retiré à la copie (T1a), puis renuméroté (T5) | T1a, T5 |
+| `crates/roomboard-wasm/src/lib.rs` | exports et `_inner` | T1b, T7, T8, T9 |
+| `apps/web/src/core/api.ts` | `CellLink`, `LineSize`, commandes neuves, `ElementBase.cell` | T2a, T7, T8, T9 |
+| `apps/web/src/core/wasm-core.ts` | `case` des commandes neuves, `toElementView` lit `cell` | T2a, T7, T8, T9 |
+| `apps/web/src/core/fake-core.ts` | parité : `offsetsOf`, `followCells`, `writeTable`, `Transform`, `PlaceInCell`, `SetTableLineSizes`, copie, enregistrement de `cell` | T2a, T5, T7, T8, T9 |
 | `apps/web/src/engine/tools/cell-drop.ts` (nouveau) | `createCellDrop` : `expand`, `target`, `drop`, `place` | T3, T6, T7 |
 | `apps/web/src/engine/table-geom.ts` | `tableAt` par `elementIdsOfKind`, `LinkedBox`, `requiredSizes`, `cellContaining` (T8) | T3, T7, T8, T9 |
 | `apps/web/src/engine/tools/select.ts` | 4 points d'appel (DA3), `placeInCell` (T6) | T3, T6 |
 | `apps/web/src/engine/render/overlay.ts`, `canvas2d.ts` | `EditOverlay.target`, cadre 2 px | T3 |
 | `scripts/essais/personnalisation-3-tableau-navigateur.mjs` (nouveau) | essai du lot A, un bloc par tâche | T4, T6, T7, T8, T9 |
+| `apps/web/src/app/stage-tags.ts` | `#stage[data-table-linked]` | T4 |
+| `apps/web/src/ui/cell-menu.ts` (nouveau) | menu de case (appui long) | T7, T9 |
+| `apps/cli/src/ops.ts`, `ops.test.ts`, `scripts/essais/cli-essai.mjs` | CLI | T2b, T7, T9 |
 
 ## Global Constraints
 
 - G1 TDD : test rouge d'abord, vu rouge, puis le code, puis vert.
 - G2 Exécution séquentielle dans le worktree partagé `/home/adminjd/projets/roomboard-wt/personnalisation-3-tableau` ; aucun worktree par tâche.
 - G3 Builds et tests : `export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH` ; `nice -n 10` ; `cargo … -j 4`. Suite complète : `node ~/.claude/scripts/vm/suite-vm.cjs -- <commande>`. Preuves bornées : `… 2>&1 | tail -20`, avec N ≥ 1 test exécuté et le nom attendu présent.
-- G4 Module Wasm principal : plafond 1 572 864 o, aujourd'hui 1 429 754 o ; seuil d'arrêt 1 540 000 o (DA4) : au-delà, la tâche s'arrête et le rapporte. Module formats inchangé (2 794 527 o). Toute tâche qui touche le cœur Rust mesure le module avant de finir (commande M ci-dessous).
+- G4 Module Wasm principal : plafond 1 572 864 o, aujourd'hui 1 429 754 o ; seuil d'arrêt 1 540 000 o (DA4) : au-delà, la tâche s'arrête et le rapporte. Module formats inchangé (2 794 527 o). Toute tâche qui touche le cœur Rust mesure le module avant de finir (commande M ci-dessous) ; T1a est mesurée par T1b, qui la suit dans le même build.
 - G5 Fichier (U3) : champs facultatifs ; `schema` et `formatVersion` inchangés ; valeur illisible = ignorée, gardée.
 - G6 CLI (D15 du profil) : toute commande neuve entre dans `COMMAND_TYPES`, `ops.test.ts` et `scripts/essais/cli-essai.mjs` ; `FORMAT_LOTS` inchangé (aucun format neuf).
 - G7 Outil Sélection : point d'entrée court seulement (DA3), logique dans `engine/tools/cell-drop.ts`.
@@ -80,53 +85,50 @@ Attendu : un nombre ≤ 1 540 000. Ce `.wasm` est aussi celui que lit `wasm-core
 
 ## Review Focus
 
-1. **Objet logé puis tableau modifié par la CLI** (cadrage D5, S16) : insérer, retirer une ligne, uniformiser — l'objet suit ou se libère, jamais à une place absurde → tests `insert_line_moves_linked_object`, `remove_line_unlinks_object`, `set_table_sizes_and_cell_follow` (T1) et contrat `personnalisation-3 suivi` (T2).
-2. **Parité faux cœur / vrai cœur sur les commandes existantes qui changent** (cadrage carte d'impact, `fake-core.ts`) : `Transform` d'un tableau, `SetTableCell` qui grandit, `RemoveTableLine` → contrat `personnalisation-3 emport` et `personnalisation-3 suivi` joués par les deux fabriques (T2).
+1. **Objet logé puis tableau modifié par la CLI** (cadrage D5, S16) : insérer, retirer une ligne, uniformiser — l'objet suit ou se libère, jamais à une place absurde → tests `insert_line_moves_linked_object`, `remove_line_unlinks_object`, `set_table_sizes_and_cell_follow` (T1a) et contrat `personnalisation-3 suivi` (T2a).
+2. **Parité faux cœur / vrai cœur sur les commandes existantes qui changent** (cadrage carte d'impact, `fake-core.ts`) : `Transform` d'un tableau, `SetTableCell` qui grandit, `RemoveTableLine` → contrat `personnalisation-3 emport` et `personnalisation-3 suivi` joués par les deux fabriques (T2a), plus « copie libre » et « recharger garde cell » (T2a).
 3. **Lâcher sur une case ombrée, sur un tableau sélectionné, avec Alt** (D7, D35, effet de bord « Alt : Transform seul ») → `cell-drop.test.ts` « case ombrée : déplacement libre », « sélection avec tableau : null », « Alt : Transform seul » (T3).
-4. **Copier ou dupliquer une page avec objets logés** (effet de bord `duplicate_page_keeps_cell_links`) : sans T5, la copie doit être libre, jamais liée au tableau d'origine → `copy_drops_cell_link` (T1) puis `duplicate_page_keeps_cell_links` (T5).
-5. **Ancien fichier ou valeur `cell` illisible** (U3, S17) → `cell_link_unreadable_is_free_and_kept`, `cell_reload_keeps_bytes` (T1).
+4. **Copier ou dupliquer une page avec objets logés** (effet de bord `duplicate_page_keeps_cell_links`) : sans T5, la copie doit être libre, jamais liée au tableau d'origine → `copy_drops_cell_link` (T1a), « copie libre » du contrat (T2a), puis `duplicate_page_keeps_cell_links` (T5).
+5. **Ancien fichier ou valeur `cell` illisible** (U3, S17) → `cell_link_unreadable_is_free_and_kept`, `cell_link_to_absent_target_is_free`, `old_reader_ignores_new_keys`, `cell_reload_keeps_bytes` (T1a).
 
 ---
 
-### Tâche T1 — Cœur : lien `cell`, `PlaceInCell`, `SetTableLineSizes`, suivi, emport par `Transform`, exports Wasm
+### Tâche T1a — Cœur : lien `cell`, vue, `PlaceInCell`, `SetTableLineSizes`, suivi dans les 4 commandes, copie libre
 
-<a id="tache-t1"></a>
+<a id="tache-t1a"></a>
 
-**Objectif** : le cœur lit et écrit le lien `cell`, loge un objet dans une case en une étape (tailles, matrice, lien),
-fait suivre les objets liés quand une ligne ou une colonne bouge, fait emporter ses objets à un tableau transformé,
-libère un objet sorti de sa case par `Transform`, et expose les deux commandes neuves au Wasm.
+**Objectif** : le cœur lit et écrit le lien `cell` (publié seulement vers une case existante), loge un objet dans une
+case en une étape (tailles, matrice, lien), fait suivre les objets liés quand une ligne ou une colonne bouge
+(`InsertTableLine`, `RemoveTableLine`, `SetTableSizes`, `SetTableCell`, et les deux commandes neuves), et une copie
+n'est jamais liée au tableau d'origine. `Transform` (D6) et les exports Wasm : T1b.
 
 **Fichiers**
 - Créer : `crates/roomboard-core/src/table_links.rs`
 - Modifier : `crates/roomboard-core/src/lib.rs` (`pub mod table_links;` après `pub mod table;`)
 - Modifier : `crates/roomboard-core/src/element.rs:193-218` (`ElementView.cell`, `bare`), `:306-330` (à côté de `read_group`)
-- Modifier : `crates/roomboard-core/src/document.rs:375`, `:497` (vue : `cell` à côté de `group`)
-- Modifier : `crates/roomboard-core/src/table.rs:1-8` (commentaire de schéma), `:609` (`table_of` → `pub(crate)`), `:568` (`ranks` → `pub(crate)`), `cmd_set_table_cell`, `cmd_insert_table_line`, `cmd_remove_table_line`, `cmd_set_table_sizes` (suivi)
-- Modifier : `crates/roomboard-core/src/commands.rs:140-240` (variantes), `:718` (`apply`), `:700` (`find_unique` → `pub(crate)`), `:1043` (`cmd_transform`)
+- Modifier : `crates/roomboard-core/src/document.rs:375`, `:497` (vue : `cell` à côté de `group`, cible vérifiée)
+- Modifier : `crates/roomboard-core/src/table.rs:1-8` (commentaire de schéma), `:568` (`ranks` → `pub(crate)`), `:609` (`table_of` → `pub(crate)`), `cmd_set_table_cell`, `cmd_insert_table_line`, `cmd_remove_table_line`, `cmd_set_table_sizes` (suivi)
+- Modifier : `crates/roomboard-core/src/commands.rs:140-240` (variantes), `:700` (`find_unique` → `pub(crate)`), `:718` (`apply`)
 - Modifier : `crates/roomboard-core/src/copy.rs:61-90` (`copy_elements` retire `cell`)
-- Modifier : `crates/roomboard-wasm/src/lib.rs` (exports après `set_table_shade`, `_inner` après `set_table_shade_inner`, test après `c10b_table_commands_inner`)
 
 **Interfaces**
-- Consomme : `table::read_raw(txn, e) -> Option<RawTable>`, `table::read_cell(txn, cells, row, col) -> Option<RawCell>`, `table::merges_of(raw, txn) -> Vec<Merge>`, `element::compose`, `element::invert`, `element::apply_transform`, `Document::element_bounds(txn, e) -> Option<Bounds>` (`query.rs:317`), `Document::page_elements(txn, page)`, `Document::find_element(txn, id)`.
+- Consomme : `table::read_raw(txn, e) -> Option<RawTable>`, `table::read_cell(txn, cells, row, col) -> Option<RawCell>`, `table::merges_of(raw, txn) -> Vec<Merge>`, `element::compose`, `Document::page_elements(txn, page)`, `Document::find_element(txn, id)`.
 - Produit (Rust) :
   - `pub(crate) fn read_cell_link<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<[String; 3]>` et `pub(crate) fn cell_link_to_any(link: &[String; 3]) -> Any` (`element.rs`)
-  - `ElementView.cell: Option<[String; 3]>` (sérialisé `cell`, omis si absent)
+  - `ElementView.cell: Option<[String; 3]>` (sérialisé `cell`, omis si absent ; absent aussi si la cible n'existe pas, D1, ou sur un tableau, D36)
   - `pub struct LineSize { pub table: String, pub axis: TableAxis, pub line: String, pub size: f64 }` (`table_links.rs`)
   - `Command::PlaceInCell { ids: Vec<String>, matrix: Transform, cell: Option<[String; 3]>, sizes: Vec<LineSize> }`
   - `Command::SetTableLineSizes { id: String, cols: Vec<(String, f64)>, rows: Vec<(String, f64)> }`
+  - `pub(crate) fn offsets(raw: &RawTable) -> Offsets`, `pub(crate) fn cell_rect<T: ReadTxn>(raw: &RawTable, txn: &T, row: &str, col: &str) -> Option<(f64, f64, f64, f64)>` (lu par T1b)
   - `Document::follow_in(&self, txn: &mut TransactionMut, page: &str, table: &MapRef, table_id: &str, before: &Offsets, skip: &HashSet<String>) -> Vec<String>`
   - `Document::table_done_with(&mut self, page: String, id: &str, moved: Vec<String>) -> Change` : `ids` = `[id, moved…]` (ordre de la pile)
-  - `Change.ids` de `PlaceInCell` = ids triés et dédoublonnés de (objets placés, tableaux des `sizes`, objets suivis) ; de `Transform` = ids triés des cibles élargies.
-- Produit (Wasm) :
-  - `place_in_cell(ids: Vec<String>, matrix: &[f64], table: Option<String>, row: Option<String>, col: Option<String>, size_keys: Vec<String>, size_values: &[f64]) -> Result<JsValue, JsError>` ; `size_keys` = triplets `(tableau, "row" | "col", ligne)` bout à bout.
-  - `set_table_line_sizes(id: &str, col_ids: Vec<String>, col_widths: &[f64], row_ids: Vec<String>, row_heights: &[f64]) -> Result<JsValue, JsError>`
+  - `Change.ids` de `PlaceInCell` = ids triés et dédoublonnés de (objets placés, tableaux des `sizes`, objets suivis).
 - Réutilise : `crates/roomboard-core/src/element.rs:308` `read_group`, `:322` `group_to_any` — `read_cell_link(txn, e) -> Option<[String; 3]>`, `cell_link_to_any(&[String; 3]) -> Any` posés à côté (étendre).
 - Réutilise : `crates/roomboard-core/src/table.rs:74` `Line.map` — `write_line_sizes(txn, raw, sizes: &[(TableAxis, String, f64)])` partagé par `SetTableLineSizes` et `PlaceInCell` (étendre).
-- Réutilise : `crates/roomboard-core/src/commands.rs:1043` `cmd_transform` — cibles élargies aux objets liés (étendre).
 - Réutilise : `crates/roomboard-core/src/copy.rs:61` `copy_elements` — `cell` retiré de la recopie (étendre ; renumérotation complète en T5).
 - Le rapport de la tâche porte une ligne par module : `Réutilisation : appelé <module>` ou `Réutilisation : écart — <pourquoi>`.
 
-**Ordre des refus de `PlaceInCell`** (le faux cœur de T2 suit le même) : 1. matrice invalide → `BadMatrix` ; 2. un id
+**Ordre des refus de `PlaceInCell`** (le faux cœur de T2a suit le même) : 1. matrice invalide → `BadMatrix` ; 2. un id
 trouvé est un tableau → `BadTable` ; 3. aucun id trouvé → aucune étape ; 4. ids sur plusieurs pages → `BadTable` ;
 5. case visée : tableau inconnu → `UnknownElement`, autre page → `BadTable`, ligne ou colonne inconnue → `BadTable`, case
 à `shade` → `BadTable` (D35) ; 6. pour chaque tableau de `sizes` (ordre d'apparition) : inconnu → `UnknownElement`,
@@ -139,29 +141,30 @@ invalide → `BadMatrix` ; 8. matrice identité, tailles égales et liens égaux
 cd /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && nice -n 10 cargo test -p roomboard-core table_links -j 4 2>&1 | tail -20
 ```
 
-Attendu : `test result: ok. N passed` avec N ≥ 9, noms `place_in_cell_grows_and_links`, `transform_out_of_cell_unlinks` présents. Puis
+Attendu : `test result: ok. 11 passed` exactement (`place_in_cell_grows_and_links`, `place_in_cell_refuses_table_and_closed_shade`,
+`insert_line_moves_linked_object`, `remove_line_unlinks_object`, `set_table_sizes_and_cell_follow`,
+`set_table_line_sizes_writes_and_follows`, `cell_link_unreadable_is_free_and_kept`, `cell_link_to_absent_target_is_free`,
+`old_reader_ignores_new_keys`, `cell_reload_keeps_bytes`, `copy_drops_cell_link`). Puis
 `nice -n 10 cargo test -p roomboard-core -j 4 2>&1 | tail -5` (tests à garder verts : `table.rs` `:1757-3071`, C10a, C10b,
-`group_reload_keeps_bytes`) et `nice -n 10 cargo test -p roomboard-wasm place_in_cell -j 4 2>&1 | tail -5` (≥ 1 test).
-Puis la commande M : ≤ 1 540 000 o.
+`group_reload_keeps_bytes`, `table_reload_keeps_bytes`).
 
 **Contraintes (recopiées)** : G1 TDD ; G2 worktree partagé ; G3 `nice -n 10`, `-j 4`, PATH, preuves bornées ; G4 module
-≤ 1 540 000 o, mesuré par la commande M avant de finir, formats inchangé ; G5 champs facultatifs, illisible = ignoré et
+Wasm : mesuré par la commande M de T1b, qui suit immédiatement (même build) ; G5 champs facultatifs, illisible = ignoré et
 gardé ; G9 hors tableau inchangé ; G10 interdits ; G11 commits ; G12 une transaction par commande.
 
-**Interdits** : aucun calcul de taille dans le cœur (la page donne les tailles, D2) ; ne pas toucher `cmd_restack`,
-`history.rs`, `query.rs` ; ne pas réécrire les tests C10a/C10b ; ne pas toucher `crates/roomboard-formats`.
+**Interdits** : aucun calcul de taille dans le cœur (la page donne les tailles, D2) ; ne pas toucher `cmd_transform`
+(T1b), `cmd_restack`, `history.rs`, `query.rs`, `crates/roomboard-wasm`, `crates/roomboard-formats` ; ne pas réécrire
+les tests C10a/C10b.
 
 **Patron à ne pas reprendre** : suivre les objets liés par une **seconde** transaction après la commande du tableau (deux
 étapes d'annulation : Ctrl+Z ramènerait l'objet sans la ligne) ; et lire les ids de ligne par rang : le lien vise des ids,
 une ligne insérée avant ne doit pas changer de case. Référence : une transaction par geste,
 `crates/roomboard-core/src/history.rs:1-4` ; écriture en un bloc `transact_local`, `crates/roomboard-core/src/table.rs:791-850`.
 
-**Terminé quand** : les tests `table_links` passent (≥ 9), `cargo test -p roomboard-core` et `-p roomboard-wasm` sont
-verts, `cargo clippy -p roomboard-core -p roomboard-wasm --all-targets -j 4 -- -D warnings` est propre, `cargo fmt --all
---check` passe, la taille du module est rapportée, un commit.
+**Terminé quand** : 11 tests `table_links` verts, `cargo test -p roomboard-core` vert,
+`cargo clippy -p roomboard-core --all-targets -j 4 -- -D warnings` propre, `cargo fmt --all --check` passe, un commit.
 
 #### Étapes
-
 - [ ] **1. Test rouge du lien et des commandes** — créer `crates/roomboard-core/src/table_links.rs` avec seulement le module de tests ci-dessous (et `pub mod table_links;` dans `lib.rs`) :
 
 ```rust
@@ -270,6 +273,7 @@ mod tests {
         let v0 = d.version();
         let table_in = d.apply(Command::PlaceInCell { ids: vec![t2.clone()], matrix: IDENTITY, cell: Some(link(&d, &t, 0, 0)), sizes: vec![] });
         assert_eq!(table_in, Err(CommandError::BadTable));
+        assert_eq!(d.version(), v0, "refus sans étape");
         let l = link(&d, &t, 0, 0);
         d.apply(Command::SetTableShade { id: t.clone(), from: (l[1].clone(), l[2].clone()), to: (l[1].clone(), l[2].clone()), shade: Some("#94a3b8".into()) })
             .expect("ombre");
@@ -347,48 +351,6 @@ mod tests {
         assert_eq!(d.version(), ver);
     }
 
-    // D6 : un tableau déplacé emporte ses objets liés ; sans lien, la Transform est celle d'aujourd'hui.
-    #[test]
-    fn transform_table_carries_links() {
-        let mut d = Document::blank();
-        let p = first(&d);
-        let t = table3(&mut d, &p);
-        let o = rect(&mut d, &p, 1000.0, 1000.0, 1050.0, 1040.0);
-        d.apply(Command::PlaceInCell { ids: vec![o.clone()], matrix: IDENTITY, cell: Some(link(&d, &t, 0, 0)), sizes: vec![] }).expect("logé");
-        let at = tx(&d, &o);
-        let c = d.apply(Command::Transform { ids: vec![t.clone()], matrix: [1.0, 0.0, 0.0, 1.0, 50.0, 20.0] }).expect("déplacé");
-        assert_eq!((tx(&d, &o)[4], tx(&d, &o)[5]), (at[4] + 50.0, at[5] + 20.0));
-        let mut want = vec![t.clone(), o.clone()];
-        want.sort();
-        assert_eq!(c.ids, want);
-    }
-
-    #[test]
-    fn transform_table_without_links_unchanged() {
-        let mut d = Document::blank();
-        let p = first(&d);
-        let t = table3(&mut d, &p);
-        let o = rect(&mut d, &p, 1000.0, 1000.0, 1050.0, 1040.0);
-        let at = tx(&d, &o);
-        let c = d.apply(Command::Transform { ids: vec![t.clone()], matrix: [1.0, 0.0, 0.0, 1.0, 50.0, 20.0] }).expect("déplacé");
-        assert_eq!(c.ids, vec![t.clone()]);
-        assert_eq!(tx(&d, &o), at);
-    }
-
-    // D6, H24 : objet lié déplacé seul : lien gardé si son centre reste dans sa case, retiré sinon.
-    #[test]
-    fn transform_out_of_cell_unlinks() {
-        let mut d = Document::blank();
-        let p = first(&d);
-        let t = table3(&mut d, &p);
-        let o = rect(&mut d, &p, 10.0, 10.0, 50.0, 40.0);
-        d.apply(Command::PlaceInCell { ids: vec![o.clone()], matrix: IDENTITY, cell: Some(link(&d, &t, 0, 0)), sizes: vec![] }).expect("logé");
-        d.apply(Command::Transform { ids: vec![o.clone()], matrix: [1.0, 0.0, 0.0, 1.0, 100.0, 0.0] }).expect("dedans");
-        assert_eq!(d.element(&o).expect("o").cell, Some(link(&d, &t, 0, 0)));
-        d.apply(Command::Transform { ids: vec![o.clone()], matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 500.0] }).expect("dehors");
-        assert_eq!(d.element(&o).expect("o").cell, None);
-    }
-
     // S17, U3 : `cell` illisible = objet libre, valeur gardée ; `cell` sur un tableau ignoré (D36).
     #[test]
     fn cell_link_unreadable_is_free_and_kept() {
@@ -408,6 +370,46 @@ mod tests {
         let txn = d.read();
         let f = d.find_element(&txn, "s1").expect("s1");
         assert!(matches!(f.element.get(&txn, "cell"), Some(yrs::Out::Any(Any::Array(_)))));
+    }
+
+    // D1 : un lien vers un tableau absent (supprimé ailleurs) n'est pas publié ; la valeur reste dans le document.
+    #[test]
+    fn cell_link_to_absent_target_is_free() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1100.0, 1100.0);
+        place11(&mut d, &t, &o);
+        d.apply(Command::Delete { ids: vec![t.clone()] }).expect("tableau supprimé");
+        assert_eq!(d.element(&o).expect("o").cell, None);
+        let txn = d.read();
+        let f = d.find_element(&txn, &o).expect("o");
+        assert!(read_cell_link(&txn, &f.element).is_some());
+    }
+
+    // S17 (U3) : un lecteur qui ignore les clés neuves (ici : `cell` retirée du document relu) voit les mêmes éléments
+    // aux mêmes places.
+    #[test]
+    fn old_reader_ignores_new_keys() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta { app_version: "0.1.0".into(), now: "2026-11-27T00:00:00Z".into(), created: None };
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1100.0, 1100.0);
+        place11(&mut d, &t, &o);
+        let old = load(&save(&d, &meta).expect("save")).expect("load");
+        {
+            let mut txn = old.transact_untracked();
+            let f = old.find_element(&txn, &o).expect("o");
+            f.element.remove(&mut txn, "cell");
+        }
+        for id in d.element_ids(&p) {
+            let mut a = d.element(&id).expect("a");
+            let b = old.element(&id).expect("b");
+            a.cell = None;
+            assert_eq!(a, b, "élément {id}");
+        }
     }
 
     #[test]
@@ -445,6 +447,7 @@ mod tests {
 Si `crate::table::tests::doc_with` construit un élément `shape` autrement (noms de champs), reprendre les champs d'un
 `shape` lus par `read_shape` (`element.rs`) ; le test vise seulement `cell`. Si `DuplicatePage` ne rend pas la page
 neuve dans `pages`, la prendre par `d.page_ids()[1]`.
+
 
 - [ ] **2. Le voir rouge** — `nice -n 10 cargo test -p roomboard-core table_links -j 4 2>&1 | tail -20` : erreurs de compilation `LineSize`, `PlaceInCell`, `cell` introuvables.
 
@@ -484,8 +487,22 @@ Dans `ElementView`, après `group` :
     pub cell: Option<[String; 3]>,
 ```
 
-`bare` : `cell: None,`. Dans `document.rs::element` (`:375`) : `let cell = read_cell_link(&txn, e);` et à la fin
-(`:497`) : `view.map(|v| { let cell = if v.kind == crate::table::TABLE_KIND { None } else { cell }; ElementView { group, cell, ..v } })`.
+`bare` : `cell: None,`. Dans `document.rs::element` (`:375`), un lien n'est publié que si sa cible existe (D1 : tableau
+absent, ligne ou colonne absente = objet libre ; la valeur reste dans le document) :
+
+```rust
+        // personnalisation-3 (D1, D36) : lien publié seulement vers une case existante, jamais sur un tableau.
+        let cell = read_cell_link(&txn, e).filter(|l| {
+            self.find_element(&txn, &l[0])
+                .and_then(|f| crate::table::read_raw(&txn, &f.element))
+                .is_some_and(|raw| raw.ranks((l[1].as_str(), l[2].as_str())).is_some())
+        });
+```
+
+et à la fin (`:497`) : `view.map(|v| { let cell = if v.kind == crate::table::TABLE_KIND { None } else { cell }; ElementView { group, cell, ..v } })`.
+Si `transact_untracked` (test `old_reader_ignores_new_keys`) n'est pas visible depuis le module de tests, l'appeler par
+`crate::document` (elle est `pub(crate)`). `ElementView` dérive `PartialEq` (comparaison du test).
+
 
 - [ ] **4. Corps de `table_links.rs`** — au-dessus du module de tests :
 
@@ -500,8 +517,8 @@ use yrs::{Any, Array, In, Map, MapRef, Out, ReadTxn, TransactionMut};
 use crate::commands::{valid_matrix, Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    apply_transform, cell_link_to_any, compose, finite_positive, fits_f32, invert, out_string,
-    out_transform, read_cell_link, transform_to_any, Transform, IDENTITY,
+    cell_link_to_any, compose, finite_positive, fits_f32, out_string, out_transform,
+    read_cell_link, transform_to_any, Transform, IDENTITY,
 };
 use crate::table::{merges_of, read_cell, read_raw, Line, RawTable, TableAxis, TABLE_KIND};
 
@@ -676,7 +693,7 @@ impl Document {
         Ok(self.table_done_with(page, id, moved))
     }
 
-    /// `PlaceInCell` (D3) : refus dans l'ordre du plan (T1) ; puis une transaction : tailles et suivi des autres objets
+    /// `PlaceInCell` (D3) : refus dans l'ordre du plan (T1a) ; puis une transaction : tailles et suivi des autres objets
     /// liés, matrice composée sur `ids`, `cell` posé ou retiré.
     pub(crate) fn cmd_place_in_cell(
         &mut self,
@@ -774,7 +791,183 @@ impl Document {
         touched.dedup();
         Ok(self.done(Change { pages: vec![page], ids: touched, ..Default::default() }))
     }
+}
+```
 
+- [ ] **5. `table.rs`** : `fn table_of` et `fn ranks` en `pub(crate)`. Dans `cmd_set_table_cell`, `cmd_insert_table_line`,
+`cmd_remove_table_line` et `cmd_set_table_sizes` : prendre `e` dans `table_of` (là où il est ignoré par `_`), calculer
+`let before = crate::table_links::offsets(&raw);` avant l'écriture, puis faire du bloc d'écriture une expression qui rend
+les objets suivis, et finir par `table_done_with` :
+
+```rust
+        let before = crate::table_links::offsets(&raw);
+        let moved = {
+            let mut txn = self.transact_local();
+            // … écritures d'aujourd'hui, inchangées …
+            self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
+        };
+        Ok(self.table_done_with(page, id, moved))
+```
+
+Commentaire de schéma de l'en-tête (`:1-8`) : ajouter « objet logé : champ `cell` de l'objet, `table_links.rs` ».
+
+- [ ] **6. `commands.rs`** — variantes, après `ImportTable` :
+
+```rust
+    /// personnalisation-3 (D3) : tailles, suivi des autres objets liés, `matrix` composée sur `ids`, `cell` posé (`Some`)
+    /// ou retiré (`None`) ; refus `BadTable` si `ids` contient un tableau ou si la case visée est ombrée (D35, D36) ; une étape.
+    PlaceInCell {
+        ids: Vec<String>,
+        matrix: Transform,
+        cell: Option<[String; 3]>,
+        sizes: Vec<crate::table_links::LineSize>,
+    },
+    /// personnalisation-3 (D4) : tailles par id de ligne et de colonne, objets liés suivis ; une étape.
+    SetTableLineSizes {
+        id: String,
+        cols: Vec<(String, f64)>,
+        rows: Vec<(String, f64)>,
+    },
+```
+
+Dans `apply` :
+
+```rust
+            Command::PlaceInCell { ids, matrix, cell, sizes } => {
+                self.cmd_place_in_cell(&ids, &matrix, cell.as_ref(), &sizes)
+            }
+            Command::SetTableLineSizes { id, cols, rows } => self.cmd_set_table_line_sizes(&id, &cols, &rows),
+```
+
+`find_unique` en `pub(crate)`.
+
+- [ ] **7. `copy.rs`** — dans `copy_elements`, après le traitement de `group` : `prelim.remove("cell");` avec le commentaire
+« personnalisation-3 : une copie est libre (renumérotation : T5) ». Si `MapPrelim` n'a pas `remove`, utiliser
+`prelim.retain(|k, _| k.as_ref() != "cell")` ou l'équivalent de son type (`HashMap<Arc<str>, In>`).
+
+- [ ] **8. Vert** — commande bornée de la tâche (11 passés), puis `cargo test -p roomboard-core`, `cargo clippy` et `cargo fmt --all --check`.
+
+- [ ] **9. Commit**
+
+```bash
+cd /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau
+git add crates/roomboard-core/src/table_links.rs
+git add crates/roomboard-core/src/lib.rs
+git add crates/roomboard-core/src/element.rs
+git add crates/roomboard-core/src/document.rs
+git add crates/roomboard-core/src/table.rs
+git add crates/roomboard-core/src/commands.rs
+git add crates/roomboard-core/src/copy.rs
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "feat(core): link objects to table cells, PlaceInCell, SetTableLineSizes, follow
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Tâche T1b — Cœur : emport et sortie de case par `Transform` (D6), exports Wasm, mesure du module
+
+<a id="tache-t1b"></a>
+
+**Objectif** : un tableau transformé emporte ses objets liés ; un objet lié transformé sans son tableau perd son lien si
+le centre de sa boîte sort de sa case ; `PlaceInCell` et `SetTableLineSizes` sont exposés au Wasm ; la taille du module
+est mesurée.
+
+**Fichiers**
+- Modifier : `crates/roomboard-core/src/table_links.rs` (`with_linked`, `leaving_cells`, 3 tests)
+- Modifier : `crates/roomboard-core/src/commands.rs:1043` (`cmd_transform`)
+- Modifier : `crates/roomboard-wasm/src/lib.rs` (exports après `set_table_shade`, `_inner` après `set_table_shade_inner`, test après `c10b_table_commands_inner`)
+
+**Interfaces**
+- Consomme (T1a) : `read_cell_link`, `cell_rect`, `read_raw`, `find_unique`, `Command::PlaceInCell`, `Command::SetTableLineSizes`, `LineSize` ; `element::invert`, `element::apply_transform`, `Document::element_bounds(txn, e) -> Option<Bounds>` (`query.rs:317`).
+- Produit (Rust) : `Document::with_linked<T: ReadTxn>(&self, txn: &T, targets: &mut Vec<(MapRef, Transform, String, String)>)`, `Document::leaving_cells<T: ReadTxn>(&self, txn: &T, targets: &[(MapRef, Transform, String, String)], m: &Transform) -> HashSet<String>` ; `Change.ids` de `Transform` = ids triés des cibles élargies.
+- Produit (Wasm) :
+  - `place_in_cell(ids: Vec<String>, matrix: &[f64], table: Option<String>, row: Option<String>, col: Option<String>, size_keys: Vec<String>, size_values: &[f64]) -> Result<JsValue, JsError>` ; `size_keys` = triplets `(tableau, "row" | "col", ligne)` bout à bout.
+  - `set_table_line_sizes(id: &str, col_ids: Vec<String>, col_widths: &[f64], row_ids: Vec<String>, row_heights: &[f64]) -> Result<JsValue, JsError>`
+- Réutilise : `crates/roomboard-core/src/commands.rs:1043` `cmd_transform` — cibles élargies aux objets liés (étendre).
+- Le rapport porte `Réutilisation : appelé cmd_transform` ou `Réutilisation : écart — <pourquoi>`.
+
+**Test et commande bornée**
+
+```bash
+cd /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && nice -n 10 cargo test -p roomboard-core table_links::tests::transform -j 4 2>&1 | tail -10
+```
+
+Attendu : `3 passed` exactement (`transform_table_carries_links`, `transform_table_without_links_unchanged`,
+`transform_out_of_cell_unlinks`). Puis `nice -n 10 cargo test -p roomboard-wasm place_in_cell -j 4 2>&1 | tail -5`
+(`1 passed`, `place_in_cell_inner_links_and_sizes`), `nice -n 10 cargo test -p roomboard-core -j 4 2>&1 | tail -5` (tests à
+garder verts : tests de `Transform` de `commands.rs` `:2738-2940`, C3), puis la commande M : ≤ 1 540 000 o, valeur rapportée.
+
+**Contraintes (recopiées)** : G1 TDD ; G2 worktree partagé ; G3 `nice -n 10`, `-j 4`, PATH, preuves bornées ; G4 module
+≤ 1 540 000 o mesuré par la commande M (plafond 1 572 864, aujourd'hui 1 429 754), module formats inchangé
+(2 794 527 o) ; G9 hors tableau inchangé (une `Transform` sans tableau ni objet lié : mêmes ids, mêmes écritures) ; G10
+interdits ; G11 commits ; G12 une transaction.
+
+**Interdits** : ne pas toucher `query.rs`, `history.rs`, `crates/roomboard-formats`.
+
+**Patron à ne pas reprendre** : élargir la sélection à la seule Sélection de la page : la CLI pilote `Transform` sans
+moteur, l'emport doit vivre dans le cœur (D6) ; et retirer le lien par une seconde commande : la sortie de case s'écrit
+dans la transaction de la `Transform`. Référence : `crates/roomboard-core/src/commands.rs:1043-1079`.
+
+**Terminé quand** : 3 + 1 tests verts, `cargo test -p roomboard-core` et `-p roomboard-wasm` verts,
+`cargo clippy -p roomboard-core -p roomboard-wasm --all-targets -j 4 -- -D warnings` propre, `cargo fmt --all --check`,
+taille rapportée, un commit.
+
+#### Étapes
+
+- [ ] **1. Tests rouges** — ajouter au module `tests` de `table_links.rs` :
+
+```rust
+    // D6 : un tableau déplacé emporte ses objets liés ; sans lien, la Transform est celle d'aujourd'hui.
+    #[test]
+    fn transform_table_carries_links() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1050.0, 1040.0);
+        d.apply(Command::PlaceInCell { ids: vec![o.clone()], matrix: IDENTITY, cell: Some(link(&d, &t, 0, 0)), sizes: vec![] }).expect("logé");
+        let at = tx(&d, &o);
+        let c = d.apply(Command::Transform { ids: vec![t.clone()], matrix: [1.0, 0.0, 0.0, 1.0, 50.0, 20.0] }).expect("déplacé");
+        assert_eq!((tx(&d, &o)[4], tx(&d, &o)[5]), (at[4] + 50.0, at[5] + 20.0));
+        let mut want = vec![t.clone(), o.clone()];
+        want.sort();
+        assert_eq!(c.ids, want);
+    }
+
+    #[test]
+    fn transform_table_without_links_unchanged() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1050.0, 1040.0);
+        let at = tx(&d, &o);
+        let c = d.apply(Command::Transform { ids: vec![t.clone()], matrix: [1.0, 0.0, 0.0, 1.0, 50.0, 20.0] }).expect("déplacé");
+        assert_eq!(c.ids, vec![t.clone()]);
+        assert_eq!(tx(&d, &o), at);
+    }
+
+    // D6, H24 : objet lié déplacé seul : lien gardé si son centre reste dans sa case, retiré sinon.
+    #[test]
+    fn transform_out_of_cell_unlinks() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 10.0, 10.0, 50.0, 40.0);
+        d.apply(Command::PlaceInCell { ids: vec![o.clone()], matrix: IDENTITY, cell: Some(link(&d, &t, 0, 0)), sizes: vec![] }).expect("logé");
+        d.apply(Command::Transform { ids: vec![o.clone()], matrix: [1.0, 0.0, 0.0, 1.0, 100.0, 0.0] }).expect("dedans");
+        assert_eq!(d.element(&o).expect("o").cell, Some(link(&d, &t, 0, 0)));
+        d.apply(Command::Transform { ids: vec![o.clone()], matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 500.0] }).expect("dehors");
+        assert_eq!(d.element(&o).expect("o").cell, None);
+    }
+
+```
+
+- [ ] **2. Rouge** — commande bornée : 2 échecs (`transform_table_carries_links`, `transform_out_of_cell_unlinks`) ; le troisième passe déjà (témoin).
+
+- [ ] **3. `with_linked`, `leaving_cells` et `cmd_transform`** — ajouter `apply_transform` et `invert` à l'import de
+`crate::element` de `table_links.rs`, puis, dans `impl Document` de `table_links.rs` :
+
+```rust
     /// D6 : ajoute aux cibles d'une `Transform` les objets liés aux tableaux qu'elles contiennent.
     pub(crate) fn with_linked<T: ReadTxn>(&self, txn: &T, targets: &mut Vec<(MapRef, Transform, String, String)>) {
         let tables: Vec<(String, String)> = targets
@@ -821,47 +1014,10 @@ impl Document {
         }
         out
     }
-}
 ```
 
 Si `invert` ou `apply_transform` ont une autre signature dans `element.rs:252-260`, adapter l'appel, pas la règle.
-
-- [ ] **5. `table.rs`** : `fn table_of` et `fn ranks` en `pub(crate)` ; dans `cmd_set_table_cell`, `cmd_insert_table_line`,
-`cmd_remove_table_line`, `cmd_set_table_sizes` : `let before = crate::table_links::offsets(&raw);` avant le bloc
-d'écriture, puis en dernière ligne du bloc `let moved = self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new());`
-(prendre `e` dans `table_of` là où il est ignoré par `_`), et `Ok(self.table_done_with(page, id, moved))` au lieu de
-`Ok(self.table_done(page, id))`. Commentaire de schéma de l'en-tête (`:1-8`) : ajouter « objet logé : champ `cell` de
-l'objet, `table_links.rs` ».
-
-- [ ] **6. `commands.rs`** — variantes, après `ImportTable` :
-
-```rust
-    /// personnalisation-3 (D3) : tailles, suivi des autres objets liés, `matrix` composée sur `ids`, `cell` posé (`Some`)
-    /// ou retiré (`None`) ; refus `BadTable` si `ids` contient un tableau ou si la case visée est ombrée (D35, D36) ; une étape.
-    PlaceInCell {
-        ids: Vec<String>,
-        matrix: Transform,
-        cell: Option<[String; 3]>,
-        sizes: Vec<crate::table_links::LineSize>,
-    },
-    /// personnalisation-3 (D4) : tailles par id de ligne et de colonne, objets liés suivis ; une étape.
-    SetTableLineSizes {
-        id: String,
-        cols: Vec<(String, f64)>,
-        rows: Vec<(String, f64)>,
-    },
-```
-
-Dans `apply` :
-
-```rust
-            Command::PlaceInCell { ids, matrix, cell, sizes } => {
-                self.cmd_place_in_cell(&ids, &matrix, cell.as_ref(), &sizes)
-            }
-            Command::SetTableLineSizes { id, cols, rows } => self.cmd_set_table_line_sizes(&id, &cols, &rows),
-```
-
-`find_unique` en `pub(crate)`. Dans `cmd_transform`, remplacer la lecture des cibles et l'écriture par :
+Dans `cmd_transform` (`commands.rs:1043`), remplacer la lecture des cibles et l'écriture par :
 
 ```rust
         let (targets, unlink) = {
@@ -885,11 +1041,8 @@ et dans le bloc d'écriture, après l'insertion de `transform` : `if unlink.cont
 (itérer `for ((e, _, _, id), c) in targets.iter().zip(&composed)`). Les `ids` du changement : `let mut ids: Vec<String> =
 targets.into_iter().map(|t| t.3).collect(); ids.sort();`.
 
-- [ ] **7. `copy.rs`** — dans `copy_elements`, après le traitement de `group` : `prelim.remove("cell");` avec le commentaire
-« personnalisation-3 : une copie est libre (renumérotation : T5) ». Si `MapPrelim` n'a pas `remove`, utiliser
-`prelim.retain(|k, _| k.as_ref() != "cell")` ou l'équivalent de son type (`HashMap<Arc<str>, In>`).
 
-- [ ] **8. Exports Wasm** — dans `crates/roomboard-wasm/src/lib.rs`, après `set_table_shade` :
+- [ ] **4. Exports Wasm** — dans `crates/roomboard-wasm/src/lib.rs`, après `set_table_shade` :
 
 ```rust
     /// personnalisation-3 (D3) : `table`, `row`, `col` tous présents = case visée, sinon sortie de case ; `size_keys` =
@@ -1000,46 +1153,39 @@ Imports : `use roomboard_core::table_links::LineSize;` et `TableAxis` (comme les
 
 Si `add_shape_inner` a une autre signature, prendre celle de l'appel existant le plus proche dans les tests de `lib.rs`.
 
-- [ ] **9. Vert** — relancer la commande bornée de la tâche, puis `cargo test -p roomboard-core` et `-p roomboard-wasm`
-(motifs `test result: ok`), `cargo clippy` et `cargo fmt --all --check`. Mesurer : commande M. Rapporter la taille.
 
-- [ ] **10. Commit**
+- [ ] **5. Vert, mesure** — commandes bornées de la tâche, `cargo clippy`, `cargo fmt --all --check`, commande M ; rapporter la taille.
+
+- [ ] **6. Commit**
 
 ```bash
 cd /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau
 git add crates/roomboard-core/src/table_links.rs
-git add crates/roomboard-core/src/lib.rs
-git add crates/roomboard-core/src/element.rs
-git add crates/roomboard-core/src/document.rs
-git add crates/roomboard-core/src/table.rs
 git add crates/roomboard-core/src/commands.rs
-git add crates/roomboard-core/src/copy.rs
 git add crates/roomboard-wasm/src/lib.rs
-git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "feat(core): link objects to table cells, PlaceInCell, SetTableLineSizes, follow and carry
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "feat(core): tables carry their cell objects on Transform; wasm exports for PlaceInCell
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Tâche T2 — Contrat TS : `api.ts`, `wasm-core.ts`, faux cœur à parité, contrat, CLI
+### Tâche T2a — Contrat TS : `api.ts`, `wasm-core.ts`, faux cœur à parité (suivi, emport, copie, enregistrement), contrat
 
-<a id="tache-t2"></a>
+<a id="tache-t2a"></a>
 
-**Objectif** : la page et la CLI parlent `PlaceInCell` et `SetTableLineSizes` ; la fausse liaison reproduit exactement le
-cœur de T1 (suivi, emport, sortie, refus, ids du changement) ; le contrat le prouve sur les deux fabriques ; la CLI
-loge un objet et le voit suivre une ligne insérée (S16).
+**Objectif** : la page parle `PlaceInCell` et `SetTableLineSizes` ; la fausse liaison reproduit exactement le cœur de T1a
+et T1b (suivi, emport, sortie, refus, ids du changement, copie libre, lien publié seulement vers une case existante, `cell`
+enregistré et relu) ; le contrat le prouve sur les deux fabriques.
 
 **Fichiers**
 - Modifier : `apps/web/src/core/api.ts:60-200` (commandes), `:310-316` (`ElementBase.cell`), en-tête (`:12-16`, une ligne personnalisation-3)
 - Modifier : `apps/web/src/core/wasm-core.ts:178-186` (`toElementView` lit `cell`), `:636-660` (deux `case`)
-- Modifier : `apps/web/src/core/fake-core.ts:150-166` (`FakeElement.cell`), `:786-795` (`writeTable`), `:1033-1056` (`Transform`), nouveaux `case`, `:1624` (`element` publie `cell`)
+- Modifier : `apps/web/src/core/fake-core.ts:150-166` (`FakeElement.cell`), `:572-585` (`copyElement`), `:786-795` (`writeTable`), `:1033-1056` (`Transform`), nouveaux `case`, `:1624` (`element`), `:1984-2000` (`savedElement`), `:2074` (`loadElement`)
 - Modifier : `apps/web/src/core/wasm-core.contract.test.ts` (bloc `describe.each(c10aFactories)("contrat personnalisation-3 : $name", …)` après le bloc C10b)
-- Modifier : `apps/cli/src/ops.ts:11-17`, `apps/cli/src/ops.test.ts:42-45`
-- Modifier : `scripts/essais/cli-essai.mjs` (passage S16 avant `console.log("CLI : OK")`)
 
 **Interfaces**
-- Consomme (T1) : exports Wasm `place_in_cell(ids, matrix, table?, row?, col?, size_keys, size_values)`, `set_table_line_sizes(id, col_ids, col_widths, row_ids, row_heights)` ; vue `cell` (3 chaînes) ; ordre des refus de `PlaceInCell` (section T1) ; `Change.ids` (table d'abord puis suivis, pour les commandes de tableau ; triés pour `PlaceInCell` et `Transform`).
+- Consomme (T1a, T1b) : exports Wasm `place_in_cell(ids, matrix, table?, row?, col?, size_keys, size_values)`, `set_table_line_sizes(id, col_ids, col_widths, row_ids, row_heights)` ; vue `cell` (3 chaînes, absente si la cible n'existe pas) ; ordre des refus de `PlaceInCell` (section T1a) ; `Change.ids` (tableau d'abord puis suivis, pour les commandes de tableau ; triés pour `PlaceInCell` et `Transform`) ; copie : `cell` retiré.
 - Produit (`api.ts`) :
 
 ```ts
@@ -1053,11 +1199,11 @@ export type LineSize = readonly [table: string, axis: TableAxis, line: string, s
   /** personnalisation-3 (D4) : tailles par id, objets liés suivis ; une étape. */
   | { readonly type: "SetTableLineSizes"; readonly id: string; readonly cols: readonly (readonly [string, number])[]; readonly rows: readonly (readonly [string, number])[] }
 // dans ElementBase :
-  /** personnalisation-3 (D1) : case qui loge l'objet ; absent sans lien (jamais sur un tableau). */
+  /** personnalisation-3 (D1) : case qui loge l'objet ; absent sans lien, si la case n'existe plus, et sur un tableau. */
   readonly cell?: CellLink;
 ```
 
-- Produit (faux cœur) : `offsetsOf(t: FakeTable): Offsets`, `followCells(p: FakePage, tableId: string, m: Matrix, before: Offsets, after: Offsets, skip: ReadonlySet<string>): string[]`, avec `interface Offsets { readonly cols: ReadonlyMap<string, number>; readonly rows: ReadonlyMap<string, number> }`.
+- Produit (faux cœur) : `offsetsOf(t: FakeTable): Offsets`, `followCells(p: FakePage, tableId: string, m: Matrix, before: Offsets, after: Offsets, skip: ReadonlySet<string>): string[]`, `cellRectOf(t: FakeTable, row: string, col: string): Bounds | null`, `cellField`, `readCell`, avec `interface Offsets { readonly cols: ReadonlyMap<string, number>; readonly rows: ReadonlyMap<string, number> }`.
 - Réutilise : `apps/web/src/core/fake-core.ts:786` `writeTable` — y loge le suivi (étendre).
 - Le rapport porte `Réutilisation : appelé writeTable` ou `Réutilisation : écart — <pourquoi>`.
 
@@ -1067,26 +1213,24 @@ export type LineSize = readonly [table: string, axis: TableAxis, line: string, s
 cd /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau && pnpm --filter @roomboard/web exec vitest run src/core/wasm-core.contract.test.ts -t "personnalisation-3" 2>&1 | tail -20
 ```
 
-Attendu : `Tests  N passed` avec N ≥ 14 (7 tests × 2 fabriques), « vrai module wasm » présent dans les noms (le `.wasm`
-de la commande M de T1 existe). Puis `pnpm --filter @roomboard/web exec vitest run src/core 2>&1 | tail -5` (tests à
-garder verts : contrats C10a, C10b, C3), `pnpm --filter @roomboard/cli exec vitest run src/ops.test.ts 2>&1 | tail -5`
-(« 38 commandes »), `pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -5` et `pnpm --filter @roomboard/cli exec tsc
---noEmit 2>&1 | tail -5` (aucune erreur), puis `pnpm --filter @roomboard/cli build 2>&1 | tail -3 && node
-scripts/essais/cli-essai.mjs 2>&1 | tail -6` : `ok — … S16 : …` puis `CLI : OK`.
+Attendu : `Tests  20 passed` (10 tests × 2 fabriques), « vrai module wasm » présent dans les noms (le `.wasm` de la commande
+M de T1b existe). Puis `pnpm --filter @roomboard/web exec vitest run src/core 2>&1 | tail -5` (tests à garder verts :
+contrats C10a, C10b, C3, et les tests de rechargement du faux cœur) et `pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -5`
+(aucune erreur). Le `tsc` de `apps/cli` est rouge jusqu'à T2b (`ALL_COMMANDS` : deux commandes manquantes) : attendu, T2b suit.
 
-**Contraintes (recopiées)** : G1 TDD ; G2 worktree partagé ; G3 preuves bornées ; G5 champs facultatifs ; G6 CLI :
-`COMMAND_TYPES`, `ops.test.ts`, `cli-essai.mjs`, `FORMAT_LOTS` inchangé ; G9 hors tableau inchangé ; G10 interdits ;
-G11 commits ; G12 une étape par commande.
+**Contraintes (recopiées)** : G1 TDD ; G2 worktree partagé ; G3 preuves bornées ; G5 champs facultatifs, lecture tolérante ;
+G9 hors tableau inchangé ; G10 interdits ; G11 commits ; G12 une étape par commande.
 
 **Interdits** : ne pas modifier le cœur Rust (le faux cœur suit le vrai, jamais l'inverse ; un écart trouvé est
-rapporté) ; ne pas réécrire de test existant du contrat.
+rapporté) ; ne pas réécrire de test existant du contrat ; ne pas toucher `apps/cli` (T2b).
 
 **Patron à ne pas reprendre** : coder le suivi dans chaque `case` du faux cœur (InsertTableLine, RemoveTableLine,
 SetTableSizes, SetTableCell…) : une commande oubliée diverge du cœur. Le suivi vit dans `writeTable`, seul passage de
-toutes les écritures de tableau (`apps/web/src/core/fake-core.ts:786-795`) ; et l'ordre des refus est celui de la section
-T1, pas celui qui vient naturellement en TS.
+toutes les écritures de tableau (`apps/web/src/core/fake-core.ts:786-795`) ; l'ordre des refus est celui de la section
+T1a, pas celui qui vient naturellement en TS ; et `copyElement` recopie tout par `...rest` (`:581`) : `cell` doit en être
+retiré explicitement, comme `group`.
 
-**Terminé quand** : les commandes bornées ci-dessus passent, `tsc` propre pour web et CLI, `CLI : OK`, un commit.
+**Terminé quand** : 20 tests verts, `vitest run src/core` vert, `tsc` web propre, un commit.
 
 #### Étapes
 
@@ -1208,10 +1352,45 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     expect(d.element(o)?.cell).toBeUndefined();
     d.free();
   });
+  it("personnalisation-3 copie libre : DuplicatePage, Copier-Coller : jamais liée au tableau d'origine", () => {
+    const d = f.blank();
+    const s = placed(d);
+    place11(d, s);
+    const p = first(d);
+    d.apply({ type: "DuplicatePage", page: p });
+    const p2 = d.pageIds().find((x) => x !== p) ?? "";
+    for (const id of d.elementIds(p2)) expect(d.element(id)?.cell?.[0]).not.toBe(s.t);
+    const frag = d.extract([s.o]);
+    const ins = d.insertFragment(p, frag, 0, 0);
+    for (const id of ins.ids) expect(d.element(id)?.cell?.[0]).not.toBe(s.t);
+    d.free();
+  });
+
+  it("personnalisation-3 recharger garde cell (S17)", () => {
+    const d = f.blank();
+    const s = placed(d);
+    place11(d, s);
+    const want = d.element(s.o)?.cell;
+    const r = f.load(d.save(now, "0.1.0"));
+    d.free();
+    expect(r.element(s.o)?.cell).toEqual(want);
+    r.free();
+  });
+
+  it("personnalisation-3 cible absente (D1) : tableau supprimé : l'objet est libre", () => {
+    const d = f.blank();
+    const s = placed(d);
+    place11(d, s);
+    d.apply({ type: "Delete", ids: [s.t] });
+    expect(d.element(s.o)?.cell).toBeUndefined();
+    d.free();
+  });
 });
 ```
 
-Importer `CellLink` dans la ligne d'import de `./api` du fichier de contrat.
+Importer `CellLink` dans la ligne d'import de `./api` du fichier de contrat. Si `extract` ou `insertFragment` ont une autre
+signature dans `api.ts` (`CoreDocument`), prendre la leur ; l'assertion reste « jamais lié au tableau d'origine ».
+
 
 - [ ] **2. Rouge** — `pnpm --filter @roomboard/web exec vitest run src/core/wasm-core.contract.test.ts -t "personnalisation-3" 2>&1 | tail -20` : échec de compilation ou de type (`PlaceInCell` absent).
 
@@ -1249,7 +1428,7 @@ et `...(link ? { cell: link } : {})` dans `base`. Dans `apply`, après `SetTable
 
 Si `WasmModule` (type local de `wasm-core.ts`) déclare les méthodes à la main, y ajouter ces deux signatures.
 
-- [ ] **5. Faux cœur** — `FakeElement` : `readonly cell?: CellLink;`. `element()` : `const base = { id, transform: e.transform, ...withGroup(e.group), ...(e.cell && !e.table ? { cell: e.cell } : {}) };`. Fonctions de module, près de `copyElement` :
+- [ ] **5. Faux cœur** — `FakeElement` : `readonly cell?: CellLink;` (`element()`, copie et enregistrement : fin de cette étape). Fonctions de module, près de `copyElement` :
 
 ```ts
 /** personnalisation-3 (D5) : décalage de chaque ligne et colonne depuis le coin, comme `offsets` du cœur. */
@@ -1374,7 +1553,7 @@ puis utiliser `all` à la place de `ids` pour `composed`, `pages`, la boucle d'�
       }
 ```
 
-`case "PlaceInCell"` (ordre des refus de T1) :
+`case "PlaceInCell"` (ordre des refus de T1a) :
 
 ```ts
       case "PlaceInCell": {
@@ -1442,15 +1621,95 @@ puis utiliser `all` à la place de `ids` pour `composed`, `pages`, la boucle d'�
       }
 ```
 
+Copie libre (même règle que `copy_elements` du cœur, T1a) — `copyElement` :
+
+```ts
+  const { group: _old, cell: _c, ...rest } = e;
+```
+
+(les appelants `:898` Dupliquer la page, `:1823` `extract`, `:1836` et `:1853` `insertFragment` passent tous par lui).
+Lien publié seulement vers une case existante (D1) — dans `element()` :
+
+```ts
+    const linked = e.cell !== undefined && e.table === undefined && this.cellTargetOk(e.cell) ? { cell: e.cell } : {};
+    const base = { id, transform: e.transform, ...withGroup(e.group), ...linked };
+```
+
+avec la méthode privée :
+
+```ts
+  /** D1 : la case visée existe (tableau lisible, ligne et colonne présentes). */
+  private cellTargetOk(l: CellLink): boolean {
+    const t = this.find(l[0])?.element.table;
+    return t !== undefined && t.rows.some((r) => r.id === l[1]) && t.cols.some((c) => c.id === l[2]);
+  }
+```
+
+Enregistrement (`savedElement`, `:1984-2000`) et lecture (`loadElement`, `:2074`) : `SavedElement` gagne `cell?: unknown` ;
+à côté de chaque `...group` des branches de `savedElement`, ajouter `...cellField(e)` ; dans `loadElement`, à côté de
+`group`, `const cell = readCell(e.cell);` et `...cell` dans chaque branche qui pose `...group` :
+
+```ts
+/** personnalisation-3 : `cell` écrit tel quel (trois chaînes) ; absent sans lien. */
+const cellField = (e: FakeElement): { cell?: readonly string[] } => (e.cell === undefined ? {} : { cell: [...e.cell] });
+/** Lecture tolérante (U3) : trois chaînes non vides, sinon aucun lien. */
+const readCell = (v: unknown): { cell?: CellLink } =>
+  Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "string" && x !== "") ? { cell: [v[0], v[1], v[2]] as CellLink } : {};
+```
+
 Imports : `applyMatrix`, `invertMatrix` depuis `./shapes` s'ils n'y sont pas ; `CellLink`, `TableAxis`, `Bounds` depuis `./api`.
 
-- [ ] **6. Vert du contrat** — commande bornée de la tâche, puis `vitest run src/core` (5 dernières lignes).
+- [ ] **6. Vert du contrat** — commande bornée de la tâche (20 passés), puis `vitest run src/core` (5 dernières lignes) et `tsc` web.
 
-- [ ] **7. CLI** — `COMMAND_TYPES` : ajouter `"PlaceInCell", "SetTableLineSizes"` après `"ImportTable"` ; `ops.test.ts` :
+- [ ] **7. Commit** — `git add` un par un de `apps/web/src/core/api.ts`, `apps/web/src/core/wasm-core.ts`,
+`apps/web/src/core/fake-core.ts`, `apps/web/src/core/wasm-core.contract.test.ts` ; message `feat(web): PlaceInCell and
+SetTableLineSizes contract, fake core parity` + ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, auteur G11.
+
+---
+
+### Tâche T2b — CLI : `COMMAND_TYPES`, `ops.test.ts`, passage S16 de `cli-essai.mjs`
+
+<a id="tache-t2b"></a>
+
+**Objectif** : la CLI accepte les deux commandes neuves ; elle loge un objet et le voit suivre une ligne insérée, une
+étape d'annulation par commande, et le lien relu après réouverture (S16).
+
+**Fichiers**
+- Modifier : `apps/cli/src/ops.ts:11-17`, `apps/cli/src/ops.test.ts:42-45`
+- Modifier : `scripts/essais/cli-essai.mjs` (passage S16 avant `console.log("CLI : OK")`)
+
+**Interfaces**
+- Consomme (T2a) : `Command` `PlaceInCell`, `SetTableLineSizes` ; vue `cell` publiée par l'état de la CLI (`state.ts`, vues du cœur telles quelles).
+- Produit : `COMMAND_TYPES` à 38 entrées.
+- Réutilise : `apps/cli/src/ops.ts:11` `COMMAND_TYPES` (étendre) ; `apps/cli/src/formats.ts:81` `FORMAT_LOTS` inchangé.
+- Le rapport porte `Réutilisation : appelé COMMAND_TYPES` ou `Réutilisation : écart — <pourquoi>`.
+
+**Test et commande bornée**
+
+```bash
+cd /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau && pnpm --filter @roomboard/cli exec vitest run src/ops.test.ts 2>&1 | tail -8
+```
+
+Attendu : le test « COMMAND_TYPES couvre les 38 commandes de Command, sans doublon » passe (N ≥ 1). Puis
+`pnpm --filter @roomboard/cli exec tsc --noEmit 2>&1 | tail -5` (aucune erreur) et
+`pnpm --filter @roomboard/cli build 2>&1 | tail -3 && node scripts/essais/cli-essai.mjs 2>&1 | tail -8` : lignes
+`ok — … S16 : …` (≥ 4) puis `CLI : OK`. Fumée : `node apps/cli/dist/roomboard.mjs --help` code 0.
+
+**Contraintes (recopiées)** : G1 TDD ; G2 worktree partagé ; G3 preuves bornées ; G6 CLI : `COMMAND_TYPES`,
+`ops.test.ts`, `cli-essai.mjs`, `FORMAT_LOTS` inchangé ; écritures seulement sur des fichiers temporaires ; G10 interdits ;
+G11 commits ; G12 une étape par commande.
+
+**Interdits** : aucun fichier de Jérôme écrit ; ne pas toucher `apps/web`.
+
+**Terminé quand** : preuves ci-dessus, un commit.
+
+#### Étapes
+
+- [ ] **1. CLI (rouge puis vert)** — `COMMAND_TYPES` : ajouter `"PlaceInCell", "SetTableLineSizes"` après `"ImportTable"` ; `ops.test.ts` :
 titre « COMMAND_TYPES couvre les 38 commandes de Command, sans doublon » et `toBe(38)`. Vérifier rouge puis vert
 (`pnpm --filter @roomboard/cli exec vitest run src/ops.test.ts 2>&1 | tail -5`).
 
-- [ ] **8. `cli-essai.mjs` (S16)** — avant `console.log("CLI : OK");` :
+- [ ] **2. `cli-essai.mjs` (S16)** — avant `console.log("CLI : OK");` :
 
 ```js
   // personnalisation-3 (S16, D25) : loger une forme dans une case, insérer une ligne en tête, enregistrer, relire.
@@ -1485,12 +1744,10 @@ titre « COMMAND_TYPES couvre les 38 commandes de Command, sans doublon » et `t
 Si l'état de la CLI ne publie pas `transform` sous ce nom, lire le champ de position qu'elle publie (`state.ts`) ; le
 contrôle reste « + 64 ».
 
-- [ ] **9. Vert CLI** — `pnpm --filter @roomboard/cli build 2>&1 | tail -3 && node scripts/essais/cli-essai.mjs 2>&1 | tail -6` : lignes `S16` puis `CLI : OK`.
+- [ ] **3. Vert CLI** — `pnpm --filter @roomboard/cli build 2>&1 | tail -3 && node scripts/essais/cli-essai.mjs 2>&1 | tail -6` : lignes `S16` puis `CLI : OK`.
 
-- [ ] **10. Commit** — `git add` des 7 fichiers un par un (`apps/web/src/core/api.ts`, `apps/web/src/core/wasm-core.ts`,
-`apps/web/src/core/fake-core.ts`, `apps/web/src/core/wasm-core.contract.test.ts`, `apps/cli/src/ops.ts`,
-`apps/cli/src/ops.test.ts`, `scripts/essais/cli-essai.mjs`), message `feat(web,cli): PlaceInCell and SetTableLineSizes
-contract, fake core parity, CLI S16` + ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, auteur G11.
+- [ ] **4. Commit** — `git add apps/cli/src/ops.ts`, `git add apps/cli/src/ops.test.ts`, `git add scripts/essais/cli-essai.mjs` ;
+message `feat(cli): PlaceInCell and SetTableLineSizes in the CLI, S16 run` + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, auteur G11.
 
 ---
 
@@ -1504,8 +1761,8 @@ le déplacement libre ; la case visée est encadrée pendant le glisser ; sélec
 
 **Fichiers**
 - Créer : `apps/web/src/engine/tools/cell-drop.ts`, `apps/web/src/engine/tools/cell-drop.test.ts`
-- Modifier : `apps/web/src/engine/table-geom.ts:166-181` (`tableAt`), fin de fichier (`LinkedBox`, `requiredSizes`)
-- Modifier : `apps/web/src/engine/table-geom.test.ts` (2 tests)
+- Modifier : `apps/web/src/engine/table-geom.ts:166-181` (`tableAt`, `tableHitIn`), fin de fichier (`LinkedBox`, `requiredSizes`)
+- Modifier : `apps/web/src/engine/table-geom.test.ts:18-21` (`docOf` gagne `elementIdsOfKind`, assertions inchangées), 2 tests neufs
 - Modifier : `apps/web/src/engine/groups.ts:8-11` (`GroupedView.cell?` optionnel)
 - Modifier : `apps/web/src/engine/tools/select.ts:91`, `:148-165`, `:168-176`, `:183-204`, `:206-224` (les 4 points DA3)
 - Modifier : `apps/web/src/engine/tools/select.test.ts` (1 test : branché, Alt)
@@ -1513,7 +1770,7 @@ le déplacement libre ; la case visée est encadrée pendant le glisser ; sélec
 - Modifier : `apps/web/src/app/board-session.ts:371`
 
 **Interfaces**
-- Consomme (T2) : `Command` `PlaceInCell` (`CellLink`, `LineSize`), `ElementView.cell`, `CoreDocument.elementIdsOfKind(page, kind)`, `CoreDocument.version()`.
+- Consomme (T2a) : `Command` `PlaceInCell` (`CellLink`, `LineSize`), `ElementView.cell`, `CoreDocument.elementIdsOfKind(page, kind)`, `CoreDocument.version()`.
 - Produit :
 
 ```ts
@@ -1521,6 +1778,7 @@ le déplacement libre ; la case visée est encadrée pendant le glisser ; sélec
 export interface LinkedBox { readonly row: string; readonly col: string; readonly w: number; readonly h: number }
 export function requiredSizes(t: TableData, linked: readonly LinkedBox[], colWidths: readonly number[], measure: Measure): { rows: number[]; cols: number[] };
 export function tableAt(doc: Pick<CoreDocument, "elementIdsOfKind" | "element">, page: string, x: number, y: number): TableHit | null;
+export function tableHitIn(tables: readonly TableElement[], x: number, y: number): TableHit | null; // du dessus vers le dessous
 // cell-drop.ts
 export interface CellDrop {
   expand(ids: readonly string[], views: readonly GroupedView[]): string[];
@@ -1547,7 +1805,7 @@ EditOverlay.target?: Bounds | null; // cadre de la case visée (monde)
 cd /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau && pnpm --filter @roomboard/web exec vitest run src/engine/tools/cell-drop.test.ts 2>&1 | tail -20
 ```
 
-Attendu : `Tests  N passed`, N ≥ 8, nom `S1 : image 400 × 300 sur la case (1, 1)` présent. Puis, tests à garder verts :
+Attendu : `Tests  9 passed`, noms `S1 : image 400 × 300 sur la case (1, 1)` et `D28 : aucun element() pendant le glisser` présents. Puis, tests à garder verts :
 `pnpm --filter @roomboard/web exec vitest run src/engine/table-geom.test.ts src/engine/tools/select.test.ts src/engine/tools/table.test.ts src/engine/fill-target.test.ts 2>&1 | tail -6`
 et `pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -5`.
 
@@ -1557,13 +1815,26 @@ inchangé (sans `cellDrop`, ou sans tableau sous le pointeur, la Sélection écr
 G10 interdits ; G11 commits ; G12 une étape par geste.
 
 **Interdits** : aucune ligne de logique de case dans `select.ts` au-delà des 4 points ; aucune boucle neuve dans `emit`
-(D28) ; ne pas toucher `engine/engine.ts` (le branchement passe par `board-session.ts`).
+(D28) ; aucune lecture `ctx.doc.element` par image dans `cell-drop.ts` : les tableaux et les vues sont lus au `begin` (par
+`expand`) et gardés tant que `ctx.doc.version()` et la page ne changent pas ; ne pas toucher `engine/engine.ts` (le
+branchement passe par `board-session.ts`).
 
-**Terminé quand** : `cell-drop.test.ts` ≥ 8 verts, tests à garder verts, `tsc` propre, un commit.
+**Terminé quand** : `cell-drop.test.ts` 9 verts, tests à garder verts, `tsc` propre, un commit.
 
 #### Étapes
 
-- [ ] **1. Tests rouges `table-geom`** — ajouter :
+- [ ] **1. Tests rouges `table-geom`** — d'abord, `docOf` (`table-geom.test.ts:18-21`) gagne la lecture par sorte, sans
+toucher aux assertions des tests `:93-100` :
+
+```ts
+const docOf = (els: ElementView[]): Pick<CoreDocument, "elementIds" | "elementIdsOfKind" | "element"> => ({
+  elementIds: () => els.map((e) => e.id),
+  elementIdsOfKind: (_page, kind) => els.filter((e) => e.kind === kind).map((e) => e.id),
+  element: (id) => els.find((e) => e.id === id) ?? null,
+});
+```
+
+Puis ajouter :
 
 ```ts
   it("tableAt garde le plus haut (D28, elementIdsOfKind)", () => {
@@ -1695,6 +1966,33 @@ describe("glisser vers une case (cell-drop, DA3)", () => {
     expect(s.drop.expand([s.table], viewsOf(s.doc, s.doc.elementIds(s.page))).sort()).toEqual([s.table, s.image].sort());
   });
 
+  it("D28 : aucun element() pendant le glisser (tableaux et vues lus au begin)", () => {
+    const base = fakeCore.blank();
+    const page = base.pageIds()[0] ?? "";
+    let calls = 0;
+    const doc = new Proxy(base, {
+      get(target, key) {
+        if (key === "element") return (id: string) => { calls++; return target.element(id); };
+        const v = Reflect.get(target, key) as unknown;
+        return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      },
+    });
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (cmd) => doc.apply(cmd) };
+    const tool = createSelectTool(ctx, createCellDrop(ctx, measure));
+    doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 });
+    doc.apply({ type: "AddImage", page, asset: ASSET, w: 400, h: 300, matrix: [1, 0, 0, 1, 1000, 1000] });
+    tool.begin(1, [at(1200, 1150)]);
+    tool.extend(1, [at(1100, 1000)], []);
+    tool.live();
+    const before = calls;
+    for (let i = 0; i < 10; i++) {
+      tool.extend(1, [at(1000 - i * 60, 900 - i * 80)], []);
+      tool.live();
+    }
+    expect(calls).toBe(before);
+    tool.close(1, "cancel");
+  });
+
   it("target : cadre monde de la case visée pendant le glisser, null hors tableau", () => {
     const s = setup();
     expect(s.drop.target([s.image], 360, 96)).toEqual({ x0: 240, y0: 64, x1: 480, y1: 128 });
@@ -1709,27 +2007,35 @@ describe("glisser vers une case (cell-drop, DA3)", () => {
 
 - [ ] **3. Rouge** — commande bornée : `Cannot find module './cell-drop'` (ou équivalent). `table-geom.test.ts -t "requiredSizes"` : rouge.
 
-- [ ] **4. `table-geom.ts`** — `tableAt` lit les seuls tableaux, ordre de la pile gardé :
+- [ ] **4. `table-geom.ts`** — `tableAt` lit les seuls tableaux, ordre de la pile gardé ; `tableHitIn` sert la liste
+déjà lue de `cell-drop` (D28) :
 
 ```ts
-/** Le tableau le plus haut sous (x, y) monde, du dessus vers le dessous (I2) ; matrice non inversible : sauté. Lit les
- *  seuls tableaux (`elementIdsOfKind`, D28), dans l'ordre de la pile. */
-export function tableAt(doc: Pick<CoreDocument, "elementIdsOfKind" | "element">, page: string, x: number, y: number): TableHit | null {
-  const ids = doc.elementIdsOfKind(page, "table");
-  for (let i = ids.length - 1; i >= 0; i--) {
-    const id = ids[i];
-    if (id === undefined) continue;
-    const el = doc.element(id);
-    if (el?.kind !== "table") continue;
+/** Le tableau le plus haut de `tables` (ordre de la pile) sous (x, y) monde (I2) ; matrice non inversible : sauté. */
+export function tableHitIn(tables: readonly TableElement[], x: number, y: number): TableHit | null {
+  for (let i = tables.length - 1; i >= 0; i--) {
+    const el = tables[i];
+    if (el === undefined) continue;
     const inv = invertMatrix(el.transform);
     if (inv === null) continue;
     const [lx, ly] = applyMatrix(inv, x, y);
     const cell = cellAt(el.table, lx, ly);
-    if (cell !== null) return { id, transform: el.transform, table: el.table, cell };
+    if (cell !== null) return { id: el.id, transform: el.transform, table: el.table, cell };
   }
   return null;
 }
+
+/** Le tableau le plus haut sous (x, y) monde ; lit les seuls tableaux (`elementIdsOfKind`, D28), dans l'ordre de la pile. */
+export function tableAt(doc: Pick<CoreDocument, "elementIdsOfKind" | "element">, page: string, x: number, y: number): TableHit | null {
+  const tables = doc.elementIdsOfKind(page, "table").flatMap((id) => {
+    const el = doc.element(id);
+    return el?.kind === "table" ? [el] : [];
+  });
+  return tableHitIn(tables, x, y);
+}
 ```
+
+(`TableElement` importé de `../core/api`.)
 
 Si un appelant passe un `doc` typé sans `elementIdsOfKind` (cherché : `tools/table.ts:295`, `:317`, `tools/select.ts:140`,
 `fill-target.ts`), le type `CoreDocument` complet le porte déjà ; corriger seulement un `Pick` local s'il en existe un.
@@ -1776,10 +2082,10 @@ export function requiredSizes(t: TableData, linked: readonly LinkedBox[], colWid
  * tout tableau : `PlaceInCell` sans case, à la place du relâché. Sinon `null` : la Sélection écrit sa `Transform`.
  * Tableaux lus une fois par version du document (D28), jamais par image.
  */
-import type { Bounds, CellLink, Command, ElementView, LineSize, Matrix } from "../../core/api";
+import type { Bounds, CellLink, Command, ElementView, LineSize, Matrix, TableElement } from "../../core/api";
 import { applyMatrix, invertMatrix } from "../../core/shapes";
 import type { GroupedView } from "../groups";
-import { cellContent, cellRect, mergeAt, requiredSizes, tableAt, TABLE_PADDING, type LinkedBox, type TableHit } from "../table-geom";
+import { cellContent, cellRect, mergeAt, requiredSizes, tableHitIn, TABLE_PADDING, type LinkedBox, type TableHit } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { transformBounds, translateMatrix } from "./handles";
 import type { ToolContext } from "./tool";
@@ -1799,16 +2105,42 @@ function localBox(m: Matrix, b: Bounds): Bounds | null {
   return inv === null ? null : transformBounds(inv, b);
 }
 
+/** D28 : tableaux de la page et vues lues une fois par version du document et par page (au `begin`, par `expand`). */
+interface Snapshot {
+  readonly version: number;
+  readonly page: string;
+  readonly tables: readonly TableElement[];
+  readonly views: Map<string, ElementView | null>;
+}
+
 export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
+  let snap: Snapshot | null = null;
+  const read = (): Snapshot => {
+    const version = ctx.doc.version();
+    const page = ctx.page();
+    if (snap === null || snap.version !== version || snap.page !== page) {
+      const tables = ctx.doc.elementIdsOfKind(page, "table").flatMap((id) => {
+        const e = ctx.doc.element(id);
+        return e?.kind === "table" ? [e] : [];
+      });
+      snap = { version, page, tables, views: new Map<string, ElementView | null>(tables.map((e) => [e.id, e])) };
+    }
+    return snap;
+  };
+  const view = (id: string): ElementView | null => {
+    const s = read();
+    if (!s.views.has(id)) s.views.set(id, ctx.doc.element(id));
+    return s.views.get(id) ?? null;
+  };
   const views = (ids: readonly string[]): ElementView[] => ids.flatMap((id) => {
-    const v = ctx.doc.element(id);
+    const v = view(id);
     return v === null ? [] : [v];
   });
 
   /** Case visée : tableau le plus haut sous le pointeur, hors sélection ; sélection sans tableau ; case ni ombrée ni en zone. */
   const aimed = (selection: readonly string[], x: number, y: number): TableHit | null => {
     if (views(selection).some((v) => v.kind === "table")) return null;
-    const hit = tableAt(ctx.doc, ctx.page(), x, y);
+    const hit = tableHitIn(read().tables, x, y);
     if (hit === null || selection.includes(hit.id)) return null;
     if (mergeAt(hit.table, hit.cell) !== null) return null;
     const r = hit.table.rows[hit.cell.row];
@@ -1848,7 +2180,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
 
   return {
     expand(ids, page) {
-      const tables = new Set(ids.filter((id) => ctx.doc.element(id)?.kind === "table"));
+      const tables = new Set(ids.filter((id) => view(id)?.kind === "table"));
       if (tables.size === 0) return [...ids];
       const extra = page.filter((v) => v.cell !== undefined && tables.has(v.cell[0]) && !ids.includes(v.id)).map((v) => v.id);
       return [...ids, ...extra];
@@ -1863,7 +2195,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
       if (hit !== null) return placeInto(selection, hit);
       if (views(selection).some((v) => v.kind === "table")) return null;
       const linked = views(selection).some((v) => v.cell !== undefined);
-      return linked && tableAt(ctx.doc, ctx.page(), x, y) === null ? { type: "PlaceInCell", ids: [...selection], matrix, cell: null, sizes: [] } : null;
+      return linked && tableHitIn(read().tables, x, y) === null ? { type: "PlaceInCell", ids: [...selection], matrix, cell: null, sizes: [] } : null;
     },
     place() {
       return null; // T6 : Alt+Entrée, Alt+Maj+Entrée
@@ -1874,8 +2206,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
 
 Si `transformBounds` ou `translateMatrix` n'acceptent pas ces types (`handles.ts:71`), utiliser leur signature exacte.
 Le test « S4 » attend `x0 = 1248` : le relâché d'un objet lié hors tableau garde la matrice du glisser (D11 sans
-réduction). Le cache par version (D28) : si `target` montre un coût mesurable dans `select.test.ts`, mémoriser
-`ctx.doc.version()` et la liste `elementIdsOfKind` ; sinon le laisser (tableAt ne lit que les tableaux).
+réduction). Le cache par version (D28) n'est pas facultatif : le test « D28 » le prouve.
 
 - [ ] **7. Les 4 points de `select.ts`** —
 
@@ -1917,13 +2248,13 @@ Import : `import type { CellDrop } from "./cell-drop";`. En-tête du fichier : u
 
 - [ ] **10. Test de `select.test.ts`** (effet de bord « Alt : Transform seul » déjà dans `cell-drop.test.ts`) : ajouter un cas « sans cellDrop : un objet lâché sur un tableau est posé par-dessus (Transform) » avec le `setup()` existant, un `AddTable` et un `rect`, glisser sur le tableau, `expect(runs.at(-1)?.type).toBe("Transform")`.
 
-- [ ] **11. Vert** — commande bornée de la tâche (N ≥ 8), tests à garder verts, `tsc`.
+- [ ] **11. Vert** — commande bornée de la tâche (9 passés), tests à garder verts, `tsc`.
 
 - [ ] **12. Commit** — `git add` un par un des 11 fichiers de la liste, message `feat(web): drop objects into table cells from the select tool (cell-drop)` + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, auteur G11.
 
 ---
 
-### Tâche T4 — Essai navigateur du lot A (noyau) + `verifier.sh --e2e` + captures 2x
+### Tâche T4 — Essai navigateur du lot A (noyau) + `data-table-linked` + `verifier.sh --e2e` + captures 2x
 
 <a id="tache-t4"></a>
 
@@ -1934,10 +2265,15 @@ bloc `--e2e` ; produire la capture 2x « photo glissée dans une case qui s'agra
 **Fichiers**
 - Créer : `scripts/essais/personnalisation-3-tableau-navigateur.mjs`
 - Modifier : `scripts/verifier.sh:118` (ligne après `c10b-tableau-navigateur.mjs`)
+- Modifier : `apps/web/src/engine/table-geom.ts:33-45` (`TableCellState.linked?`), `apps/web/src/engine/tools/table.ts:350-363` (`cellState` compte les objets logés), `apps/web/src/engine/tools/table.test.ts` (1 test), `apps/web/src/app/stage-tags.ts` (`tableLinked` → `#stage[data-table-linked]`)
 - Créer (avec `--captures`) : `docs/design/captures/personnalisation-3-tableau/photo-case-agrandie.png`
 
 **Interfaces**
 - Consomme : `scripts/essais/commun.mjs` (`DIST`, `Echec`, `ROOT`, `VIEWPORT`, `coqueCsp`, `dropFile`, `frames`, `gitSha`, `item`, `loadPlaywright`, `serve`, `solidPng`, `stageBox`, `stageMouse`) ; attributs `#stage[data-bounds|data-selection|data-camera|data-table]` ; picker `button[aria-label="3 colonnes, 3 lignes"]`.
+- Produit : `TableCellState.linked?: number` (objets dont `cell[0]` est le tableau actif, comptés dans `cellState()` de
+  l'outil Tableau, jamais par une boucle de `emit`) ; attribut `#stage[data-table-linked]` (nombre, vide sans cellule
+  active). Attribut à part, et non une suite de `data-table` : les essais C10a et C10b lisent `data-table` à l'égalité
+  stricte (G9).
 - Produit : `scenario(page, url, { captures, tmp })` avec un bloc par scénario, `check(cond, msg)`, `touchDrag(a, b)` (vrai toucher par CDP `Input.dispatchTouchEvent`), `boundsOf()`, `selectAt(pt)`, `capture(nom)` ; les tâches T6 à T9 ajoutent leur bloc à la fin de `scenario`.
 - Réutilise : `scripts/essais/c10b-tableau-navigateur.mjs` — gabarit (`main`, `serve`, CSP, routes bloquées, `--captures`) recopié, pas importé.
 - Le rapport porte `Réutilisation : appelé commun.mjs` ou `Réutilisation : écart — <pourquoi>`.
@@ -1958,8 +2294,8 @@ Essais à garder verts (zone voisine) : `node scripts/essais/c10b-tableau-naviga
 du tableau sélectionné = largeur 896, hauteur 444 ; `data-selection="2"` (tableau et image). Puis la capture 2x à
 décrire dans le rapport : tableau 3 × 3, colonne du milieu large, image sombre dans la case (1, 1), cadre de sélection.
 
-**Contraintes (recopiées)** : G1 (le test est l'essai : écrit avant, vu rouge sur la construction d'avant T3 si elle est
-disponible, sinon vu rouge en visant une valeur fausse puis corrigé) ; G2 worktree partagé ; G3 preuves bornées ; G8
+**Contraintes (recopiées)** : G1 (le test est l'essai : la construction d'avant T3 n'existe plus ; l'oracle est vérifié
+par une assertion faussée, vue rouge, puis remise — acceptable ici ; `data-table-linked` : test unitaire rouge d'abord) ; G2 worktree partagé ; G3 preuves bornées ; G8
 tactile d'abord : le glisser de S1 et S4 est un **vrai toucher** (CDP), jamais un glisser HTML5 ; G9 essais `data-item`
 existants verts sans réécriture ; G10 interdits ; G11 commits ; captures : seulement avec `--captures`, échelle 2
 (`deviceScaleFactor: 2`), sous `docs/design/captures/personnalisation-3-tableau/` ; la ligne de `verifier.sh` n'a aucune
@@ -1972,6 +2308,15 @@ vue avec l'outil Sélection, s'arrêter et le rapporter (écart au cadrage S1), 
 restent `OK`, un commit.
 
 #### Étapes
+
+- [ ] **0. `data-table-linked` (test rouge d'abord)** — dans `tools/table.test.ts`, au harnais du fichier : un tableau,
+une forme logée par `PlaceInCell` dans la case (0, 0), cellule active (0, 0) : `expect(tool.cellState()?.linked).toBe(1)` ;
+rouge, puis dans `cellState()` : `linked: ctx.doc.elementIds(ctx.page()).filter((id) => ctx.doc.element(id)?.cell?.[0] === at.ref.id).length`
+(la cellule active seulement ; `cellState` n'est lue qu'au changement d'état, cadrage carte d'impact `stage-tags.ts`) ;
+`TableCellState.linked?: number` ; `stage-tags.ts` : clé `tableLinked: s.tableCell?.linked === undefined ? "" : String(s.tableCell.linked)`
+ajoutée au type de retour et à l'objet ; vert : `pnpm --filter @roomboard/web exec vitest run src/engine/tools/table.test.ts src/app 2>&1 | tail -5`.
+Si `stageTags` est appelé par `emit` à chaque image, mesurer d'abord par un test que le compte ne s'exécute qu'avec l'outil
+Tableau et une cellule active ; sinon le rapporter.
 
 - [ ] **1. Écrire l'essai** — `scripts/essais/personnalisation-3-tableau-navigateur.mjs` :
 
@@ -2073,6 +2418,14 @@ async function scenario(page, url, { captures }) {
   const [tx0, ty0, tx1, ty1] = await boundsOf();
   check(near(tx1 - tx0, 896) && near(ty1 - ty0, 444), `S1 : le tableau fait 896 × 444 (colonne 1 à 416, ligne 1 à 316)`);
   check((await attr("data-selection")) === "2", 'S1 : sélectionner le tableau prend son image logée (data-selection="2")');
+  await page.click(item("table"));
+  await mouse.click(...cellPt(0, 0));
+  await page.keyboard.press("Escape");
+  await fr();
+  check((await attr("data-table-linked")) === "1", 'S1 : outil Tableau : data-table-linked="1"');
+  await page.click(item("select"));
+  await fr();
+  await selectAt(cellPt(0, 0));
   await capture("photo-case-agrandie");
   await page.keyboard.press("Control+z");
   await fr();
@@ -2149,13 +2502,13 @@ process.exitCode = await main();
 Le contrôle S1 se fait en sélectionnant l'image par un clic en son centre (coin de la boîte intérieure + 200, + 150). Si `dropFile` place l'image par son coin et non
 par son centre (`c2-image-navigateur.mjs:93-99`), décaler `inCell` en conséquence, pas les valeurs attendues.
 
-- [ ] **2. Rouge** — sur la construction courante, inverser un oracle (`896` → `897`) : l'essai échoue avec `ÉCHEC — S1 : le tableau fait …` ; remettre `896`.
+- [ ] **2. Rouge** — la construction d'avant T3 n'existe plus : vérifier l'oracle par une assertion faussée (`896` → `897`) ; l'essai échoue avec `ÉCHEC — S1 : le tableau fait …` ; remettre `896`.
 
 - [ ] **3. Vert** — commande bornée de la tâche ; puis `--captures` ; ouvrir la capture (outil Read) et la décrire.
 
 - [ ] **4. `verifier.sh`** — après `node scripts/essais/c10b-tableau-navigateur.mjs` : `node scripts/essais/personnalisation-3-tableau-navigateur.mjs` (sans option). `bash scripts/tests/verifier-e2e.test.sh 2>&1 | tail -3` : vert.
 
-- [ ] **5. Commit** — `git add scripts/essais/personnalisation-3-tableau-navigateur.mjs`, `git add scripts/verifier.sh`, `git add docs/design/captures/personnalisation-3-tableau/photo-case-agrandie.png` ; message `test(e2e): personnalisation-3 browser run for objects in table cells (S1, S4)` + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, auteur G11.
+- [ ] **5. Commit** — `git add` un par un de `apps/web/src/engine/table-geom.ts`, `apps/web/src/engine/tools/table.ts`, `apps/web/src/engine/tools/table.test.ts`, `apps/web/src/app/stage-tags.ts`, puis `git add scripts/essais/personnalisation-3-tableau-navigateur.mjs`, `git add scripts/verifier.sh`, `git add docs/design/captures/personnalisation-3-tableau/photo-case-agrandie.png` ; message `test(e2e): personnalisation-3 browser run for objects in table cells (S1, S4)` + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, auteur G11.
 
 ---
 
@@ -2174,7 +2527,7 @@ insérer des pages relie les objets copiés au tableau copié ; un morceau de go
 - Modifier : `apps/web/src/core/wasm-core.contract.test.ts` (2 tests « personnalisation-3 copie »)
 
 **Interfaces**
-- Consomme (T1, T2) : `cmd_place_in_cell`, `read_cell_link`, `cell_link_to_any`, `FakeElement.cell`.
+- Consomme (T1a, T2a) : `cmd_place_in_cell`, `read_cell_link`, `cell_link_to_any`, `FakeElement.cell`.
 - Produit : `copy_elements` (même signature) relie `cell[0]` à l'id neuf du tableau copié dans le même appel, retire `cell` si le tableau n'est pas copié ; `PlaceInCell` monte les `ids` situés sous le tableau visé juste au-dessus de lui (après l'écriture de `matrix` et `cell`) ; fake : `copyElement(e, groups, dx, dy, ids?: ReadonlyMap<string, string>)`.
 - Réutilise : `crates/roomboard-core/src/copy.rs:96` `reinsert_kept(arr, txn, moves, to)` — appelé après l'écriture de `matrix` et `cell` (réutiliser).
 - Réutilise : `crates/roomboard-core/src/copy.rs:61` `copy_elements`, `:75` `renumber` — ids générés d'abord, puis `cell[0]` remplacé (étendre).
@@ -2310,7 +2663,7 @@ proche ; garder les assertions.
         // (translation de transform et insertion : inchangées)
 ```
 
-Retirer le `prelim.remove("cell")` inconditionnel posé par T1. Une valeur `cell` illisible est recopiée telle quelle (U3).
+Retirer le `prelim.remove("cell")` inconditionnel posé par T1a ; dans le faux cœur, remplacer le retrait de `cell` de `copyElement` (T2a) par la renumérotation ci-dessous. Une valeur `cell` illisible est recopiée telle quelle (U3).
 
 - [ ] **4. Montée dans `cmd_place_in_cell`** — dans le bloc d'écriture, après la boucle `matrix`/`cell`, si `cell` est
 `Some(l)` : relire dans `txn` les index de la page (`self.page_elements(&*txn, &page)`), l'index `ti` du tableau `l[0]`,
@@ -2578,7 +2931,7 @@ contrôle des mêmes valeurs que S1 (`896 × 444`), puis `Alt+Shift+Enter` et co
 
 ---
 
-### Tâche T7 — Point 2 : mode « rétrécir » (`SetTableOptions`, `fit`, Alt+F)
+### Tâche T7 — Point 2 : mode « rétrécir » (`SetTableOptions`, `fit`, Alt+F) et menu de case par appui long
 
 <a id="tache-t7"></a>
 
@@ -2586,9 +2939,10 @@ contrôle des mêmes valeurs que S1 (`896 × 444`), puis `Alt+Shift+Enter` et co
 min(1, boîte intérieure / objet) et posé au coin haut-gauche de la boîte (S2) ; Alt+F en outil Tableau bascule le mode.
 
 **Fichiers** : voir la table (cœur `table.rs`, `table_links.rs`, `commands.rs` ; Wasm ; `api.ts`, `wasm-core.ts`,
-`fake-core.ts`, contrat ; CLI `ops.ts`, `ops.test.ts` ; `table-geom.ts` (`TableData.fit`) ; `cell-drop.ts` et test ;
-`tools/table.ts` (action `fit-toggle`) ; `keys.ts` déjà prêt (T6) ; `engine.ts` ; `shortcuts.ts` ; essai et capture
-`objet-ajuste.png`).
+`fake-core.ts`, contrat ; CLI `ops.ts`, `ops.test.ts`, `cli-essai.mjs` ; `table-geom.ts` (`TableData.fit`) ; `cell-drop.ts`
+et test ; `tools/table.ts` (action `fit-toggle`, appui long) et `table.test.ts` ; `ui/cell-menu.ts` (nouveau) et
+`cell-menu.test.ts` ; `app/board-session.ts` ; `keys.ts` déjà prêt (T6) ; `engine.ts` ; `shortcuts.ts` ; essai et capture
+`objet-ajuste.png`). Au doigt, le seul chemin vers « rétrécir » dans le lot A est le menu de case : il naît ici.
 
 **Interfaces**
 - Consomme (T6) : `cellKey(e) === "fit"` ; (T3) `placeInto`.
@@ -2596,12 +2950,14 @@ min(1, boîte intérieure / objet) et posé au coin haut-gauche de la boîte (S2
   - Rust : `Command::SetTableOptions { id: String, fit: Option<String>, header: Option<bool> }` — `fit` : `"shrink"` écrit, `"grow"` retire la clé ; `header` : `true` écrit, `false` retire (dessin de l'en-tête : lot B) ; autre valeur de `fit` → `BadTable` ; rien ne change → aucune étape. `TableView.fit: Option<String>` (`"shrink"` seulement), `TableView.header: bool` (sérialisé `header`, omis si faux par `skip_serializing_if`).
   - Wasm : `set_table_options(id: &str, fit: Option<String>, header: Option<bool>) -> Result<JsValue, JsError>` et `_inner`.
   - TS : `| { readonly type: "SetTableOptions"; readonly id: string; readonly fit?: "grow" | "shrink"; readonly header?: boolean }` ; `TableData.fit?: "shrink"` ; `TableData.header?: boolean` ; `TableAction` gagne `"fit-toggle"`.
+  - Menu de case (D31, G8) : `export interface CellMenuItem { readonly id: "fit" | "cell-image" | "unplace"; readonly label: string; run(): void }`, `export interface CellMenu { open(x: number, y: number, items: readonly CellMenuItem[]): void; close(): void }`, `export function createCellMenu(host: HTMLElement): CellMenu` (`ui/cell-menu.ts`, `div[role="menu"].rb-cell-menu`, boutons ≥ 44 px, Échap ferme) ; `createTableTool(ctx, editor, picker, style, measure, menu?: CellMenu)` ; appui long : 500 ms sans bouger de plus de 8 px écran ; entrée de T7 : « Rétrécir » (ou « Agrandir » si `fit === "shrink"`), id `"fit"`. T9 y ajoute `"cell-image"` et `"unplace"`.
   - CLI : `COMMAND_TYPES` + `"SetTableOptions"` (39), `ops.test.ts` → 39 ; `cli-essai.mjs` : un passage `SetTableOptions fit shrink`, relu par `state` (`fit: "shrink"`).
 - Réutilise : `apps/web/src/engine/table-geom.ts:225` `cellInnerBox` — boîte intérieure de la mise à l'échelle (réutiliser).
 - Le rapport porte `Réutilisation : appelé cellInnerBox` ou `Réutilisation : écart — <pourquoi>`.
 
 **Test et commande bornée** :
 `nice -n 10 cargo test -p roomboard-core set_table_options -j 4 2>&1 | tail -10` (≥ 1 test `set_table_options_writes_fit_and_header`) ;
+`pnpm --filter @roomboard/web exec vitest run src/ui/cell-menu.test.ts src/engine/tools/table.test.ts -t "cell-menu|appui long" 2>&1 | tail -8` (≥ 2) ;
 `pnpm --filter @roomboard/web exec vitest run src/engine/tools/cell-drop.test.ts -t "S2" 2>&1 | tail -10` (≥ 1) ;
 contrat `-t "SetTableOptions"` (≥ 2) ; `ops.test.ts` 39 ; `cli-essai.mjs` `CLI : OK` ; essai : `ok — S2 : image réduite à 64 × 48`.
 Commande M : ≤ 1 540 000 o.
@@ -2614,7 +2970,8 @@ champs facultatifs (`fit`, `header` absents par défaut) ; G6 CLI (`COMMAND_TYPE
 `FORMAT_LOTS` inchangé) ; G8 raccourci Alt+F ; G9 hors tableau inchangé ; G10 interdits ; G11 commits ; G12 une étape.
 Captures : seulement avec `--captures`, échelle 2.
 
-**Interdits** : pas de panneau d'options (section `table`, `TableOptions.tsx` : lot B) ; pas de dessin d'en-tête (lot B).
+**Interdits** : pas de panneau d'options (section `table`, `TableOptions.tsx` : lot B) ; pas de dessin d'en-tête (lot B) ;
+pas de glisser HTML5 ni d'appui long par `contextmenu` (G8 : pointeur du moteur).
 
 **Terminé quand** : preuves ci-dessus, capture décrite, un commit.
 
@@ -2656,12 +3013,13 @@ TS (`cell-drop.test.ts`) :
 
 - [ ] **2. Rouge** (deux commandes bornées).
 - [ ] **3. Cœur** — `read_raw` lit `fit` (`"shrink"` seulement, sinon `None`) et `header` (`Any::Bool(true)` seulement) ; `TableView` les publie (`#[serde(skip_serializing_if = "Option::is_none")] pub fit: Option<String>`, `#[serde(skip_serializing_if = "std::ops::Not::not")] pub header: bool`) ; `cmd_set_table_options` dans `table_links.rs` : `table_of`, contrôle de `fit` (`"grow" | "shrink"`), une transaction `e.insert(&mut txn, "fit", "shrink")` / `e.remove(&mut txn, "fit")`, `e.insert(&mut txn, "header", true)` / `e.remove(&mut txn, "header")`, seulement ce qui change ; `table_done`. Variante et `apply` dans `commands.rs`.
-- [ ] **4. Wasm** — `set_table_options` / `_inner` au patron de `set_table_sizes` (T1, étape 8).
+- [ ] **4. Wasm** — `set_table_options` / `_inner` au patron de `place_in_cell` (T1b, étape 4).
 - [ ] **5. TS** — `api.ts`, `wasm-core.ts` (`case "SetTableOptions": return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header));` ; `toElementView` lit `table.fit`, `table.header`), faux cœur (`FakeTable.fit?`, `header?`, `case` qui passe par `writeTable`), contrat (deux fabriques : écrit, relu, aucune étape si inchangé, `"zz"` → `TABLE_MESSAGE`).
 - [ ] **6. `cell-drop.ts`** — dans `placeInto`, si `hit.table.fit === "shrink"` : `sizes = []`, `const inner = cellInnerBox(hit.table, hit.cell)` ; `const k = Math.min(1, inner.w / mine.w, inner.h / mine.h)` ; matrice = translation vers le coin de la boîte intérieure composée avec la mise à l'échelle `k` autour du coin `(box.x0, box.y0)` : `[k, 0, 0, k, tx - k * box.x0, ty - k * box.y0]` (mise à l'échelle dans le repère monde ; un tableau tourné : hors périmètre, cadrage § 7).
+- [ ] **7a. Menu de case (test rouge d'abord)** — `cell-menu.test.ts` (jsdom du projet) : `createCellMenu(document.body).open(10, 20, [{ id: "fit", label: "Rétrécir", run }])` crée `div[role="menu"]` dont le `button` a `style.minHeight === "44px"` ; clic → `run` appelé et menu fermé ; Échap ferme. `table.test.ts` : « appui long (500 ms, < 8 px) sur une case : menu ouvert avec l'entrée fit ; < 500 ms : saisie ouverte comme aujourd'hui » (`vi.useFakeTimers()`, `begin`, `vi.advanceTimersByTime(500)`, faux `menu` qui enregistre `open`). Puis : `ui/cell-menu.ts` ; dans `tools/table.ts`, au `begin` d'un appui sur une case, `hold = setTimeout(() => openMenu(press), 500)` ; `extend` au-delà de 8 px écran : `clearTimeout(hold)` ; `close` : `clearTimeout(hold)`, et si le menu a été ouvert, aucune saisie ; `openMenu` rend la cellule active et appelle `menu?.open(x, y, items)` avec l'entrée `fit` (`run` : `act("fit-toggle")`). `board-session.ts` : `const cellMenu = createCellMenu(container);` passé en sixième argument de `createTableTool`.
 - [ ] **7. Outil Tableau, touche** — `TableAction` + `"fit-toggle"` ; dans `act` : `case "fit-toggle": ctx.run({ type: "SetTableOptions", id: ref.id, fit: t.fit === "shrink" ? "grow" : "shrink" }); break;` ; `engine.ts` : `if (ck === "fit" && tool === "table") { tableTool.act("fit-toggle"); return true; }` ; `shortcuts.ts` : `s("table-fit", "Tableau", "Agrandir ou rétrécir pour les objets", "Alt+F"),`.
 - [ ] **8. CLI** — `COMMAND_TYPES`, `ops.test.ts` (39), `cli-essai.mjs` : `{ type: "SetTableOptions", id: tab.id, fit: "shrink" }` puis `state` : `table.fit === "shrink"`.
-- [ ] **9. Essai** — bloc S2 : nouveau tableau 3 × 3 sous le premier (outil Tableau, clic, picker), Alt+F, outil Sélection, image 400 × 300 neuve, `touchDrag` sur (1, 1), lectures, `capture("objet-ajuste")`.
+- [ ] **9. Essai** — bloc S2 : nouveau tableau 3 × 3 sous le premier (outil Tableau, clic, picker), appui long au toucher sur une case (CDP `touchStart`, 600 ms, `touchEnd`) puis `.rb-cell-menu button:has-text("Rétrécir")` (au clavier : Alt+F, contrôlé sur un troisième tableau), outil Sélection, image 400 × 300 neuve, `touchDrag` sur (1, 1), lectures, `capture("objet-ajuste")`.
 - [ ] **10. Vert, mesure, commit** — preuves, commande M, `git add` un par un de chaque fichier de la ligne T7 de la table, message `feat: shrink-to-fit mode for objects placed in table cells (SetTableOptions)` + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, auteur G11.
 
 ---
@@ -2678,7 +3036,7 @@ son premier point lui appartient ; il suit sa case et le tableau ; un trait qui 
 `trace-dans-case.png`).
 
 **Interfaces**
-- Consomme (T1) : `cell_link_to_any`, refus D35/D36 ; (T3) `tableAt`.
+- Consomme (T1a) : `cell_link_to_any`, refus D35/D36 ; (T3) `tableAt`.
 - Produit :
   - Rust : `CommitStroke { page, points, style, look, cell: Option<[String; 3]> }` ; `cell` écrit dans la même transaction que le trait ; tableau inconnu, autre page, ligne inconnue ou case ombrée → `BadTable`.
   - Wasm : `commit_stroke(…, opacity, cell_table: Option<String>, cell_row: Option<String>, cell_col: Option<String>)` (trois arguments en fin, D29) ; `commit_stroke_inner(…, look, cell: Option<[String; 3]>)`.
@@ -2773,7 +3131,7 @@ export function cellContaining(doc: Pick<CoreDocument, "elementIdsOfKind" | "ele
 
 ---
 
-### Tâche T9 — Point 5 : image de fond de case (`bg`, `SetCellImage`, appui long, Alt+I)
+### Tâche T9 — Point 5 : image de fond de case (`bg`, `SetCellImage`, menu de case, Alt+I), PDF compris
 
 <a id="tache-t9"></a>
 
@@ -2782,16 +3140,16 @@ long sur la case avec l'outil Tableau puis « Mettre en fond », ou Alt+I sur la
 l'export PDF montre le fond (même peintre) (S5).
 
 **Fichiers** : voir la table (cœur `table.rs` `bg`, `table_links.rs` `cmd_set_cell_image`, `commands.rs` ; Wasm ;
-`api.ts`, `wasm-core.ts`, `fake-core.ts`, contrat ; CLI ; `table-geom.ts` (`cellContent().bg`) ; `render/table-paint.ts` ;
-`tools/table.ts` (appui long, `cell-image`) et test ; `keys.ts`, `engine.ts` ; `ui/cell-menu.ts` (nouveau) et test ;
-`ui/shortcuts.ts` ; `app/board-session.ts` ; essai).
+`api.ts`, `wasm-core.ts`, `fake-core.ts`, contrat ; CLI ; `table-geom.ts` (`cellContent().bg`) ; `render/table-paint.ts` et son test ;
+`render/canvas2d.ts:545` (passe les images au peintre du tableau) ; `tools/table.ts` (entrées de menu, `cell-image`) et
+test ; `keys.ts`, `engine.ts` ; `ui/shortcuts.ts` ; essai). Le menu de case existe (T7).
 
 **Interfaces**
-- Consomme (T6) : `cellKey(e) === "cell-image"` ; (T1) `read_cell_link`.
+- Consomme (T6) : `cellKey(e) === "cell-image"` ; (T7) `CellMenu`, appui long ; (T1a) `read_cell_link`.
 - Produit :
   - Rust : clé de case `bg` = id d'asset (chaîne) ; `TableCellView.bg: Option<String>` ; la vue liste une case qui n'a que `bg` (`table.rs:315`) ; `Command::SetCellImage { id: String, row: String, col: String, from: Option<String> }` : `Some(imageId)` → l'image doit être un `image` lié à cette case (sinon `BadTable`), son asset écrit en `bg`, l'image supprimée, une étape ; `None` → `bg` retiré.
   - Wasm : `set_cell_image(id: &str, row: &str, col: &str, from: Option<String>)` et `_inner`.
-  - TS : `TableCell.bg?: string` ; `| { readonly type: "SetCellImage"; readonly id: string; readonly row: string; readonly col: string; readonly from: string | null }` ; `TableAction` + `"cell-image"` ; `export interface CellMenu { open(x: number, y: number, items: readonly CellMenuItem[]): void; close(): void }`, `export interface CellMenuItem { readonly id: "cell-image" | "unplace"; readonly label: string; run(): void }` ; `createTableTool(ctx, editor, picker, style, measure, menu?: CellMenu)` ; `export function createCellMenu(host: HTMLElement): CellMenu` (`ui/cell-menu.ts`, `div[role="menu"].rb-cell-menu`, boutons ≥ 44 px).
+  - TS : `TableCell.bg?: string` ; `| { readonly type: "SetCellImage"; readonly id: string; readonly row: string; readonly col: string; readonly from: string | null }` ; `TableAction` + `"cell-image"` ; `paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData, images: ImageSource | null = null): void` (`table-paint.ts:75`), appelé `paintTableGrid(ctx, el.table, this.images ?? null)` par `canvas2d.ts:545` ; le menu de case (T7) gagne les entrées `"cell-image"` (« Mettre en fond », si une image loge) et `"unplace"` (« Sortir »).
   - CLI : `COMMAND_TYPES` + `"SetCellImage"` (40) ; `ops.test.ts` → 40 ; `cli-essai.mjs` : passage « image logée, `SetCellImage`, `state` : `bg` présent, `undo` : image revenue ».
 - Réutilise : `crates/roomboard-core/src/document.rs:278` `cited_assets` — aucun changement : l'asset de `bg` est gardé à l'enregistrement (réutiliser ; test `cell_image_asset_kept_on_save`).
 - Réutilise : `apps/web/src/engine/render/image-cache` — `ImageSource` déjà passé au peintre (réutiliser).
@@ -2799,20 +3157,22 @@ l'export PDF montre le fond (même peintre) (S5).
 
 **Test et commande bornée** :
 `nice -n 10 cargo test -p roomboard-core set_cell_image -j 4 2>&1 | tail -10` (≥ 2 : `set_cell_image_takes_asset_and_removes_image`, `set_cell_image_refuses_unlinked`) et `cargo test -p roomboard-core cell_image_asset_kept_on_save` (1) ;
-`pnpm --filter @roomboard/web exec vitest run src/engine/tools/table.test.ts src/ui/cell-menu.test.ts -t "S5|appui long|cell-menu" 2>&1 | tail -10` (≥ 3) ;
+`pnpm --filter @roomboard/web exec vitest run src/engine/tools/table.test.ts src/engine/render/table-paint.test.ts -t "S5" 2>&1 | tail -10` (≥ 4, dont `S5 PDF : le peintre d'export dessine le fond de case`) ;
 contrat `-t "SetCellImage"` (≥ 2) ; `ops.test.ts` 40 ; `CLI : OK` ; essai : `ok — S5 : l'image devient le fond de la case`.
 Tests à garder verts : `table.test.ts` entier (Uniformiser, Ombrer), `zone-s6-banc.test.ts` (témoin D30). Commande M : ≤ 1 540 000 o.
 
 **Preuve visuelle** : lectures — après « Mettre en fond » : `data-elements` diminue de 1, la case (1, 1) montre des pixels
-de la couleur de l'image (`inkIn` sur la boîte de la case) ; après Ctrl+Z : `data-elements` revient. Capture 2x
-facultative (aucune exigée pour S5).
+de la couleur de l'image (`inkIn` sur la boîte de la case) ; après Ctrl+Z, retour exact à l'état d'avant : `data-elements`
+revient, l'image est à sa place dans la case (`data-bounds` d'avant), liée (`data-table-linked="1"`), et la case n'a plus
+de fond. PDF : le test unitaire `S5 PDF` (même peintre que l'écran : `exportPainterOptions`, `canvas2d.ts:61`, lu par
+`app/pdf-export.ts`). Capture 2x facultative.
 
 **Contraintes (recopiées)** : G1 TDD ; G2 worktree partagé ; G3 preuves bornées ; G4 module mesuré ; G5 champ facultatif
 `bg` (un ancien lecteur ignore la clé, l'asset reste cité) ; G6 CLI ; G8 tactile d'abord : appui long 500 ms sans bouger
 de plus de 8 px ouvre le menu, boutons ≥ 44 px, raccourci Alt+I ; jamais de glisser HTML5 ; G9 hors tableau inchangé ;
 G10 interdits ; G11 commits ; G12 une étape.
 
-**Interdits** : pas d'autre entrée de menu que « Mettre en fond » et « Sortir » (Trier : lot C) ; pas de panneau
+**Interdits** : pas d'autre entrée de menu ajoutée que « Mettre en fond » et « Sortir » (Trier : lot C) ; pas de panneau
 d'options (lot B).
 
 **Terminé quand** : preuves ci-dessus, un commit.
@@ -2855,14 +3215,29 @@ d'options (lot B).
   it("appui long (500 ms, < 8 px) sur une case : menu ouvert avec « Mettre en fond » si une image y loge", () => { /* vi.useFakeTimers(), begin, advanceTimersByTime(500), menu.open appelé avec l'item "cell-image" ; close sans saisie ouverte */ });
 ```
 
-Écrire ces deux tests en entier au harnais de `table.test.ts` (création du tableau, cellule active, faux `editor`, `picker`) : les commentaires ci-dessus donnent les assertions exactes. `cell-menu.test.ts` (jsdom du projet) : `createCellMenu(document.body).open(10, 20, [{ id: "cell-image", label: "Mettre en fond", run }])` crée `div[role="menu"]` avec un `button` dont `style.minHeight` vaut `"44px"` ; clic → `run` appelé et menu fermé ; Échap ferme.
+Écrire ces deux tests en entier au harnais de `table.test.ts` (création du tableau, cellule active, faux `editor`, `picker`, faux `menu`) : les commentaires ci-dessus donnent les assertions exactes ; « undo : image revenue » veut dire retour exact à l'état d'avant : `doc.element(image)` à la même `transform`, `cell` égal à la case, et `cellContent(...).bg` absent. PDF (`table-paint.test.ts`, `FakeCtx` de `render/fake-ctx`) :
+
+```ts
+  it("S5 PDF : le peintre d'export dessine le fond de case (drawImage découpé à la case)", () => {
+    const bmp = { width: 10, height: 10 } as unknown as CanvasImageSource;
+    const images = { bitmap: (id: string) => (id === "a".repeat(64) ? bmp : null) } as unknown as ImageSource;
+    const t: TableData = { color: "#000000", size: 36, cols: [{ id: "c0", width: 240 }], rows: [{ id: "r0", height: 64 }], cells: [{ row: "r0", col: "c0", text: "", fill: null, shade: null, spans: [], bg: "a".repeat(64) }], merges: [] };
+    const fake = new FakeCtx();
+    paintTableGrid(asCtx(fake), t, images);
+    expect(fake.calls.some((c) => c.op === "drawImage")).toBe(true);
+    expect(fake.calls.some((c) => c.op === "clip")).toBe(true);
+  });
+```
+
+(si `FakeCtx` enregistre ses appels sous un autre nom que `calls`/`op`, prendre le sien) ; et dans `canvas2d.test.ts`, le
+rendu d'un tableau à `bg` par `new Canvas2DRenderer(exportPainterOptions(images))` appelle `drawImage` (même assertion).
 
 - [ ] **2. Rouge** (commandes bornées).
 - [ ] **3. Cœur** — `RawCell.bg` lu (`out_string`, chaîne non vide), `TableCellView.bg` (`skip_serializing_if`), `view` garde une case à `bg` seul ; `cmd_set_cell_image` dans `table_links.rs` : `table_of`, `ranks`, `from` → `find_element`, `kind == "image"`, `read_cell_link == [id, row, col]` sinon `BadTable` ; asset lu au champ d'asset de l'image (`read_image`) ; une transaction : cellule créée si absente (`insert_cell` de `table.rs`, en `pub(crate)`), `bg` posé, image retirée de sa page (`elements.remove(&mut txn, index)`) ; `None` → `bg` retiré, aucune étape s'il n'y en avait pas.
 - [ ] **4. Wasm, TS, contrat, CLI** — au patron de T7 étapes 4, 5, 8 (`case "SetCellImage": return toChange(this.d.set_cell_image(cmd.id, cmd.row, cmd.col, cmd.from ?? undefined));`).
-- [ ] **5. Dessin** — `table-paint.ts` : pour une case à `bg`, avant le texte, dessin de l'image par la source d'images déjà passée au peintre, découpée au rectangle de la case (`ctx.save(); ctx.beginPath(); ctx.rect(...); ctx.clip();`), mise à l'échelle « couvrir » (`k = Math.max(w / iw, h / ih)`, centrée) ; image non encore chargée : rien (le cache redemande une image).
-- [ ] **6. Outil Tableau** — `TableAction` + `"cell-image"` : image logée la plus haute de la case active (`ctx.doc.elementIds(page)` lu du dessus, `kind === "image"`, `cell` égal) → `SetCellImage` ; aucune : rien. Appui long : au `begin`, `hold = setTimeout(() => openMenu(press), 500)` ; `extend` au-delà de 8 px écran : `clearTimeout(hold)` ; `close` : `clearTimeout(hold)`, et si le menu a été ouvert, aucune saisie. `openMenu` appelle `menu?.open(x, y, items)` avec « Mettre en fond » (si une image loge) et « Sortir » (`PlaceInCell` des objets de la case, `cell: null`, `sizes: []`). `engine.ts` : `if (ck === "cell-image" && tool === "table") { tableTool.act("cell-image"); return true; }`. `shortcuts.ts` : `s("cell-image", "Tableau", "Mettre l'image logée en fond", "Alt+I"),`. `board-session.ts` : `createCellMenu(container)` passé à `createTableTool`.
-- [ ] **7. Essai** — bloc S5 : image logée (comme S1), outil Tableau, appui long au toucher (CDP `touchStart`, attente 600 ms, `touchEnd`), clic sur `.rb-cell-menu button:has-text("Mettre en fond")`, lectures ; Ctrl+Z ; puis Alt+I sur la case active, même contrôle.
+- [ ] **5. Dessin** — `paintTableGrid(ctx, t, images: ImageSource | null = null)` ; `canvas2d.ts:545` : `paintTableGrid(ctx, el.table, this.images ?? null);` ; `table-paint.ts` : pour une case à `bg`, avant le texte, dessin de l'image par la source d'images déjà passée au peintre, découpée au rectangle de la case (`ctx.save(); ctx.beginPath(); ctx.rect(...); ctx.clip();`), mise à l'échelle « couvrir » (`k = Math.max(w / iw, h / ih)`, centrée) ; image non encore chargée : rien (le cache redemande une image).
+- [ ] **6. Outil Tableau** — `TableAction` + `"cell-image"` : image logée la plus haute de la case active (`ctx.doc.elementIds(page)` lu du dessus, `kind === "image"`, `cell` égal) → `SetCellImage` ; aucune : rien. Menu de case (T7) : `openMenu` ajoute à l'entrée `fit` « Mettre en fond » (si une image loge) et « Sortir » (`PlaceInCell` des objets de la case, `cell: null`, `sizes: []`). `engine.ts` : `if (ck === "cell-image" && tool === "table") { tableTool.act("cell-image"); return true; }`. `shortcuts.ts` : `s("cell-image", "Tableau", "Mettre l'image logée en fond", "Alt+I"),`.
+- [ ] **7. Essai** — bloc S5 : image logée (comme S1), outil Tableau, appui long au toucher (CDP `touchStart`, attente 600 ms, `touchEnd`), clic sur `.rb-cell-menu button:has-text("Mettre en fond")`, lectures ; Ctrl+Z ; contrôle du retour exact (bounds d'avant, `data-table-linked="1"`, case sans fond) ; puis Alt+I sur la case active, même contrôle.
 - [ ] **8. Vert, mesure, commit** — preuves, commande M, `git add` un par un de chaque fichier de la ligne T9 de la table, message `feat: table cell background image from a placed image (SetCellImage, long press, Alt+I)` + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, auteur G11.
 
 ---
@@ -2871,17 +3246,22 @@ d'options (lot B).
 
 | entrée du cadrage | tâche |
 |---|---|
-| socle : `cell` lu et écrit (D1, D36), `PlaceInCell`, `SetTableLineSizes`, `follow_cells` sur 4 commandes, emport (D6), exports Wasm, `case`, faux cœur, contrat, `COMMAND_TYPES`, `cli-essai` S16 | T1, T2 |
-| socle « peut tomber » : montée `reinsert_kept`, renumérotation à la copie, `cell` gardé par la gomme | T5 (sans T5 : copie libre, T1 `copy_drops_cell_link`) |
+| socle : `cell` lu et écrit (D1, D36), `PlaceInCell`, `SetTableLineSizes`, `follow_cells` sur 4 commandes | T1a |
+| socle : emport et sortie par `Transform` (D6), exports Wasm | T1b |
+| socle : `case`, faux cœur (copie libre, enregistrement de `cell`), contrat | T2a |
+| socle : `COMMAND_TYPES`, `cli-essai` S16 | T2b |
+| `stage-tags.ts` : `data-table-linked` (carte d'impact ; attribut à part pour ne pas toucher `data-table`) | T4 |
+| socle « peut tomber » : montée `reinsert_kept`, renumérotation à la copie, `cell` gardé par la gomme | T5 (sans T5 : copie libre, T1a `copy_drops_cell_link`, T2a « copie libre ») |
 | point 1 : `cell-drop.ts`, mode agrandir (D8), `requiredSizes`, cadre de case visée, S1 au doigt | T3, T4 |
 | point 1 « peut tomber » : Alt+Entrée ; zones fusionnées (refus de loger : déplacement libre) | T6 ; refus des zones fait en T3 |
-| point 2 (D9, S2) | T7 |
+| point 2 (D9, S2), et son chemin au doigt : menu de case par appui long (D31) | T7 |
 | point 3 (D10, S3) | T8 |
-| point 4 : sortir retire le lien, retrait par `Transform` hors case (D6) ; réduction (D11) | T1, T3 ; T6 |
-| point 5 (D12, S5) | T9 |
-| garde-fous : refus case ombrée fermée, refus d'un tableau (D35, D36) | T1, T2, T3 |
+| point 4 : sortir retire le lien, retrait par `Transform` hors case (D6) ; réduction (D11) | T1b, T3 ; T6 |
+| point 5 (D12, S5), PDF compris (test `S5 PDF`) | T9 |
+| garde-fous : refus case ombrée fermée, refus d'un tableau (D35, D36) | T1a, T2a, T3 |
 | garde-fou « peut tomber » : refus d'Ombrer une case à objet (D35) | non couvert (lot B, avec l'outil Tableau) |
 | D28 `tableAt` par `elementIdsOfKind` | T3 |
 | D30 empreinte S6 | témoin rejoué en T9 (`zone-s6-banc.test.ts`) et à la clôture |
-| effets de bord : Alt (T3), sans lien (T1), `tableAt` (T3), gomme (T5), copie (T5), sortie de case (T1), U3 (T1) | voir tâches |
+| effets de bord : Alt (T3), sans lien (T1b), `tableAt` (T3), gomme (T5), copie (T5), sortie de case (T1b), U3 (T1a, T2a) | voir tâches |
+| D1 : lien vers une case absente non publié | T1a (`cell_link_to_absent_target_is_free`), T2a (« cible absente ») |
 | effets de bord hors lot A : F10 `open` (D19), panneau `table`, collage tabulé, Uniformiser par `requiredSizes`, Ombrer refusé | lots B et C |
