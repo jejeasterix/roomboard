@@ -131,6 +131,16 @@ export type Command =
     }
   /** grid null : retire la grille ; même grille : aucune étape (D38) ; remplacée en bloc, une étape (G5). */
   | { readonly type: "SetGrid"; readonly page: string; readonly grid: GridInput | null }
+  /** personnalisation-1b (Q2, Q4, Q35, DA1) : aspect complet de N pages en une étape ; seules les pages qui changent
+   *  sont écrites et rendues ; une page à fond `pdf-page` ne reçoit que couleur et grille. Refus sans écriture, dans
+   *  l'ordre : BadFill (couleur), BadAsset, BadImage, BadGrid, page inconnue (liste vide, doublon, page absente). */
+  | {
+      readonly type: "ApplyBackground";
+      readonly pages: readonly string[];
+      readonly color: string;
+      readonly backdrop: BackdropInput | null;
+      readonly grid: GridInput | null;
+    }
   /** C10a : 1 à 64 colonnes et lignes ; coin en (x, y). */
   | {
       readonly type: "AddTable";
