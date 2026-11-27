@@ -375,6 +375,17 @@ describe("gomme automatique à la surface de contact (OG25)", () => {
     expect(router.roleOf(5)).toBeNull();
   });
 
+  it("OG25 : doigt qui trace loin d'une paume posée dans sa fenêtre : le trait continue, la gomme se centre sur la paume seule (revue T10)", () => {
+    const { router, log, rings } = palmSetup();
+    router.handle(touch("start", 5, 100, 100, 0));
+    router.handle(touch("start", 6, 1500, 300, 200, 140, 120));
+    expect(router.roleOf(5)).toBe("ink");
+    expect(router.roleOf(6)).toBe("erase");
+    router.handle(touch("move", 5, 110, 100, 220));
+    expect(log).toEqual(["begin 5 pen 1", "begin -1 eraser 1", "resize -1 70", "extend 5 1"]);
+    expect(rings).toEqual(["1500,300,70"]);
+  });
+
   it("OG25 S1 : doigt fin (20 × 20) : trait ordinaire, aucune gomme, aucun anneau", () => {
     const { router, log, rings } = palmSetup();
     router.handle(touch("start", 5, 0, 0, 0, 20));

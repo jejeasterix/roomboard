@@ -379,6 +379,17 @@ describe("App (T95)", () => {
     expect(container.querySelector('button[data-reglage="gomme-paume"]')?.textContent).toBe("Gomme automatique à la paume : active");
   });
 
+  it("OG25 : Ctrl+Maj+H tenue (touche répétée) ne bascule qu'une fois", () => {
+    const device = createDeviceSettings(null);
+    renderApp({ device });
+    const press = (repeat: boolean): void => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "H", ctrlKey: true, shiftKey: true, repeat, bubbles: true, cancelable: true }));
+    };
+    press(false);
+    press(true);
+    expect(device.palmEraser()).toBe(false);
+  });
+
   it("C4 : le bouton Bibliothèque ouvre le panneau, calé en popover", async () => {
     const library: ResourceLibrary = createResourceLibrary({
       files: [createMemoryLibraryFiles("mine")],
