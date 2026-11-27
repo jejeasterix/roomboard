@@ -148,9 +148,10 @@ describe("géométrie d'insertion (R4, R5)", () => {
   });
 
   it("visibleOf : largeur coupée au bord de la page, hauteur de la vue ; page hors vue : largeur de la vue", () => {
-    expect(visibleOf({ left: 0, top: 0, width: 800, height: 600 }, IDENTITY)).toEqual({ w: 800, h: 600 });
-    expect(visibleOf({ left: 0, top: 0, width: 1280, height: 900 }, { zoom: 0.5, tx: 0, ty: 0 })).toEqual({ w: 1920, h: 1800 });
-    expect(visibleOf({ left: 0, top: 0, width: 800, height: 600 }, { zoom: 1, tx: -3000, ty: 0 })).toEqual({ w: 800, h: 600 });
+    const page = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+    expect(visibleOf({ left: 0, top: 0, width: 800, height: 600 }, IDENTITY, page)).toEqual({ w: 800, h: 600 });
+    expect(visibleOf({ left: 0, top: 0, width: 1280, height: 900 }, { zoom: 0.5, tx: 0, ty: 0 }, page)).toEqual({ w: 1920, h: 1800 });
+    expect(visibleOf({ left: 0, top: 0, width: 800, height: 600 }, { zoom: 1, tx: -3000, ty: 0 }, page)).toEqual({ w: 800, h: 600 });
   });
 
   it("placement : centrée, 1 px = 1 unité, cascade de 24", () => {
@@ -262,5 +263,41 @@ describe("D66 (cli-lot4) — refus avant décodage pour les formats lus dans l'e
     expect(decode).not.toHaveBeenCalled();
     expect(target.assets.put).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith(`g.gif : ${TOO_MANY_PIXELS}`);
+  });
+});
+
+describe("visibleOf et le cadre de la page (DA4, T9)", () => {
+  const PAGE = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+  /** Vue de 800 × 600 px, origine de la page à 700 px du bord gauche : le monde visible va de x = −700 à x = 100. */
+  const cam = { zoom: 1, tx: 700, ty: 0 };
+  const rect = { left: 0, top: 0, width: 800, height: 600 };
+  const drop = async (frame: { x0: number; y0: number; x1: number; y1: number } | null) => {
+    const target = {
+      assets: { put: vi.fn(async () => "sha") },
+      page: () => "p",
+      frame: () => frame,
+      camera: () => cam,
+      stageRect: () => rect,
+      run: vi.fn((_cmd: unknown) => ({}) as never),
+    };
+    const blob = new Blob([pngHead(400, 300)], { type: "image/png" });
+    const decode = vi.fn(async () => ({ bitmap: { close() {} } as unknown as ImageBitmap, w: 400, h: 300 }));
+    const out = await imageHandler({ decode }).run(
+      { name: "a.png" } as never,
+      { blob, head: pngHead(400, 300), at: { x: 400, y: 200 }, inserted: 0, target, notify: vi.fn(async () => {}) } as never,
+    );
+    expect(out).toBe("inserted");
+    return (target.run.mock.calls[0]?.[0] as { matrix: number[] }).matrix;
+  };
+
+  it("infini : image déposée à gauche de l'origine reste au point de dépôt", async () => {
+    expect(visibleOf(rect, cam, null)).toEqual({ w: 800, h: 600 });
+    // Dépôt en (−300, 200) monde : pleine taille (80 % de 800 ≥ 400), centrée sur le point de dépôt.
+    expect(await drop(null)).toEqual([1, 0, 0, 1, -500, 50]);
+  });
+
+  it("page : inchangé, largeur coupée au cadre (seuls 100 px de page visibles)", async () => {
+    expect(visibleOf(rect, cam, PAGE)).toEqual({ w: 100, h: 600 });
+    expect(await drop(PAGE)).toEqual([0.2, 0, 0, 0.2, -340, 170]);
   });
 });

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   abandonQuestion, addItem, addPreset, canHide, catalog, moveItem, moveItemTo, originOf, presetFields, PRESET_TOOLS, removePreset,
-  resetAllPresets, resetToolbars, resetToOrigin, sameProfile, setButtonSize, setDock, setHidden, setLabel, setStartMode, updatePreset,
+  resetAllPresets, resetToolbars, resetToOrigin, sameProfile, setAnchor, setButtonSize, setCollapsed, setDock, setHidden, setLabel, setPageMode, setStartMode, updatePreset,
 } from "./profile-edit";
 import { parseProfile, serializeProfile, TABLE_ACTIONS, visibleItems, type Profile, type RuntimeCapabilities } from "./toolbar";
 import { BUILTIN_PROFILES, builtinProfile, DEFAULT_PROFILE_JSON } from "./toolbar-profiles";
@@ -49,7 +49,7 @@ describe("profile-edit (C1, DAC1-1)", () => {
   it("nom et démarrage ; behavior.rest gardé", () => {
     const p = setStartMode(setLabel(withUnknownKeys(), "CM1"), "desktop-annotation");
     expect(p.label).toBe("CM1");
-    expect(p.behavior).toEqual({ startMode: "desktop-annotation", rest: { pageDefaut: "seyes" } });
+    expect(p.behavior).toEqual({ startMode: "desktop-annotation", pageMode: "landscape", rest: { pageDefaut: "seyes" } });
   });
 
   it("masquer la gomme : sautée par visibleItems, gardée (ordre, id) ; montrer retire le champ (P2)", () => {
@@ -80,13 +80,13 @@ describe("profile-edit (C1, DAC1-1)", () => {
     const up = moveItem(DEFAUT, "outils", "sep-1", -1);
     expect(groupsOf(up)[0]).toEqual(["select", "hand", "sep-1"]);
     expect(moveItem(DEFAUT, "outils", "select", -1)).toEqual(DEFAUT);
-    expect(moveItem(DEFAUT, "outils", "desktop-annotation", 1)).toEqual(DEFAUT);
+    expect(moveItem(DEFAUT, "outils", "page-next", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "outils", "absent", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "pages", "eraser", 1)).toEqual(DEFAUT);
   });
 
   it("catalogue : barre tools = outils et actions absents ; barre pages = actions seules (P15)", () => {
-    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["undo", "redo", "page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "edit-original", "export-pdf", "export-iwb", "export-ubz", "fit-page", "file-new", "file-open", "file-import", "file-save", "file-save-as", "settings", "profiles", "grid", "library"]);
+    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["undo", "redo", "page-add", "page-remove", "page-insert-file", "page-duplicate", "edit-original", "export-pdf", "export-iwb", "export-ubz", "fit-page", "file-new", "file-open", "file-import", "file-save", "file-save-as", "settings", "profiles", "grid", "library"]);
     const simple = catalog(SIMPLE, "outils");
     expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "ellipse", "line", "arrow", "text", "table", "fill"]);
     const pages = catalog(DEFAUT, "pages");
@@ -117,10 +117,10 @@ describe("profile-edit (C1, DAC1-1)", () => {
     const p = addItem(SIMPLE, "outils", rect);
     expect(ids(p).at(-1)).toBe("rect");
     expect(item(p, "rect")).toEqual({ id: "rect", kind: "tool", tool: "rect", label: "Rectangle", requires: [], rest: {} });
-    const next = catalog(DEFAUT, "outils").find((e) => e.ref === "page-next")!;
+    const next = catalog(DEFAUT, "outils").find((e) => e.ref === "undo")!;
     const q = addItem(DEFAUT, "outils", next);
-    expect(ids(q).at(-1)).toBe("page-next-2");
-    expect(item(q, "page-next-2").action).toBe("page-next");
+    expect(ids(q).at(-1)).toBe("undo-2");
+    expect(item(q, "undo-2").action).toBe("undo");
     expect("errors" in parseProfile(serializeProfile(q))).toBe(false);
   });
 
@@ -239,7 +239,8 @@ describe("profile-edit : design-l3 (L3-14, L3-17, L3-20, L3-32)", () => {
       ] }],
     });
     if ("errors" in r) throw new Error(r.errors.join("; "));
-    return r.profile;
+    // personnalisation-1a (T2) : sans le groupe de la reprise `withPageNav` (sélecteur seul : deux groupes, comme avant).
+    return { ...r.profile, toolbars: r.profile.toolbars.map((b) => ({ ...b, groups: b.groups.slice(0, 2) })) };
   }
 
   it("design-l3 L3-14 : moveItemTo rang 0 : tête du premier groupe, rien de perdu", () => {
@@ -318,5 +319,39 @@ describe("profile-edit : design-l3 (L3-14, L3-17, L3-20, L3-32)", () => {
 
   it("design-l3 L3-32 : question d'abandon, texte exact", () => {
     expect(abandonQuestion("Par défaut")).toBe("Abandonner les changements du profil « Par défaut » ?");
+  });
+});
+
+describe("personnalisation-1a T2 : ancre, repli, mode de page neuve, catalogue de navigation", () => {
+  it("setAnchor pose puis retire l'ancre (null) ; setCollapsed ; setPageMode ; le reste ne bouge pas, relu à l'identique", () => {
+    const a = setAnchor(withUnknownKeys(), "pages", "side-end");
+    expect(bar(a, "pages").anchor).toBe("side-end");
+    expect(bar(a).anchor).toBeUndefined();
+    expect(bar(a).rest).toEqual({ couleur: "bleu" });
+    const back = setAnchor(a, "pages", null);
+    expect("anchor" in bar(back, "pages")).toBe(false);
+    expect(back).toEqual(withUnknownKeys());
+    expect(setAnchor(DEFAUT, "absente", "top-end")).toEqual(DEFAUT);
+    expect(bar(setCollapsed(DEFAUT, "pages", false), "pages").collapsed).toBe(false);
+    expect(bar(setCollapsed(DEFAUT, "outils", true)).collapsed).toBe(true);
+    const m = setPageMode(withUnknownKeys(), "infinite");
+    expect(m.behavior).toEqual({ startMode: "board", pageMode: "infinite", rest: { pageDefaut: "seyes" } });
+    const round = parseProfile(serializeProfile(setPageMode(setAnchor(DEFAUT, "pages", "side-start"), "portrait")));
+    if ("errors" in round) throw new Error(round.errors.join(" ; "));
+    expect(round.profile.behavior.pageMode).toBe("portrait");
+    expect(bar(round.profile, "pages").anchor).toBe("side-start");
+  });
+
+  it("catalogue : barre pages sans précédente, suivante ni numéro ; barre tools sans numéro : page-number proposé", () => {
+    const pages = catalog(DEFAUT, "pages").map((e) => e.ref);
+    for (const a of ["page-prev", "page-next", "page-number"]) expect(pages, a).not.toContain(a);
+    expect(pages).toContain("page-insert-file");
+    expect(pages).not.toContain("page-duplicate");
+    const noNav = setHidden(DEFAUT, "page-number", true);
+    expect(catalog(noNav, "outils").map((e) => e.ref)).not.toContain("page-number");
+    const stripped = { ...DEFAUT, toolbars: DEFAUT.toolbars.map((b) => (b.id === "outils" ? { ...b, groups: b.groups.slice(0, -1) } : b)) };
+    const refs = catalog(stripped, "outils").map((e) => e.ref);
+    expect(refs).toContain("page-number");
+    expect(refs).toContain("page-duplicate");
   });
 });

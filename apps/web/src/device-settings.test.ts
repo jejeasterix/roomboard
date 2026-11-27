@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDeviceSettings, FRAME_KEY, ITEM_STYLE_KEY, NO_ISLAND, islandKey } from "./device-settings";
+import { createDeviceSettings, FRAME_KEY, ITEM_STYLE_KEY, NO_ISLAND, islandKey, SIDEBAR_KEY } from "./device-settings";
 import { DEFAULT_ITEM_STYLE } from "./engine/item-style";
 import type { KeyValue } from "./profile-store";
 
@@ -165,5 +165,31 @@ describe("device-settings : style courant (OG11 déc. 23)", () => {
   });
   it("style courant sans stockage : setItemStyle rend faux", () => {
     expect(createDeviceSettings(null).setItemStyle(dashed)).toBe(false);
+  });
+});
+
+describe("device-settings : barre latérale (personnalisation-1a T2)", () => {
+  it("barre latérale : clé roomboard.laterale ; rien d'enregistré : onglet pages, vignettes m", () => {
+    expect(SIDEBAR_KEY).toBe("roomboard.laterale");
+    expect(createDeviceSettings(memoryKv()).sidebar()).toEqual({ tab: "pages", thumb: "m" });
+    expect(createDeviceSettings(null).sidebar()).toEqual({ tab: "pages", thumb: "m" });
+  });
+  it("barre latérale : aller-retour, relu par une nouvelle instance (rechargement)", () => {
+    const kv = memoryKv();
+    const s = createDeviceSettings(kv);
+    s.setSidebar({ tab: "calques", thumb: "l" });
+    expect(s.sidebar()).toEqual({ tab: "calques", thumb: "l" });
+    expect(JSON.parse(kv.map.get(SIDEBAR_KEY)!)).toEqual({ tab: "calques", thumb: "l" });
+    expect(createDeviceSettings(kv).sidebar()).toEqual({ tab: "calques", thumb: "l" });
+  });
+  it("barre latérale : valeur illisible → défaut, champ par champ ; stockage qui lève : mémoire seule, rien ne lève", () => {
+    for (const raw of ["{", "[]", "null", '"pages"', '{"tab":"x","thumb":"xl"}']) {
+      expect(createDeviceSettings(memoryKv({ [SIDEBAR_KEY]: raw })).sidebar(), raw).toEqual({ tab: "pages", thumb: "m" });
+    }
+    expect(createDeviceSettings(memoryKv({ [SIDEBAR_KEY]: '{"tab":"calques","thumb":9}' })).sidebar()).toEqual({ tab: "calques", thumb: "m" });
+    const s = createDeviceSettings(throwing);
+    expect(s.sidebar()).toEqual({ tab: "pages", thumb: "m" });
+    expect(() => s.setSidebar({ tab: "calques", thumb: "s" })).not.toThrow();
+    expect(s.sidebar()).toEqual({ tab: "calques", thumb: "s" });
   });
 });

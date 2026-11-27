@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { Toolbar as Bar } from "../toolbar";
 import {
-  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, placeOptions, sheetLane, tabsWidth, topRowBottom,
-  type Corners,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, placeOptions, beyondObstacles, sheetLane, sideCorners, tabsWidth, withContextRow,
+  optionsWidth, topRowBottom, type Anchor, type Corners,
 } from "./island-place";
 
 const MID = { w: 1280, h: 900 };
@@ -10,16 +11,23 @@ const TOP: Corners = { start: 56 + 8 + 144, end: 108, band: 56 };
 /** Rangée du bas : historique 160 ; rien à droite. */
 const BOTTOM: Corners = { start: 160, end: 0, band: 56 };
 const TOOLS = { w: 770, h: 56 };
+const barOf = (role: string, anchor?: Anchor): Bar => ({ id: role, role, dock: "floating", collapsed: false, groups: [], rest: {}, ...(anchor !== undefined ? { anchor } : {}) });
 
 describe("island-place : ancres (design-l2 L2-5, H11)", () => {
-  it("design-l2 L2-5 : menu haut-gauche, outils haut-centre, panneaux haut-droite, historique bas-gauche, pages bas-centre", () => {
-    expect(["menu", "tools", "panels", "history", "pages"].map(anchorOf)).toEqual(["top-start", "top-center", "top-end", "bottom-start", "bottom-center"]);
+  it("design-l2 L2-5 : menu haut-gauche, outils haut-centre, panneaux haut-droite, historique bas-gauche, pages côté gauche (personnalisation-1a)", () => {
+    expect(["menu", "tools", "panels", "history", "pages"].map((r) => anchorOf(barOf(r)))).toEqual(["top-start", "top-center", "top-end", "bottom-start", "side-start"]);
   });
   it("design-l2 H11 : rôle inconnu ou clé héritée : haut-droite", () => {
-    for (const r of ["zoom", "", "__proto__", "toString"]) expect(anchorOf(r), r).toBe("top-end");
+    for (const r of ["zoom", "", "__proto__", "toString"]) expect(anchorOf(barOf(r)), r).toBe("top-end");
+  });
+  it("personnalisation-1a : pages → side-start par défaut ; bar.anchor side-end prime sur le rôle", () => {
+    expect(anchorOf(barOf("pages"))).toBe("side-start");
+    expect(anchorOf(barOf("pages", "side-end"))).toBe("side-end");
+    expect(anchorOf(barOf("history", "bottom-start"))).toBe("bottom-start");
+    expect(anchorOf(barOf("tools", "bottom-start"))).toBe("bottom-center"); // T19 : barre mobile, coin replié
   });
   it("isCentered : seulement top-center et bottom-center", () => {
-    expect((["top-start", "top-center", "top-end", "bottom-start", "bottom-center"] as const).map(isCentered)).toEqual([false, true, false, false, true]);
+    expect((["top-start", "top-center", "top-end", "bottom-start", "bottom-center", "side-start", "side-end"] as const).map(isCentered)).toEqual([false, true, false, false, true, false, false]);
   });
   it("constantes : marges 16, écart 8, onglets 144, panneau 600, boutons 44 / 48 / 64", () => {
     expect([EDGE, GAP, TABS_MIN, SHEET_W]).toEqual([16, 8, 144, 600]);
@@ -43,8 +51,50 @@ describe("island-place : voies (design-l2 L2-30, L2-12)", () => {
     expect(Number.isInteger(l.x) && Number.isInteger(l.y)).toBe(true);
     expect(l.x).toBe(Math.round((1280 - 771) / 2));
   });
-  it("design-l2 L2-30 (b) : pages centrées sur la rangée du bas, à droite de l'historique", () => {
+  it("design-l2 L2-30 (b) : un îlot centré du bas se pose sur la rangée du bas, à droite de l'historique", () => {
     expect(laneOf("bottom-center", { w: 400, h: 56 }, MID, BOTTOM)).toEqual({ x: 440, y: 900 - 16 - 56, maxWidth: 912 });
+  });
+  it("personnalisation-1a : laneOf side-start : sous la rangée du haut, au-dessus de celle du bas, maxHeight borné", () => {
+    const c: Corners = { ...TOP, foot: 56 };
+    // y = 16 + 56 + 8 = 80 ; maxHeight = 900 - 80 - (16 + 56 + 8) = 740
+    expect(laneOf("side-start", { w: 56, h: 300 }, MID, c)).toEqual({ x: 16, y: 80, maxWidth: 1248, maxHeight: 740 });
+  });
+  it("personnalisation-1a : laneOf side-end : collé à 16 du bord droit ; sans rangée du bas, maxHeight jusqu'à 16 du bord", () => {
+    expect(laneOf("side-end", { w: 56, h: 300 }, MID, TOP)).toEqual({ x: 1280 - 16 - 56, y: 80, maxWidth: 1248, maxHeight: 900 - 80 - 16 });
+  });
+  it("personnalisation-1a : laneOf side-* sur une case vide : aucune valeur négative", () => {
+    const l = laneOf("side-start", { w: 56, h: 300 }, { w: 0, h: 0 }, { ...TOP, foot: 56 });
+    expect(l.maxHeight).toBe(0);
+    expect(l.y).toBeGreaterThanOrEqual(0);
+  });
+  it("T16 (discrimine) : laneOf side-* passe sous l'îlot d'outils descendu qui la surplombe ; étroite, sans le croiser, reste sous la rangée des coins", () => {
+    // 1280 × 900 : outils descendu sur la voie suivante (y 80), 940 px centrés : x 170–1110 (constat de T11).
+    const tools = { x: 170, y: 80, w: 940, h: 56 };
+    const c: Corners = { ...TOP, foot: 56, above: [tools] };
+    // dépliée (260 px, x 16–276) : croise l'outil, sous lui : y = 80 + 56 + 8 ; bas inchangé (au-dessus de la rangée du bas)
+    const open = laneOf("side-start", { w: 260, h: 600 }, MID, c);
+    expect(open).toEqual({ x: 16, y: 144, maxWidth: 1248, maxHeight: 900 - 144 - (16 + 56 + 8) });
+    // repliée (bande de 52 px, x 16–68) : l'outil ne la surplombe pas : sous la rangée des coins
+    expect(laneOf("side-start", { w: 52, h: 300 }, MID, c).y).toBe(80);
+    // side-end dépliée : x 1004–1264 croise 170–1110 : sous l'outil
+    expect(laneOf("side-end", { w: 260, h: 600 }, MID, c).y).toBe(144);
+    // invariant : aucune case de la voie ne recouvre l'outil
+    for (const w of [52, 260]) {
+      const l = laneOf("side-start", { w, h: 600 }, MID, c);
+      const h = Math.min(600, l.maxHeight!);
+      const cross = l.x < tools.x + tools.w && l.x + w > tools.x && l.y < tools.y + tools.h && l.y + h > tools.y;
+      expect(cross).toBe(false);
+    }
+  });
+  it("T16 : laneOf side-* : îlots surplombants empilés (outils sur deux rangées), positions entières ; îlot posé plus bas que la voie : ne la repousse pas", () => {
+    const c: Corners = { ...TOP, above: [{ x: 16, y: 80, w: 400, h: 56 }, { x: 16, y: 144, w: 400, h: 52.4 }] };
+    const l = laneOf("side-start", { w: 260, h: 600 }, MID, c);
+    expect(l.y).toBe(Math.ceil(144 + 52.4 + 8));
+    expect(Number.isInteger(l.y) && Number.isInteger(l.maxHeight)).toBe(true);
+    expect(laneOf("side-start", { w: 260, h: 600 }, MID, { ...TOP, above: [{ x: 16, y: 400, w: 300, h: 56 }] }).y).toBe(80);
+  });
+  it("personnalisation-1a : MOVABLE_ROLES = tools et pages", () => {
+    expect([...MOVABLE_ROLES].sort()).toEqual(["pages", "tools"]);
   });
   it("design-l2 L2-18 : trente pages : voie au-dessus de la rangée du bas, toute la largeur, sans recouvrir l'historique", () => {
     const l = laneOf("bottom-center", { w: 1900, h: 56 }, MID, BOTTOM);
@@ -127,6 +177,43 @@ describe("island-place : panneau d'options (OG11, T10)", () => {
     expect(placeOptions(MID, { w: 80, h: 900 }, 64)).toEqual({ x: 88, y: 72 });
     expect(topRowBottom(44)).toBe(16 + 44 + 8);
   });
+  it("barre latérale d'OG4 à gauche, dépliée : panneau à sa droite, même haut, aucun recouvrement ; repliée : à droite de la colonne ; absente : contre le bord", () => {
+    const tops = topRowBottom(BUTTON_PX.m);
+    const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    // Voie latérale de début (`laneOf`), barre dépliée de 325 px puis repliée à une colonne d'onglets.
+    for (const w of [325, BUTTON_PX.m + 8]) {
+      const lane = laneOf("side-start", { w, h: 600 }, MID, { ...TOP, foot: 56 });
+      const side = { x: lane.x, y: lane.y, w, h: 600 };
+      const p = placeOptions(MID, side, tops);
+      expect(p.y).toBe(tops + GAP);
+      expect(p.x).toBe(side.x + side.w + GAP);
+      expect(overlaps({ ...p, w: optionsWidth(BUTTON_PX.m), h: 500 }, side), `largeur ${w}`).toBe(false);
+    }
+    expect(placeOptions(MID, null, tops).x).toBe(EDGE);
+  });
+  it("îlot d'outils descendu qui surplombe le panneau (barre latérale dépliée) : panneau sous lui, aucun recouvrement ; hors de ses abscisses : inchangé", () => {
+    const tops = topRowBottom(BUTTON_PX.m);
+    const side = { x: 16, y: 80, w: 280, h: 600 };
+    const tools = { x: 170, y: 80, w: 940, h: 56 };
+    const w = optionsWidth(BUTTON_PX.m);
+    const p = placeOptions(MID, side, tops, [tools], w);
+    expect(p).toEqual({ x: 304, y: 80 + 56 + GAP });
+    const hit = p.x < tools.x + tools.w && tools.x < p.x + w && p.y < tools.y + tools.h;
+    expect(hit).toBe(false);
+    expect(placeOptions(MID, null, tops, [{ x: 400, y: 16, w: 300, h: 56 }], w)).toEqual({ x: 16, y: tops + GAP });
+  });
+  it("rangée de contexte descendue sous l'îlot d'outils : haut du panneau >= bas de la rangée + GAP, même si seule la rangée croise ses abscisses", () => {
+    const tops = topRowBottom(BUTTON_PX.m);
+    const w = optionsWidth(BUTTON_PX.m);
+    const tools = { x: 500, y: 16, w: 600, h: 56 }; // à droite du panneau (x 16 à 16 + w)
+    const ctx = { x: 100, y: 80, w: 560, h: 56 }; // la rangée, décalée à gauche, croise le panneau
+    const p = placeOptions(MID, null, tops, withContextRow(tools, ctx), w);
+    expect(p.y).toBeGreaterThanOrEqual(ctx.y + ctx.h + GAP);
+    expect(placeOptions(MID, null, tops, withContextRow(tools, null), w).y).toBe(tops + GAP);
+    // rangée hors des abscisses du panneau : inchangé
+    expect(placeOptions(MID, null, tops, withContextRow(tools, { x: 600, y: 80, w: 300, h: 56 }), w).y).toBe(tops + GAP);
+  });
   it("sous la rangée du haut : haut du panneau >= bas de l'îlot ☰ + GAP, en S, M, L", () => {
     for (const size of ["s", "m", "l"] as const) {
       const btn = BUTTON_PX[size];
@@ -152,5 +239,48 @@ describe("optionsWidth (T22)", () => {
       }
     }
     expect(optionsWidth(44)).toBe(260);
+  });
+});
+
+describe("island-place : correctifs de relecture (T19)", () => {
+  it("une ancre de coin lue sur une barre mobile se replie vers l'ancre centrée de sa rangée ; les autres rôles la gardent", () => {
+    expect((["top-start", "top-end", "top-center", "bottom-start", "bottom-center", "side-start", "side-end"] as Anchor[]).map((a) => anchorOf(barOf("tools", a)))).toEqual([
+      "top-center", "top-center", "top-center", "bottom-center", "bottom-center", "side-start", "side-end",
+    ]);
+    expect(anchorOf(barOf("pages", "top-end"))).toBe("top-center");
+    expect(anchorOf(barOf("menu", "top-end"))).toBe("top-end");
+    expect(anchorOf(barOf("history", "bottom-start"))).toBe("bottom-start");
+  });
+
+  it("sideCorners : l'îlot d'outils n'est jamais son propre surplomb ; deux passes de placement : position stable", () => {
+    const base: Corners = { ...TOP, foot: 56 };
+    const size = { w: 56, h: 300 };
+    let at = laneOf("side-start", size, MID, sideCorners(base, "tools", null));
+    for (let pass = 0; pass < 3; pass++) {
+      const placed = { x: at.x, y: at.y, w: size.w, h: size.h };
+      const next = laneOf("side-start", size, MID, sideCorners(base, "tools", placed));
+      expect(next.y, `passe ${pass}`).toBe(at.y);
+      at = next;
+    }
+    // un autre rôle (pages) passe encore sous l'îlot d'outils qui le surplombe
+    const tools = { x: 170, y: 80, w: 940, h: 56 };
+    expect(laneOf("side-start", { w: 260, h: 600 }, MID, sideCorners(base, "pages", tools)).y).toBe(144);
+    expect(sideCorners(base, "pages", null).above).toEqual([]);
+  });
+});
+
+describe("beyondObstacles (T22 : la rangée contextuelle ne passe pas sous une barre latérale)", () => {
+  const side = { x: 16, y: 80, w: 325, h: 600 };
+  it("rangée posée sous la barre latérale : décalée à son bord droit + écart", () => {
+    expect(beyondObstacles(0, { top: 144, height: 56 }, [side], GAP)).toBe(16 + 325 + GAP);
+  });
+  it("sans recouvrement vertical, ou déjà à droite de la barre : inchangée", () => {
+    expect(beyondObstacles(0, { top: 700, height: 56 }, [side], GAP)).toBe(0);
+    expect(beyondObstacles(400, { top: 144, height: 56 }, [side], GAP)).toBe(400);
+    expect(beyondObstacles(12, { top: 144, height: 56 }, [], GAP)).toBe(12);
+  });
+  it("plusieurs obstacles : le plus à droite gagne, seulement ceux qui recouvrent", () => {
+    const other = { x: 400, y: 100, w: 50, h: 300 };
+    expect(beyondObstacles(0, { top: 144, height: 56 }, [side, other], GAP)).toBe(450 + GAP);
   });
 });

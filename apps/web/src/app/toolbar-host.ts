@@ -36,14 +36,16 @@ export interface HostTargets {
     send?(to: SendTarget): Promise<void>;
     pointer?(mode: PointerMode): Promise<void>;
   };
-  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat" | "deleteElements">;
+  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "nextOrAdd" | "duplicatePage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat" | "bringToFront" | "sendToBack" | "deleteElements">;
   /** « Effacer la page » : identifiants des objets de la page montrée. */
   pageElementIds(): readonly string[];
   /** Question oui / non (shell) ; absent : refus. */
   confirm(message: string): Promise<boolean>;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
-  toggle(panel: "settings" | "profiles" | "grid" | "image" | "library" | "help"): void;
+  toggle(panel: "settings" | "profiles" | "grid" | "image" | "library" | "backgrounds" | "help"): void;
+  /** T8 : barre latérale (onglet Pages ou Calques) ; branché par T10, absent : sans effet. */
+  toggleSidebar?(tab: "pages" | "calques"): void;
   /** C3 (Z12). */
   insertPages(): void;
   /** C12 (PF19) : « Exporter en PDF… » ; absent (hôte partiel) : sans effet (PC9). */
@@ -80,10 +82,15 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   undo: (t) => t.engine().undo(),
   redo: (t) => t.engine().redo(),
   "page-prev": (t) => void t.engine().prevPage(),
-  "page-next": (t) => void t.engine().nextPage(),
+  "page-next": (t) => void t.engine().nextOrAdd(),
   "page-add": (t) => void t.engine().addPage(),
   "page-remove": (t) => void t.engine().removePage(),
   "page-insert-file": (t) => t.insertPages(),
+  // Lot 2 : boutons de la rangée Sélection, hors catalogue des profils (décision 27).
+  "layer-front": (t) => void t.engine().bringToFront(),
+  "layer-back": (t) => void t.engine().sendToBack(),
+  "page-number": (t) => t.toggleSidebar?.("pages"),
+  "page-duplicate": (t) => void t.engine().duplicatePage(),
   "edit-original": (t) => t.editOriginal?.(),
   "export-pdf": (t) => t.exportPdf?.(),
   "export-iwb": (t) => t.exportBoard?.("iwb"),
@@ -110,6 +117,7 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   profiles: (t) => t.toggle("profiles"),
   grid: (t) => t.toggle("grid"),
   library: (t) => t.toggle("library"),
+  backgrounds: (t) => t.toggle("backgrounds"),
   "table-row-insert": (t) => t.engine().tableAction("row-insert"),
   "table-col-insert": (t) => t.engine().tableAction("col-insert"),
   "table-row-remove": (t) => t.engine().tableAction("row-remove"),

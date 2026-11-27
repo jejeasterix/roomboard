@@ -10,6 +10,10 @@ export interface PageView {
   readonly background?: string;
   /** C12 (PF14) : fond de la page, lu par le moteur dans `doc.page(id)` ; absent ou null : aucun fond. */
   readonly backdrop?: BackdropView | null;
+  /** DA4 : champs du cadre (`pageFrame`), ceux de `PageView` du cœur ; absents : 1920 × 1080, mode Page. */
+  readonly width?: number;
+  readonly height?: number;
+  readonly mode?: string;
 }
 
 /** C12 (PF15) : état du fond après une scène — "" sans fond, `attente`, `pret`, `echec` (`#stage[data-fond]`). */

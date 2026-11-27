@@ -1,5 +1,5 @@
 /** Caméra d'une page (D17) : écran (px CSS) = monde × zoom + (tx, ty). Hors document, jamais annulée. */
-import { PAGE_HEIGHT, PAGE_WIDTH } from "./page";
+import { PAGE_HEIGHT, PAGE_WIDTH, type FrameLayout, type PageRect } from "./page";
 
 export interface Camera {
   readonly zoom: number;
@@ -58,12 +58,13 @@ export interface VBox {
  *  (l'écart de `placeTip`, `ui/island-place.ts`), puis une rangée de la hauteur du plus bas des îlots du haut (un îlot sur
  *  une rangée ; une barre repliée sur plusieurs rangées ne double pas la réserve). Puis `gap` px ; 16 sans îlot.
  *  Îlot du haut : commence dans le premier quart de la scène et tient en moins d'un tiers de sa hauteur (une barre
- *  verticale posée sur un côté n'en est pas un). Une boîte de hauteur nulle est ignorée. */
-export function topBelowIslands(stage: VBox, islands: readonly VBox[], contextGap = 8, gap = 12, min = 16): number {
+ *  verticale posée sur un côté n'en est pas un). Une boîte de hauteur nulle, ou `side === true` (îlot latéral, OF83), est ignorée. */
+export function topBelowIslands(stage: VBox, islands: readonly (VBox & { readonly side?: boolean })[], contextGap = 8, gap = 12, min = 16): number {
   const h = stage.bottom - stage.top;
   let low = -Infinity;
   let row = Infinity;
   for (const b of islands) {
+    if (b.side === true) continue;
     const height = b.bottom - b.top;
     if (!(height > 0) || b.top - stage.top >= h / 4 || height >= h / 3) continue;
     low = Math.max(low, b.bottom - stage.top);
@@ -77,4 +78,28 @@ export function fitWidth(viewW: number, viewH: number, pageW: number = PAGE_WIDT
   if (!(viewW > 0) || !(viewH > 0)) return IDENTITY;
   const zoom = clampZoom((viewW / pageW) * margin);
   return { zoom, tx: (viewW - pageW * zoom) / 2, ty: top };
+}
+
+/** Cadre entier visible sous `top` px, centré ; réutilise `fitPage`. Vue vide : identité. */
+export function fitFrame(viewW: number, viewH: number, frame: PageRect, top: number, margin = 0.95): Camera {
+  if (!(viewW > 0) || !(viewH - top > 0)) return IDENTITY;
+  const w = frame.x1 - frame.x0;
+  const h = frame.y1 - frame.y0;
+  const c = fitPage(viewW, viewH - top, w, h, margin);
+  return { zoom: c.zoom, tx: c.tx - frame.x0 * c.zoom, ty: c.ty + top - frame.y0 * c.zoom };
+}
+
+/** « Ajuster la page » selon l'orientation (décision 10) : paysage = largeur ; portrait = cadre entier ; infini = contenu entier, sinon 1920 × 1080 en largeur. */
+export function fitFor(
+  layout: FrameLayout,
+  viewW: number,
+  viewH: number,
+  frame: PageRect | null,
+  content: PageRect | null,
+  top: number,
+): Camera {
+  if (layout === "landscape" && frame) return fitWidth(viewW, viewH, frame.x1 - frame.x0, 0.95, top);
+  if (layout === "portrait" && frame) return fitFrame(viewW, viewH, frame, top);
+  if (layout === "infinite" && content) return fitFrame(viewW, viewH, content, top);
+  return fitWidth(viewW, viewH, PAGE_WIDTH, 0.95, top);
 }

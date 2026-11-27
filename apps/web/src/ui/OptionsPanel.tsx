@@ -19,7 +19,7 @@ import { objectKey, type KeyLike } from "../engine/input/keys";
 import { ColorPicker } from "./ColorPicker";
 import { Icon, IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { createTip } from "./tooltip";
-import { BUTTON_PX, optionsWidth, placeOptions, topRowBottom, type Box } from "./island-place";
+import { BUTTON_PX, optionsWidth, placeOptions, topRowBottom, type Box, type Rect } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import {
   FONTS, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
@@ -36,7 +36,10 @@ export interface OptionsPanelProps {
   readonly settings: DeviceSettings;
   readonly annotating: Accessor<boolean>;
   /** null tant qu'OG4 n'a pas de barre latérale. */
-  readonly sideStart: Accessor<Box | null>;
+  /** Rectangle posé de l'îlot latéral de début (barre latérale d'OG4), px de la zone ; null : aucun. */
+  readonly sideStart: Accessor<Rect | null>;
+  /** Îlots qui surplombent le panneau (îlot d'outils descendu) ; absent : aucun. */
+  readonly above?: Accessor<readonly Rect[]>;
 }
 
 const LABEL: Readonly<Record<OptionKey, string>> = {
@@ -173,7 +176,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     if (host) onCleanup(observeBox(host, setArea, Math.floor));
   });
   const pos = (): { x: number; y: number } =>
-    placeOptions(area().h > 0 ? area() : { w: 0, h: Number.MAX_SAFE_INTEGER }, props.sideStart(), topRowBottom(btn()));
+    placeOptions(area().h > 0 ? area() : { w: 0, h: Number.MAX_SAFE_INTEGER }, props.sideStart(), topRowBottom(btn()), props.above?.() ?? [], optionsWidth(btn()));
 
   const swatch = (k: "strokeColor" | "background", pick: Pick, apply: () => void): JSX.Element => {
     const id = pick.color ?? "transparent";
@@ -368,7 +371,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         data-options
         data-collapsed={collapsed() ? "" : undefined}
         aria-label="Options de l'outil"
-        style={{ left: `${pos().x}px`, top: `${pos().y}px`, "--rb-btn-size": `${btn()}px`, ...(collapsed() ? {} : { width: `${optionsWidth(btn())}px` }) }}
+        style={{ left: `${pos().x}px`, top: `${pos().y}px`, "--rb-btn-size": `${btn()}px`, ...(area().h > 0 ? { "max-block-size": `${Math.max(0, area().h - pos().y - 88)}px` } : {}), ...(collapsed() ? {} : { width: `${optionsWidth(btn())}px` }) }}
       >
         <IconButton
           icon={collapsed() ? "sliders-horizontal" : "chevron-left"}

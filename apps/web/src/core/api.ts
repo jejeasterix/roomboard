@@ -51,9 +51,20 @@ export type FillTarget =
   | { readonly kind: "image"; readonly id: string; readonly asset: AssetRef }
   | { readonly kind: "zone"; readonly x: number; readonly y: number; readonly tol: number };
 
+import type { PageLayout } from "../toolbar";
+/** Disposition d'une page (décisions 3, 4, 6) : même littéral que le profil (`toolbar.ts`), aucune copie. */
+export type { PageLayout };
+/** Mode lu d'une page : `"page"` (Paysage, Portrait, `mode` absent ou inconnu) ou `"infinite"` (U3). */
+export type PageMode = "page" | "infinite";
+
 export type Command =
-  | { readonly type: "AddPage"; readonly after: string | null }
+  | { readonly type: "AddPage"; readonly after: string | null; readonly mode?: PageLayout }
   | { readonly type: "RemovePage"; readonly page: string }
+  | { readonly type: "SetPageMode"; readonly page: string; readonly mode: PageLayout }
+  | { readonly type: "MovePage"; readonly page: string; readonly to: number }
+  | { readonly type: "DuplicatePage"; readonly page: string }
+  /** Ordre des objets (décision 16) : bloc des `ids` (une même page), bas au rang `to` (0 = arrière-plan), ids gardés. */
+  | { readonly type: "Restack"; readonly ids: readonly string[]; readonly to: number }
   /** OG11 : `look` écrit dans la même étape, assaini comme le cœur (`Look::sanitized`) ; nombres hors bornes : « style invalide ». */
   | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle; readonly look?: Look }
   | { readonly type: "Erase"; readonly page: string; readonly path: Float32Array; readonly radius: number; readonly mode: EraseMode }
@@ -139,6 +150,16 @@ export type Command =
     }
   /** grid null : retire la grille ; même grille : aucune étape (D38) ; remplacée en bloc, une étape (G5). */
   | { readonly type: "SetGrid"; readonly page: string; readonly grid: GridInput | null }
+  /** personnalisation-1b (Q2, Q4, Q35, DA1) : aspect complet de N pages en une étape ; seules les pages qui changent
+   *  sont écrites et rendues ; une page à fond `pdf-page` ne reçoit que couleur et grille. Refus sans écriture, dans
+   *  l'ordre : BadFill (couleur), BadAsset, BadImage, BadGrid, page inconnue (liste vide, doublon, page absente). */
+  | {
+      readonly type: "ApplyBackground";
+      readonly pages: readonly string[];
+      readonly color: string;
+      readonly backdrop: BackdropInput | null;
+      readonly grid: GridInput | null;
+    }
   /** C10a : 1 à 64 colonnes et lignes ; coin en (x, y). */
   | {
       readonly type: "AddTable";
@@ -338,6 +359,7 @@ export interface PageView {
   readonly background: string;
   readonly backdrop: BackdropView | null;
   readonly grid: GridView | null;
+  readonly mode: PageMode;
 }
 
 export interface Bounds { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
@@ -414,7 +436,7 @@ export interface CoreDocument {
 }
 
 export interface CoreFactory {
-  blank(): CoreDocument;
+  blank(mode?: PageLayout): CoreDocument;
   /** C12 (PF6) : une page par taille, fond `pdf-page` d'indice i, asset cité ; aucune étape (D37). Lève le message
    *  BadAsset, puis BadImage (0 ou plus de PDF_MAX_PAGES pages, taille non finie ou ≤ 0). C16 (O17) : `original`
    *  (fichier Office converti) cité par chaque fond (`backdrop.original`), contrôlé comme l'asset. */

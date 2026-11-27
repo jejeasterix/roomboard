@@ -5,20 +5,21 @@
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
-import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, ShapeKind, StrokeStyle } from "../core/api";
+import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, PageLayout, PageMode, ShapeKind, StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
-import { fitWidth, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
+import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
-import { editAction, enterAction, isPanKey, keyAction, objectKey, orderKey, type KeyLike } from "./input/keys";
+import { stepTarget, wholeUnits } from "../app/layer-list";
+import { editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import type { LookPatch } from "../core/look";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
 import { validColor } from "../core/rich-text";
-import { PAGE_BACKGROUND } from "./page";
+import { PAGE_BACKGROUND, pageFrame, pageLayoutOf, type PageRect } from "./page";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
@@ -36,6 +37,9 @@ export interface EngineState {
   /** Rang de la page montrée (0 = première) et nombre de pages (D16 : compteur « 3 / 7 »). */
   readonly pageIndex: number;
   readonly pageCount: number;
+  /** Mode lu de la page montrée (`"page"` ou `"infinite"`) et disposition (paysage, portrait, infini) ; T8. */
+  readonly pageMode: PageMode;
+  readonly pageLayout: PageLayout;
   /** Éléments sélectionnés (outil Sélection, T55) et leur boîte monde ; vides tant que la sélection n'est pas branchée. */
   readonly selection: readonly string[];
   readonly selectionBounds: Bounds | null;
@@ -100,6 +104,42 @@ export interface EngineDeps {
   readonly images?: { colorAt(asset: string, x: number, y: number): string | null; dropPreview?(id: string): void };
   /** OF83 : haut de la page ajustée, en px de scène, lu à chaque ajustement (sous les îlots du haut) ; absent : 16. */
   readonly fitTop?: () => number;
+  /** Disposition d'une page neuve (profil actif, `behavior.pageMode`) ; absent : paysage. */
+  readonly pageMode?: () => PageLayout;
+}
+
+/**
+ * Raccourcis de page (DA9) pris avant le moteur : hors champ de saisie et hors IME (`pageKey`). Une touche tenue
+ * (`repeat`) ne crée jamais de page ni de copie (H7). Vrai si l'action a eu lieu (la page appelle preventDefault).
+ * `sidebar-pages` et `sidebar-layers` ouvrent l'onglet Pages ou Calques de la barre latérale (lot 2 pour le second).
+ */
+export function pageShortcut(
+  e: KeyLike & { readonly repeat?: boolean },
+  engine: Pick<Engine, "prevPage" | "nextPage" | "nextOrAdd" | "addPage" | "duplicatePage">,
+  toggleSidebar?: (tab: "pages" | "calques") => void,
+): boolean {
+  if (inEditable(e.target)) return false;
+  const k = pageKey(e);
+  if (k === null) return false;
+  const held = e.repeat === true;
+  switch (k) {
+    case "prev":
+      return engine.prevPage();
+    case "next":
+      return held ? engine.nextPage() : engine.nextOrAdd();
+    case "add":
+      return !held && engine.addPage();
+    case "duplicate":
+      return !held && engine.duplicatePage();
+    case "sidebar-pages":
+      if (toggleSidebar === undefined) return false;
+      toggleSidebar("pages");
+      return true;
+    case "sidebar-layers":
+      if (toggleSidebar === undefined) return false;
+      toggleSidebar("calques");
+      return true;
+  }
 }
 
 export interface OrbitOptions {
@@ -116,6 +156,16 @@ export interface Engine {
   setTool(t: ToolChoice): void;
   setEraserMode(m: EraseMode): void;
   run(cmd: Command): Change | null;
+  /** Lot 2 (calques) : outil Sélection, sélection = `ids` de la page montrée (les inconnus sont ignorés) ; [] la vide. */
+  select(ids: readonly string[]): void;
+  /** Lot 2 : bloc `ids` au rang `to` de la pile (0 = arrière-plan) ; une étape ; faux si refusé ou sans effet. */
+  restack(ids: readonly string[], to: number): boolean;
+  /** Lot 2 : la sélection (groupes entiers) au premier plan ; faux sans sélection ou déjà en haut. */
+  bringToFront(): boolean;
+  /** Lot 2 : la sélection (groupes entiers) à l'arrière-plan ; faux sans sélection ou déjà en bas. */
+  sendToBack(): boolean;
+  /** Lot 2 : la sélection d'un rang vers le premier plan (`up`) ou l'arrière-plan (`down`) ; faux si impossible. */
+  reorder(dir: "up" | "down"): boolean;
   /** C3 (Z1) : groupe la sélection (≥ 2 unités) ; une étape ; sélection gardée ; faux si rien n'est fait. */
   group(): boolean;
   /** C3 (Z1) : retire le groupe extérieur de la sélection ; faux sans groupe. */
@@ -139,7 +189,15 @@ export interface Engine {
   /** Montre une page (caméra par page, D17) ; false si elle est inconnue. Les gestes en cours sont abandonnés. */
   showPage(id: string): boolean;
   /** Ajoute une page après la page montrée et la montre (D16, CL4-9) ; false si le cœur refuse. */
-  addPage(): boolean;
+  addPage(after?: string): boolean;
+  /** Page suivante ; sur la dernière, ajoute une page au mode du profil (décision 7) ; faux si rien n'est fait. */
+  nextOrAdd(): boolean;
+  /** Déplace `page` au rang `to` ; la page montrée reste montrée. */
+  movePage(page: string, to: number): boolean;
+  /** Duplique `page` (défaut : la page montrée) et montre la copie (H20). */
+  duplicatePage(page?: string): boolean;
+  /** Change la disposition de la page montrée. */
+  setPageMode(mode: PageLayout): boolean;
   /** Retire la page montrée, montre la précédente (CL4-9) ; dernière page : refus du cœur dans l'état (D37). */
   removePage(): boolean;
   nextPage(): boolean;
@@ -174,8 +232,6 @@ export interface Engine {
   duplicateSelection(): boolean;
   /** Lot 2 (T15, Disposition) : déplace la sélection dans l'ordre de la page, un `Restack`, une étape ; faux sans sélection
    *  ou si l'ordre ne change pas. Le bloc garde son ordre relatif. */
-  bringToFront(): boolean;
-  sendToBack(): boolean;
   bringForward(): boolean;
   sendBackward(): boolean;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
@@ -273,7 +329,27 @@ export function createEngine(deps: EngineDeps): Engine {
   let fillColor: string | null = DEFAULT_FILL_COLOR;
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
-  const fit = (w: number, h: number): Camera => fitWidth(w, h, undefined, undefined, deps.fitTop?.() ?? 16);
+  /** « Ajuster la page » : selon la disposition de la page montrée ; en Infini, contenu ∪ fond. */
+  const fit = (w: number, h: number): Camera => {
+    const view = doc.page(pageId);
+    const top = deps.fitTop?.() ?? 16;
+    if (view === null) return fitFor("landscape", w, h, null, null, top);
+    // décision 10 : Infini = contenu ∪ fond ; page plus haute que large (portrait choisi) = cadre entier ; sinon largeur.
+    // Le cadre d'un fond PDF A4 dépasse la hauteur de page : il ne décide pas de l'ajustement.
+    const layout = pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape";
+    return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(view.backdrop?.rect ?? null) : null, top);
+  };
+  const contentRect = (backdrop: Bounds | null): PageRect | null => {
+    const b = doc.bounds(doc.elementIds(pageId));
+    const rects = [b, backdrop].filter((r): r is Bounds => r !== null);
+    if (rects.length === 0) return null;
+    return {
+      x0: Math.min(...rects.map((r) => r.x0)),
+      y0: Math.min(...rects.map((r) => r.y0)),
+      x1: Math.max(...rects.map((r) => r.x1)),
+      y1: Math.max(...rects.map((r) => r.y1)),
+    };
+  };
   const cameraListeners = new Set<(c: Camera) => void>();
   const setCamera = (c: Camera): void => {
     camera = c;
@@ -343,9 +419,32 @@ export function createEngine(deps: EngineDeps): Engine {
     return run({ type: "Ungroup", ids: sel }) !== null;
   }
 
+  /** Lot 2 : `Restack` ; vrai seulement si l'ordre a changé (même ordre : aucune étape, version inchangée). */
+  function restack(ids: readonly string[], to: number): boolean {
+    const version = doc.version();
+    const change = run({ type: "Restack", ids: [...ids], to });
+    return change !== null && doc.version() !== version;
+  }
+  /** Sélection étendue aux groupes entiers, dans l'ordre de la pile. */
+  const selectedBlock = (): string[] => wholeUnits(doc, pageId, selectTool.selection());
+  function reorder(dir: "up" | "down"): boolean {
+    const sel = selectTool.selection();
+    const to = sel.length === 0 ? null : stepTarget(doc, pageId, sel, dir);
+    return to !== null && restack(selectedBlock(), to);
+  }
+  function bringToFront(): boolean {
+    const ids = selectedBlock();
+    return ids.length > 0 && restack(ids, doc.elementIds(pageId).length - ids.length);
+  }
+  function sendToBack(): boolean {
+    const ids = selectedBlock();
+    return ids.length > 0 && restack(ids, 0);
+  }
+
   function state(): EngineState {
     const ids = doc.pageIds();
     const sel = selectTool.selection();
+    const pageView = doc.page(pageId);
     const units = sel.length === 0 ? { units: 0, grouped: false } : selectionUnits(sel, selectedViews());
     return {
       tool,
@@ -355,6 +454,8 @@ export function createEngine(deps: EngineDeps): Engine {
       page: pageId,
       pageIndex: ids.indexOf(pageId),
       pageCount: ids.length,
+      pageMode: pageView?.mode ?? "page",
+      pageLayout: pageView === null ? "landscape" : pageLayoutOf(pageView),
       selection: [...selectTool.selection()],
       selectionBounds: selectTool.selection().length > 0 ? doc.bounds(selectTool.selection()) : null,
       selectionUnits: units.units,
@@ -526,7 +627,13 @@ export function createEngine(deps: EngineDeps): Engine {
       // Un seul `doc.page` par scène (PF29) : fond de couleur (C6a) et fond de page (C12).
       const view = doc.page(pageId);
       renderer.drawScene(
-        { id: pageId, elementIds: doc.elementIds(pageId), background: view?.background ?? PAGE_BACKGROUND, backdrop: view?.backdrop ?? null },
+        {
+          id: pageId,
+          elementIds: doc.elementIds(pageId),
+          background: view?.background ?? PAGE_BACKGROUND,
+          backdrop: view?.backdrop ?? null,
+          ...(view === null ? {} : { width: view.width, height: view.height, mode: view.mode }),
+        },
         camera,
         hidden,
         overlay,
@@ -626,7 +733,7 @@ export function createEngine(deps: EngineDeps): Engine {
   };
 
   /** Lot 2 (T15) : un `Restack` de la sélection ; `to` = rang du bas du bloc, calculé sur l'ordre de la page. */
-  function restack(how: "front" | "back" | "forward" | "backward"): boolean {
+  function restackSelection(how: "forward" | "backward"): boolean {
     const sel = selectTool.selection();
     if (sel.length === 0) return false;
     const order = doc.elementIds(pageId);
@@ -636,7 +743,7 @@ export function createEngine(deps: EngineDeps): Engine {
     const low = ranks[0]!;
     const high = ranks[k - 1]!;
     // Rang du bas du bloc : en avant, d'un rang au-dessus du dernier objet voisin ; en arrière, d'un rang sous le premier.
-    const to = how === "front" ? order.length - k : how === "back" ? 0 : how === "forward" ? Math.min(high - (k - 1) + 1, order.length - k) : Math.max(low - 1, 0);
+    const to = how === "forward" ? Math.min(high - (k - 1) + 1, order.length - k) : Math.max(low - 1, 0);
     const change = run({ type: "Restack", ids: [...sel], to });
     return change !== null && change.ids.length > 0;
   }
@@ -713,10 +820,8 @@ export function createEngine(deps: EngineDeps): Engine {
       engine.deleteElements(sel);
       return true;
     },
-    bringToFront: () => restack("front"),
-    sendToBack: () => restack("back"),
-    bringForward: () => restack("forward"),
-    sendBackward: () => restack("backward"),
+    bringForward: () => restackSelection("forward"),
+    sendBackward: () => restackSelection("backward"),
     duplicateSelection() {
       const sel = selectTool.selection();
       if (sel.length === 0) return false;
@@ -728,6 +833,17 @@ export function createEngine(deps: EngineDeps): Engine {
       } finally {
         fragment.free();
       }
+    },
+    restack,
+    bringToFront,
+    sendToBack,
+    reorder,
+    select(ids) {
+      engine.setTool("select");
+      const present = new Set(doc.elementIds(pageId));
+      selectTool.setSelection(ids.filter((id) => present.has(id)));
+      requestScene();
+      emit();
     },
     deleteElements(ids) {
       const list = [...ids];
@@ -766,6 +882,15 @@ export function createEngine(deps: EngineDeps): Engine {
         spaceHeld = true;
         return true;
       }
+      const order = orderKey(e);
+      if (order !== null) {
+        // Lot 2 : Ctrl+↑ ↓ un rang, Ctrl+Maj+↑ ↓ extrémités ; pris seulement avec une sélection (sinon la touche passe).
+        if (selectTool.selection().length === 0) return false;
+        if (order === "front") bringToFront();
+        else if (order === "back") sendToBack();
+        else reorder(order);
+        return true;
+      }
       const edit = editAction(e);
       const action = keyAction(e);
       if (imageEdit !== null && imageEdit.mode() !== "idle") {
@@ -793,15 +918,6 @@ export function createEngine(deps: EngineDeps): Engine {
       // OG11 (DA-6, déc. 39) : Ctrl+D duplique ; toujours pris (preventDefault), comme Excalidraw : pas de favori du navigateur.
       if (objectKey(e) === "duplicate") {
         engine.duplicateSelection();
-        return true;
-      }
-      // Lot 2 (T15) : Ctrl+↑/↓ (avec Maj : aux bouts) ordonnent la sélection ; pris même sans effet, hors champ.
-      const order = orderKey(e);
-      if (order !== null) {
-        if (order === "front") engine.bringToFront();
-        else if (order === "back") engine.sendToBack();
-        else if (order === "forward") engine.bringForward();
-        else engine.sendBackward();
         return true;
       }
       if (edit !== null) {
@@ -855,10 +971,29 @@ export function createEngine(deps: EngineDeps): Engine {
       emit();
       return true;
     },
-    addPage() {
-      const id = run({ type: "AddPage", after: pageId })?.pages[0];
+    addPage(after = pageId) {
+      const id = run({ type: "AddPage", after, mode: deps.pageMode?.() ?? "landscape" })?.pages[0];
       if (id === undefined) return false;
       return engine.showPage(id);
+    },
+    nextOrAdd() {
+      return engine.nextPage() || (doc.pageIds().at(-1) === pageId && engine.addPage());
+    },
+    movePage(page, to) {
+      return run({ type: "MovePage", page, to }) !== null;
+    },
+    duplicatePage(page = pageId) {
+      const id = run({ type: "DuplicatePage", page })?.pages[0];
+      if (id === undefined) return false;
+      return engine.showPage(id);
+    },
+    setPageMode(mode) {
+      const before = doc.page(pageId);
+      if (run({ type: "SetPageMode", page: pageId, mode }) === null) return false;
+      const after = doc.page(pageId);
+      // comme PowerPoint : le changement de mode recadre la page ; mode inchangé, la vue reste où elle est
+      if (before === null || after === null || before.mode !== after.mode || before.height !== after.height) engine.fitPage();
+      return true;
     },
     removePage() {
       leaveAll("page"); // texte ouvert validé sur la page encore présente, sélection vidée

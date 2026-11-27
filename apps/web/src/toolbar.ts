@@ -21,6 +21,20 @@ export type ButtonSize = "s" | "m" | "l";
 export const BUTTON_SIZES: readonly ButtonSize[] = Object.freeze(["s", "m", "l"]);
 export type StartMode = "board" | "desktop-annotation";
 export const START_MODES: readonly StartMode[] = Object.freeze(["board", "desktop-annotation"]);
+/** personnalisation-1a (décisions 20, 22) : coin ou bord où l'îlot d'une barre se pose ; absent : voie par défaut. */
+export type BarAnchor = "top-start" | "top-center" | "top-end" | "bottom-start" | "bottom-center" | "side-start" | "side-end";
+export const BAR_ANCHORS: readonly BarAnchor[] = Object.freeze([
+  "top-start",
+  "top-center",
+  "top-end",
+  "bottom-start",
+  "bottom-center",
+  "side-start",
+  "side-end",
+]);
+/** personnalisation-1a (décision 7) : mode d'une page neuve ; réexporté tel quel par `core/api.ts`. */
+export type PageLayout = "landscape" | "portrait" | "infinite";
+const PAGE_LAYOUTS: readonly PageLayout[] = Object.freeze(["landscape", "portrait", "infinite"]);
 export type ActionId = string;
 export type CapabilityKey = "desktopAnnotation" | "multiWindow" | "dropPaths" | "officeConverter";
 export const CAPABILITY_KEYS: readonly CapabilityKey[] = Object.freeze([
@@ -51,6 +65,8 @@ export interface Toolbar {
   readonly id: string;
   readonly role: string;
   readonly dock: Dock;
+  /** Écrit seulement s'il est posé ; une valeur inconnue est lue absente (avertissement). */
+  readonly anchor?: BarAnchor;
   readonly collapsed: boolean;
   readonly groups: readonly ToolbarGroup[];
   readonly rest: Rest;
@@ -73,7 +89,7 @@ export interface Profile {
   readonly interface: { readonly buttonSize: ButtonSize; readonly rest: Rest };
   readonly toolbars: readonly Toolbar[];
   readonly presets: Readonly<Record<ToolId, readonly Preset[]>>;
-  readonly behavior: { readonly startMode: StartMode; readonly rest: Rest };
+  readonly behavior: { readonly startMode: StartMode; readonly pageMode: PageLayout; readonly rest: Rest };
   readonly rest: Rest;
 }
 export type ParsedProfile = { readonly profile: Profile; readonly warnings: string[] } | { readonly errors: string[] };
@@ -105,6 +121,8 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "page-add": { label: "Ajouter une page" },
   "page-remove": { label: "Retirer la page" },
   "page-insert-file": { label: "Insérer des pages…" },
+  "page-number": { label: "Numéro de page" },
+  "page-duplicate": { label: "Dupliquer la page" },
   "edit-original": { label: "Modifier dans l'application d'origine" },
   "export-pdf": { label: "Exporter en PDF…" },
   "export-iwb": { label: "Enregistrer une copie au format .iwb…" },
@@ -121,6 +139,7 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   profiles: { label: "Profil" },
   grid: { label: "Grille" },
   library: { label: "Bibliothèque" },
+  backgrounds: { label: "Fonds" },
   "desktop-annotation": { label: "Annotation du bureau" },
   "annotation-pointer": { label: "Souris" },
   "annotation-screen": { label: "Écran suivant" },
@@ -225,11 +244,11 @@ interface Ctx {
 
 const PROFILE_KEYS = ["format", "schema", "minor", "id", "label", "basedOn", "interface", "toolbars", "presets", "behavior"];
 const INTERFACE_KEYS = ["buttonSize"];
-const BEHAVIOR_KEYS = ["startMode"];
+const BEHAVIOR_KEYS = ["startMode", "pageMode"];
 /** Noms de cases fixes de la grille (`ui/layout.ts`, `layoutFor`) : un identifiant de barre ne peut pas les prendre. */
 export const RESERVED_BAR_IDS: readonly string[] = Object.freeze(["tabs", "stage"]);
 
-const BAR_KEYS = ["id", "role", "dock", "collapsed", "groups"];
+const BAR_KEYS = ["id", "role", "dock", "collapsed", "groups", "anchor"];
 const GROUP_KEYS = ["id", "items"];
 const ITEM_KEYS = ["id", "kind", "tool", "action", "label", "icon", "options", "requires", "hidden"];
 const PRESET_KEYS = ["id", "label", "color", "width", "size"];
@@ -379,13 +398,18 @@ function parseBar(raw: unknown, path: string, ctx: Ctx): Toolbar | null {
   let dock: Dock = "top";
   if (includes(DOCKS, raw.dock)) dock = raw.dock;
   else ctx.errors.push(`${path}.dock : ${show(raw.dock)} n'est pas une position (${DOCKS.join(", ")})`);
+  // Ancre (patron `startMode`) : inconnue, avertissement et champ absent ; jamais gardée dans `rest`.
+  let anchor: BarAnchor | undefined;
+  if (includes(BAR_ANCHORS, raw.anchor)) anchor = raw.anchor;
+  else if (typeof raw.anchor === "string") ctx.warnings.push(`${path}.anchor : ${show(raw.anchor)} inconnue, ancre ignorée`);
+  else if (raw.anchor !== undefined) ctx.errors.push(`${path}.anchor : chaîne attendue`);
   let collapsed = false;
   if (typeof raw.collapsed === "boolean") collapsed = raw.collapsed;
   else if (raw.collapsed !== undefined) ctx.errors.push(`${path}.collapsed : booléen attendu`);
   const groups = list(raw, "groups", path, ctx)
     .map((g, i) => parseGroup(g, `${path}.groups[${i}]`, ctx))
     .filter((g): g is ToolbarGroup => g !== null);
-  return { id, role, dock, collapsed, groups, rest: restOf(raw, BAR_KEYS) };
+  return { id, role, dock, ...(anchor !== undefined ? { anchor } : {}), collapsed, groups, rest: restOf(raw, BAR_KEYS) };
 }
 
 function parsePreset(raw: unknown, path: string, ctx: Ctx): Preset | null {
@@ -454,7 +478,13 @@ function parseBehavior(raw: unknown, ctx: Ctx): Profile["behavior"] {
   else if (typeof o.startMode === "string") {
     ctx.warnings.push(`behavior.startMode : ${show(o.startMode)} inconnu, board utilisé`);
   } else if (o.startMode !== undefined) ctx.errors.push("behavior.startMode : chaîne attendue");
-  return { startMode, rest: restOf(o, BEHAVIOR_KEYS) };
+  // personnalisation-1a (décision 7) : même règle pour le mode de la page neuve, `landscape` par défaut.
+  let pageMode: PageLayout = "landscape";
+  if (includes(PAGE_LAYOUTS, o.pageMode)) pageMode = o.pageMode;
+  else if (typeof o.pageMode === "string") {
+    ctx.warnings.push(`behavior.pageMode : ${show(o.pageMode)} inconnu, landscape utilisé`);
+  } else if (o.pageMode !== undefined) ctx.errors.push("behavior.pageMode : chaîne attendue");
+  return { startMode, pageMode, rest: restOf(o, BEHAVIOR_KEYS) };
 }
 
 const isVersion = (v: unknown, min: number): v is number => Number.isInteger(v) && (v as number) >= min;
@@ -542,7 +572,8 @@ export function parseProfile(json: unknown): ParsedProfile {
   const behavior = parseBehavior(json.behavior, ctx);
   if (ctx.errors.length > 0) return { errors: ctx.errors };
   return {
-    profile: {
+    // Reprise d'un profil ancien en mémoire (décision 19, H6) : rien n'est écrit avant « Enregistrer ».
+    profile: withPageNav({
       schema: json.schema,
       minor,
       id,
@@ -553,9 +584,46 @@ export function parseProfile(json: unknown): ParsedProfile {
       presets,
       behavior,
       rest: restOf(json, PROFILE_KEYS),
-    },
+    }),
     warnings: ctx.warnings,
   };
+}
+
+/** personnalisation-1a (décisions 19, 25, 27) : actions de navigation, posées dans la barre d'outils. */
+const PAGE_NAV_ACTIONS: readonly ActionId[] = Object.freeze(["page-prev", "page-number", "page-next"]);
+const isActionOf = (it: ToolItem, ids: readonly ActionId[]): boolean => it.kind === "action" && ids.includes(it.action ?? "");
+const barHas = (b: Toolbar, ids: readonly ActionId[]): boolean => b.groups.some((g) => g.items.some((it) => isActionOf(it, ids)));
+
+/**
+ * Reprise d'un profil d'avant la navigation en barre d'outils (décision 19, H6) : si aucune barre n'a `page-number` et
+ * qu'aucune barre hors rôle `pages` n'a précédente ni suivante, le groupe `pages` (précédente, numéro, suivante) est
+ * ajouté en fin de la première barre `tools`, ids rendus libres par `uniqueId`. En mémoire : rien n'est retiré, rien
+ * n'est écrit ; relu, le profil est rendu tel quel (idempotente). Sans barre `tools` : profil rendu tel quel.
+ */
+export function withPageNav(p: Profile): Profile {
+  if (p.toolbars.some((b) => barHas(b, ["page-number"]))) return p;
+  if (p.toolbars.some((b) => b.role !== "pages" && barHas(b, ["page-prev", "page-next"]))) return p;
+  const first = p.toolbars.findIndex((b) => b.role === "tools");
+  if (first === -1) return p;
+  const taken = new Set(p.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((it) => it.id))));
+  const items = PAGE_NAV_ACTIONS.map((action): ToolItem => {
+    const id = uniqueId(action, taken);
+    taken.add(id);
+    return { id, kind: "action", action, label: ACTION_TABLE[action]!.label, requires: [], rest: {} };
+  });
+  return {
+    ...p,
+    toolbars: p.toolbars.map((b, i) => {
+      if (i !== first) return b;
+      const id = uniqueId("pages", new Set(b.groups.map((g) => g.id)));
+      return { ...b, groups: [...b.groups, { id, items, rest: {} }] };
+    }),
+  };
+}
+
+/** Rangée d'actions de la barre `pages` (lue par la barre latérale) : ses éléments sans précédente, numéro ni suivante. */
+export function sideActions(bar: Toolbar): readonly ToolItem[] {
+  return bar.groups.flatMap((g) => g.items).filter((it) => !isActionOf(it, PAGE_NAV_ACTIONS));
 }
 
 // --- Écriture ---------------------------------------------------------------------------------------------------
@@ -602,11 +670,12 @@ export function serializeProfile(p: Profile): Record<string, unknown> {
       id: b.id,
       role: b.role,
       dock: b.dock,
+      ...(b.anchor !== undefined ? { anchor: b.anchor } : {}),
       collapsed: b.collapsed,
       groups: b.groups.map((g) => ({ ...g.rest, id: g.id, items: g.items.map(serializeItem) })),
     })),
     presets: Object.fromEntries(Object.entries(p.presets).map(([tool, list]) => [tool, list.map(serializePreset)])),
-    behavior: { ...p.behavior.rest, startMode: p.behavior.startMode },
+    behavior: { ...p.behavior.rest, startMode: p.behavior.startMode, pageMode: p.behavior.pageMode },
   };
 }
 

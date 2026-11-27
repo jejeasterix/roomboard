@@ -21,18 +21,19 @@ const tool = (id: string, label: string) => ({ id, kind: "tool", tool: id, label
 const action = (id: string, label: string) => ({ id, kind: "action", action: id, label });
 const sep = (id: string) => ({ id, kind: "separator", label: "" });
 
-/** design-l2 (L2-4, H1) : barre des pages en îlot ; `full` : actions d'insertion et d'export (profil simple, sans menu). */
+/** design-l2 (L2-4, H1) : barre des pages en îlot ; `full` : actions d'insertion et d'export (profil simple, sans menu).
+ *  personnalisation-1a (décisions 25, 27, 34) : repliée au départ, sans navigation (passée dans la barre d'outils). */
 const pagesBar = (full: boolean) => ({
   id: "pages",
   role: "pages",
   dock: "floating",
+  collapsed: true,
   groups: [
     {
       id: "pages",
       items: [
-        action("page-prev", "Page précédente"),
-        action("page-next", "Page suivante"),
         action("page-add", "Ajouter une page"),
+        action("page-duplicate", "Dupliquer la page"),
         action("page-remove", "Retirer la page"),
         ...(full
           ? [
@@ -150,7 +151,9 @@ const defaultToolbars = () => [
       { id: "navigation", items: [tool("select", "Sélection"), tool("hand", "Main")] },
       { id: "dessin", items: [sep("sep-1"), tool("pen", "Stylo"), tool("eraser", "Gomme"), action("eraser-mode", "Gomme : partielle")] },
       { id: "edition", items: [sep("sep-2"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
+      { id: "page", items: [sep("sep-fonds"), action("backgrounds", "Fonds")] },
       { id: "bureau", items: [sep("sep-3"), annotationEntry()] },
+      { id: "pages", items: [action("page-prev", "Page précédente"), action("page-number", "Numéro de page"), action("page-next", "Page suivante")] },
     ],
   },
   menuBar(),
@@ -168,7 +171,7 @@ export const DEFAULT_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFreez
   interface: { buttonSize: "m" },
   toolbars: defaultToolbars(),
   presets: presets(),
-  behavior: { startMode: "board" },
+  behavior: { startMode: "board", pageMode: "landscape" },
 });
 
 export const SIMPLE_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFreeze({
@@ -185,14 +188,15 @@ export const SIMPLE_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFreeze
       groups: [
         { id: "dessin", items: [tool("pen", "Stylo"), tool("eraser", "Gomme"), tool("hand", "Main")] },
         { id: "historique", items: [sep("sep-1"), action("undo", "Annuler"), action("redo", "Rétablir")] },
-        { id: "vue", items: [sep("sep-2"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages"), annotationEntry()] },
+        { id: "vue", items: [sep("sep-2"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages"), action("backgrounds", "Fonds"), annotationEntry()] },
+        { id: "pages", items: [action("page-prev", "Page précédente"), action("page-number", "Numéro de page"), action("page-next", "Page suivante")] },
       ],
     },
     pagesBar(true),
     simpleAnnotationBar(),
   ],
   presets: presets(),
-  behavior: { startMode: "board" },
+  behavior: { startMode: "board", pageMode: "landscape" },
 });
 
 /** « Annotation au démarrage » (U14, P9) : barres et préréglages de `defaut`, rabattu sur `board` sans la capacité. */
@@ -204,7 +208,7 @@ export const ANNOTATION_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFr
   interface: { buttonSize: "m" },
   toolbars: defaultToolbars(),
   presets: presets(),
-  behavior: { startMode: "desktop-annotation" },
+  behavior: { startMode: "desktop-annotation", pageMode: "landscape" },
 });
 
 function load(json: Readonly<Record<string, unknown>>): Profile {

@@ -16,8 +16,11 @@ import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames, gitSha, item, loadP
 
 const LABEL = "C10a tableau";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
-/** Point cliqué sur la scène (px de la scène) : coin haut gauche du tableau. */
-const CLICK = [200, 150];
+/**
+ * Point cliqué sur la scène (px de la scène) : coin haut gauche du tableau. À 1280 px, l'îlot d'outils (941 px avec la navigation
+ * de page) descend à y = 80 (règle L2-30) et sa rangée contextuelle du tableau couvre y = 144 à 200 ; le point est donc sous elle.
+ */
+const CLICK = [200, 230];
 const COL = 240;
 const ROW = 64;
 const FIRST = ["Lundi", "Mardi", "Mercredi"];
@@ -118,10 +121,13 @@ async function scenario(page, url, { captures, tmp }) {
   }
 
   // S1 : « + Colonne », « + Ligne ».
-  await page.click('button[data-table-action="table-col-insert"]');
+  // La rangée contextuelle (Tableau + Format, 1504 px) est plus large que la fenêtre de 1280 px : placée à gauche (x = 0), ses
+  // premiers boutons passent sous l'îlot des pages (défaut de mise en page relevé au rapport) ; le clic part donc du DOM.
+  const press = (sel) => page.$eval(sel, (b) => b.click());
+  await press('button[data-table-action="table-col-insert"]');
   await waitTable("5x3@2,3");
   check(true, "S1 : « + Colonne » : 5x3@2,3");
-  await page.click('button[data-table-action="table-row-insert"]');
+  await press('button[data-table-action="table-row-insert"]');
   await waitTable("5x4@2,3");
   check(true, "S1 : « + Ligne » : 5x4@2,3");
 

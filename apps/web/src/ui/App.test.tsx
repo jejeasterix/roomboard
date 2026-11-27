@@ -8,6 +8,8 @@ import { createTabs } from "../app/tabs";
 import type { TabSession, Workspace } from "../app/workspace";
 import { createResourceLibrary, type ResourceLibrary } from "../app/library";
 import { createMemoryLibraryFiles } from "../platform/library-files";
+import { createMyBackgrounds, probeImage } from "../app/my-backgrounds";
+import { fakeCore } from "../core/fake-core";
 import { createAssetStore } from "../core/asset-store";
 import type { EngineState } from "../engine/engine";
 import { createSettingsStore, parseSettings } from "../engine/settings";
@@ -96,6 +98,9 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     fitPage: vi.fn(),
     setPenStyle: vi.fn(),
     showPage: vi.fn(() => true),
+    setPageMode: vi.fn(() => true),
+    movePage: vi.fn(() => true),
+    duplicatePage: vi.fn(() => true),
     releaseKeys: vi.fn(),
     previewGrid: vi.fn(),
     endGridPreview: vi.fn(),
@@ -195,6 +200,7 @@ function fakeWorkspace(first: FakeTab): Workspace {
     pasteInternal: vi.fn(async () => false),
     exportSelection: vi.fn(async () => false),
     insertPages: vi.fn(async () => false),
+    pageThumb: vi.fn(async () => null),
     openPdf: vi.fn(async () => true),
     exportPdf: vi.fn(async () => false),
     selection: vi.fn(),
@@ -202,6 +208,8 @@ function fakeWorkspace(first: FakeTab): Workspace {
     captureResource: vi.fn(async () => null),
     ask: vi.fn(async () => true),
     say: vi.fn(async () => undefined),
+    setDropDiverter: vi.fn(),
+    pickFiles: vi.fn(async () => []),
     canPaste: () => false,
     onClipboard: () => () => undefined,
     anyDirty: () => false,
@@ -221,7 +229,7 @@ function fakeFiles(picks: ({ name: string; text: string } | null)[] = []) {
   } satisfies ProfileFiles;
 }
 
-function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"]; annotation?: AnnotationUi; device?: AppProps["device"] } = {}) {
+function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"]; annotation?: AnnotationUi; device?: AppProps["device"]; backgrounds?: AppProps["backgrounds"]; sidebar?: AppProps["sidebar"] } = {}) {
   const tab = opts.tab ?? fakeTab("Sans titre.roomboard");
   const workspace = fakeWorkspace(tab);
   const store = createProfileStore(opts.kv ?? null, BUILTIN_PROFILES);
@@ -252,6 +260,8 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
         {...(opts.library ? { library: opts.library } : {})}
         {...(opts.annotation ? { annotation: opts.annotation } : {})}
         {...(opts.device ? { device: opts.device } : {})}
+        {...(opts.backgrounds ? { backgrounds: opts.backgrounds } : {})}
+        {...(opts.sidebar ? { sidebar: opts.sidebar } : {})}
       />
     ),
     container,
@@ -333,6 +343,25 @@ afterEach(() => {
 });
 
 describe("App (T95)", () => {
+  it("personnalisation-1b (Q28) : le bouton Fonds et Ctrl+Maj+F ouvrent la fenêtre des fonds, Ctrl+Maj+F la referme", async () => {
+    const mine = createMyBackgrounds(createMemoryLibraryFiles("backgrounds"), { now: () => "n", probe: probeImage, thumbnail: async () => null });
+    const backgrounds = {
+      mine, core: fakeCore, makeAssets: () => createAssetStore(), files: { read: async () => new Blob() }, now: () => new Date(2026, 10, 27),
+      thumbs: {} as never, loadPack: async () => [],
+    } as AppProps["backgrounds"];
+    const { container } = renderApp({ backgrounds });
+    const dialog = (): Element | null => document.querySelector('[data-panel="backgrounds"]');
+    expect(dialog()).toBeNull();
+    click(container.querySelector('button[data-item="backgrounds"]'));
+    await vi.waitFor(() => expect(dialog()).not.toBeNull());
+    const chord = new KeyboardEvent("keydown", { key: "F", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+    window.dispatchEvent(chord);
+    await vi.waitFor(() => expect(dialog()).toBeNull());
+    expect(chord.defaultPrevented).toBe(true);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "F", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(dialog()).not.toBeNull());
+  });
+
   it("C4 : le bouton Bibliothèque ouvre le panneau, calé en popover", async () => {
     const library: ResourceLibrary = createResourceLibrary({
       files: [createMemoryLibraryFiles("mine")],
@@ -1321,7 +1350,45 @@ describe("App — design-l2 : îlots (L2-5, L2-6, L2-8, L2-13, L2-14, L2-19)", (
     expect(corner(container, "top-end").querySelector('[data-island="panneaux"] button[data-item="profiles"]')).not.toBeNull();
     expect(corner(container, "bottom-start").querySelector('[data-island="historique"] button[data-item="undo"]')).not.toBeNull();
     for (const id of ["outils", "pages"]) expect(container.querySelector(`.rb-islands > .rb-island[data-island="${id}"]`), id).not.toBeNull();
-    expect(container.querySelectorAll("[data-island-grip]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-island-grip]")).toHaveLength(2); // outils et pages (barre latérale)
+  });
+  it("barre latérale : à side-start, data-toolbar pages ; #pages et page-prev/next dans la barre d'outils, aucun îlot bas-centre", () => {
+    const { container } = renderApp();
+    const island = container.querySelector<HTMLElement>('[data-island="pages"]')!;
+    expect(island.dataset["anchor"]).toBe("side-start");
+    expect(island.querySelector('[data-toolbar="pages"]')).not.toBeNull();
+    expect(island.querySelector("#pages")).toBeNull();
+    for (const id of ["page-prev", "page-next"]) expect(container.querySelector(`[data-toolbar="outils"] [data-item="${id}"]`), id).not.toBeNull();
+    expect(container.querySelector('[data-toolbar="outils"] #pages')).not.toBeNull();
+    expect(container.querySelector('[data-anchor="bottom-center"]')).toBeNull();
+  });
+  it("barre latérale : page-number et le port sidebar.toggle déplient puis replient ; focus sur la miniature montrée", () => {
+    const sidebar: NonNullable<AppProps["sidebar"]> = {};
+    const { container } = renderApp({ sidebar, tab: fakeTab("A.roomboard", { page: "p1" }) });
+    const island = container.querySelector<HTMLElement>('[data-island="pages"]')!;
+    expect(island.dataset["collapsed"]).toBe("1");
+    expect(container.querySelector('[data-item="page-add"]')!.closest("[hidden]")).not.toBeNull();
+    click(container.querySelector('button[data-item="page-number"]'));
+    expect(island.dataset["collapsed"]).toBeUndefined();
+    expect(container.querySelector('button[data-item="page-number"]')!.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector('[data-item="page-add"]')!.closest("[hidden]")).toBeNull();
+    click(container.querySelector('button[data-item="page-number"]'));
+    expect(island.dataset["collapsed"]).toBe("1");
+    sidebar.toggle!("pages");
+    expect(island.dataset["collapsed"]).toBeUndefined();
+    expect(document.activeElement?.getAttribute("data-page-id")).toBe("p1");
+  });
+  it("barre latérale : miniatures, mode portrait et suppression vers le moteur de l'onglet actif ; miniature demandée à l'espace de travail", async () => {
+    const { container, tab, workspace } = renderApp({ tab: fakeTab("A.roomboard", { page: "p2", pageIndex: 1, pageCount: 3 }) });
+    click(container.querySelector('button[data-item="page-number"]'));
+    expect(container.querySelectorAll(".rb-pages-list [data-page]")).toHaveLength(3);
+    expect(container.querySelector('.rb-pages-list [data-page="2"]')!.getAttribute("aria-current")).toBe("page");
+    click(container.querySelector('[data-edit="page-mode"] [data-choice="portrait"]'));
+    expect(tab.engine["setPageMode"]).toHaveBeenCalledWith("portrait");
+    await vi.waitFor(() => expect(workspace.pageThumb).toHaveBeenCalledWith(tab.session, "p2", expect.any(Number)));
+    container.querySelector<HTMLElement>('.rb-pages-list [data-page="3"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    expect(tab.engine["showPage"]).toHaveBeenCalledWith("p3");
+    expect(tab.engine["removePage"]).toHaveBeenCalled();
   });
   it("design-l2 L2-6 : rôle menu rendu par MenuBar ; liste fermée mais dans le DOM ; une ligne lance son action", () => {
     const { container, workspace } = renderApp();

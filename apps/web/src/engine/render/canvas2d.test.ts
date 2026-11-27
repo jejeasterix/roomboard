@@ -67,11 +67,12 @@ describe("Canvas2DRenderer (D19, DA2)", () => {
   });
 
   it("page dessinée jusqu'au bas de la vue", () => {
+    // DA4 : la page s'arrête à son cadre ; un cadre plus haut que la vue (6000) est peint jusqu'au bas de la vue, recoupé.
     const { r, scene } = make({});
     r.resize(800, 600, 1);
-    r.drawScene({ id: "p", elementIds: [] }, { zoom: 1, tx: 0, ty: -5000 }, new Set());
+    r.drawScene({ id: "p", elementIds: [], height: 6000 }, { zoom: 1, tx: 0, ty: -5000 }, new Set());
     const fills = scene.log.filter((l) => l.startsWith("fillRect"));
-    expect(scene.rects[fills.indexOf(`fillRect ${PAGE_BACKGROUND}`)]).toEqual([0, 0, 1920, 5600]);
+    expect(scene.rects[fills.indexOf(`fillRect ${PAGE_BACKGROUND}`)]).toEqual([0, 5000, 800, 600]);
   });
 
   it("drawScene : les éléments masqués (aperçu D38) ne sont pas dessinés", () => {
@@ -378,14 +379,16 @@ const gridLevel = (kind: string, s: number, color: string): GridLevel => ({
 const gridOf = (levels: GridLevel[], above = false): GridInput => ({ visible: true, snap: false, above, levels });
 
 /** Scène de la fausse liaison avec une grille, vue 800 × 600 CSS, caméra S5. */
+/** Page infinie (DA4) : « au loin sur la page » (y ≈ 1e6) n'existe plus qu'en Infini, la page Page s'arrête à son cadre. */
 function gridScene(dpr: number, zoom: number, levels: GridLevel[]) {
   const doc = fakeCore.blank();
   const p = doc.pageIds()[0] ?? "";
   doc.apply({ type: "SetGrid", page: p, grid: gridOf(levels) });
+  doc.apply({ type: "SetPageMode", page: p, mode: "infinite" });
   const scene = new FakeCtx();
   const r = new Canvas2DRenderer(asCtx(scene), null, doc, { makePath: () => new FakePath() as unknown as Path2D });
   r.resize(800, 600, dpr);
-  r.drawScene({ id: p, elementIds: doc.elementIds(p) }, { zoom, tx: 13.3, ty: -1_000_007 * zoom }, new Set());
+  r.drawScene({ id: p, elementIds: doc.elementIds(p), mode: "infinite" }, { zoom, tx: 13.3, ty: -1_000_007 * zoom }, new Set());
   return scene;
 }
 
@@ -485,10 +488,12 @@ describe("Canvas2DRenderer — grille (C9)", () => {
 });
 
 /** Scène dont la source compte les appels de gridLines (S4) : vue 800 × 600 CSS, dpr 1, caméra S5 descendue de `dy` px. */
+/** Page infinie (DA4), comme `gridScene` : la vue va au loin (y ≈ 1e6). */
 function cachedScene(levels: GridLevel[] = [gridLevel("squares", 40, "#7b68ee")]) {
   const doc = fakeCore.blank();
   const p = doc.pageIds()[0] ?? "";
   doc.apply({ type: "SetGrid", page: p, grid: gridOf(levels) });
+  doc.apply({ type: "SetPageMode", page: p, mode: "infinite" });
   const gridLines = vi.fn((page: string, rect: Bounds, minStep: number, minDotStep: number) => doc.gridLines(page, rect, minStep, minDotStep));
   const gridLinesOf = vi.fn((page: string, grid: GridView, rect: Bounds, minStep: number, minDotStep: number) =>
     doc.gridLinesOf(page, grid, rect, minStep, minDotStep),
@@ -501,7 +506,7 @@ function cachedScene(levels: GridLevel[] = [gridLevel("squares", 40, "#7b68ee")]
   const draw = (c: Camera, page = p): void => {
     scene.path.length = 0;
     scene.log.length = 0;
-    r.drawScene({ id: page, elementIds: [] }, c, new Set());
+    r.drawScene({ id: page, elementIds: [], mode: doc.page(page)?.mode ?? "page" }, c, new Set());
   };
   return { doc, p, r, scene, gridLines, gridLinesOf, cam, draw };
 }
@@ -509,7 +514,7 @@ function cachedScene(levels: GridLevel[] = [gridLevel("squares", 40, "#7b68ee")]
 /** Segments d'un rendu sans cache : lignes du cœur pour la seule vue, peintes directement. */
 function uncached(doc: CoreDocument, p: string, c: Camera): { v: number[]; h: number[] } {
   const f = new FakeCtx();
-  const rect = visibleGridRect(c, 800, 600);
+  const rect = visibleGridRect(c, 800, 600, null);
   const lines = rect ? doc.gridLines(p, rect, MIN_GRID_PX / c.zoom, MIN_DOT_PX / c.zoom) : null;
   if (lines) paintGrid(asCtx(f), lines, c, 1, 1, 1);
   return gridSegments(f);
@@ -570,7 +575,7 @@ describe("Canvas2DRenderer — cache de la grille (C9 éditeur, E3, S4)", () => 
     draw(cam());
     expect(gridSegments(scene)).toEqual(uncached(doc, p, cam()));
     expect(gridSegments(scene).v.length).toBe(10);
-    const q = doc.apply({ type: "AddPage", after: p }).pages[0] ?? "";
+    const q = doc.apply({ type: "AddPage", after: p, mode: "infinite" }).pages[0] ?? "";
     const before = gridLines.mock.calls.length;
     draw(cam(), q);
     draw(cam(), q);
@@ -1427,14 +1432,16 @@ const ARCHITECTE_SCENE_MAIN: readonly Call[] = [
   ["restore"],
   ["restore"],
 ];
+// Aperçu relevé de nouveau après la fusion d'OG4 (fond de page de `main` changé par OG4, non touché par OG11).
 const ARCHITECTE_APERCU_MAIN: readonly Call[] = [
   ["setTransform",1,0,0,1,0,0],
+  ["fillStyle=","#ffffff"],
+  ["fillStyle=","#ffffff"],
   ["fillStyle=","#f5f5f8"],
   ["fillRect",0,0,400,300],
   ["setTransform",1,0,0,1,0,0],
   ["fillStyle=","#ffffff"],
-  ["fillStyle=","#ffffff"],
-  ["fillRect",0,0,1920,300],
+  ["fillRect",0,0,400,300],
   ["save"],
   ["transform",1,0,0,1,100,50],
   ["beginPath"],
@@ -1653,5 +1660,40 @@ describe("pointes, hachures et alignement (OG11, lot 2)", () => {
     const l = new FakeCtx();
     paintText(asCtx(l), [line], "#000000");
     expect(l.texts[0]?.x).toBe(0);
+  });
+});
+
+/** Même cas que `webgl2.test.ts` « cadre de page (T9) » : cadre 1920 × 1080 vu à z = 0,05 (96 × 54 px en (10, 20)). */
+describe("Canvas2DRenderer — cadre de page (DA4, T9)", () => {
+  const pageView = (mode?: string) => ({ id: "p", elementIds: [], width: 1920, height: 1080, backdrop: null, ...(mode === undefined ? {} : { mode }) });
+  const far: Camera = { zoom: 0.05, tx: 10, ty: 20 };
+  const partial = { strokes: [], erasers: [{ path: new Float32Array([0, 0, 100, 0]), radius: 6, mode: "partial" as const }] };
+
+  it("infini : aucun pourtour, fond sur toute la vue", () => {
+    const { r, scene, live } = make({});
+    r.resize(200, 100, 2);
+    r.drawScene(pageView("infinite"), far, new Set());
+    expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual([`fillRect ${PAGE_BACKGROUND}`]);
+    expect(scene.rects[0]).toEqual([0, 0, 400, 200]);
+    r.drawLive(partial, far);
+    expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`]);
+  });
+
+  it("infini : la couleur de fond de la page couvre toute la vue", () => {
+    const { r, scene } = make({});
+    r.resize(200, 100, 1);
+    r.drawScene({ ...pageView("infinite"), background: "#bfdbfe" }, far, new Set());
+    expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual(["fillRect #bfdbfe"]);
+    expect(scene.rects[0]).toEqual([0, 0, 200, 100]);
+  });
+
+  it("page : pourtour sous le cadre 1080", () => {
+    const { r, scene, live } = make({});
+    r.resize(200, 100, 1);
+    r.drawScene(pageView(), far, new Set());
+    expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual([`fillRect ${SURROUND_COLOR}`, `fillRect ${PAGE_BACKGROUND}`]);
+    expect(scene.rects[1]).toEqual([0, 0, 1920, 1080]);
+    r.drawLive(partial, far);
+    expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
   });
 });

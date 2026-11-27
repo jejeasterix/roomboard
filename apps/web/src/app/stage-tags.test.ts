@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import type { EngineState } from "../engine/engine";
-import { pagesLabel } from "../ui/PagesBar";
+import { pagesLabel } from "../ui/item-state";
 import { stageTags } from "./stage-tags";
 
 const base: EngineState = {
@@ -12,6 +12,8 @@ const base: EngineState = {
   page: "p",
   pageIndex: 0,
   pageCount: 1,
+  pageMode: "page",
+  pageLayout: "landscape",
   selection: [],
   selectionBounds: null,
   selectionUnits: 0,
@@ -35,8 +37,8 @@ describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
       selection: ["a", "b"],
       selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
     };
-    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "" });
-    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "" });
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", pageMode: "landscape", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", pageMode: "landscape", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "" });
     expect(pagesLabel(s)).toBe("2 / 3");
   });
 
@@ -84,5 +86,12 @@ describe("stageTags (C8, Q18)", () => {
   it("C8 zones, zoneMs, zoneCells : recopiés ; vides par défaut", () => {
     expect(stageTags(base, { zones: "1", zoneMs: "12.3", zoneCells: "4032064" })).toMatchObject({ zones: "1", zoneMs: "12.3", zoneCells: "4032064" });
     expect(stageTags(base)).toMatchObject({ zones: "", zoneMs: "", zoneCells: "" });
+  });
+});
+
+describe("data-page-mode", () => {
+  it("data-page-mode suit la page montrée", () => {
+    expect(stageTags({ ...base, pageLayout: "portrait" }).pageMode).toBe("portrait");
+    expect(stageTags({ ...base, pageMode: "infinite", pageLayout: "infinite" }).pageMode).toBe("infinite");
   });
 });

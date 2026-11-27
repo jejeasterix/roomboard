@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, rgbPng, serve, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, rgbPng, serve, stageBox, stageMouse, foldOptions } from "./commun.mjs";
 
 const LABEL = "C5 image";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
@@ -131,6 +131,7 @@ async function scenario(page, url, { captures, tmp }) {
     await fr();
   };
 
+  await foldOptions(page);
   await page.goto(url);
   await page.waitForSelector('#stage[data-ready="1"]', { timeout: 30000 });
   await fr();

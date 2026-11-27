@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, clashes, dropFile, frames, gitSha, inkIn, islandBoxes, item, loadPlaywright, noOverlap, overlapping, serve, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, clashes, dropFile, frames, gitSha, clickItem, inkIn, islandBoxes, item, loadPlaywright, noOverlap, overlapping, serve, stageBox, stageMouse, foldOptions } from "./commun.mjs";
 
 const LABEL = "S5b";
 const LATER = "format pris en charge dans une prochaine version";
@@ -92,6 +92,7 @@ async function scenario(page, url, { captures, tmp }) {
 
   // 1. Page prête, profil par défaut (design-l2, L2-25, contrôle inversé par L2) : la scène occupe toute la fenêtre ; les
   //    îlots flottent au-dessus d'elle, entiers dans la fenêtre et sans chevauchement.
+  await foldOptions(page);
   await page.goto(url);
   await ready();
   check((await attr("data-tool")) === "pen", '#stage[data-tool="pen"] : outil Stylo au départ');
@@ -152,13 +153,13 @@ async function scenario(page, url, { captures, tmp }) {
   await press("Control+y");
   check((await elements()) === 1, "Ctrl+Y dans l'onglet 1 : le trait revient");
 
-  // 4. Page infinie : loin sous la page, le fond sous le trait est blanc.
+  // 4. Fond de page : le fond sous le trait est blanc, pas le gris du pourtour.
+  // Depuis la décision 7, une page neuve est en mode Page 1920 × 1080 (cadre fini) : le
+  // trait est tracé DANS le cadre de la page (ajusté à la fenêtre), plus « loin sous la page ».
   await click("fit-page");
-  await page.mouse.move(box.x + 640, box.y + 350);
-  await page.mouse.wheel(0, 3000);
   await fr();
   await drag([[400, 350], [650, 350], [900, 350]]);
-  check((await elements()) === 2, "page infinie : un trait tracé loin sous la page (data-elements 1 → 2)");
+  check((await elements()) === 2, "un trait tracé dans le cadre de la page (data-elements 1 → 2)");
   const px = await page.$eval("#scene", (c) => {
     const ctx = c.getContext("2d");
     const at = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3));
@@ -217,10 +218,10 @@ async function scenario(page, url, { captures, tmp }) {
   const BOXES = [[640, 240, 660, 260], [296, 346, 304, 354], [596, 296, 720, 340]];
   await click("pen");
   await drag(TRAIT);
-  await click("page-add");
+  await clickItem(page, "page-add");
   await click("rect");
   await drag(RECT);
-  await click("page-add");
+  await clickItem(page, "page-add");
   await click("text");
   await mouse.click(600, 300);
   await fr();

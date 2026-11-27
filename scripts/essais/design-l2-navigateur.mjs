@@ -14,7 +14,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DIST, Echec, ROOT, frames, gitSha, inkIn, item, loadPlaywright, serve } from "./commun.mjs";
+import { DIST, Echec, ROOT, frames, gitSha, clickItem, openSideOf, inkIn, item, loadPlaywright, serve } from "./commun.mjs";
 import { edgeRow, fringes, hex, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "design L2";
@@ -222,7 +222,8 @@ async function s1(browser, base) {
     const clash = clashes(boxes);
     check(clash.length === 0, `S1 ${vp.width} : aucun îlot n'en recouvre un autre${clash.length ? ` (${clash.join(", ")})` : ""}`);
     // OF83 : la page ajustée commence sous les îlots du haut (maquette 01 : y 152), à l'ouverture et après « Ajuster la page ».
-    const low = Math.max(...Object.values(boxes).filter((b) => b.y < vp.height / 4 && b.height < vp.height / 3).map((b) => b.y + b.height));
+    // personnalisation-1a (décision 10) : la barre latérale (îlot `pages`, ancre side-*) ne compte pas dans le haut réservé.
+    const low = Math.max(...Object.entries(boxes).filter(([k, b]) => k !== "pages" && b.y < vp.height / 4 && b.height < vp.height / 3).map(([, b]) => b.y + b.height));
     const pageTop = async () => Number((await page.getAttribute("#stage", "data-camera")).split(",")[2]);
     const open = await pageTop();
     // Rangée de préréglages du stylo présente : le haut réservé tombe 12 px sous elle, ni plus ni moins.
@@ -456,7 +457,7 @@ async function s5(browser, base, tmp) {
   const one = await exportProfile(page, tmp, "defaut-1.rbprofile");
   const extra = one.json.toolbars.flatMap((b) => Object.keys(b).filter((k) => !BAR_KEYS.includes(k)));
   const deep = keysDeep(one.json).filter((k) => ["x", "y", "position", "at"].includes(k));
-  check(extra.length === 0 && deep.length === 0 && one.json.toolbars.every((b) => b.collapsed === false), `S5 : le .rbprofile exporté après déplacement et repli ne porte ni position ni collapsed: true (clés en trop : ${[...extra, ...deep].join(", ") || "aucune"})`);
+  check(extra.length === 0 && deep.length === 0 && one.json.toolbars.filter((b) => b.id !== "pages").every((b) => b.collapsed === false), `S5 : le .rbprofile exporté après déplacement et repli ne porte ni position ni collapsed: true (clés en trop : ${[...extra, ...deep].join(", ") || "aucune"})`);
   await page.click(item("profiles"));
   await waitFor(page, "[data-profiles]");
   const chooser = page.waitForEvent("filechooser");
@@ -532,12 +533,17 @@ async function s6(browser, base) {
     const w = watch(page);
     await page.goto(`${base}/?fichiers=repli`);
     await ready(page);
-    for (let i = 0; i < 29; i++) await page.click(item("page-add"));
+    for (let i = 0; i < 29; i++) await clickItem(page, "page-add");
     await page.waitForFunction(() => document.querySelector("#pages")?.textContent === "30 / 30", null, { timeout: 15000 });
     await frames(page);
+    // Décision 32 (c) : barre dépliée d'abord, puis placement attendu, avant de mesurer l'îlot des pages entier.
+    // La barre latérale des pages défile en vertical, celle du bas en horizontal : on lit l'axe selon l'ancre de la barre.
+    await openSideOf(page, ".rb-pages-list");
+    await frames(page);
+    await page.waitForFunction(() => document.querySelector(".rb-pages-list")?.closest("[data-island]")?.hasAttribute("data-collapsed") === false, null, { timeout: 15000 });
     const pg = await box(page, ISLAND("pages"));
     const hi = await box(page, ISLAND("historique"));
-    const [sw, cw] = await page.$eval(".rb-pages-list", (e) => [e.scrollWidth, e.clientWidth]);
+    const [sw, cw] = await page.$eval(".rb-pages-list", (e) => (e.scrollHeight > e.clientHeight || e.scrollWidth <= e.clientWidth ? [e.scrollHeight, e.clientHeight] : [e.scrollWidth, e.clientWidth]));
     check(inside(pg, MID) && apart(pg, hi), `S6 30 pages : îlot des pages entier, hors de l'îlot de l'historique (${pg.x}, ${pg.y}, ${pg.width} px)`);
     check(sw > cw && (await page.textContent("#pages")) === "30 / 30", `S6 30 pages : la liste des numéros défile (${sw} > ${cw}), #pages = « 30 / 30 »`);
     noErrors(w, "S6 30 pages");

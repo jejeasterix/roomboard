@@ -13,7 +13,11 @@ import { createTauriAnnotationWindows } from "./platform/annotation-tauri";
 import { ANNOTATION_REMOTE_ACTIONS, annotationBarOf, resolveStartMode, type Dock } from "./toolbar";
 import { createContainerIO } from "./app/container-io";
 import { createAssetStore } from "./core/asset-store";
+import { createMyBackgrounds, probeImage } from "./app/my-backgrounds";
+import { fetchPackFiles, sourceThumbnail } from "./app/backgrounds-apply";
+import type { ThumbDeps } from "./app/thumbnail";
 import { createBoardSession, createSharedItemStyle, type SessionShared } from "./app/board-session";
+import { pageShortcut } from "./engine/engine";
 import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
 import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, vectorPainter, workerPdfWriter } from "./app/pdf-overlay-vector";
@@ -224,6 +228,7 @@ async function start(): Promise<void> {
   const shared: SessionShared = {
     container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker, modelView,
     ...(ports === null ? {} : { mediaUrl: ports.assetUrl }),
+    pageMode: () => active.profile().behavior.pageMode,
     // OG11 (déc. 23) : style courant gardé sur l'appareil ; `device` (plus bas) n'est lu qu'à la création d'une session.
     ...createSharedItemStyle(() => device.itemStyle(), (s) => void device.setItemStyle(s)),
   };
@@ -331,6 +336,23 @@ async function start(): Promise<void> {
         )
       : { files: typeof window.indexedDB === "undefined" ? createMemoryLibraryFiles("mine") : createIdbLibraryFiles(window.indexedDB, "mine"), notice: null };
   if (mine.notice !== null) void prepared.shell.notify(mine.notice);
+  // personnalisation-1b (Q18, DA4) : « Mes fonds », troisième racine de la bibliothèque de l'appareil : IndexedDB (même
+  // base) sur le web, `Documents/RoomBoard/Fonds` dans la coque ; repli en mémoire avec un avis (K8).
+  const fonds =
+    ports !== null
+      ? await mineOrMemory(
+          async () => createTauriLibraryFiles({ ...ports.fs, ...ports.dirFs }, `${await ports.documentDir()}/RoomBoard/Fonds`, "backgrounds"),
+          () => createMemoryLibraryFiles("backgrounds"),
+        )
+      : { files: typeof window.indexedDB === "undefined" ? createMemoryLibraryFiles("backgrounds") : createIdbLibraryFiles(window.indexedDB, "backgrounds"), notice: null };
+  if (fonds.notice !== null) void prepared.shell.notify(fonds.notice);
+  // Vignettes (C4, D12) et rendus de page des fonds : même peintre que la superposition PNG.
+  const thumbDeps: ThumbDeps = { canvas: browserExportCanvas, decode: decodeBitmap, painter: (ctx, doc, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images)) };
+  const myBackgrounds = createMyBackgrounds(fonds.files, {
+    now: () => new Date().toISOString(),
+    probe: probeImage,
+    thumbnail: (src) => sourceThumbnail(core, src, thumbDeps, () => createAssetStore()),
+  });
   // Un seul codec des conteneurs : celui des onglets lit aussi le type d'une ressource sans compagnon (K4).
   const codec = createPageCodec(loadFormatsModule);
   const library = createResourceLibrary({
@@ -377,7 +399,7 @@ async function start(): Promise<void> {
     rasterPage,
     rasterClose,
     // Vignettes des ressources (C4, D12) : même peintre que la superposition PNG.
-    thumbnail: { canvas: browserExportCanvas, decode: decodeBitmap, painter: (ctx, doc, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images)) },
+    thumbnail: thumbDeps,
     importPack: async (name, bytes) => {
       try {
         const r = await library.importPack(bytes, name);
@@ -389,6 +411,7 @@ async function start(): Promise<void> {
       }
     },
     first,
+    pageMode: () => active.profile().behavior.pageMode,
     makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
     dropReady: () => prepared.dropReady(),
     // L'ordre écoute du dépôt puis `launch_files` est tenu par le workspace (T98) : `launchFiles` n'est appelé que là.
@@ -419,8 +442,11 @@ async function start(): Promise<void> {
   // Choix assumé (fiche ENI) : l'espace est pris même quand un bouton de la barre a le focus, donc il n'active plus les
   // boutons ; sans cela, « espace + glisser » casserait après un clic dans la barre. Puis les raccourcis de fichier de
   // l'onglet actif (hors composition IME).
+  const sidebar: { toggle?: (tab: "pages" | "calques") => void } = {};
   window.addEventListener("keydown", (e) => {
     let taken = workspace.active().board.engine.key(keyOf(e));
+    // Raccourcis de page (DA9, H7) avant ceux de fichier ; la barre latérale est branchée par `sidebar.toggle` (T10).
+    if (pageShortcut({ ...keyOf(e), repeat: e.repeat }, workspace.active().board.engine, sidebar.toggle)) taken = true;
     if (!e.isComposing && workspace.key(e)) taken = true;
     if (taken) e.preventDefault();
   });
@@ -508,7 +534,9 @@ async function start(): Promise<void> {
     profileFiles,
     stages,
     library: { library, shared: sharedFolder, packs: packFiles },
+    backgrounds: { mine: myBackgrounds, thumbs: thumbDeps, core, makeAssets: () => createAssetStore(), files: fetchPackFiles(), now: () => new Date() },
     device,
+    sidebar,
     ...(ctl === null || windows === null
       ? {}
       : { annotation: { control: ctl, remote: (local) => createRemoteToolbarHost((m) => ctl.command(m), local, ANNOTATION_REMOTE_ACTIONS), onView: (cb) => windows.onView(cb) } }),

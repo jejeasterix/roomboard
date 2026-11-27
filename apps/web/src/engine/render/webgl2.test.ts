@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Change } from "../../core/api";
 import { IDENTITY, type Camera } from "../camera";
-import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
+import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR } from "../page";
 import { asGL, FakeGL } from "./fake-gl";
 import { EMPTY_OVERLAY } from "./overlay";
 import type { GridPreview, ImagePreview, LiveLayer, PageView, Renderer } from "./renderer";
@@ -45,6 +45,10 @@ function make() {
 }
 
 const f32 = (v: readonly number[]): number[] => Array.from(new Float32Array(v));
+/** Cadre étendu vers le bas au-delà de toute vue (fond plus haut que la page, DA4). */
+const TALL = { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: Number.POSITIVE_INFINITY };
+/** Cadre d'avant toute scène : la page par défaut, 1920 × 1080. */
+const DEFAULT_FRAME = { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: PAGE_HEIGHT };
 /** Contour concave en U (8 sommets) : un éventail en couleur depuis le premier sommet déborderait dans le creux. */
 const U = new Float32Array([0, 0, 30, 0, 30, 30, 20, 30, 20, 10, 10, 10, 10, 30, 0, 30]);
 const stroke = (outline: Float32Array): LiveLayer => ({
@@ -84,14 +88,14 @@ describe("géométrie WebGL2 (échelon 4)", () => {
   });
 
   it("pageScissor : cadre de page en pixels du tampon, origine en bas, borné au tampon", () => {
-    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 1, 1)).toEqual([10, 0, 960, 700]);
-    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 2, 2)[2]).toBe(1260);
+    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 1, 1, TALL)).toEqual([10, 0, 960, 700]);
+    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 2, 2, TALL)[2]).toBe(1260);
   });
 
   it("page dessinée jusqu'au bas de la vue : le ciseau va jusqu'au bas du tampon quand ty < 0", () => {
-    expect(pageScissor({ zoom: 1, tx: 0, ty: -5000 }, 200, 100, 1, 1)).toEqual([0, 0, 200, 100]);
-    expect(pageScissor({ zoom: 1, tx: 0, ty: 40 }, 200, 100, 1, 1)).toEqual([0, 0, 200, 60]);
-    expect(pageScissor({ zoom: 1, tx: 0, ty: 700 }, 200, 100, 1, 1)[3]).toBe(0);
+    expect(pageScissor({ zoom: 1, tx: 0, ty: -5000 }, 200, 100, 1, 1, TALL)).toEqual([0, 0, 200, 100]);
+    expect(pageScissor({ zoom: 1, tx: 0, ty: 40 }, 200, 100, 1, 1, TALL)).toEqual([0, 0, 200, 60]);
+    expect(pageScissor({ zoom: 1, tx: 0, ty: 700 }, 200, 100, 1, 1, TALL)[3]).toBe(0);
   });
 
   it("splitPolygons : une paire NaN sépare deux polygones ; moins de 3 sommets écarté", () => {
@@ -152,7 +156,7 @@ describe("WebGL2LiveRenderer (échelon 4)", () => {
       [gl.TRIANGLES, false, f32(parseColor(SURROUND_COLOR))],
       [gl.TRIANGLES, true, f32(parseColor(PAGE_BACKGROUND))],
     ]);
-    expect(gl.log).toContain(`scissor ${pageScissor(cam, 200, 100, 1, 1).join(",")}`);
+    expect(gl.log).toContain(`scissor ${pageScissor(cam, 200, 100, 1, 1, DEFAULT_FRAME).join(",")}`);
     expect(gl.draws[0]?.count).toBe(thickPolyline([0, 0, 100, 0], 12).length / 2);
   });
 
@@ -359,5 +363,36 @@ describe("OG11 (T8) — couche vive WebGL2", () => {
     expect(style.opacity).toBe("");
     r.drawLive({ ...stroke(U), opacity: 100 } as LiveLayer, IDENTITY);
     expect(style.opacity).toBe("");
+  });
+});
+
+/** Même cas que `canvas2d.test.ts` « cadre de page (T9) » : cadre 1920 × 1080 vu à z = 0,05 (96 × 54 px en (10, 20)). */
+describe("WebGL2 — cadre de page (DA4, T9)", () => {
+  const pageView = (mode?: string): PageView => ({ id: "p", elementIds: [], width: 1920, height: 1080, backdrop: null, ...(mode === undefined ? {} : { mode }) }) as PageView;
+  const far: Camera = { zoom: 0.05, tx: 10, ty: 20 };
+  const FRAME = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+  const partial: LiveLayer = { strokes: [], erasers: [{ path: new Float32Array([0, 0, 100, 0]), radius: 6, mode: "partial" }] };
+
+  it("infini : scissor de toute la vue", () => {
+    expect(pageScissor(far, 200, 100, 1, 1, null)).toEqual([0, 0, 200, 100]);
+    expect(pageScissor(far, 400, 200, 2, 2, null)).toEqual([0, 0, 400, 200]);
+    const { gl, r } = make();
+    r.drawScene(pageView("infinite"), far, new Set());
+    r.drawLive(partial, far);
+    // Aucun pourtour : la bande n'est peinte qu'au fond de page.
+    expect(gl.draws.map((d) => d.rgba)).toEqual([f32(parseColor(PAGE_BACKGROUND))]);
+  });
+
+  it("page : scissor du cadre", () => {
+    // x : 10 → 10 + 96 ; y : 20 → 20 + 54 (origine en bas : 100 − 74 = 26).
+    expect(pageScissor(far, 200, 100, 1, 1, FRAME)).toEqual([10, 26, 96, 54]);
+    const { gl, r } = make();
+    r.drawScene(pageView(), far, new Set());
+    r.drawLive(partial, far);
+    expect(gl.draws.map((d) => [d.scissor, d.rgba])).toEqual([
+      [false, f32(parseColor(SURROUND_COLOR))],
+      [true, f32(parseColor(PAGE_BACKGROUND))],
+    ]);
+    expect(gl.log).toContain("scissor 10,26,96,54");
   });
 });

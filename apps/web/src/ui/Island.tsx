@@ -3,8 +3,8 @@ import { NO_ISLAND, type DeviceSettings } from "../device-settings";
 import type { ButtonSize, Toolbar as Bar } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import {
-  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, tabsWidth,
-  type Anchor, type Box, type Corners, type Lane, type Point,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, sideCorners, tabsWidth,
+  beyondObstacles, withContextRow, type Anchor, type Box, type Corners, type Lane, type Point, type Rect,
 } from "./island-place";
 import { startPointerGesture } from "./pointer-gesture";
 import { createTip, placeTip } from "./tooltip";
@@ -20,13 +20,12 @@ import { createTip, placeTip } from "./tooltip";
  */
 export type IslandStore = Pick<DeviceSettings, "island" | "setIsland">;
 /** Rectangle placé d'un îlot, px de la case ; `moved` : position enregistrée ou glisser en cours. */
-export interface Placed { readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly moved: boolean }
+export interface Placed { readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly moved: boolean; readonly ctx?: Rect | null }
 
 export const GRIP_LABEL = "Déplacer la barre (flèches ; Maj : grand pas ; Début : recentrer)";
 export const COLLAPSE_LABEL = "Replier la barre";
 export const EXPAND_LABEL = "Déplier la barre";
-/** L2-8, H4 : seul ce rôle se déplace et se replie. */
-export const MOVABLE_ROLE = "tools";
+const isSide = (anchor: Anchor): boolean => anchor === "side-start" || anchor === "side-end";
 
 const ZERO: Box = Object.freeze({ w: 0, h: 0 });
 const sameBox = (a: Box, b: Box): boolean => a.w === b.w && a.h === b.h;
@@ -119,7 +118,7 @@ function ChromeButton(props: ChromeProps): JSX.Element {
 export interface IslandProps {
   readonly bar: Bar;
   readonly anchor: Anchor;
-  /** L2-8 : barre `floating` de rôle `tools` : poignée, Replier, clavier, appareil. */
+  /** L2-8 : barre `floating` de rôle `tools` ou `pages` (`MOVABLE_ROLES`) : poignée, Replier, clavier, appareil. */
   readonly movable: boolean;
   readonly profileId: string;
   readonly store?: IslandStore;
@@ -131,7 +130,7 @@ export interface IslandProps {
   /** Change quand le contenu de l'îlot peut changer de largeur (pages, outil) : remesure. */
   readonly watch?: Accessor<unknown>;
   onPlaced?(p: Placed | null): void;
-  readonly children: (collapsed: Accessor<boolean>) => JSX.Element;
+  readonly children: (collapsed: Accessor<boolean>, expand: () => void) => JSX.Element;
 }
 
 export function Island(props: IslandProps): JSX.Element {
@@ -141,7 +140,9 @@ export function Island(props: IslandProps): JSX.Element {
   const [drag, setDrag] = createSignal<Point | null>(null);
   const [size, setSize] = createSignal<Box>(ZERO, { equals: sameBox });
   const collapsed = (): boolean => props.movable && (own() ?? props.bar.collapsed);
-  const positioned = props.movable || isCentered(props.anchor);
+  const positioned = props.movable || isCentered(props.anchor) || isSide(props.anchor);
+  /** Le panneau des profils ne repousse que l'îlot d'outils (L2-16) ; les autres îlots mobiles restent où ils sont. */
+  const sheetLane_ = (): Lane | null => (props.bar.role === "tools" ? props.sheet() : null);
   let el: HTMLDivElement | undefined;
   let stopDrag: (() => void) | null = null;
 
@@ -153,13 +154,18 @@ export function Island(props: IslandProps): JSX.Element {
     if (area.w === 0 || area.h === 0) return null;
     const s = size();
     const c = props.corners();
-    const lane = props.movable ? props.sheet() : null;
+    const lane = props.movable ? sheetLane_() : null;
     if (lane !== null) return { ...lane, wrap: true };
     const full = Math.max(0, area.w - 2 * EDGE);
+    /** Voie latérale : l'îlot déplacé garde une hauteur bornée à la case sous lui. */
+    const tall = (p: Point): { readonly maxHeight?: number } => (isSide(props.anchor) ? { maxHeight: Math.max(0, area.h - EDGE - p.y) } : {});
     const d = drag();
-    if (d !== null) return { ...d, maxWidth: full, wrap: false };
+    if (d !== null) return { ...d, ...tall(d), maxWidth: full, wrap: false };
     const a = at();
-    if (a !== null) return { ...placeIsland(props.anchor, s, area, a, c), maxWidth: full, wrap: false };
+    if (a !== null) {
+      const p = placeIsland(props.anchor, s, area, a, c);
+      return { ...p, ...tall(p), maxWidth: full, wrap: false };
+    }
     return { ...laneOf(props.anchor, s, area, c), wrap: false };
   });
 
@@ -176,16 +182,31 @@ export function Island(props: IslandProps): JSX.Element {
   };
   /** L2-13 : îlot contextuel centré sous la barre, borné à la case, px entiers (`placeTip`) ; coordonnées relatives à
    *  l'îlot, son bloc conteneur. */
+  const [ctxRect, setCtxRect] = createSignal<Rect | null>(null, { equals: (a, b) => a === b || (a !== null && b !== null && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h) });
   const placeContext = (): void => {
     const p = pos();
     const ctx = el?.querySelector<HTMLElement>("[data-island-context]");
-    if (el === undefined || ctx === null || ctx === undefined || p === null) return;
+    if (el === undefined || p === null) return;
+    if (ctx === null || ctx === undefined) {
+      setCtxRect(null);
+      return;
+    }
     const me = el.getBoundingClientRect();
     const r = ctx.getBoundingClientRect();
     const area = props.area();
     const t = placeTip({ left: p.x, top: p.y, right: p.x + me.width, bottom: p.y + me.height }, { width: r.width, height: r.height }, { width: area.w, height: area.h }, GAP);
-    ctx.style.left = `${t.left - p.x}px`;
-    ctx.style.top = `${t.top - p.y}px`;
+    const top = t.top - p.y;
+    const obstacles: Rect[] = [];
+    for (const o of el.parentElement?.querySelectorAll<HTMLElement>('.rb-island[data-anchor^="side-"]') ?? []) {
+      if (o === el) continue;
+      const b = o.getBoundingClientRect();
+      if (b.width > 0 && b.height > 0) obstacles.push({ x: b.left - me.left, y: b.top - me.top, w: b.width, h: b.height });
+    }
+    ctx.style.left = `${beyondObstacles(t.left - p.x, { top, height: r.height }, obstacles, GAP)}px`;
+    ctx.style.top = `${top}px`;
+    // Rectangle de la rangée dans le repère de la case, pour que le panneau d'options passe dessous.
+    const l = beyondObstacles(t.left - p.x, { top, height: r.height }, obstacles, GAP);
+    setCtxRect({ x: Math.round(p.x + l), y: Math.round(p.y + top), w: Math.ceil(r.width), h: Math.ceil(r.height) });
   };
 
   onMount(() => {
@@ -196,8 +217,16 @@ export function Island(props: IslandProps): JSX.Element {
       frame = requestAnimationFrame(() => {
         measure();
         placeContext();
+        // T22 : la rangée contextuelle suit aussi les barres latérales (dépliées, repliées, déplacées).
+        for (const o of el?.parentElement?.querySelectorAll<HTMLElement>('.rb-island[data-anchor^="side-"]') ?? []) {
+          if (o !== el && !watched.has(o)) {
+            watched.add(o);
+            ro?.observe(o);
+          }
+        }
       });
     };
+    const watched = new WeakSet<Element>();
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver === "function" && el !== undefined) {
       ro = new ResizeObserver(later);
@@ -205,6 +234,7 @@ export function Island(props: IslandProps): JSX.Element {
       const ctx = el.querySelector("[data-island-context]");
       if (ctx !== null) ro.observe(ctx);
     }
+    later();
     onCleanup(() => {
       cancelAnimationFrame(frame);
       ro?.disconnect();
@@ -228,7 +258,7 @@ export function Island(props: IslandProps): JSX.Element {
     const p = pos();
     if (p === null) return;
     queueMicrotask(placeContext);
-    props.onPlaced?.({ x: p.x, y: p.y, w: Math.min(size().w, p.maxWidth), h: size().h, moved: at() !== null || drag() !== null });
+    props.onPlaced?.({ x: p.x, y: p.y, w: Math.min(size().w, p.maxWidth), h: size().h, moved: at() !== null || drag() !== null, ...(ctxRect() !== null ? { ctx: ctxRect() } : {}) });
   });
 
   const write = (): void => {
@@ -241,7 +271,7 @@ export function Island(props: IslandProps): JSX.Element {
   /** L2-9 : glisser la poignée ; écrit au lâcher seulement ; Échap, `pointercancel` : retour au départ. */
   const startDrag = (e: PointerEvent): void => {
     const p0 = pos();
-    if (p0 === null || props.sheet() !== null) return;
+    if (p0 === null || sheetLane_() !== null) return;
     const x0 = e.clientX;
     const y0 = e.clientY;
     stopDrag = startPointerGesture(e, {
@@ -256,7 +286,7 @@ export function Island(props: IslandProps): JSX.Element {
   };
   /** L2-10 : flèches 16 px, Maj 64 px, Début recentre ; la touche traitée ne va pas au moteur. */
   const onGripKey = (e: KeyboardEvent): void => {
-    if (props.sheet() !== null) return;
+    if (sheetLane_() !== null) return;
     if (e.key === "Home") {
       if (pos() === null) return;
       e.preventDefault();
@@ -275,21 +305,34 @@ export function Island(props: IslandProps): JSX.Element {
     setOwn(!collapsed());
     write();
   };
+  /** Déplie l'îlot replié (toucher un onglet de la barre repliée) ; sans effet s'il est déjà déplié. */
+  const expand = (): void => {
+    if (collapsed()) toggle();
+  };
 
   return (
     <div
       ref={el}
       class="rb-island"
       data-island={props.bar.id}
-      data-anchor={props.anchor}
+      data-anchor={anchorOf(props.bar)}
       data-wrap={pos()?.wrap === true ? "1" : undefined}
       data-collapsed={collapsed() ? "1" : undefined}
-      style={pos() === null ? undefined : { left: `${pos()!.x}px`, top: `${pos()!.y}px`, "max-inline-size": `${pos()!.maxWidth}px` }}
+      style={
+        pos() === null
+          ? undefined
+          : {
+              left: `${pos()!.x}px`,
+              top: `${pos()!.y}px`,
+              "max-inline-size": `${pos()!.maxWidth}px`,
+              ...(pos()!.maxHeight !== undefined ? { "max-block-size": `${pos()!.maxHeight}px` } : {}),
+            }
+      }
     >
       <Show when={props.movable}>
-        <ChromeButton icon="grip" label={GRIP_LABEL} mark="data-island-grip" onDown={startDrag} onKey={onGripKey} onDouble={() => props.sheet() === null && commit(null)} />
+        <ChromeButton icon="grip" label={GRIP_LABEL} mark="data-island-grip" onDown={startDrag} onKey={onGripKey} onDouble={() => sheetLane_() === null && commit(null)} />
       </Show>
-      {props.children(collapsed)}
+      {props.children(collapsed, expand)}
       <Show when={props.movable}>
         <ChromeButton
           icon={collapsed() ? "down" : "collapse"}
@@ -306,7 +349,7 @@ export function Island(props: IslandProps): JSX.Element {
 export interface IslandLayerProps {
   /** Barres `floating` montrées au tableau (aucune en annotation). */
   readonly bars: Accessor<readonly Bar[]>;
-  readonly render: (bar: Bar, collapsed: Accessor<boolean>) => JSX.Element;
+  readonly render: (bar: Bar, collapsed: Accessor<boolean>, expand: () => void) => JSX.Element;
   /** Contenu de l'îlot des onglets (TabsBar). */
   readonly head: JSX.Element;
   /** `<p id="etat" role="status">`, après les onglets. */
@@ -317,8 +360,12 @@ export interface IslandLayerProps {
   /** L2-16 : panneau des profils ouvert. */
   readonly sheetOpen: Accessor<boolean>;
   readonly watch?: Accessor<unknown>;
-  /** T22 : îlot posé dans la zone du calque (panneau d'options) : mêmes bornes que les îlots, au-dessus de la barre latérale. */
-  readonly extra?: JSX.Element;
+  /** T22 : îlot posé dans la zone du calque (panneau d'options) : mêmes bornes que les îlots. OG11 × OG4 : reçoit le
+   *  rectangle de l'îlot latéral de début (`side-start`, barre latérale ou outils, déplié ou replié) pour se poser à sa droite. */
+  readonly extra?: (sideStart: Accessor<Rect | null>, above: Accessor<readonly Rect[]>) => JSX.Element;
+  /** T16 (design-l4) : haut libre des panneaux passagers, px de la case : 16 px sous la rangée des coins et sous l'îlot
+   *  d'outils qu'elle place (sur la rangée ou descendu sur la voie suivante ; déplacé : non compté). */
+  onTopFree?(y: number): void;
 }
 
 /** Largeur du panneau des profils, lue dans `--rb-sheet-w` (rb.css) ; illisible : `SHEET_W`. */
@@ -342,11 +389,33 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   const [statusBox, setStatusBox] = createSignal<Box>(ZERO, { equals: sameBox });
   const statusW = (): number => statusBox().w;
   const [tools, setTools] = createSignal<Placed | null>(null);
-  const byAnchor = (anchor: Anchor) => createMemo(() => props.bars().filter((b) => anchorOf(b.role) === anchor));
+  /** OG11 × OG4 : îlots latéraux de début posés (par id de barre) ; le panneau d'options se pose à droite du plus à droite. */
+  const [sidePlaced, setSidePlaced] = createSignal<Readonly<Record<string, Rect>>>({});
+  const sideStart = createMemo((): Rect | null => {
+    let best: Rect | null = null;
+    for (const r of Object.values(sidePlaced())) if (r.w > 0 && r.h > 0 && (best === null || r.x + r.w > best.x + best.w)) best = r;
+    return best;
+  });
+  /** Îlot d'outils posé et non déplacé : le panneau d'options passe dessous s'il le surplombe (comme la voie latérale). */
+  const toolsAbove = createMemo((): readonly Rect[] => {
+    const t = tools();
+    return t === null || t.moved ? [] : withContextRow({ x: t.x, y: t.y, w: t.w, h: t.h }, t.ctx ?? null);
+  });
+  const placeSide = (id: string, p: Placed | null): void => {
+    setSidePlaced((m) => {
+      const { [id]: _old, ...rest } = m;
+      return p === null ? rest : { ...rest, [id]: { x: p.x, y: p.y, w: p.w, h: p.h } };
+    });
+  };
+  /** Îlot posé par `left` / `top` dans le calque : centré, latéral ou mobile ; les autres vont dans leur groupe de coin. */
+  const free = (b: Bar): boolean => isCentered(anchorOf(b)) || isSide(anchorOf(b)) || MOVABLE_ROLES.has(b.role);
+  const byAnchor = (anchor: Anchor) => createMemo(() => props.bars().filter((b) => !free(b) && anchorOf(b) === anchor));
   const starts = byAnchor("top-start");
   const ends = byAnchor("top-end");
   const bottoms = byAnchor("bottom-start");
-  const centered = createMemo(() => props.bars().filter((b) => isCentered(anchorOf(b.role))));
+  /** `design-l4:81` : les îlots latéraux viennent après les centrés dans le DOM, quel que soit l'ordre du profil. */
+  const centered = createMemo(() => props.bars().filter((b) => free(b) && !isSide(anchorOf(b))));
+  const sides = createMemo(() => props.bars().filter((b) => isSide(anchorOf(b))));
   /** Abscisse de l'îlot des onglets : après les îlots du menu et leur écart. */
   const startX = (): number => EDGE + menuBox().w + (menuBox().w > 0 ? GAP : 0);
   const topCorners = createMemo((): Corners => ({
@@ -355,7 +424,21 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     band: Math.max(startBox().h, endBox().h),
   }));
   const bottomCorners = createMemo((): Corners => ({ start: bottomBox().w, end: 0, band: bottomBox().h }));
+  /** T16 : la voie latérale passe aussi sous l'îlot d'outils qui la surplombe (descendu sur la voie suivante, ou dans la
+   *  place du panneau des profils), jamais sous la seule rangée des coins. */
+  const sideBase = createMemo((): Corners => ({ start: 0, end: 0, band: topCorners().band, foot: bottomBox().h }));
+  const sideCornersOf = (role: string): Accessor<Corners> =>
+    createMemo(() => {
+      const t = tools();
+      return sideCorners(sideBase(), role, t === null ? null : { x: t.x, y: t.y, w: t.w, h: t.h });
+    });
   const sheet = createMemo((): Lane | null => (props.sheetOpen() ? sheetLane(area(), sheetWidth(), topCorners().band, BUTTON_PX[props.size()]) : null));
+  const topFree = createMemo(() => {
+    const t = tools();
+    const row = EDGE + topCorners().band;
+    return (t === null || t.moved ? row : Math.max(row, t.y + t.h)) + EDGE;
+  });
+  createEffect(() => props.onTopFree?.(topFree()));
   const tabsMax = createMemo(() => {
     const t = tools();
     return tabsWidth(area(), startX(), endBox().w, t === null || t.moved ? null : { x: t.x, y: t.y }, statusW());
@@ -383,8 +466,8 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     </Show>
   );
   const island = (bar: Bar, profileId: string): JSX.Element => {
-    const anchor = anchorOf(bar.role);
-    const movable = bar.role === MOVABLE_ROLE;
+    const anchor = anchorOf(bar);
+    const movable = MOVABLE_ROLES.has(bar.role);
     return (
       <Island
         bar={bar}
@@ -393,18 +476,25 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         profileId={profileId}
         {...(props.store !== undefined ? { store: props.store } : {})}
         area={area}
-        corners={anchor.startsWith("top") ? topCorners : bottomCorners}
+        corners={isSide(anchor) ? sideCornersOf(bar.role) : anchor.startsWith("top") ? topCorners : bottomCorners}
         sheet={sheet}
         {...(props.watch !== undefined ? { watch: props.watch } : {})}
-        {...(movable ? { onPlaced: (p: Placed | null) => setTools(p) } : {})}
+        {...(bar.role === "tools" || anchor === "side-start"
+          ? {
+              onPlaced: (p: Placed | null) => {
+                if (bar.role === "tools") setTools(p);
+                if (anchor === "side-start") placeSide(bar.id, p);
+              },
+            }
+          : {})}
       >
-        {(c) => props.render(bar, c)}
+        {(c, expand) => props.render(bar, c, expand)}
       </Island>
     );
   };
   return (
     <div ref={layer} class="rb-islands">
-      {props.extra}
+      {props.extra?.(sideStart, toolsAbove)}
       <div ref={topStart} class="rb-corner" data-corner="top-start">
         <div ref={menu} class="rb-corner-menu">
           {islands(starts)}
@@ -421,6 +511,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         {islands(bottoms)}
       </div>
       {islands(centered)}
+      {islands(sides)}
     </div>
   );
 }

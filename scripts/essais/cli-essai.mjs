@@ -418,6 +418,27 @@ try {
       return undefined; // stderr vide ou non JSON : le contrôle « D79 » échoue sous son propre nom
     }
   };
+  // personnalisation-1b (Q32, S4) : liste et recherche du pack, opération background sur des copies temporaires.
+  const fonds = cli(["backgrounds", "--search", "seyes"]);
+  verifie("backgrounds --search seyes : seyes-8mm listé", fonds.code === 0 && fonds.lignes[0]?.id === "seyes-8mm", fonds.brut);
+  const sectionKo = cli(["backgrounds", "--section", "bidule"]);
+  verifie("backgrounds --section inconnue : code 2", sectionKo.code === 2, sectionKo.brut);
+  const fondsDoc = join(dir, "fonds.roomboard");
+  const cree = cli(["run", "--new", "--out", fondsDoc, "--ops", "-"], '{"type":"AddPage","after":"$page:0"}\n');
+  verifie("fonds : tableau de deux pages", cree.code === 0, cree.brut);
+  const tous = join(dir, "fonds-tous.roomboard");
+  const ap = cli(["apply", fondsDoc, '{"op":"background","id":"seyes-8mm","pages":"all"}', "--out", tous]);
+  verifie("apply background seyes-8mm, toutes les pages : code 0", ap.code === 0, ap.brut);
+  const et = etat(tous);
+  verifie("state : grille seyes sur chaque page", et.pages.length === 2 && et.pages.every((p) => p.page.grid?.levels[0]?.kind === "seyes"));
+  const une = join(dir, "fonds-une.roomboard");
+  const ar = cli(["apply", tous, '{"op":"background","id":"ardoise","page":"$page:1"}', "--out", une]);
+  const eu = etat(une);
+  verifie("apply background ardoise sur $page:1 : seule la deuxième page change", ar.code === 0 && eu.pages[0].page.background === et.pages[0].page.background && eu.pages[0].page.grid?.levels[0]?.kind === "seyes" && eu.pages[1].page.background === "#2f3e46", ar.brut);
+  const ko = join(dir, "fonds-ko.roomboard");
+  const lesDeux = cli(["apply", fondsDoc, '{"op":"background","id":"ardoise","page":"$page:0","pages":"all"}', "--out", ko]);
+  verifie("background page et pages ensemble : code 2, rien écrit", lesDeux.code === 2 && !existsSync(ko), lesDeux.brut);
+
   // D79 — Ctrl-C pendant une conversion : transmis au binaire, sortie 130, une ligne {"error":…}
   const faux = join(dir, "faux-office");
   const marque = join(dir, "faux-office.pid");
@@ -477,6 +498,54 @@ try {
     verifie("personnalisation-2 : Restack hors bornes refusé (code 1)", refus.code === 1 && refus.brut.includes("ordre invalide"), refus.brut);
     console.log("personnalisation-2 : Restack puis undo");
   }
+
+  // personnalisation-1a (T7, D15) : SetPageMode, AddPage mode, MovePage, DuplicatePage ; refus code 1.
+  const lignesOps = (...o) => `${o.map((x) => JSON.stringify(x)).join("\n")}\n`;
+  const vuePage = (st, i) => st?.pages?.[i]?.page;
+  const carre1a = (page, x) => ({ type: "AddShape", page, shape: "rect", x0: x, y0: 20, x1: x + 100, y1: 120, style: { color: "#1e40af", width: 4 }, fill: null });
+  const pm = join(dir, "pages-1a.roomboard");
+  const nm = cli(["new", pm]);
+  verifie("1a : new pages-1a.roomboard", nm.code === 0 && existsSync(pm), nm.brut);
+  const mo = cli(["run", pm, "--ops", "-"], lignesOps({ type: "SetPageMode", page: "$page:0", mode: "portrait" }, { op: "state" }, { op: "undo" }, { op: "state" }));
+  const portrait1a = vuePage(mo.lignes[1]?.state, 0);
+  verifie("1a : SetPageMode portrait : mode « page », hauteur 3413,33", mo.code === 0 && portrait1a?.mode === "page" && Math.abs(portrait1a.height - 3413.33) < 0.01, mo.brut);
+  verifie("1a : undo, une étape : hauteur 1080, plus rien à annuler", vuePage(mo.lignes[3]?.state, 0)?.height === 1080 && mo.lignes[3]?.state?.canUndo === false, mo.brut);
+  const mv = cli(["run", pm, "--save", "--ops", "-"], lignesOps({ type: "AddPage", after: "$page:0", mode: "infinite" }, { type: "MovePage", page: "$page:1", to: 0 }, { op: "state" }));
+  const apres1a = mv.lignes[2]?.state;
+  verifie("1a : AddPage mode infinite puis MovePage en tête", mv.code === 0 && vuePage(apres1a, 0)?.mode === "infinite" && vuePage(apres1a, 1)?.mode === "page", mv.brut);
+  const ordre1a = (st) => (st?.pages ?? []).map((x) => x.page.id);
+  egal("1a : réouverture identique (ordre des ids)", ordre1a(etat(pm)), ordre1a(apres1a));
+  const pd = join(dir, "dup-1a.roomboard");
+  const nd = cli(["new", pd]);
+  verifie("1a : new dup-1a.roomboard", nd.code === 0, nd.brut);
+  const du = cli(["run", pd, "--ops", "-"], lignesOps(carre1a("$page:0", 10), carre1a("$page:0", 300), { type: "DuplicatePage", page: "$page:0" }, { op: "state" }, { type: "Delete", ids: ["$3.1"] }, { type: "SetPageMode", page: "$page:1", mode: "infinite" }, { op: "state" }));
+  const copie1a = du.lignes[3]?.state;
+  const fin1a = du.lignes[6]?.state;
+  verifie("1a : DuplicatePage d'une page à deux objets : copie au rang 1, deux objets", du.code === 0 && copie1a?.pages?.length === 2 && copie1a.pages[1].elements.length === 2 && vuePage(copie1a, 1)?.id !== vuePage(copie1a, 0)?.id, du.brut);
+  verifie("1a : $3.1 est un élément copié, $page:1 la copie", fin1a?.pages?.[0]?.elements.length === 2 && fin1a.pages[1].elements.length === 1 && vuePage(fin1a, 0)?.mode === "page" && vuePage(fin1a, 1)?.mode === "infinite", du.brut);
+  const avant1a = empreinte(pm);
+  const loin = cli(["run", pm, "--save", "--ops", "-"], lignesOps({ type: "MovePage", page: "$page:0", to: 99 }));
+  verifie("1a : MovePage to 99 : code 1, fichier inchangé", loin.code === 1 && empreinte(pm) === avant1a, loin.brut);
+  const a4 = cli(["run", pm, "--save", "--ops", "-"], lignesOps({ type: "SetPageMode", page: "$page:0", mode: "a4" }));
+  verifie("1a : SetPageMode a4 : code 1, fichier inchangé", a4.code === 1 && empreinte(pm) === avant1a, a4.brut);
+
+  // personnalisation-1a calques (T13, D15) : Restack, une étape, ids gardés ; refus code 1 pour deux pages mêlées.
+  const pc = join(dir, "calques-1a.roomboard");
+  const nc = cli(["new", pc]);
+  verifie("1a calques : new calques-1a.roomboard", nc.code === 0, nc.brut);
+  const idsPage = (st, i) => (st?.pages?.[i]?.elements ?? []).map((e) => e.id);
+  const rsk = cli(["run", pc, "--save", "--ops", "-"], lignesOps(carre1a("$page:0", 10), carre1a("$page:0", 200), carre1a("$page:0", 400), { op: "state" }, { type: "Restack", ids: ["$1"], to: 2 }, { op: "state" }, { op: "undo" }, { op: "state" }, { op: "redo" }));
+  const pile0 = idsPage(rsk.lignes[3]?.state, 0);
+  const pile1 = idsPage(rsk.lignes[5]?.state, 0);
+  verifie("1a calques : Restack $1 au premier plan, ids gardés", rsk.code === 0 && pile0.length === 3 && JSON.stringify(pile1) === JSON.stringify([pile0[1], pile0[2], pile0[0]]), rsk.brut);
+  egal("1a calques : undo, une étape : ordre d'origine", idsPage(rsk.lignes[7]?.state, 0), pile0);
+  egal("1a calques : réouverture identique (ordre des ids)", idsPage(etat(pc), 0), pile1);
+  const deux = cli(["run", pc, "--save", "--ops", "-"], lignesOps({ type: "AddPage", after: "$page:0" }, carre1a("$page:1", 10), { op: "state" }));
+  const autre = idsPage(deux.lignes[2]?.state, 1)[0];
+  verifie("1a calques : seconde page à un objet", deux.code === 0 && typeof autre === "string", deux.brut);
+  const avantC = empreinte(pc);
+  const mele = cli(["run", pc, "--save", "--ops", "-"], lignesOps({ type: "Restack", ids: [pile1[0], autre], to: 0 }));
+  verifie("1a calques : Restack de deux pages mêlées : code 1, fichier inchangé", mele.code === 1 && empreinte(pc) === avantC, mele.brut);
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);

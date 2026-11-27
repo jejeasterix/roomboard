@@ -14,11 +14,13 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames, gitSha, item, loadPlaywright, noOverlap, serve, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames, gitSha, item, loadPlaywright, noOverlap, serve, stageBox, stageMouse, foldOptions } from "./commun.mjs";
 
 const LABEL = "C7b texte riche";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
-const TEXT_AT = [300, 150];
+// À 1280 px, l'îlot d'outils (941 px avec la navigation de page) descend à y = 80 (règle L2-30) et sa rangée contextuelle
+// couvre y = 144 à 200 : le texte est placé sous elle.
+const TEXT_AT = [300, 230];
 const TABLE_AT = [300, 450];
 const COL = 240;
 const ROW = 64;
@@ -93,6 +95,7 @@ async function scenario(page, url, { captures, tmp, cdp }) {
   };
   const sameBox = (a, b) => ["x", "y", "width", "height"].every((k) => Math.abs(a[k] - b[k]) < 0.5);
 
+  await foldOptions(page);
   await page.goto(url);
   await page.waitForSelector('#stage[data-ready="1"]', { timeout: 30000 });
   await fr();

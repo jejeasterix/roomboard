@@ -3,8 +3,8 @@ import type { Change, ElementView, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
-import { fitWidth, worldToScreen, type Camera } from "./camera";
-import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
+import { fitFor, fitWidth, worldToScreen, type Camera } from "./camera";
+import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "./item-style";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
@@ -114,7 +114,7 @@ function fakeTool(name: "pen" | "eraser", log: string[], ctx: ToolContext): Fake
   };
 }
 
-function setup(extra: Pick<EngineDeps, "fitTop"> = {}) {
+function setup(extra: Pick<EngineDeps, "fitTop" | "pageMode"> = {}) {
   const doc = fakeCore.blank();
   const frames = new Frames();
   const renderer = new FakeRenderer();
@@ -479,6 +479,100 @@ describe("createEngine", () => {
     expect(engine.prevPage()).toBe(false);
     expect(engine.nextPage()).toBe(true);
     expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2, selection: [], selectionBounds: null });
+  });
+
+  it("nextOrAdd sur la dernière page ajoute une page au mode du profil, Ctrl+Z la retire", () => {
+    const { doc, engine } = setup({ pageMode: () => "portrait" });
+    expect(engine.nextOrAdd()).toBe(true);
+    expect(doc.pageIds()).toHaveLength(2);
+    expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2, pageLayout: "portrait", pageMode: "page" });
+    engine.undo();
+    expect(doc.pageIds()).toHaveLength(1);
+  });
+
+  it("nextOrAdd ailleurs : page suivante", () => {
+    const { doc, engine } = setup();
+    engine.addPage();
+    engine.prevPage();
+    expect(engine.nextOrAdd()).toBe(true);
+    expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2 });
+    expect(doc.pageIds()).toHaveLength(2);
+  });
+
+  it("movePage garde la page montrée", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    engine.addPage();
+    engine.addPage();
+    engine.showPage(p1);
+    expect(engine.movePage(p1, 2)).toBe(true);
+    expect(doc.pageIds()[2]).toBe(p1);
+    expect(engine.state()).toMatchObject({ page: p1, pageIndex: 2 });
+  });
+
+  it("duplicatePage montre la copie", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    expect(engine.duplicatePage()).toBe(true);
+    const ids = doc.pageIds();
+    expect(ids).toHaveLength(2);
+    expect(engine.state().page).toBe(ids[1]);
+    expect(engine.state().page).not.toBe(p1);
+  });
+
+  it("setPageMode portrait : fitPage montre tout le cadre", () => {
+    const { engine } = setup();
+    engine.resize(1000, 800, 1);
+    expect(engine.state().pageLayout).toBe("landscape");
+    expect(engine.setPageMode("portrait")).toBe(true);
+    expect(engine.state().pageLayout).toBe("portrait");
+    engine.fitPage();
+    const cam = engine.camera();
+    // cadre portrait entier visible : hauteur du cadre (1920 × 16 / 9) × zoom ≤ hauteur de la vue
+    expect(cam.zoom * ((1920 * 16) / 9)).toBeLessThanOrEqual(800 + 1e-6);
+  });
+
+  it("pageMode / pageLayout dans l'état", () => {
+    const { engine } = setup();
+    expect(engine.state()).toMatchObject({ pageMode: "page", pageLayout: "landscape" });
+    engine.setPageMode("infinite");
+    expect(engine.state()).toMatchObject({ pageMode: "infinite", pageLayout: "infinite" });
+  });
+
+  const keyEv = (key: string, o: Partial<KeyLike> & { repeat?: boolean } = {}) =>
+    ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...o });
+
+  it("PageDown tenu sur la dernière page : une seule page", () => {
+    const { doc, engine } = setup();
+    expect(pageShortcut(keyEv("PageDown"), engine)).toBe(true);
+    expect(pageShortcut(keyEv("PageDown", { repeat: true }), engine)).toBe(false);
+    expect(pageShortcut(keyEv("PageDown", { repeat: true }), engine)).toBe(false);
+    expect(doc.pageIds()).toHaveLength(2);
+    expect(pageShortcut(keyEv("PageUp"), engine)).toBe(true);
+    expect(pageShortcut(keyEv("PageDown", { repeat: true }), engine)).toBe(true);
+    expect(doc.pageIds()).toHaveLength(2);
+  });
+
+  it("Ctrl+M ajoute, Ctrl+Maj+D duplique, Ctrl+Maj+P ouvre la barre latérale", () => {
+    const { doc, engine } = setup();
+    const toggle = vi.fn();
+    expect(pageShortcut(keyEv("m", { ctrlKey: true }), engine, toggle)).toBe(true);
+    expect(pageShortcut(keyEv("D", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
+    expect(doc.pageIds()).toHaveLength(3);
+    expect(pageShortcut(keyEv("P", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
+    expect(toggle).toHaveBeenCalledWith("pages");
+    // Lot 2 : Ctrl+Maj+L, sans effet au lot 1, ouvre l'onglet Calques (cadrage, décision 22).
+    expect(pageShortcut(keyEv("L", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
+    expect(toggle).toHaveBeenLastCalledWith("calques");
+  });
+
+  it("dans un champ de saisie, PageDown et Ctrl+M ne font rien de la page", () => {
+    const { doc, engine } = setup();
+    const input = { tagName: "INPUT" };
+    expect(pageShortcut(keyEv("PageDown", { target: input }), engine)).toBe(false);
+    expect(pageShortcut(keyEv("m", { ctrlKey: true, target: input }), engine)).toBe(false);
+    expect(pageShortcut(keyEv("PageDown", { isComposing: true }), engine)).toBe(false);
+    expect(doc.pageIds()).toHaveLength(1);
   });
 
   function editSetup() {
@@ -1225,6 +1319,53 @@ describe("moteur — pot (C6a)", () => {
     engine.redraw();
     frames.tick();
     expect(renderer.scenes.at(-1)?.page.background).toBe("#bfdbfe");
+  });
+
+  it("drawScene reçoit largeur, hauteur et mode de la page montrée (T10 : plus de Page 1920 × 1080 par défaut)", () => {
+    const { doc, engine, frames, renderer } = setup();
+    const page = doc.page.bind(doc);
+    doc.page = (id) => {
+      const p = page(id);
+      return p === null ? null : { ...p, width: 1080, height: 1920, mode: "page" };
+    };
+    engine.redraw();
+    frames.tick();
+    expect(renderer.scenes.at(-1)?.page).toMatchObject({ width: 1080, height: 1920, mode: "page" });
+  });
+
+  it("setPageMode réajuste la caméra par fitPage (T10)", () => {
+    const { engine } = setup();
+    const fit = vi.spyOn(engine, "fitPage");
+    expect(engine.setPageMode("infinite")).toBe(true);
+    expect(fit).toHaveBeenCalledTimes(1);
+  });
+
+  it("setPageMode au mode déjà actif : pas de recadrage (T18)", () => {
+    const { engine } = setup();
+    engine.resize(1000, 800, 1);
+    const fit = vi.spyOn(engine, "fitPage");
+    expect(engine.setPageMode("landscape")).toBe(true);
+    expect(fit).not.toHaveBeenCalled();
+    expect(engine.setPageMode("infinite")).toBe(true);
+    expect(fit).toHaveBeenCalledTimes(1);
+    expect(engine.setPageMode("infinite")).toBe(true);
+    expect(fit).toHaveBeenCalledTimes(1);
+  });
+
+  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : cadre entier (décision 10, T18)", () => {
+    const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
+    const mk = (doc: typeof pdf) => createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) } });
+    const view = pdf.page(pdf.pageIds()[0]!)!;
+    expect(view.height).toBeLessThan(view.width);
+    expect(view.backdrop?.rect?.y1).toBeGreaterThan(view.width);
+    const e = mk(pdf);
+    e.resize(1000, 800, 1);
+    expect(e.camera()).toEqual(fitWidth(1000, 800));
+    const { engine } = setup();
+    engine.resize(1000, 800, 1);
+    engine.setPageMode("portrait");
+    const portrait = fitFor("portrait", 1000, 800, { x0: 0, y0: 0, x1: 1920, y1: (1920 * 16) / 9 }, null, 16);
+    expect(engine.camera().zoom).toBeCloseTo(portrait.zoom, 6);
   });
 
   it("setFillColor : défaut rouge, couleur valide gardée, invalide ignorée, null = « Aucune » ; le stylo ne change pas (D16)", () => {
@@ -2097,5 +2238,93 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     engine.setTool("rect");
     const { id } = drawRect();
     expect(lookOf(id)).toBeUndefined();
+  });
+});
+
+describe("moteur — ordre des objets (lot 2)", () => {
+  function stack() {
+    const doc = fakeCore.blank();
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", [], ctx),
+      eraser: (ctx) => fakeTool("eraser", [], ctx),
+      select: (ctx) => createSelectTool(ctx),
+    };
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
+    const page = engine.state().page;
+    const rect = (x: number): string =>
+      doc.apply({ type: "AddShape", page, shape: "rect", x0: x, y0: 100, x1: x + 50, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
+    const ctrl = (key: string, shiftKey = false): KeyLike => ({ key, ctrlKey: true, metaKey: false, shiftKey, altKey: false, isComposing: false, target: null });
+    return { doc, engine, page, rect, ctrl };
+  }
+  it("select(ids) : outil Sélection, sélection posée, état émis ; select([]) la vide", () => {
+    const { engine, rect } = stack();
+    const a = rect(0);
+    engine.setTool("pen");
+    engine.select([a]);
+    expect(engine.tool()).toBe("select");
+    expect(engine.state().selection).toEqual([a]);
+    engine.select([]);
+    expect(engine.state().selection).toEqual([]);
+  });
+  it("bringToFront() : une étape, un seul Annuler rend l'ordre ; déjà au premier plan : faux", () => {
+    const { engine, doc, page, rect } = stack();
+    const a = rect(0);
+    const b = rect(100);
+    const c = rect(200);
+    engine.select([a]);
+    expect(engine.bringToFront()).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, c, a]);
+    const v = doc.version();
+    expect(engine.bringToFront()).toBe(false);
+    expect(doc.version()).toBe(v);
+    engine.undo();
+    expect(doc.elementIds(page)).toEqual([a, b, c]);
+  });
+  it("sendToBack() : la sélection descend au rang 0, ordre relatif gardé ; sans sélection : faux", () => {
+    const { engine, doc, page, rect } = stack();
+    const a = rect(0);
+    const b = rect(100);
+    const c = rect(200);
+    expect(engine.sendToBack()).toBe(false);
+    engine.select([b, c]);
+    expect(engine.sendToBack()).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, c, a]);
+    expect(engine.sendToBack()).toBe(false); // déjà à l'arrière-plan : aucune étape
+    engine.undo();
+    expect(doc.elementIds(page)).toEqual([a, b, c]);
+  });
+  it("restack(ids, to) : relayé au cœur ; refus (rang hors bornes) : faux, erreur dans l'état", () => {
+    const { engine, doc, page, rect } = stack();
+    const a = rect(0);
+    const b = rect(100);
+    expect(engine.restack([a], 1)).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, a]);
+    expect(engine.restack([a], 5)).toBe(false);
+    expect(engine.state().error).not.toBeNull();
+  });
+  it("Ctrl+↑ / Ctrl+↓ : un rang ; Ctrl+Maj+↑ / ↓ : extrémités ; touche prise seulement avec une sélection", () => {
+    const { engine, doc, page, rect, ctrl } = stack();
+    const a = rect(0);
+    const b = rect(100);
+    const c = rect(200);
+    expect(engine.key(ctrl("ArrowUp"))).toBe(false);
+    engine.select([a]);
+    expect(engine.key(ctrl("ArrowUp"))).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, a, c]);
+    expect(engine.key(ctrl("ArrowUp", true))).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, c, a]);
+    expect(engine.key(ctrl("ArrowDown"))).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, a, c]);
+    expect(engine.key(ctrl("ArrowDown", true))).toBe(true);
+    expect(doc.elementIds(page)).toEqual([a, b, c]);
+  });
+  it("Ctrl+Maj+L : ouvre l'onglet Calques (pageShortcut), Ctrl+Maj+P : Pages", () => {
+    const seen: string[] = [];
+    const eng = { prevPage: () => false, nextPage: () => false, nextOrAdd: () => false, addPage: () => false, duplicatePage: () => false };
+    const ev = (key: string): KeyLike => ({ key, ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null });
+    expect(pageShortcut(ev("L"), eng, (t) => seen.push(t))).toBe(true);
+    expect(pageShortcut(ev("P"), eng, (t) => seen.push(t))).toBe(true);
+    expect(seen).toEqual(["calques", "pages"]);
+    expect(pageShortcut(ev("L"), eng)).toBe(false);
   });
 });

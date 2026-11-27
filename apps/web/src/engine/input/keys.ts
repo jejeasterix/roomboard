@@ -15,7 +15,7 @@ const EDITABLE = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
 /** Cible d'édition (champ, zone éditable) : ses touches lui appartiennent. Un bouton n'en est pas une. */
 const NON_TEXT_INPUTS = new Set(["range", "checkbox", "radio", "button", "submit", "reset", "color", "file", "image"]);
-const inEditable = (t: KeyLike["target"]): boolean => {
+export const inEditable = (t: KeyLike["target"]): boolean => {
   if (t === null) return false;
   if (t.isContentEditable === true) return true;
   if (t.tagName === undefined) return false;
@@ -56,15 +56,6 @@ export function objectKey(e: KeyLike): ObjectKey | null {
   return null;
 }
 
-/** Lot 2 (T15, Disposition) : Ctrl+Maj+↑ premier plan, Ctrl+↑ avancer, Ctrl+↓ reculer, Ctrl+Maj+↓ arrière-plan (cadrage 20). */
-export type OrderKey = "front" | "back" | "forward" | "backward";
-export function orderKey(e: KeyLike): OrderKey | null {
-  if (e.isComposing || e.altKey || !(e.ctrlKey || e.metaKey) || inEditable(e.target)) return null;
-  if (e.key === "ArrowUp") return e.shiftKey ? "front" : "forward";
-  if (e.key === "ArrowDown") return e.shiftKey ? "back" : "backward";
-  return null;
-}
-
 export type EditAction = "delete" | "escape";
 
 /** Suppr / Retour arrière (supprimer la sélection, D12) et Échap (la vider), hors champ, hors composition, sans modificateur. */
@@ -79,4 +70,45 @@ export function editAction(e: KeyLike): EditAction | null {
 export function enterAction(e: KeyLike): boolean {
   if (e.key !== "Enter" || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || inEditable(e.target)) return false;
   return e.target?.tagName?.toUpperCase() !== "BUTTON";
+}
+
+export type OrderKey = "up" | "down" | "front" | "back";
+
+/** Ordre des objets (lot 2) : Ctrl/Cmd+↑ ↓ d'un rang, Ctrl/Cmd+Maj+↑ ↓ premier plan et arrière-plan ; hors champ, hors IME, Alt Gr refusé. */
+export function orderKey(e: KeyLike): OrderKey | null {
+  if (e.isComposing || e.altKey || inEditable(e.target) || !(e.ctrlKey || e.metaKey)) return null;
+  if (e.key === "ArrowUp") return e.shiftKey ? "front" : "up";
+  if (e.key === "ArrowDown") return e.shiftKey ? "back" : "down";
+  return null;
+}
+
+export type PageKey = "prev" | "next" | "add" | "duplicate" | "sidebar-pages" | "sidebar-layers";
+
+/** Raccourcis de page (DA9) : PageUp/PageDown, Ctrl+M (Ctrl aussi sous macOS), Ctrl/Cmd+Maj+D/P/L ; hors champ, hors IME, Alt Gr refusé. */
+export function pageKey(e: KeyLike): PageKey | null {
+  if (e.isComposing || e.altKey || inEditable(e.target)) return null;
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod && !e.shiftKey) {
+    if (e.key === "PageUp") return "prev";
+    if (e.key === "PageDown") return "next";
+    return null;
+  }
+  const key = e.key.toLowerCase();
+  if (e.ctrlKey && !e.metaKey && !e.shiftKey && key === "m") return "add";
+  if (mod && e.shiftKey) {
+    if (key === "d") return "duplicate";
+    if (key === "p") return "sidebar-pages";
+    if (key === "l") return "sidebar-layers";
+  }
+  return null;
+}
+
+export type AppShortcut = "backgrounds";
+
+/** personnalisation-1b (Q28) : raccourcis de l'application, écoutés par `App.tsx` (jamais par le moteur) : Ctrl+Maj+F
+ *  (Cmd+Maj+F sous macOS) ouvre ou ferme la fenêtre des fonds ; hors champ de saisie, hors composition, jamais avec Alt. */
+export function appShortcut(e: KeyLike): AppShortcut | null {
+  if (e.isComposing || e.altKey || !e.shiftKey || !(e.ctrlKey || e.metaKey)) return null;
+  if (inEditable(e.target)) return null;
+  return e.key.toLowerCase() === "f" ? "backgrounds" : null;
 }

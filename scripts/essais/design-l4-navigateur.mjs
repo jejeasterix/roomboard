@@ -214,7 +214,7 @@ async function s4(browser, base) {
   const w = watch(page);
   await page.goto(`${base}/?fichiers=repli&annotation=faux&encre=1`);
   await ready(page);
-  await page.click(item("page-add"));
+  await clickItem(page, "page-add");
   await waitStage(page, "data-page", "^2/2$");
   await page.click(item("page-prev"));
   await waitStage(page, "data-page", "^1/2$");

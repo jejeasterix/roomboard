@@ -25,7 +25,8 @@ import { FormatRow } from "./FormatRow";
 import { SelectionRow } from "./SelectionRow";
 import { Icon, IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { iconFor } from "./icons";
-import { itemState, type ToolbarView } from "./item-state";
+import { itemState, pagesLabel, type ToolbarView } from "./item-state";
+import { padToPixel } from "./Island";
 import { PointerSwitch } from "./PointerSwitch";
 import { createTip } from "./tooltip";
 
@@ -96,10 +97,42 @@ function Drop(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
   );
 }
 
+/** personnalisation-1a (T6, décisions 25, 27) : compteur « 2 / 5 » de la barre d'outils, bouton à icône qui ouvre la barre
+ *  latérale. Il porte `#pages` (unique tant que PagesBar existe : elle ne rend plus le sien sans Précédente/Suivante) ;
+ *  son nom accessible est le compteur, l'infobulle garde le libellé de l'action. */
+function PageCounter(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
+  const st = createMemo(() => itemState(props.item, props.ctx.view()));
+  const text = createMemo(() => pagesLabel(props.ctx.view()));
+  const tip = createTip();
+  let button: HTMLButtonElement | undefined;
+  return (
+    <>
+      <button
+        id="pages"
+        ref={button}
+        type="button"
+        class="rb-pages-count"
+        data-item={props.item.id}
+        aria-label={text()}
+        aria-pressed={st().pressed ?? undefined}
+        disabled={st().disabled}
+        onClick={() => props.ctx.host.runAction(props.item.action ?? "")}
+        {...tipPointerHandlers(tip)}
+        onBlur={() => tip.blur(document.hasFocus())}
+      >
+        <Icon name={iconFor(props.item, st().icon) ?? ""} />
+        <span ref={(el) => onCleanup(padToPixel(el))}>{text()}</span>
+      </button>
+      <TipBubble tip={tip} label={st().label} anchor={() => button!} />
+    </>
+  );
+}
+
 /** design-l4 (L4-8) : rendu propre à une action (table indexée par l'action, jamais un test sur l'identifiant) ;
  *  absente : bouton. */
 const ACTION_RENDER: Readonly<Record<ActionId, (item: ToolItem, ctx: Ctx) => JSX.Element>> = {
   "annotation-pointer": (item, ctx) => <PointerSwitch item={item} view={ctx.view} host={ctx.host} />,
+  "page-number": (item, ctx) => <PageCounter item={item} ctx={ctx} />,
 };
 
 /** Rendu par sorte d'élément (table, jamais un branchement sur l'identifiant). */

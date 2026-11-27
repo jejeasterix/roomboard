@@ -233,6 +233,7 @@ const k = (key: string, m: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKe
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 interface SetupOptions {
+  readonly pageMode?: WorkspaceDeps["pageMode"];
   readonly kind?: HostKind;
   readonly first?: StartedDocument;
   readonly onDrop?: FileHost["onDrop"];
@@ -297,6 +298,7 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     first: o.first ?? { doc: (o.core ?? fakeCore).blank(), opened: null, error: null },
     makeSession: async (doc, _assets) => fakeSession(doc).board,
     makeAssets: () => (o.realHash === true ? createAssetStore() : createAssetStore(fakeHasher)),
+    ...(o.pageMode ? { pageMode: o.pageMode } : {}),
     ...(o.decode ? { decode: o.decode } : {}),
     ...(o.readSheet ? { readSheet: o.readSheet } : {}),
     ...(o.clipboard ? { clipboard: o.clipboard } : {}),
@@ -371,6 +373,18 @@ describe("espace de travail : ouvrir et nouveau (CL5b-3, Q1)", () => {
     expect(ws.active()).not.toBe(first);
     expect(strokes(ws.active())).toBe(0);
     expect([first.files.isDirty(), strokes(first), shell.confirm.mock.calls.length]).toEqual([true, 1, 0]);
+  });
+
+  it("onglet neuf au mode du profil ; onglet d'annotation sans mode", async () => {
+    const blank = vi.fn((mode?: string) => fakeCore.blank(mode as never));
+    const core = { ...fakeCore, blank } as unknown as typeof fakeCore;
+    const ws = await setupWorkspace({ core, pageMode: () => "portrait" });
+    blank.mockClear();
+    await ws.newBlank();
+    expect(blank).toHaveBeenLastCalledWith("portrait");
+    blank.mockClear();
+    await ws.annotationTab();
+    expect(blank).toHaveBeenLastCalledWith();
   });
 
   it("fichier illisible : message, aucun onglet ajouté", async () => {
@@ -795,6 +809,22 @@ describe("espace de travail : conteneur, repli et images (R7, R12, R30, S3, S4)"
     expect(strokes(tab)).toBe(1);
     expect(tab.board.doc.citedAssets()).toHaveLength(1);
     expect(tab.assets.has(tab.board.doc.citedAssets()[0]!.id)).toBe(true);
+  });
+
+  it("dépôt d'une image large en Infini : la cible dit son cadre (null), l'image n'est pas réduite au cadre 1920 (T10)", async () => {
+    const wide = vi.fn(async (_b: Blob, _k: string) => ({ bitmap: { close() {} } as unknown as ImageBitmap, w: 3000, h: 100 }));
+    const ws = await setupWorkspace({ decode: wide });
+    const tab = ws.active();
+    tab.board.stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 4000, bottom: 800, width: 4000, height: 800, x: 0, y: 0, toJSON: () => ({}) });
+    const page = tab.board.doc.page.bind(tab.board.doc);
+    tab.board.doc.page = (id) => {
+      const p = page(id);
+      return p === null ? null : { ...p, mode: "infinite" };
+    };
+    const apply = vi.spyOn(tab.board.doc, "apply");
+    await ws.importFiles([plainFile("a.png", pngHead(3000, 100))], { x: 2000, y: 400 });
+    const add = apply.mock.calls.map((c) => c[0]).find((c) => c.type === "AddImage") as unknown as { matrix: number[] };
+    expect(add.matrix[0]).toBe(1);
   });
 
   it("même image déposée deux fois : deux éléments, un seul asset écrit", async () => {
@@ -2593,5 +2623,29 @@ describe("C11b : envoi au tableau et fond figé (P3, P6 à P14, P17, P31)", () =
     expect(await ws.replaceAnnotation(bytes)).toBe(true);
     expect(ws.annotationBackdrop()).toBeNull();
     expect(strokes(ws.tabs.list().find((t) => t.kind === "annotation")!.session)).toBe(1);
+  });
+
+  it("personnalisation-1b (Q22) : dérivation posée, un dépôt va à Mes fonds et pas à la page ; retirée, l'import reprend", async () => {
+    const ws = await setupWorkspace({ decode: fakeDecode });
+    const got: string[] = [];
+    ws.setDropDiverter(async (files) => {
+      got.push(...files.map((f) => f.name));
+    });
+    dropHandler!([plainFile("a.png", pngHead(10, 10))], null);
+    await flush();
+    expect(got).toEqual(["a.png"]);
+    const doc = ws.active().board.doc;
+    expect(doc.elementIds(doc.pageIds()[0]!)).toEqual([]);
+    ws.setDropDiverter(null);
+    dropHandler!([plainFile("b.png", pngHead(10, 10))], null);
+    await flush();
+    await flush();
+    await vi.waitFor(() => expect(doc.elementIds(doc.pageIds()[0]!)).toHaveLength(1));
+    expect(got).toEqual(["a.png"]);
+  });
+
+  it("personnalisation-1b (Q22) : pickFiles rend les fichiers de la boîte d'ouverture", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pickFiles()).toEqual([]);
   });
 });

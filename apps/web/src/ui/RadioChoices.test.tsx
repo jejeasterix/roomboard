@@ -101,4 +101,15 @@ describe("RadioChoices (design-l3, L3-23, DA-L3-2)", () => {
     expect(radios.map((b) => b.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
     expect(radios.map((b) => b.getAttribute("data-option-value"))).toEqual(["top", "left", "floating"]);
   });
+  it("personnalisation-1b : aspects rail et chips : data-look posé, flèches comme les autres", () => {
+    for (const look of ["rail", "chips"] as const) {
+      const choose = vi.fn();
+      const r = render(() => <RadioChoices name="essai" label="Essai" look={look} options={[{ value: "a", label: "A" }, { value: "b", label: "B" }]} value="a" choose={choose} />);
+      const group = r.container.querySelector('[role="radiogroup"]')!;
+      expect(group.getAttribute("data-look")).toBe(look);
+      fireEvent.keyDown(r.container.querySelector('[data-choice="a"]')!, { key: "ArrowRight" });
+      expect(choose).toHaveBeenCalledWith("b");
+      r.unmount();
+    }
+  });
 });

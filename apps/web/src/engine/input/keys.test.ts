@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editAction, isPanKey, keyAction, objectKey, orderKey, type KeyLike } from "./keys";
+import { appShortcut, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -145,18 +145,62 @@ describe("keyAction : réglette et cases (le focus y reste après un réglage)",
   });
 });
 
-describe("orderKey (T15)", () => {
-  it("orderKey : les quatre combinaisons", () => {
-    expect(orderKey(k("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBe("front");
-    expect(orderKey(k("ArrowDown", { ctrlKey: true, shiftKey: true }))).toBe("back");
-    expect(orderKey(k("ArrowUp", { ctrlKey: true }))).toBe("forward");
-    expect(orderKey(k("ArrowDown", { metaKey: true }))).toBe("backward");
+describe("pageKey (DA9)", () => {
+  it("pageKey : PageUp, PageDown, Ctrl+M (aussi Mac), Ctrl+Maj+D, Ctrl+Maj+P, Ctrl+Maj+L", () => {
+    expect(pageKey(k("PageUp"))).toBe("prev");
+    expect(pageKey(k("PageDown"))).toBe("next");
+    expect(pageKey(k("m", { ctrlKey: true }))).toBe("add");
+    expect(pageKey(k("D", { ctrlKey: true, shiftKey: true }))).toBe("duplicate");
+    expect(pageKey(k("d", { metaKey: true, shiftKey: true }))).toBe("duplicate");
+    expect(pageKey(k("P", { ctrlKey: true, shiftKey: true }))).toBe("sidebar-pages");
+    expect(pageKey(k("l", { metaKey: true, shiftKey: true }))).toBe("sidebar-layers");
   });
-  it("orderKey : nul en champ, en composition, avec Alt, sans Ctrl, autre touche", () => {
-    expect(orderKey(k("ArrowUp", { ctrlKey: true, target: { tagName: "INPUT", type: "text" } }))).toBeNull();
-    expect(orderKey(k("ArrowUp", { ctrlKey: true, isComposing: true }))).toBeNull();
-    expect(orderKey(k("ArrowUp", { ctrlKey: true, altKey: true }))).toBeNull();
+  it("pageKey : Alt Gr et composition IME : null ; Cmd+M : null", () => {
+    expect(pageKey(k("m", { ctrlKey: true, altKey: true }))).toBeNull();
+    expect(pageKey(k("PageUp", { isComposing: true }))).toBeNull();
+    expect(pageKey(k("m", { ctrlKey: true, isComposing: true }))).toBeNull();
+    expect(pageKey(k("m", { metaKey: true }))).toBeNull();
+    expect(pageKey(k("PageDown", { ctrlKey: true }))).toBeNull();
+  });
+  it("pageKey : champ de saisie : null ; inEditable exporté", () => {
+    expect(pageKey(k("PageUp", { target: { tagName: "INPUT" } }))).toBeNull();
+    expect(inEditable({ tagName: "TEXTAREA" })).toBe(true);
+    expect(inEditable({ tagName: "BUTTON" })).toBe(false);
+  });
+});
+
+describe("orderKey (ordre des objets, lot 2)", () => {
+  it("orderKey : Ctrl+↑ / Ctrl+↓ un rang, Ctrl+Maj+↑ / Ctrl+Maj+↓ premier plan et arrière-plan (Cmd aussi)", () => {
+    expect(orderKey(k("ArrowUp", { ctrlKey: true }))).toBe("up");
+    expect(orderKey(k("ArrowDown", { metaKey: true }))).toBe("down");
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBe("front");
+    expect(orderKey(k("ArrowDown", { metaKey: true, shiftKey: true }))).toBe("back");
+  });
+  it("orderKey : flèche seule, Maj seul, Alt, composition IME, champ de saisie, autre touche : null", () => {
     expect(orderKey(k("ArrowUp"))).toBeNull();
+    expect(orderKey(k("ArrowUp", { shiftKey: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, altKey: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, isComposing: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, target: { isContentEditable: true } }))).toBeNull();
     expect(orderKey(k("ArrowLeft", { ctrlKey: true }))).toBeNull();
+  });
+});
+
+describe("appShortcut (personnalisation-1b, Q28)", () => {
+  it("Ctrl+Maj+F et Cmd+Maj+F → backgrounds, touche rendue en majuscule ou non", () => {
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true }))).toBe("backgrounds");
+    expect(appShortcut(k("f", { metaKey: true, shiftKey: true }))).toBe("backgrounds");
+  });
+  it("sans Maj, avec Alt, en composition, dans un champ, autre touche, sans Ctrl ni Cmd : null", () => {
+    expect(appShortcut(k("f", { ctrlKey: true }))).toBeNull();
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true, altKey: true }))).toBeNull();
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true, isComposing: true }))).toBeNull();
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+    expect(appShortcut(k("G", { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(appShortcut(k("F", { shiftKey: true }))).toBeNull();
+  });
+  it("Ctrl+Maj+F n'est pas une touche du moteur (annuler, grouper)", () => {
+    expect(keyAction(k("F", { ctrlKey: true, shiftKey: true }))).toBeNull();
   });
 });

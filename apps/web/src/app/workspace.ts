@@ -6,7 +6,7 @@
  * tenu sur le stage de chaque onglet : l'id `stage` suivant l'onglet actif (CL5b-2), `#stage` décrit l'onglet montré.
  * C13 (D5, D17) : `openBoard` ouvre un `.iwb` ou un `.ubz` dans un nouvel onglet ; `exportBoard` écrit une copie au format.
  */
-import { type CoreDocument, type CoreFactory, type LinkedAsset } from "../core/api";
+import { type CoreDocument, type CoreFactory, type LinkedAsset, type PageLayout } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { NOTHING_TO_SEND_MESSAGE, type AnnotationControl, type CapturedImage, type SendRequest, type SendResult, type SendTarget } from "../platform/annotation-port";
 import type { ContainerCodec } from "../platform/container";
@@ -19,6 +19,7 @@ import {
   type FileController,
   type FileKey,
 } from "../platform/controller";
+import { PAGE_HEIGHT, PAGE_WIDTH, pageFrame } from "../engine/page";
 import type { PdfEngine } from "../engine/render/pdf-port";
 import { createClipboard, INTERNAL_ONLY_MESSAGE, NEWER_ITEMS_MESSAGE, TOO_BIG_ITEMS_MESSAGE, type Clipboard, type ItemsRefusal } from "../platform/clipboard";
 import { PDF_EXTENSION, RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type FileHost, type HostKind, type Notify, type OpenedFile, type Point, type SaveTarget, type ShellPort } from "../platform/files";
@@ -39,7 +40,7 @@ import { createFragmentOps, SELECTION_NAME, tabSessionView, type InsertOutcome }
 import { IDENTITY_MATRIX } from "../core/shapes";
 import { capturePage, type PageBackdrop } from "./desktop-page";
 import type { CapturedResource } from "./library";
-import { renderThumbnail, type ThumbDeps } from "./thumbnail";
+import { renderPageThumb, renderThumbnail, type ThumbDeps } from "./thumbnail";
 import { type OverlayProducer, type PdfLib, type RasterPage } from "./pdf-export";
 import { createTabs, TOO_MANY_TABS, type TabKind, type Tabs } from "./tabs";
 
@@ -87,6 +88,8 @@ export interface WorkspaceDeps {
   /** C15 (X39) : rendu 3D partagé et lecteur de ZIP pour l'import ; absent : fichiers 3D refusés comme avant. */
   readonly model3d?: Model3dDeps;
   readonly core: CoreFactory;
+  /** Disposition d'une page d'onglet neuf (profil actif, `behavior.pageMode`) ; absent : paysage. */
+  readonly pageMode?: () => PageLayout;
   readonly host: FileHost;
   /** Pour `data-fichiers`. */
   readonly kind: HostKind;
@@ -164,6 +167,13 @@ export interface Workspace {
   /** Question si l'onglet est modifié ; dernier onglet : un vierge d'abord (CL5b-5). */
   close(id: string): Promise<boolean>;
   importFiles(files: readonly DroppedFile[], at?: Point | null): Promise<ImportReport>;
+  /** personnalisation-1b (Q22) : fenêtre des fonds ouverte, tout dépôt natif va à `h` (« Mes fonds ») au lieu de la page ;
+   *  null : dérivation retirée, le dépôt reprend son chemin. */
+  setDropDiverter(h: ((files: readonly DroppedFile[]) => Promise<void>) | null): void;
+  /** personnalisation-1b (Q22) : boîte d'ouverture du système (« Importer une image… ») ; annulée : liste vide. */
+  pickFiles(): Promise<readonly DroppedFile[]>;
+  /** Miniature de la page `pageId` de l'onglet `tab` (DA7), `width` en pixels du tampon ; null sans peintre ou sans page. */
+  pageThumb(tab: TabSession, pageId: string, width: number): Promise<ImageBitmap | Blob | null>;
   /** Tableau HTML collé (C10b, F19) dans l'onglet actif, centre de la vue ; vrai si le collage est pris (tableau posé
    *  ou refusé pour sa taille), faux sans tableau lisible (PC9). */
   pasteTable(html: string): Promise<boolean>;
@@ -355,6 +365,11 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     page: () => t.board.engine.state().page,
     camera: () => t.board.engine.camera(),
     stageRect: () => t.board.stage.getBoundingClientRect(),
+    // DA4 : cadre de la page cible ; null en Infini (rien n'est coupé), 1920 × 1080 sans page lisible.
+    frame: () => {
+      const p = t.board.doc.page(t.board.engine.state().page);
+      return p === null ? { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: PAGE_HEIGHT } : pageFrame(p);
+    },
     measure: () => t.board.measure,
     textStyle: () => t.board.engine.textStyle(),
     run: (cmd) => t.board.engine.run(cmd),
@@ -487,6 +502,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   };
 
   let exporting = false;
+  let diverter: ((files: readonly DroppedFile[]) => Promise<void>) | null = null;
   const ws: Workspace = {
     tabs,
     active() {
@@ -616,7 +632,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await say(TOO_MANY_TABS);
         return;
       }
-      await addTab(core.blank(), null);
+      await addTab(core.blank(deps.pageMode?.()), null);
     },
     async annotationTab() {
       const existing = tabs.list().find((t) => t.kind === "annotation");
@@ -724,6 +740,15 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       }
     },
     importFiles: (files, at = null) => importer.importFiles(files, at),
+    setDropDiverter(h) {
+      diverter = h;
+    },
+    pickFiles: () => host.pick(),
+    async pageThumb(tab, pageId, width) {
+      const thumb = deps.thumbnail;
+      if (thumb === undefined || released.has(tab)) return null;
+      return renderPageThumb(tab.board.doc, tab.assets, pageId, width, thumb);
+    },
     async pasteTable(html) {
       const t = tabs.active()?.session;
       if (t === undefined) return false;
@@ -877,7 +902,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     if (entry === undefined) return false;
     const tab = entry.session;
     if (tab.files.isDirty() && !(await ask(DISCARD_MESSAGE))) return false;
-    if (tabs.list().length === 1 && (await addTab(core.blank(), null)) === null) return false;
+    if (tabs.list().length === 1 && (await addTab(core.blank(deps.pageMode?.()), null)) === null) return false;
     if (tabs.remove(id) === null) return false;
     release(tab);
     // C11a (P13) : onglet d'annotation fermé, `annotate` détruite (sortie d'abord si active).
@@ -921,9 +946,12 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     return true;
   });
   // C11a (P17, P18) : en annotation, tout dépôt natif sur la fenêtre principale compte comme un dépôt sur la zone.
+  // personnalisation-1b (Q22) : fenêtre des fonds ouverte, le dépôt va à « Mes fonds » (dérivation posée par la fenêtre).
   const stopDrop = host.onDrop((files, at) => {
     const a = gate();
-    const done: Promise<unknown> = a !== null && a.state().active ? a.dropOnZone(files, at) : ws.importFiles(files, at);
+    const divert = diverter;
+    const done: Promise<unknown> =
+      divert !== null ? divert(files) : a !== null && a.state().active ? a.dropOnZone(files, at) : ws.importFiles(files, at);
     void done.catch((e: unknown) => {
       console.warn(`RoomBoard : dépôt abandonné (${messageOf(e)})`);
     });

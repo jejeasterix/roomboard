@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, ROOT, serve, sha256, solidPng, stageMouse, TAB, VIEWPORT, zipEntries } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, ROOT, serve, sha256, solidPng, stageMouse, TAB, VIEWPORT, zipEntries, foldOptions } from "./commun.mjs";
 
 const LABEL = "C2 image";
 const LATER = "format pris en charge dans une prochaine version";
@@ -85,6 +85,7 @@ async function scenario(page, url, { captures, tmp }) {
   };
 
   const png = solidPng(W, H, [20, 20, 20]);
+  await foldOptions(page);
   await page.goto(url);
   await page.waitForSelector('#stage[data-ready="1"]', { timeout: 15000 });
   await fr();

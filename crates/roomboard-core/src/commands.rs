@@ -2,16 +2,20 @@
 //! effet (gomme qui ne touche rien) n'ouvre aucune transaction d'écriture : aucune étape vide (D38).
 use std::collections::BTreeSet;
 
+use yrs::types::AsPrelim;
 use yrs::{
     Any, Array, ArrayRef, GetString, In, Map, MapPrelim, MapRef, Out, ReadTxn, TextPrelim, TextRef,
+    TransactionMut,
 };
 
 use crate::asset::{is_asset_id, AssetRef};
+use crate::copy::reinsert_kept;
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
     apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, look_fields,
     out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group, read_style,
-    style_fields, transform_to_any, Look, StrokeStyle, Transform, FIT_WIDTH, IDENTITY, LOOK_KEYS,
+    style_fields, transform_to_any, Look, PageLayout, RawBackdrop, StrokeStyle, Transform,
+    FIT_WIDTH, IDENTITY, INFINITE_MODE, LOOK_KEYS, PAGE_HEIGHT, PORTRAIT_HEIGHT,
 };
 use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
@@ -30,9 +34,31 @@ pub enum EraseMode {
 pub enum Command {
     AddPage {
         after: Option<String>,
+        mode: Option<PageLayout>,
     },
     RemovePage {
         page: String,
+    },
+    /// Disposition d'une page (décisions 3, 4, 6) : une étape ; même valeur : aucune (D38).
+    SetPageMode {
+        page: String,
+        mode: PageLayout,
+    },
+    /// Déplace une page au rang final `to` en gardant son id et ceux de ses éléments (DA2) ; une étape.
+    MovePage {
+        page: String,
+        to: u32,
+    },
+    /// Recopie une page juste après elle, ids neufs (décision 7) ; une étape.
+    DuplicatePage {
+        page: String,
+    },
+    /// Ordre des objets (décision 16) : les `ids` (une même page, sinon `MixedPages`) passent en un bloc contigu, ordre
+    /// relatif de la pile gardé, `to` = rang du bas du bloc dans la pile finale (0 = arrière-plan) ; ids gardés (DA2) ;
+    /// une étape ; même ordre : aucune (D38).
+    Restack {
+        ids: Vec<String>,
+        to: u32,
     },
     CommitStroke {
         page: String,
@@ -107,6 +133,14 @@ pub enum Command {
     /// Grille de page (U31, C9) ; `None` retire la grille. Remplacée en bloc, une étape (G5).
     SetGrid {
         page: String,
+        grid: Option<GridInput>,
+    },
+    /// Aspect complet de N pages (personnalisation-1b, DA1) : couleur, grille et fond image en une étape ; seules les
+    /// pages qui changent sont écrites et rendues ; une page à fond `pdf-page` ne reçoit que couleur et grille (Q35).
+    ApplyBackground {
+        pages: Vec<String>,
+        color: String,
+        backdrop: Option<BackdropInput>,
         grid: Option<GridInput>,
     },
     /// Tableau (U32, C10a, T3) : `cols` × `rows` (1 à 64), colonnes et lignes à la taille donnée ; coin en (x, y).
@@ -272,13 +306,13 @@ pub enum Command {
         pitch: f64,
         snapshot: Option<AssetRef>,
     },
-    /// Ordre des objets (OG11, DA-2) : le bloc `ids` d'une même page, dans son ordre relatif, posé au rang `to` (rang
-    /// du bas du bloc après déplacement : 0 = arrière-plan, `n - k` = premier plan) ; ids gardés, une étape ; même
-    /// ordre : aucune étape (D38) ; page mêlée, id inconnu, rang hors bornes : `BadOrder`.
-    Restack {
-        ids: Vec<String>,
-        to: u32,
-    },
+}
+
+impl Command {
+    /// Page neuve sans disposition (Paysage, `mode` absent).
+    pub fn add_page(after: Option<String>) -> Command {
+        Command::AddPage { after, mode: None }
+    }
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -322,7 +356,8 @@ pub enum CommandError {
     BadImageParams,
     BadModel3d,
     BadStyle,
-    BadOrder,
+    BadIndex,
+    MixedPages,
 }
 
 impl std::fmt::Display for CommandError {
@@ -394,7 +429,8 @@ impl std::fmt::Display for CommandError {
                 "objet 3D invalide (format glb, gltf, obj, stl ou ply, boîte finie > 0, pitch de −85° à 85°, yaw dans ]−180°, 180°], 256 fichiers liés au plus, chemins de 1 à 1 024 caractères normalisés et uniques attendus)"
             ),
             CommandError::BadStyle => write!(f, "style invalide"),
-            CommandError::BadOrder => write!(f, "ordre invalide"),
+            CommandError::BadIndex => write!(f, "rang de page hors bornes"),
+            CommandError::MixedPages => write!(f, "objets de pages différentes"),
         }
     }
 }
@@ -570,6 +606,40 @@ pub(crate) fn valid_asset(a: &AssetRef) -> bool {
         && a.size.fract() == 0.0
 }
 
+/// Fond demandé (K6, HK1) : asset conforme (`BadAsset`), puis boîte finie > 0 et `fit: "width"` (`BadImage`). Partagé par
+/// `SetBackdrop` et `ApplyBackground` (personnalisation-1b).
+pub(crate) fn check_backdrop(b: &BackdropInput) -> Result<(), CommandError> {
+    if !valid_asset(&b.asset) {
+        return Err(CommandError::BadAsset);
+    }
+    if !finite_positive(b.w) || !finite_positive(b.h) || b.fit != FIT_WIDTH {
+        return Err(CommandError::BadImage);
+    }
+    Ok(())
+}
+
+/// Écriture d'un fond décidée par `backdrop_plan`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BackdropWrite {
+    Meta,
+    Full,
+}
+
+/// Même fond (D38) : rien à retirer, ou même image (asset, genre `image`, taille, ajustement `width`).
+pub(crate) fn same_backdrop(input: Option<&BackdropInput>, current: Option<&RawBackdrop>) -> bool {
+    match (input, current) {
+        (None, None) => true,
+        (Some(b), Some(r)) => {
+            r.asset.as_deref() == Some(b.asset.id.as_str())
+                && r.kind.as_deref() == Some("image")
+                && r.w == Some(b.w)
+                && r.h == Some(b.h)
+                && r.fit.as_deref() == Some(FIT_WIDTH)
+        }
+        _ => false,
+    }
+}
+
 fn stroke_prelim(
     id: &str,
     transform: &Transform,
@@ -647,8 +717,12 @@ impl Document {
 
     pub fn apply(&mut self, cmd: Command) -> Result<Change, CommandError> {
         let change = match cmd {
-            Command::AddPage { after } => self.cmd_add_page(after.as_deref()),
+            Command::AddPage { after, mode } => self.cmd_add_page(after.as_deref(), mode),
             Command::RemovePage { page } => self.cmd_remove_page(&page),
+            Command::SetPageMode { page, mode } => self.cmd_set_page_mode(&page, mode),
+            Command::MovePage { page, to } => self.cmd_move_page(&page, to),
+            Command::DuplicatePage { page } => self.cmd_duplicate_page(&page),
+            Command::Restack { ids, to } => self.cmd_restack(&ids, to),
             Command::CommitStroke {
                 page,
                 points,
@@ -724,6 +798,12 @@ impl Document {
                 box_height,
             } => self.cmd_format_text(&id, (start, len), &attrs, box_height),
             Command::SetGrid { page, grid } => self.cmd_set_grid(&page, grid.as_ref()),
+            Command::ApplyBackground {
+                pages,
+                color,
+                backdrop,
+                grid,
+            } => self.cmd_apply_background(&pages, &color, backdrop.as_ref(), grid.as_ref()),
             Command::AddTable {
                 page,
                 x,
@@ -901,7 +981,6 @@ impl Document {
                 pitch,
                 snapshot,
             } => self.cmd_set_model3d_view(&id, yaw, pitch, snapshot.as_ref()),
-            Command::Restack { ids, to } => self.cmd_restack(&ids, to),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)
@@ -1152,12 +1231,7 @@ impl Document {
         input: Option<&BackdropInput>,
     ) -> Result<Change, CommandError> {
         if let Some(b) = input {
-            if !valid_asset(&b.asset) {
-                return Err(CommandError::BadAsset);
-            }
-            if !finite_positive(b.w) || !finite_positive(b.h) || b.fit != FIT_WIDTH {
-                return Err(CommandError::BadImage);
-            }
+            check_backdrop(b)?;
         }
         let (page_map, current) = {
             let txn = self.read();
@@ -1167,53 +1241,70 @@ impl Document {
             let current = read_backdrop(&txn, &m);
             (m, current)
         };
-        let same = match (input, &current) {
-            (None, None) => true,
-            (Some(b), Some(r)) => {
-                r.asset.as_deref() == Some(b.asset.id.as_str())
-                    && r.kind.as_deref() == Some("image")
-                    && r.w == Some(b.w)
-                    && r.h == Some(b.h)
-                    && r.fit.as_deref() == Some(FIT_WIDTH)
-            }
-            _ => false,
+        let plan = {
+            let txn = self.read();
+            self.backdrop_plan(&txn, input, current.as_ref())
         };
-        // Même fond mais métadonnée d'asset absente : on l'écrit (une étape) au lieu de « inchangé ».
-        let meta_missing = same
-            && input.is_some_and(|b| {
-                let txn = self.read();
-                self.assets_ref().get(&txn, b.asset.id.as_str()).is_none()
-            });
-        if same && !meta_missing {
+        let Some(plan) = plan else {
             return Ok(self.unchanged());
-        }
+        };
         {
             let mut txn = self.transact_local();
-            match input {
-                Some(b) if same => self.insert_asset_meta(&mut txn, &b.asset),
-                None => {
-                    page_map.remove(&mut txn, "backdrop");
-                }
-                Some(b) => {
-                    page_map.insert(
-                        &mut txn,
-                        "backdrop",
-                        MapPrelim::from([
-                            ("asset", In::from(b.asset.id.as_str())),
-                            ("kind", In::from("image")),
-                            ("w", In::Any(Any::from(b.w))),
-                            ("h", In::Any(Any::from(b.h))),
-                            ("fit", In::from(FIT_WIDTH)),
-                        ]),
-                    );
-                    self.insert_asset_meta(&mut txn, &b.asset);
-                }
-            }
+            self.write_backdrop(&mut txn, &page_map, input, plan);
         }
         Ok(self.done(Change {
             pages: vec![page.to_string()],
             ..Default::default()
         }))
+    }
+
+    /// Ce qu'il faut écrire pour que la page ait le fond `input`, partagé par `SetBackdrop` et `ApplyBackground` : `None`
+    /// si rien (même fond, métadonnée d'asset présente) ; `Meta` si même fond mais métadonnée d'asset absente ; `Full`
+    /// sinon.
+    pub(crate) fn backdrop_plan<T: ReadTxn>(
+        &self,
+        txn: &T,
+        input: Option<&BackdropInput>,
+        current: Option<&RawBackdrop>,
+    ) -> Option<BackdropWrite> {
+        if !same_backdrop(input, current) {
+            return Some(BackdropWrite::Full);
+        }
+        let meta_missing =
+            input.is_some_and(|b| self.assets_ref().get(txn, b.asset.id.as_str()).is_none());
+        meta_missing.then_some(BackdropWrite::Meta)
+    }
+
+    /// Écriture du fond d'une page (U6, K6), partagée par `SetBackdrop` et `ApplyBackground` : `None` retire ; `Meta` :
+    /// même fond, seule la métadonnée d'asset absente s'écrit ; `Full` : champs du `Y.Map` (jamais `Any::Map`, G4), puis
+    /// métadonnée (K3).
+    pub(crate) fn write_backdrop(
+        &self,
+        txn: &mut TransactionMut,
+        page: &MapRef,
+        input: Option<&BackdropInput>,
+        write: BackdropWrite,
+    ) {
+        match input {
+            Some(b) if write == BackdropWrite::Meta => self.insert_asset_meta(txn, &b.asset),
+            None => {
+                page.remove(txn, "backdrop");
+            }
+            Some(b) => {
+                page.insert(
+                    txn,
+                    "backdrop",
+                    MapPrelim::from([
+                        ("asset", In::from(b.asset.id.as_str())),
+                        ("kind", In::from("image")),
+                        ("w", In::Any(Any::from(b.w))),
+                        ("h", In::Any(Any::from(b.h))),
+                        ("fit", In::from(FIT_WIDTH)),
+                    ]),
+                );
+                self.insert_asset_meta(txn, &b.asset);
+            }
+        }
     }
 
     pub(crate) fn done(&mut self, mut change: Change) -> Change {
@@ -1228,7 +1319,11 @@ impl Document {
         }
     }
 
-    fn cmd_add_page(&mut self, after: Option<&str>) -> Result<Change, CommandError> {
+    fn cmd_add_page(
+        &mut self,
+        after: Option<&str>,
+        mode: Option<PageLayout>,
+    ) -> Result<Change, CommandError> {
         let index = match after {
             Some(a) => {
                 self.page_index(a)
@@ -1239,7 +1334,7 @@ impl Document {
         };
         let id = {
             let mut txn = self.transact_local();
-            insert_page(self.pages_ref(), &mut txn, index)
+            insert_page(self.pages_ref(), &mut txn, index, mode)
         };
         Ok(self.done(Change {
             pages: vec![id],
@@ -1263,6 +1358,144 @@ impl Document {
         Ok(self.done(Change {
             pages: vec![page.to_string()],
             removed,
+            ..Default::default()
+        }))
+    }
+
+    /// Paysage et Portrait : `mode` retiré s'il vaut `"infinite"` (valeur inconnue gardée, U3) et hauteur écrite ;
+    /// Infini : `mode` écrit, hauteur gardée (décision 6). Même disposition : aucune étape (D38).
+    fn cmd_set_page_mode(
+        &mut self,
+        page: &str,
+        layout: PageLayout,
+    ) -> Result<Change, CommandError> {
+        let (infinite, height) = {
+            let txn = self.read();
+            let (_, m) = self
+                .find_page(&txn, page)
+                .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+            (
+                out_string(m.get(&txn, "mode")).as_deref() == Some(INFINITE_MODE),
+                out_f64(m.get(&txn, "height")),
+            )
+        };
+        let target_h = match layout {
+            PageLayout::Portrait => PORTRAIT_HEIGHT,
+            _ => PAGE_HEIGHT,
+        };
+        let same = match layout {
+            PageLayout::Infinite => infinite,
+            _ => !infinite && height == Some(target_h),
+        };
+        if same {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            let (_, m) = self.find_page(&txn, page).expect("page lue plus haut");
+            match layout {
+                PageLayout::Infinite => {
+                    m.insert(&mut txn, "mode", INFINITE_MODE);
+                }
+                _ => {
+                    if infinite {
+                        m.remove(&mut txn, "mode");
+                    }
+                    m.insert(&mut txn, "height", target_h);
+                }
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
+            ..Default::default()
+        }))
+    }
+
+    /// Retire la page puis réinsère sa recopie complète (`id` compris, DA2) au rang final `to`, dans une transaction :
+    /// sélection, caméra par page et cache des contours restent valides. Même rang : aucune étape (D38).
+    fn cmd_move_page(&mut self, page: &str, to: u32) -> Result<Change, CommandError> {
+        let from = self
+            .page_index(page)
+            .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+        if to >= self.page_count() {
+            return Err(CommandError::BadIndex);
+        }
+        if to == from {
+            return Ok(self.unchanged());
+        }
+        let prelim = {
+            let txn = self.read();
+            let (_, m) = self.find_page(&txn, page).expect("page lue plus haut");
+            m.as_prelim(&txn)
+        };
+        {
+            let mut txn = self.transact_local();
+            reinsert_kept(self.pages_ref(), &mut txn, vec![(from, prelim)], to);
+        }
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
+            ..Default::default()
+        }))
+    }
+
+    /// Recopie de la page juste après elle (ids neufs, champs inconnus gardés) : une étape ; `Change.pages` = [copie].
+    fn cmd_duplicate_page(&mut self, page: &str) -> Result<Change, CommandError> {
+        let tmp = self.extract_page(page)?;
+        self.insert_pages(&tmp, page)
+    }
+
+    /// Retire les `ids` puis réinsère leurs recopies complètes (`id` et `group` compris, DA2), dans l'ordre de la pile,
+    /// en un bloc dont le bas est au rang final `to`, dans une transaction : une étape ; sélection et cache des contours
+    /// restent valides. Ids dédoublonnés ; premier id inconnu (ordre donné) : `UnknownElement` ; pages mêlées :
+    /// `MixedPages` ; bloc vide ou hors de la pile : `BadIndex` ; même ordre : aucune étape (D38). `Change.ids` : le
+    /// bloc, du bas vers le haut.
+    fn cmd_restack(&mut self, ids: &[String], to: u32) -> Result<Change, CommandError> {
+        let (page, arr, moves) = {
+            let txn = self.read();
+            let mut seen = BTreeSet::new();
+            let mut found = Vec::with_capacity(ids.len());
+            for id in ids.iter().filter(|id| seen.insert(id.as_str())) {
+                let f = self
+                    .find_element(&txn, id)
+                    .ok_or_else(|| CommandError::UnknownElement(id.clone()))?;
+                found.push((id.clone(), f));
+            }
+            let Some((_, head)) = found.first() else {
+                return Err(CommandError::BadIndex);
+            };
+            let (page, arr) = (head.page_id.clone(), head.elements.clone());
+            if found.iter().any(|(_, f)| f.page_id != page) {
+                return Err(CommandError::MixedPages);
+            }
+            found.sort_by_key(|(_, f)| f.index);
+            let n = found.len() as u32;
+            if to.checked_add(n).is_none_or(|end| end > arr.len(&txn)) {
+                return Err(CommandError::BadIndex);
+            }
+            if found.iter().zip(to..).all(|((_, f), rank)| f.index == rank) {
+                return Ok(self.unchanged());
+            }
+            let moves: Vec<(String, u32, MapPrelim)> = found
+                .into_iter()
+                .map(|(id, f)| (id, f.index, f.element.as_prelim(&txn)))
+                .collect();
+            (page, arr, moves)
+        };
+        let mut moved = Vec::with_capacity(moves.len());
+        let kept = moves
+            .into_iter()
+            .map(|(id, i, prelim)| {
+                moved.push(id);
+                (i, prelim)
+            })
+            .collect();
+        {
+            let mut txn = self.transact_local();
+            reinsert_kept(&arr, &mut txn, kept, to);
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: moved,
             ..Default::default()
         }))
     }
@@ -1782,15 +2015,9 @@ pub(crate) mod tests {
     fn add_page_after_inserts_next() {
         let mut d = Document::blank();
         let p0 = first(&d);
-        let last = d
-            .apply(Command::AddPage { after: None })
-            .expect("ajout")
-            .pages[0]
-            .clone();
+        let last = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
         let mid = d
-            .apply(Command::AddPage {
-                after: Some(p0.clone()),
-            })
+            .apply(Command::add_page(Some(p0.clone())))
             .expect("ajout")
             .pages[0]
             .clone();
@@ -1800,11 +2027,7 @@ pub(crate) mod tests {
     #[test]
     fn remove_page_then_undo_restores_its_stroke() {
         let mut d = Document::blank();
-        let p1 = d
-            .apply(Command::AddPage { after: None })
-            .expect("ajout")
-            .pages[0]
-            .clone();
+        let p1 = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
         let id = commit(&mut d, &p1, hline(100.0));
         let before = bits(&d.stroke_points(&id));
         let c = d
@@ -1830,6 +2053,401 @@ pub(crate) mod tests {
         );
         assert_eq!(d.page_count(), 1);
         assert!(!d.can_undo());
+    }
+
+    /// Valeur brute du champ `mode` d'une page (absent : `None`).
+    fn raw_mode(d: &Document, page: &str) -> Option<String> {
+        let txn = d.read();
+        let (_, m) = d.find_page(&txn, page)?;
+        out_string(m.get(&txn, "mode"))
+    }
+
+    fn set_mode(d: &mut Document, page: &str, mode: PageLayout) -> Change {
+        d.apply(Command::SetPageMode {
+            page: page.into(),
+            mode,
+        })
+        .expect("mode")
+    }
+
+    #[test]
+    fn page_mode_absent_reads_as_page() {
+        let d = Document::blank();
+        let p = first(&d);
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("page", 1080.0));
+        assert_eq!(raw_mode(&d, &p), None, "absent = Page : jamais écrit");
+    }
+
+    #[test]
+    fn page_mode_unknown_value_reads_as_page_and_is_kept() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        {
+            let mut txn = d.transact_untracked();
+            let (_, m) = d.find_page(&txn, &p).expect("page");
+            m.insert(&mut txn, "mode", "frame");
+        }
+        assert_eq!(d.page(&p).expect("page").mode, "page");
+        set_mode(&mut d, &p, PageLayout::Portrait);
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("page", PORTRAIT_HEIGHT));
+        assert!((PORTRAIT_HEIGHT - 3413.333).abs() < 0.001);
+        assert_eq!(
+            raw_mode(&d, &p).as_deref(),
+            Some("frame"),
+            "valeur inconnue gardée (U3)"
+        );
+    }
+
+    #[test]
+    fn page_mode_set_portrait_then_undo_is_one_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        let ch = set_mode(&mut d, &p, PageLayout::Portrait);
+        assert_eq!(n.since(), 1, "une commande = une transaction");
+        assert_eq!(ch.pages, vec![p.clone()]);
+        assert_eq!(d.page(&p).expect("page").height, PORTRAIT_HEIGHT);
+        assert!(d.undo());
+        assert_eq!(d.page(&p).expect("page").height, 1080.0);
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn page_mode_infinite_keeps_height() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        set_mode(&mut d, &p, PageLayout::Portrait);
+        set_mode(&mut d, &p, PageLayout::Infinite);
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("infinite", PORTRAIT_HEIGHT));
+        set_mode(&mut d, &p, PageLayout::Landscape);
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("page", 1080.0));
+        assert_eq!(
+            raw_mode(&d, &p),
+            None,
+            "retour en Page : champ retiré, jamais \"page\""
+        );
+        assert!(d.undo());
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("infinite", PORTRAIT_HEIGHT));
+    }
+
+    #[test]
+    fn page_mode_same_value_has_no_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        let v0 = d.version();
+        let ch = set_mode(&mut d, &p, PageLayout::Landscape);
+        assert_eq!((n.since(), d.version(), ch.version), (0, v0, v0));
+        assert!(ch.pages.is_empty());
+        assert!(!d.can_undo(), "D38 : aucune étape vide");
+        set_mode(&mut d, &p, PageLayout::Infinite);
+        let n = writes(&d);
+        let v1 = d.version();
+        set_mode(&mut d, &p, PageLayout::Infinite);
+        assert_eq!((n.since(), d.version()), (0, v1));
+        assert!(d.undo());
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn page_mode_add_page_with_mode() {
+        let mut d = Document::blank();
+        let p0 = first(&d);
+        let inf = d
+            .apply(Command::AddPage {
+                after: None,
+                mode: Some(PageLayout::Infinite),
+            })
+            .expect("ajout")
+            .pages[0]
+            .clone();
+        let v = d.page(&inf).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("infinite", 1080.0));
+        let por = d
+            .apply(Command::AddPage {
+                after: Some(p0.clone()),
+                mode: Some(PageLayout::Portrait),
+            })
+            .expect("ajout")
+            .pages[0]
+            .clone();
+        assert_eq!(d.page_ids(), vec![p0.clone(), por.clone(), inf.clone()]);
+        let v = d.page(&por).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("page", PORTRAIT_HEIGHT));
+        let plain = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        assert_eq!(d.page(&plain).expect("page").height, 1080.0);
+        assert_eq!(raw_mode(&d, &plain), None);
+        assert!(d.undo() && d.undo());
+        assert_eq!(d.page_ids(), vec![p0.clone(), inf]);
+        assert!(d.undo());
+        assert_eq!(d.page_ids(), vec![p0]);
+    }
+
+    #[test]
+    fn page_mode_blank_with_is_not_undoable() {
+        let mut d = Document::blank_with(Some(PageLayout::Portrait));
+        assert!(!d.can_undo());
+        assert!(!d.undo());
+        assert_eq!(d.page_count(), 1);
+        assert_eq!(d.page(&first(&d)).expect("page").height, PORTRAIT_HEIGHT);
+        let mut i = Document::blank_with(Some(PageLayout::Infinite));
+        assert!(!i.undo());
+        assert_eq!(i.page(&first(&i)).expect("page").mode, "infinite");
+        let b = Document::blank_with(None);
+        assert_eq!(raw_mode(&b, &first(&b)), None);
+    }
+
+    #[test]
+    fn page_mode_reload_keeps_bytes() {
+        let mut d = Document::blank_with(Some(PageLayout::Infinite));
+        let p = first(&d);
+        commit(&mut d, &p, hline(100.0));
+        let bytes = d.encode_v1();
+        let r = Document::from_update_v1(&bytes).expect("relecture");
+        assert_eq!(r.encode_v1(), bytes);
+        assert_eq!(r.page(&p).expect("page").mode, "infinite");
+    }
+
+    /// Discrimine le patron écarté (recopie par `copy_elements`, ids neufs) : la page et ses éléments gardent leurs
+    /// ids (DA2), et l'ordre se rétablit en une annulation.
+    #[test]
+    fn move_page_keeps_ids_and_is_one_step() {
+        let mut d = Document::blank();
+        let a = first(&d);
+        let b = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        let c = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        let s1 = commit(&mut d, &c, hline(100.0));
+        let s2 = commit(&mut d, &c, hline(200.0));
+        set_mode(&mut d, &c, PageLayout::Infinite);
+        let before = d.page(&c);
+        let n = writes(&d);
+        let ch = d
+            .apply(Command::MovePage {
+                page: c.clone(),
+                to: 0,
+            })
+            .expect("déplacement");
+        assert_eq!(d.page_ids(), vec![c.clone(), a.clone(), b.clone()]);
+        assert_eq!(d.element_ids(&c), vec![s1.clone(), s2.clone()]);
+        assert_eq!(n.since(), 1, "un déplacement = une transaction");
+        assert_eq!(d.page(&c), before, "tous les champs de page gardés");
+        assert_eq!(ch.pages, vec![c.clone()]);
+        assert!(ch.ids.is_empty() && ch.removed.is_empty());
+        assert!(d.undo());
+        assert_eq!(d.page_ids(), vec![a.clone(), b.clone(), c.clone()]);
+        assert_eq!(d.element_ids(&c), vec![s1, s2]);
+        d.apply(Command::MovePage {
+            page: a.clone(),
+            to: 2,
+        })
+        .expect("vers la fin");
+        assert_eq!(d.page_ids(), vec![b, c, a]);
+    }
+
+    #[test]
+    fn move_page_same_rank_has_no_step() {
+        let mut d = Document::blank();
+        let a = first(&d);
+        d.apply(Command::add_page(None)).expect("ajout");
+        let n = writes(&d);
+        let v = d.version();
+        let ch = d
+            .apply(Command::MovePage { page: a, to: 0 })
+            .expect("même rang");
+        assert_eq!((n.since(), d.version(), ch.version), (0, v, v));
+        assert!(ch.pages.is_empty());
+    }
+
+    #[test]
+    fn move_page_out_of_range_is_bad_index() {
+        let mut d = Document::blank();
+        let a = first(&d);
+        d.apply(Command::add_page(None)).expect("ajout");
+        let n = writes(&d);
+        assert_eq!(
+            d.apply(Command::MovePage {
+                page: a.clone(),
+                to: 2
+            }),
+            Err(CommandError::BadIndex)
+        );
+        assert_eq!(n.since(), 0);
+        assert_eq!(
+            CommandError::BadIndex.to_string(),
+            "rang de page hors bornes"
+        );
+        assert_eq!(d.page_ids()[0], a);
+    }
+
+    #[test]
+    fn move_page_unknown_is_refused() {
+        let mut d = Document::blank();
+        let n = writes(&d);
+        assert_eq!(
+            d.apply(Command::MovePage {
+                page: "nope".into(),
+                to: 0
+            }),
+            Err(CommandError::UnknownPage("nope".into()))
+        );
+        assert_eq!(n.since(), 0);
+    }
+
+    fn four(d: &mut Document) -> (String, [String; 4]) {
+        let p = first(d);
+        let ids = [100.0, 200.0, 300.0, 400.0].map(|y| commit(d, &p, hline(y)));
+        (p, ids)
+    }
+
+    fn restack(d: &mut Document, ids: &[&String], to: u32) -> Result<Change, CommandError> {
+        d.apply(Command::Restack {
+            ids: ids.iter().map(|s| s.to_string()).collect(),
+            to,
+        })
+    }
+
+    /// Discrimine le patron écarté (recopie par `copy_elements` : ids neufs, groupes renumérotés, toujours posée en
+    /// haut) : le bloc garde ses ids, son ordre relatif et son chemin de groupe (DA2), et `to` place le bas du bloc.
+    #[test]
+    fn restack_block_to_front_keeps_order_and_ids() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        d.apply(Command::Group {
+            ids: vec![a.clone(), c.clone()],
+        })
+        .expect("groupe");
+        let views = [&a, &c].map(|id| d.element(id).expect("vue"));
+        let n = writes(&d);
+        let ch = restack(&mut d, &[&c, &a], 2).expect("premier plan");
+        assert_eq!(
+            d.element_ids(&p),
+            vec![b.clone(), e.clone(), a.clone(), c.clone()]
+        );
+        assert_eq!(
+            [&a, &c].map(|id| d.element(id).expect("vue")),
+            views,
+            "tous les champs gardés, groupe compris"
+        );
+        assert_eq!(n.since(), 1, "un réordonnancement = une transaction");
+        assert_eq!(ch.pages, vec![p.clone()]);
+        assert_eq!(ch.ids, vec![a.clone(), c.clone()]);
+        assert!(ch.removed.is_empty(), "sélection gardée : rien de retiré");
+    }
+
+    #[test]
+    fn restack_to_back() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        restack(&mut d, &[&e, &b], 0).expect("arrière-plan");
+        assert_eq!(
+            d.element_ids(&p),
+            vec![b.clone(), e.clone(), a.clone(), c.clone()]
+        );
+        restack(&mut d, &[&a], 1).expect("un rang");
+        assert_eq!(d.element_ids(&p), vec![b, a, e, c]);
+    }
+
+    #[test]
+    fn restack_same_order_no_step() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        let n = writes(&d);
+        let v = d.version();
+        let ch = restack(&mut d, &[&c, &b, &b], 1).expect("même ordre");
+        assert_eq!((n.since(), d.version(), ch.version), (0, v, v));
+        assert!(ch.pages.is_empty() && ch.ids.is_empty());
+        // Un bloc à trou n'est pas le même ordre, même posé au rang de son bas.
+        restack(&mut d, &[&a, &c], 0).expect("bloc à trou");
+        assert_eq!(d.element_ids(&p), vec![a, c, b, e]);
+        assert_eq!(n.since(), 1);
+    }
+
+    #[test]
+    fn restack_mixed_pages_refused() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        let q = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        let x = commit(&mut d, &q, hline(100.0));
+        let n = writes(&d);
+        assert_eq!(restack(&mut d, &[&a, &x], 0), Err(CommandError::MixedPages));
+        assert_eq!(n.since(), 0);
+        assert_eq!(
+            CommandError::MixedPages.to_string(),
+            "objets de pages différentes"
+        );
+        assert_eq!(d.element_ids(&p), vec![a, b, c, e]);
+        assert_eq!(d.element_ids(&q), vec![x]);
+    }
+
+    #[test]
+    fn restack_one_step_undo() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        restack(&mut d, &[&a, &b], 2).expect("premier plan");
+        assert_eq!(
+            d.element_ids(&p),
+            vec![c.clone(), e.clone(), a.clone(), b.clone()]
+        );
+        assert!(d.undo());
+        assert_eq!(
+            d.element_ids(&p),
+            vec![a.clone(), b.clone(), c.clone(), e.clone()]
+        );
+        assert!(d.redo());
+        assert_eq!(d.element_ids(&p), vec![c, e, a, b]);
+    }
+
+    #[test]
+    fn restack_out_of_range_bad_index() {
+        let mut d = Document::blank();
+        let (p, [a, b, c, e]) = four(&mut d);
+        let n = writes(&d);
+        assert_eq!(restack(&mut d, &[&a, &b], 3), Err(CommandError::BadIndex));
+        assert_eq!(
+            restack(&mut d, &[&a], u32::MAX),
+            Err(CommandError::BadIndex)
+        );
+        assert_eq!(restack(&mut d, &[], 0), Err(CommandError::BadIndex));
+        assert_eq!(
+            restack(&mut d, &[&a, &"absent".to_string()], 0),
+            Err(CommandError::UnknownElement("absent".into()))
+        );
+        assert_eq!(n.since(), 0);
+        assert_eq!(d.element_ids(&p), vec![a, b, c, e]);
+    }
+
+    /// Discrimine le patron écarté : avec des ids neufs, l'ancien id n'aurait plus de contour ; avec les ids gardés
+    /// mais rendus dans `removed`, le contour serait oublié puis recalculé.
+    #[test]
+    fn move_page_keeps_contour_cache() {
+        let mut d = Document::blank();
+        let a = first(&d);
+        let c = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        let s = commit(&mut d, &c, hline(100.0));
+        let before = d.outline(&s);
+        assert!(before.is_some());
+        let (m, len) = (d.outline_cache_misses(), d.outline_cache_len());
+        assert!(len >= 1, "contour en cache avant le déplacement");
+        d.apply(Command::MovePage {
+            page: c.clone(),
+            to: 0,
+        })
+        .expect("déplacement");
+        assert_eq!(d.page_ids(), vec![c, a]);
+        assert_eq!(d.outline(&s), before);
+        assert_eq!(
+            (d.outline_cache_misses(), d.outline_cache_len()),
+            (m, len),
+            "contour servi du cache, jamais recalculé"
+        );
+        assert!(d.undo());
+        assert_eq!(d.outline(&s), before);
+        assert_eq!(d.outline_cache_misses(), m);
     }
 
     #[test]
@@ -1908,11 +2526,7 @@ pub(crate) mod tests {
                 page: "nope".into()
             })
             .is_err());
-        assert!(d
-            .apply(Command::AddPage {
-                after: Some("nope".into())
-            })
-            .is_err());
+        assert!(d.apply(Command::add_page(Some("nope".into()))).is_err());
         assert!(d
             .apply(Command::CommitStroke {
                 page: "nope".into(),
@@ -2073,7 +2687,7 @@ pub(crate) mod tests {
             })
             .expect("commit");
         assert_eq!(c1.version, 1);
-        let c2 = d.apply(Command::AddPage { after: None }).expect("ajout");
+        let c2 = d.apply(Command::add_page(None)).expect("ajout");
         assert_eq!(c2.version, 2);
     }
 
@@ -3767,9 +4381,7 @@ pub(crate) mod tests {
         )
         .expect("grille");
         let q = d
-            .apply(Command::AddPage {
-                after: Some(p.clone()),
-            })
+            .apply(Command::add_page(Some(p.clone())))
             .expect("page")
             .pages[0]
             .clone();
@@ -3936,9 +4548,7 @@ pub(crate) mod tests {
         let a = rect_at(&mut d, &p, 0.0);
         let b = rect_at(&mut d, &p, 100.0);
         let q = d
-            .apply(Command::AddPage {
-                after: Some(p.clone()),
-            })
+            .apply(Command::add_page(Some(p.clone())))
             .expect("page")
             .pages[0]
             .clone();

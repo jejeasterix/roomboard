@@ -26,6 +26,32 @@ export interface IslandState {
 }
 export const NO_ISLAND: IslandState = Object.freeze({ at: null, collapsed: null });
 
+/** personnalisation-1a (T2) : onglet et taille des vignettes de la barre latérale, sur le poste ; JSON `{ "tab", "thumb" }`. */
+export const SIDEBAR_KEY = "roomboard.laterale";
+export interface SidebarState {
+  readonly tab: "pages" | "calques";
+  readonly thumb: "s" | "m" | "l";
+}
+const SIDEBAR_DEFAULT: SidebarState = Object.freeze({ tab: "pages", thumb: "m" });
+const SIDEBAR_TABS: readonly string[] = ["pages", "calques"];
+const SIDEBAR_THUMBS: readonly string[] = ["s", "m", "l"];
+
+/** Lecture champ par champ : un champ illisible prend sa valeur par défaut. */
+function parseSidebar(raw: string | null): SidebarState {
+  if (raw === null) return SIDEBAR_DEFAULT;
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return SIDEBAR_DEFAULT;
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return SIDEBAR_DEFAULT;
+  const o = v as Record<string, unknown>;
+  const tab = typeof o["tab"] === "string" && SIDEBAR_TABS.includes(o["tab"]) ? (o["tab"] as SidebarState["tab"]) : SIDEBAR_DEFAULT.tab;
+  const thumb = typeof o["thumb"] === "string" && SIDEBAR_THUMBS.includes(o["thumb"]) ? (o["thumb"] as SidebarState["thumb"]) : SIDEBAR_DEFAULT.thumb;
+  return { tab, thumb };
+}
+
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 /** Lecture champ par champ ; tout ce qui est illisible est absent (L2-7). */
@@ -69,6 +95,10 @@ export interface DeviceSettings {
   itemStyle(): ItemStyle | null;
   /** Vrai si gardé sur l'appareil ; faux : mémoire seule. Ne déclenche pas `onChange`. */
   setItemStyle(s: ItemStyle): boolean;
+  /** personnalisation-1a (T2) : onglet et vignettes de la barre latérale ; rien ou illisible : `{ tab: "pages", thumb: "m" }`. */
+  sidebar(): SidebarState;
+  /** Gardé en mémoire, puis sur le poste s'il le permet. Ne déclenche pas `onChange` (comme `setIsland`). */
+  setSidebar(s: SidebarState): void;
   onChange(cb: () => void): () => void;
 }
 
@@ -86,6 +116,7 @@ export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
   const islands = new Map<string, IslandState>();
   /** Style courant écrit dans cette séance (gardé même si le stockage refuse) ; undefined : lire le stockage. */
   let item: ItemStyle | null | undefined;
+  let sidebar: SidebarState | null = null;
   return {
     frame: () => frame,
     setFrame(on) {
@@ -143,6 +174,22 @@ export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
         return true;
       } catch {
         return false;
+      }
+    },
+    sidebar() {
+      if (sidebar !== null) return sidebar;
+      try {
+        return parseSidebar(kv?.getItem(SIDEBAR_KEY) ?? null);
+      } catch {
+        return SIDEBAR_DEFAULT;
+      }
+    },
+    setSidebar(s) {
+      sidebar = parseSidebar(JSON.stringify({ tab: s.tab, thumb: s.thumb }));
+      try {
+        kv?.setItem(SIDEBAR_KEY, JSON.stringify(sidebar));
+      } catch {
+        // Stockage qui refuse : mémoire seule.
       }
     },
     onChange(cb) {
