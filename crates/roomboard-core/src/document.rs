@@ -383,7 +383,8 @@ impl Document {
                 let transform = out_transform(e.get(&txn, "transform"))?;
                 let s = read_shape(&txn, e)?;
                 let bound = |b: Option<crate::linear::BindInput>| {
-                    b.filter(|b| self.find_element(&txn, &b.id).is_some())
+                    // C1 : cible cherchée sur la page de la ligne ; d'une autre page, la liaison est lue libre.
+                    b.filter(|b| self.bound_target(&txn, &found.page_id, &b.id).is_some())
                         .map(|b| crate::element::BindingView {
                             id: b.id,
                             fx: b.fx,

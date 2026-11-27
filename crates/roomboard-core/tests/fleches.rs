@@ -694,3 +694,296 @@ fn set_style_elbowed_reroutes() {
     assert!(d.undo());
     assert_eq!(view(&d, &f), before, "une étape");
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// C1 (double relecture du lot 1).
+
+/// C1 constat 1 : une flèche coudée créée par `AddShape` est routée dans la même étape. Glisser (200, 200)→(300, 300),
+/// deux bouts libres : route en Z par x = 250. Sous le patron fautif (aucune route à la création), la flèche reste une
+/// diagonale de deux points.
+#[test]
+fn add_shape_elbowed_is_routed_at_creation() {
+    let mut d = Document::blank();
+    let p = page(&d);
+    let ch = d
+        .apply(Command::AddShape {
+            page: p.clone(),
+            shape: ShapeKind::Arrow,
+            x0: 200.0,
+            y0: 200.0,
+            x1: 300.0,
+            y1: 300.0,
+            style: pen(),
+            fill: None,
+            look: Look {
+                elbowed: Some(true),
+                ..Look::default()
+            },
+            line: LineInit::default(),
+        })
+        .expect("coudée");
+    let f = ch.ids[0].clone();
+    let w = world(&d, &f);
+    let want = [(200.0, 200.0), (250.0, 200.0), (250.0, 300.0), (300.0, 300.0)];
+    assert_eq!(w.len(), want.len(), "route en Z : {w:?}");
+    assert!(w.iter().zip(want).all(|(a, b)| near(*a, b)), "{w:?}");
+    assert!(d.undo());
+    assert!(d.element_ids(&p).is_empty(), "une étape");
+}
+
+/// C1 constat 2 : une liaison vers un objet d'une autre page est refusée (`BadShape`), par `AddShape` comme par
+/// `SetLinePoints`. Sous le patron fautif (`find_element` parcourt toutes les pages), les deux commandes passent.
+#[test]
+fn binding_to_other_page_is_refused() {
+    let mut d = Document::blank();
+    let p1 = page(&d);
+    let p2 = d
+        .apply(Command::AddPage {
+            after: None,
+            mode: None,
+        })
+        .expect("page")
+        .pages[0]
+        .clone();
+    let r = d
+        .apply(Command::AddShape {
+            page: p2.clone(),
+            shape: ShapeKind::Rect,
+            x0: 0.0,
+            y0: 0.0,
+            x1: 100.0,
+            y1: 50.0,
+            style: pen(),
+            fill: None,
+            look: Look::default(),
+            line: LineInit::default(),
+        })
+        .expect("rectangle de la page 2")
+        .ids[0]
+        .clone();
+    let line = LineInit {
+        points: vec![],
+        start: bind(&r, 1.0, 0.5),
+        end: None,
+    };
+    assert_eq!(
+        shape(&mut d, ShapeKind::Arrow, [200.0, 25.0, 400.0, 25.0], line),
+        Err(CommandError::BadShape),
+        "AddShape vers la page 2"
+    );
+    let f = shape(
+        &mut d,
+        ShapeKind::Arrow,
+        [200.0, 25.0, 400.0, 25.0],
+        LineInit::default(),
+    )
+    .expect("flèche libre");
+    let before = view(&d, &f);
+    assert_eq!(
+        d.apply(Command::SetLinePoints {
+            id: f.clone(),
+            points: vec![200.0, 25.0, 400.0, 25.0],
+            start: None,
+            end: bind(&r, 0.0, 0.5),
+        }),
+        Err(CommandError::BadShape),
+        "SetLinePoints vers la page 2"
+    );
+    assert_eq!(view(&d, &f), before, "rien d'écrit");
+    // Même page : acceptée (le refus ne vient que de la page).
+    let a = rect(&mut d, 0.0, 0.0);
+    d.apply(Command::SetLinePoints {
+        id: f.clone(),
+        points: vec![200.0, 25.0, 400.0, 25.0],
+        start: bind(&a, 1.0, 0.5),
+        end: None,
+    })
+    .expect("même page");
+    assert_eq!(view(&d, &f)["shape"]["start"]["id"], a.as_str());
+    assert_eq!(d.element_ids(&p2), vec![r]);
+    let _ = p1;
+}
+
+/// C1 constat 4 : `AddLinked` sur une source tournée de 90° : la flèche sort par le côté lié (local droit, monde bas),
+/// donc verticalement. Sous le patron fautif (normale prise en coordonnées monde, `(1, 0)`), le premier segment est
+/// horizontal : route en Z par x = 50.
+#[test]
+fn add_linked_on_rotated_source_leaves_through_bound_side() {
+    use roomboard_core::linear::LinkDir;
+    let mut d = Document::blank();
+    let a = rect(&mut d, 0.0, 0.0);
+    d.apply(Command::Transform {
+        ids: vec![a.clone()],
+        matrix: [0.0, 1.0, -1.0, 0.0, 0.0, 0.0],
+    })
+    .expect("tourner");
+    let ch = d
+        .apply(Command::AddLinked {
+            id: a.clone(),
+            dir: LinkDir::Right,
+        })
+        .expect("relié");
+    let w = world(&d, &ch.ids[1]);
+    assert!(near(w[0], (-25.0, 107.0)), "départ au bas monde : {w:?}");
+    assert!(near(w[1], (-25.0, 147.0)), "sortie verticale de 40 : {w:?}");
+    assert!(orthogonal(&w), "{w:?}");
+}
+
+/// Tableau 2 × 2 de 100 × 25 en (0, 0), et une ligne dont la fin est liée au milieu de son côté droit : ancre (205, 25).
+fn table_with_line(d: &mut Document) -> (String, String) {
+    let p = page(d);
+    let t = d
+        .apply(Command::AddTable {
+            page: p,
+            x: 0.0,
+            y: 0.0,
+            cols: 2,
+            rows: 2,
+            col_width: 100.0,
+            row_height: 25.0,
+            color: "#000000".into(),
+            size: 16.0,
+        })
+        .expect("tableau")
+        .ids[0]
+        .clone();
+    let line = LineInit {
+        points: vec![],
+        start: None,
+        end: bind(&t, 1.0, 0.5),
+    };
+    let f = shape(d, ShapeKind::Line, [400.0, 25.0, 200.0, 25.0], line).expect("ligne");
+    assert!(near(world(d, &f)[1], (205.0, 25.0)), "{:?}", world(d, &f));
+    (t, f)
+}
+
+/// C1 constat 3 : colonne ajoutée à un tableau lié : l'extrémité suit (305, 25), une étape (une annulation rend tout).
+/// Sous le patron fautif (géométrie changée sans `follow`), elle reste en (205, 25).
+#[test]
+fn table_line_inserted_moves_bound_end_in_one_step() {
+    use roomboard_core::table::TableAxis;
+    let mut d = Document::blank();
+    let (t, f) = table_with_line(&mut d);
+    d.apply(Command::InsertTableLine {
+        id: t.clone(),
+        axis: TableAxis::Col,
+        at: 2,
+    })
+    .expect("colonne");
+    assert!(near(world(&d, &f)[1], (305.0, 25.0)), "{:?}", world(&d, &f));
+    assert!(d.undo());
+    assert!(near(world(&d, &f)[1], (205.0, 25.0)), "une étape");
+}
+
+/// C1 constat 3 : tailles du tableau changées : l'extrémité suit, une étape.
+#[test]
+fn table_sizes_change_moves_bound_end() {
+    let mut d = Document::blank();
+    let (t, f) = table_with_line(&mut d);
+    d.apply(Command::SetTableSizes {
+        id: t.clone(),
+        col_width: 150.0,
+        row_height: 25.0,
+    })
+    .expect("tailles");
+    assert!(near(world(&d, &f)[1], (305.0, 25.0)), "{:?}", world(&d, &f));
+    assert!(d.undo());
+    assert!(near(world(&d, &f)[1], (205.0, 25.0)), "une étape");
+}
+
+/// C1 constat 3 : `SetStyle` qui épaissit la cible (écart 5 + 20 / 2) : le départ lié suit, une étape. `SetStyle` sur la
+/// flèche seule ne rompt pas ses liaisons (la flèche n'est pas une cible : elle n'entre pas dans `moved`).
+#[test]
+fn set_style_width_on_target_moves_bound_end() {
+    let mut d = Document::blank();
+    let (a, _b, f) = linked_arrow(&mut d);
+    d.apply(Command::SetStyle {
+        ids: vec![a.clone(), f.clone()],
+        patch: StylePatch {
+            width: Some(20.0),
+            ..StylePatch::default()
+        },
+    })
+    .expect("épaisseur");
+    let w = world(&d, &f);
+    assert!(near(w[0], (115.0, 25.0)), "départ suivi : {w:?}");
+    let v = view(&d, &f);
+    assert_eq!(v["shape"]["start"]["id"], a.as_str(), "liaison gardée");
+    assert!(v["shape"].get("end").is_some(), "liaison gardée");
+    assert!(d.undo());
+    assert!(near(world(&d, &f)[0], (107.0, 25.0)), "une étape");
+}
+
+/// C1 constat 6 : `FormatText` qui change `boxHeight` d'un texte lié : l'extrémité suit, une étape.
+#[test]
+fn format_text_box_height_moves_bound_end() {
+    let mut d = Document::blank();
+    let p = page(&d);
+    let t = d
+        .apply(Command::SetText {
+            page: p,
+            id: None,
+            x: 0.0,
+            y: 0.0,
+            content: "nœud".into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 100.0,
+            box_height: 50.0,
+            spans: None,
+            look: Look::default(),
+        })
+        .expect("texte")
+        .ids[0]
+        .clone();
+    let line = LineInit {
+        points: vec![],
+        start: None,
+        end: bind(&t, 0.5, 1.0),
+    };
+    let f = shape(&mut d, ShapeKind::Line, [50.0, 300.0, 50.0, 50.0], line).expect("ligne");
+    assert!(near(world(&d, &f)[1], (50.0, 55.0)), "{:?}", world(&d, &f));
+    d.apply(Command::FormatText {
+        id: t.clone(),
+        start: 0,
+        len: 0,
+        attrs: vec![],
+        box_height: Some(80.0),
+    })
+    .expect("hauteur");
+    assert!(near(world(&d, &f)[1], (50.0, 85.0)), "{:?}", world(&d, &f));
+    assert!(d.undo());
+    assert!(near(world(&d, &f)[1], (50.0, 55.0)), "une étape");
+}
+
+/// C1 constat 5 : la copie d'`AddLinked` ne garde ni le lien ni la graine de la source (une graine neuve, comme un
+/// groupe neuf). Sous le patron fautif (copie telle quelle), `link` et `seed` sont ceux de la source.
+#[test]
+fn add_linked_copy_drops_link_and_draws_new_seed() {
+    use roomboard_core::linear::LinkDir;
+    let mut d = Document::blank();
+    let a = rect(&mut d, 0.0, 0.0);
+    d.apply(Command::SetStyle {
+        ids: vec![a.clone()],
+        patch: StylePatch {
+            roughness: Some(1),
+            link: Some(Some("https://example.com/".into())),
+            ..StylePatch::default()
+        },
+    })
+    .expect("lien et tracé");
+    let src = view(&d, &a);
+    assert!(src["look"]["seed"].is_number(), "{src}");
+    assert_eq!(src["look"]["link"], "https://example.com/");
+    let ch = d
+        .apply(Command::AddLinked {
+            id: a.clone(),
+            dir: LinkDir::Right,
+        })
+        .expect("relié");
+    let c = view(&d, &ch.ids[0]);
+    assert!(c["look"].get("link").is_none(), "lien retiré : {c}");
+    assert!(c["look"]["seed"].is_number(), "graine gardée présente : {c}");
+    assert_ne!(c["look"]["seed"], src["look"]["seed"], "graine neuve");
+    assert_eq!(c["look"]["roughness"], 1, "le reste de l'aspect copié");
+}

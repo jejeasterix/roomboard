@@ -947,13 +947,15 @@ class FakeDocument implements CoreDocument {
   }
 
   /** Une étape : le tableau `id` remplacé par `next` (les autres éléments repris tels quels). */
-  private writeTable(found: Found, id: string, next: FakeTable): Change {
+  private writeTable(found: Found, id: string, next: FakeTable, follow = false): Change {
     const pageId = found.page.id;
     return this.step((s) => {
       const p = s.pages.find((q) => q.id === pageId);
       const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
       const old = p?.elements[i];
       if (p && old) p.elements[i] = { ...old, table: next };
+      // C1 : taille changée (`cmd_insert_table_line`, `cmd_set_table_sizes`) : les lignes liées suivent, même étape.
+      if (follow) this.follow(s, new Set([id]), null);
       return { pages: [pageId], ids: [id], removed: [] };
     });
   }
@@ -1003,12 +1005,12 @@ class FakeDocument implements CoreDocument {
     return p === undefined ? [] : p.elements.filter((e) => typeof e.id === "string" && rawKind(e) === kind).map((e) => e.id);
   }
 
-  /** OG12 : liaison demandée (`checked_binding`) : rapport fini, cible connue et accrochable, rapport borné à ±10 ; sinon
-   *  forme invalide. */
-  private checkedBinding(b: LineBinding): Checked {
+  /** OG12 : liaison demandée (`checked_binding`) : rapport fini, cible connue sur la page `page` de la ligne (C1 :
+   *  `bound_target`) et accrochable, rapport borné à ±10 ; sinon forme invalide. */
+  private checkedBinding(page: string, b: LineBinding): Checked {
     if (!Number.isFinite(b.fx) || !Number.isFinite(b.fy)) throw new Error(MESSAGES.badShape);
-    const found = this.find(b.id);
-    const box = found ? bindBoxOf(found.element) : null;
+    const target = this.state.pages.find((q) => q.id === page)?.elements.find((x) => x.id === b.id);
+    const box = target ? bindBoxOf(target) : null;
     if (!box) throw new Error(MESSAGES.badShape);
     const clamp = (v: number): number => Math.min(BIND_RATIO_MAX, Math.max(-BIND_RATIO_MAX, v));
     return { bind: { id: b.id, fx: clamp(b.fx), fy: clamp(b.fy) }, box };
@@ -1017,13 +1019,11 @@ class FakeDocument implements CoreDocument {
   /** OG12 : suivi et rupture (`linear::follow`, n° 7, 8), sur l'état `s` de l'étape de la commande qui a bougé `moved` ;
    *  `m` : matrice du `Transform` (null : boîte d'un texte changée). Rend les ids réécrits. */
   private follow(s: State, moved: ReadonlySet<string>, m: Matrix | null): string[] {
-    const boxIn = (b: LineBinding | null): BindBox | null => {
+    // C1 (`bound_target`) : cible cherchée sur la page de la ligne seulement ; d'une autre page, bout libre.
+    const boxIn = (p: FakePage, b: LineBinding | null): BindBox | null => {
       if (b === null) return null;
-      for (const p of s.pages) {
-        const t = p.elements.find((x) => x.id === b.id);
-        if (t) return bindBoxOf(t);
-      }
-      return null;
+      const t = p.elements.find((x) => x.id === b.id);
+      return t ? bindBoxOf(t) : null;
     };
     const out: string[] = [];
     for (const p of s.pages) {
@@ -1048,8 +1048,8 @@ class FakeDocument implements CoreDocument {
         const last = world.length - 1;
         if (!self && sm && em && m) world = world.map((q, k) => (k === 0 || k === last ? q : applyMatrix(m, q[0], q[1])));
         // `settle` : bout lié recalé sur l'ancre de sa cible présente, laissé tel quel sinon ; coudée : ses bouts seuls.
-        const bs = boxIn(start);
-        const be = boxIn(end);
+        const bs = boxIn(p, start);
+        const be = boxIn(p, end);
         if (bs && start) world[0] = anchorPoint(bs, start.fx, start.fy);
         if (be && end) world[last] = anchorPoint(be, end.fx, end.fy);
         if (elbowArrow(e)) world = [world[0]!, world[last]!];
@@ -1092,9 +1092,9 @@ class FakeDocument implements CoreDocument {
     return pick?.hit ?? null;
   }
 
-  /** OG12 (DA-2) : liaison vers un objet absent lue libre, sans écriture. */
-  private shapeView(s: ShapeData): ShapeData {
-    const gone = (b: LineBinding | undefined): boolean => b !== undefined && this.find(b.id) === undefined;
+  /** OG12 (DA-2) : liaison vers un objet absent de la page de la ligne (C1) lue libre, sans écriture. */
+  private shapeView(s: ShapeData, page: FakePage): ShapeData {
+    const gone = (b: LineBinding | undefined): boolean => b !== undefined && !page.elements.some((x) => x.id === b.id);
     if (!gone(s.start) && !gone(s.end)) return s;
     const { start, end, ...rest } = s;
     return { ...rest, ...(start && !gone(start) ? { start } : {}), ...(end && !gone(end) ? { end } : {}) };
@@ -1113,8 +1113,8 @@ class FakeDocument implements CoreDocument {
         if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
         const e = found.element;
         if (!e.shape || !isSegment(e.shape.shape)) throw new Error(MESSAGES.badShape);
-        const sb = cmd.start ? this.checkedBinding(cmd.start) : null;
-        const eb = cmd.end ? this.checkedBinding(cmd.end) : null;
+        const sb = cmd.start ? this.checkedBinding(found.page.id, cmd.start) : null;
+        const eb = cmd.end ? this.checkedBinding(found.page.id, cmd.end) : null;
         const given: Pt2[] = [];
         for (let i = 0; i + 1 < pts.length; i += 2) given.push([pts[i]!, pts[i + 1]!]);
         let world = anchored(given, sb, eb);
@@ -1152,7 +1152,11 @@ class FakeDocument implements CoreDocument {
           if (ux !== 0) dy += sh + LINK_GAP;
           else dx += sw + LINK_GAP;
         }
-        const { group: _g, ...copy } = copyElements([e], new Map(), dx, dy)[0]!;
+        const { group: _g, look: copied, ...bareCopy } = copyElements([e], new Map(), dx, dy)[0]!;
+        // C1 : ni le lien ni la graine de la source (graine neuve, comme un groupe neuf).
+        const { link: _l, ...kept } = copied ?? {};
+        const look: Look | undefined = kept.seed === undefined ? kept : { ...kept, seed: newSeed() };
+        const copy: FakeElement = { ...bareCopy, ...(look && Object.keys(look).length > 0 ? { look } : {}) };
         const dst: BindBox = { ...src, id: copy.id, m: [src.m[0], src.m[1], src.m[2], src.m[3], src.m[4] + dx, src.m[5] + dy] };
         const [fx, fy] = dir.r;
         const start: LineBinding = { id: cmd.id, fx, fy };
@@ -1305,8 +1309,8 @@ class FakeDocument implements CoreDocument {
         if (hasLine && !isSegment(cmd.shape)) throw new Error(MESSAGES.badShape);
         if (!validInner(inner)) throw new Error("points invalides");
         this.pageOf(cmd.page);
-        const sb = absent(cmd.start) ? null : this.checkedBinding(cmd.start);
-        const eb = absent(cmd.end) ? null : this.checkedBinding(cmd.end);
+        const sb = absent(cmd.start) ? null : this.checkedBinding(cmd.page, cmd.start);
+        const eb = absent(cmd.end) ? null : this.checkedBinding(cmd.page, cmd.end);
         const shape: ShapeData = { shape: cmd.shape, w: g.w, h: g.h, fill: cmd.fill };
         let placed: FakeElement | null = null;
         if (hasLine) {
@@ -1663,10 +1667,10 @@ class FakeDocument implements CoreDocument {
         if (!fitsF32([sum(sizes) + (sizes[near] ?? 0)])) throw new Error(MESSAGES.badTable);
         if (cmd.axis === "row") {
           const height = t.rows[near]?.height ?? 0;
-          return this.writeTable(found, cmd.id, { ...t, rows: [...t.rows.slice(0, at), { id: newId(), height }, ...t.rows.slice(at)] });
+          return this.writeTable(found, cmd.id, { ...t, rows: [...t.rows.slice(0, at), { id: newId(), height }, ...t.rows.slice(at)] }, true);
         }
         const width = t.cols[near]?.width ?? 0;
-        return this.writeTable(found, cmd.id, { ...t, cols: [...t.cols.slice(0, at), { id: newId(), width }, ...t.cols.slice(at)] });
+        return this.writeTable(found, cmd.id, { ...t, cols: [...t.cols.slice(0, at), { id: newId(), width }, ...t.cols.slice(at)] }, true);
       }
       case "RemoveTableLine": {
         const { found, t } = this.tableOf(cmd.id);
@@ -1721,7 +1725,7 @@ class FakeDocument implements CoreDocument {
           ...t,
           cols: t.cols.map((c) => (c.width === cmd.colWidth ? c : { ...c, width: cmd.colWidth })),
           rows: t.rows.map((r) => (r.height === cmd.rowHeight ? r : { ...r, height: cmd.rowHeight })),
-        });
+        }, true);
       }
       case "SetTableFill": {
         if (cmd.fill !== null && !validColor(cmd.fill)) throw new Error(MESSAGES.badTable);
@@ -1855,8 +1859,12 @@ class FakeDocument implements CoreDocument {
           if (!pages.includes(found.page.id)) pages.push(found.page.id);
         }
         if (plan.size === 0) return this.unchanged();
+        // C1 (`cmd_set_style`) : cibles touchées (ni ligne ni flèche, qui rompraient leurs liaisons) : leurs lignes liées
+        // suivent l'épaisseur neuve dans la même étape.
+        const targets = new Set([...plan].filter(([, e]) => !(e.shape && isSegment(e.shape.shape))).map(([id]) => id));
         return this.step((s) => {
           for (const p of s.pages) p.elements.splice(0, p.elements.length, ...p.elements.map((e) => plan.get(e.id) ?? e));
+          if (targets.size > 0) this.follow(s, targets, null);
           return { pages, ids: [...plan.keys()], removed: [] };
         });
       }
@@ -1972,8 +1980,9 @@ class FakeDocument implements CoreDocument {
   }
 
   element(id: string): ElementView | null {
-    const e = this.find(id)?.element;
-    if (!e || e.malformed) return null;
+    const found = this.find(id);
+    const e = found?.element;
+    if (!found || !e || e.malformed) return null;
     const base = { id, transform: e.transform, ...withGroup(e.group) };
     const looked = e.look ? { look: e.look } : {};
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
@@ -1983,7 +1992,7 @@ class FakeDocument implements CoreDocument {
     if (e.fill) return { ...base, kind: "fill", fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h } };
     if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
     const styled = { ...base, ...looked, style: e.style };
-    if (e.shape) return { ...styled, kind: "shape", shape: this.shapeView(e.shape) };
+    if (e.shape) return { ...styled, kind: "shape", shape: this.shapeView(e.shape, found.page) };
     if (e.text) return { ...styled, kind: "text", text: e.text };
     return { ...styled, kind: "stroke" };
   }

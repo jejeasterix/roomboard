@@ -852,6 +852,8 @@ impl Document {
         {
             let mut txn = self.transact_local();
             arr.insert(&mut txn, index, line_prelim(&line_id, size_key(axis), size));
+            // C1 : tableau élargi, ses lignes liées suivent dans la même étape.
+            crate::linear::follow(self, &mut txn, &[id.to_string()], None);
         }
         Ok(self.table_done(page, id))
     }
@@ -966,6 +968,8 @@ impl Document {
                 l.map
                     .insert(&mut txn, "height", In::Any(Any::from(row_height)));
             }
+            // C1 : taille du tableau changée, ses lignes liées suivent dans la même étape.
+            crate::linear::follow(self, &mut txn, &[id.to_string()], None);
         }
         Ok(self.table_done(page, id))
     }

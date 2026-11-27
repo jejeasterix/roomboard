@@ -1104,12 +1104,12 @@ impl Document {
             let s = line
                 .start
                 .as_ref()
-                .map(|b| self.checked_binding(&txn, b))
+                .map(|b| self.checked_binding(&txn, page, b))
                 .transpose()?;
             let e = line
                 .end
                 .as_ref()
-                .map(|b| self.checked_binding(&txn, b))
+                .map(|b| self.checked_binding(&txn, page, b))
                 .transpose()?;
             [s, e]
         };
@@ -1124,6 +1124,19 @@ impl Document {
         if let Some((b, bx)) = &ends[1] {
             world[last] = linear::anchor(bx, [b.fx, b.fy]);
         }
+        // C1 : une flèche coudée est routée dès sa création (n° 11), comme `settle` : sortie perpendiculaire au côté lié,
+        // vers l'autre bout si libre ; ses points intérieurs sont ceux de la route.
+        if kind == ShapeKind::Arrow && look.elbowed == Some(true) {
+            let end_of = |p: (f64, f64), b: &Option<(BindInput, linear::BindBox)>| linear::ElbowEnd {
+                p,
+                normal: b
+                    .as_ref()
+                    .map(|(b, bx)| linear::side_normal(bx, [b.fx, b.fy])),
+            };
+            let (a, b) = (end_of(world[0], &ends[0]), end_of(world[last], &ends[1]));
+            world = linear::elbow_route(a, b);
+        }
+        let last = world.len() - 1;
         let (tx, ty, w, h) = if kind.is_segment() {
             (
                 world[0].0,
@@ -1209,8 +1222,12 @@ impl Document {
                 .ok_or(CommandError::BadShape)?;
             let t = out_transform(found.element.get(&txn, "transform"))
                 .ok_or(CommandError::BadShape)?;
-            let a = start.map(|b| self.checked_binding(&txn, b)).transpose()?;
-            let b = end.map(|b| self.checked_binding(&txn, b)).transpose()?;
+            let a = start
+                .map(|b| self.checked_binding(&txn, &found.page_id, b))
+                .transpose()?;
+            let b = end
+                .map(|b| self.checked_binding(&txn, &found.page_id, b))
+                .transpose()?;
             let mut world: Vec<(f64, f64)> = points
                 .as_chunks::<2>()
                 .0
@@ -1229,6 +1246,7 @@ impl Document {
                 world = linear::settle_route(
                     self,
                     &txn,
+                    &found.page_id,
                     &s,
                     world,
                     a.as_ref().map(|x| &x.0),

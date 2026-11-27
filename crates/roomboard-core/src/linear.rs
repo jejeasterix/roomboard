@@ -322,19 +322,32 @@ pub(crate) fn line_writes(
 }
 
 impl Document {
-    /// Liaison demandée (n° 12 b) : rapport fini, cible connue et accrochable ; rapport borné à ±10 ; sinon `BadShape`.
+    /// Cible d'une liaison, cherchée sur la page `page` de la ligne seulement (C1) : `find_element` parcourt toutes les
+    /// pages, et une cible d'une autre page n'est ni accrochable, ni suivie, ni lue (vue : liaison libre).
+    pub(crate) fn bound_target<T: ReadTxn>(&self, txn: &T, page: &str, id: &str) -> Option<MapRef> {
+        self.page_elements(txn, page)?
+            .iter(txn)
+            .find_map(|o| match o {
+                Out::YMap(e) if out_string(e.get(txn, "id")).as_deref() == Some(id) => Some(e),
+                _ => None,
+            })
+    }
+
+    /// Liaison demandée (n° 12 b) : rapport fini, cible connue sur la page `page` de la ligne et accrochable ; rapport
+    /// borné à ±10 ; sinon `BadShape`.
     pub(crate) fn checked_binding<T: ReadTxn>(
         &self,
         txn: &T,
+        page: &str,
         b: &BindInput,
     ) -> Result<(BindInput, BindBox), CommandError> {
         if !b.fx.is_finite() || !b.fy.is_finite() {
             return Err(CommandError::BadShape);
         }
         let found = self
-            .find_element(txn, &b.id)
+            .bound_target(txn, page, &b.id)
             .ok_or(CommandError::BadShape)?;
-        let bx = bind_box(txn, &found.element).ok_or(CommandError::BadShape)?;
+        let bx = bind_box(txn, &found).ok_or(CommandError::BadShape)?;
         let fixed = BindInput {
             id: b.id.clone(),
             fx: b.fx.clamp(-BIND_RATIO_MAX, BIND_RATIO_MAX),
@@ -443,16 +456,18 @@ fn world_of(t: &Transform, s: &ShapeFields) -> Vec<(f64, f64)> {
         .collect()
 }
 
-/// Bout coudé : ancre et normale du côté lié, ou point libre (bout libre, ou cible absente du document : n° 9).
+/// Bout coudé : ancre et normale du côté lié, ou point libre (bout libre, ou cible absente de la page `page` de la
+/// ligne : n° 9, C1).
 fn elbow_end<T: ReadTxn>(
     doc: &Document,
     txn: &T,
+    page: &str,
     b: Option<&BindInput>,
     p: (f64, f64),
 ) -> ElbowEnd {
     let target = b.and_then(|b| {
-        doc.find_element(txn, &b.id)
-            .and_then(|f| bind_box(txn, &f.element))
+        doc.bound_target(txn, page, &b.id)
+            .and_then(|e| bind_box(txn, &e))
             .map(|bx| (b, bx))
     });
     match target {
@@ -468,14 +483,15 @@ fn elbow_end<T: ReadTxn>(
 fn settle<T: ReadTxn>(
     doc: &Document,
     txn: &T,
+    page: &str,
     s: &ShapeFields,
     mut world: Vec<(f64, f64)>,
     start: Option<&BindInput>,
     end: Option<&BindInput>,
 ) -> Vec<(f64, f64)> {
     let last = world.len() - 1;
-    let a = elbow_end(doc, txn, start, world[0]);
-    let b = elbow_end(doc, txn, end, world[last]);
+    let a = elbow_end(doc, txn, page, start, world[0]);
+    let b = elbow_end(doc, txn, page, end, world[last]);
     if s.elbowed {
         return elbow_route(a, b);
     }
@@ -488,12 +504,13 @@ fn settle<T: ReadTxn>(
 pub(crate) fn settle_route<T: ReadTxn>(
     doc: &Document,
     txn: &T,
+    page: &str,
     s: &ShapeFields,
     world: Vec<(f64, f64)>,
     start: Option<&BindInput>,
     end: Option<&BindInput>,
 ) -> Vec<(f64, f64)> {
-    settle(doc, txn, s, world, start, end)
+    settle(doc, txn, page, s, world, start, end)
 }
 
 /// Applique les écritures d'une ligne (seules celles qui changent) ; rend vrai si une clé a changé.
@@ -525,12 +542,13 @@ pub(crate) fn follow(
     m: Option<&Transform>,
 ) -> Vec<String> {
     let moved: HashSet<&str> = moved.iter().map(String::as_str).collect();
-    let mut work: Vec<(MapRef, String, Transform, ShapeFields)> = Vec::new();
+    let mut work: Vec<(MapRef, String, String, Transform, ShapeFields)> = Vec::new();
     for page in doc.pages_ref().iter(&*txn) {
         let Out::YMap(pm) = page else { continue };
         let Some(Out::YArray(els)) = pm.get(&*txn, "elements") else {
             continue;
         };
+        let page_id = out_string(pm.get(&*txn, "id")).unwrap_or_default();
         for o in els.iter(&*txn) {
             let Out::YMap(e) = o else { continue };
             let Some(s) = read_shape(&*txn, &e)
@@ -544,11 +562,11 @@ pub(crate) fn follow(
             ) else {
                 continue;
             };
-            work.push((e, id, t, s));
+            work.push((e, page_id.clone(), id, t, s));
         }
     }
     let mut out = Vec::new();
-    for (e, id, t, s) in work {
+    for (e, page, id, t, s) in work {
         let in_moved =
             |b: &Option<BindInput>| b.as_ref().is_some_and(|b| moved.contains(b.id.as_str()));
         let (sm, em) = (in_moved(&s.start), in_moved(&s.end));
@@ -569,7 +587,15 @@ pub(crate) fn follow(
                 *p = apply_transform(m, p.0, p.1);
             }
         }
-        let world = settle(doc, &*txn, &s, world, start.as_ref(), end.as_ref());
+        let world = settle(
+            doc,
+            &*txn,
+            &page,
+            &s,
+            world,
+            start.as_ref(),
+            end.as_ref(),
+        );
         if write_line(txn, &e, &t, &world, start.as_ref(), end.as_ref()) {
             out.push(id);
         }
@@ -578,7 +604,7 @@ pub(crate) fn follow(
 }
 
 /// Reroutage d'une flèche qui vient de passer coudée (n° 12 c), dans la transaction de `SetStyle`.
-pub(crate) fn reroute(doc: &Document, txn: &mut TransactionMut, e: &MapRef) {
+pub(crate) fn reroute(doc: &Document, txn: &mut TransactionMut, page: &str, e: &MapRef) {
     let (Some(s), Some(t)) = (
         read_shape(&*txn, e),
         out_transform(e.get(&*txn, "transform")),
@@ -588,6 +614,7 @@ pub(crate) fn reroute(doc: &Document, txn: &mut TransactionMut, e: &MapRef) {
     let world = settle(
         doc,
         &*txn,
+        page,
         &s,
         world_of(&t, &s),
         s.start.as_ref(),
@@ -710,6 +737,14 @@ impl Document {
             );
             let (copy_id, mut copy) = prelims.remove(0);
             copy.remove("group");
+            // C1 : une copie reliée n'hérite ni du lien de sa source ni de sa graine (tracé neuf, comme un groupe neuf).
+            copy.remove("link");
+            if copy.contains_key("seed") {
+                copy.insert(
+                    "seed".into(),
+                    In::Any(Any::from(f64::from(crate::style::random_seed()))),
+                );
+            }
             let dst = BindBox {
                 id: copy_id.clone(),
                 t: [
@@ -733,14 +768,15 @@ impl Document {
                 fx: 1.0 - fx,
                 fy: 1.0 - fy,
             };
+            // C1 : normale du côté lié dans le repère de la source (tournée : le côté droit local peut regarder en bas).
             let route = elbow_route(
                 ElbowEnd {
                     p: anchor(&src, [fx, fy]),
-                    normal: Some((ux, uy)),
+                    normal: Some(side_normal(&src, [fx, fy])),
                 },
                 ElbowEnd {
                     p: anchor(&dst, [end.fx, end.fy]),
-                    normal: Some((-ux, -uy)),
+                    normal: Some(side_normal(&dst, [end.fx, end.fy])),
                 },
             );
             let arrow = linked_arrow_fields(&route, &s.style, &start, &end)?;
@@ -922,6 +958,64 @@ mod tests {
             "gardé tel quel"
         );
         assert_eq!(out_string(e.get(&txn, "elbowed")).as_deref(), Some("oui"));
+    }
+
+    /// C1 constat 2 : liaison écrite vers un objet d'une autre page (fichier, pair distant) : lue libre par la vue, jamais
+    /// suivie. Sous le patron fautif (`find_element` sur toutes les pages), la vue montre `start` et le déplacement de la
+    /// cible réécrit la flèche.
+    #[test]
+    fn binding_to_other_page_reads_free_and_never_follows() {
+        let mut d = Document::blank();
+        let p1 = d.page_ids()[0].clone();
+        let p2 = d
+            .apply(Command::AddPage {
+                after: None,
+                mode: None,
+            })
+            .expect("page")
+            .pages[0]
+            .clone();
+        let add = |d: &mut Document, page: &str, shape: ShapeKind, c: [f64; 4]| {
+            d.apply(Command::AddShape {
+                page: page.to_string(),
+                shape,
+                x0: c[0],
+                y0: c[1],
+                x1: c[2],
+                y1: c[3],
+                style: StrokeStyle {
+                    color: "#000000".into(),
+                    width: 4.0,
+                },
+                fill: None,
+                look: Look::default(),
+                line: LineInit::default(),
+            })
+            .expect("ajout")
+            .ids[0]
+            .clone()
+        };
+        let r = add(&mut d, &p2, ShapeKind::Rect, [0.0, 0.0, 100.0, 50.0]);
+        let f = add(&mut d, &p1, ShapeKind::Arrow, [200.0, 25.0, 400.0, 25.0]);
+        {
+            let txn = d.read();
+            let e = d.find_element(&txn, &f).expect("élément").element;
+            drop(txn);
+            let mut w = d.transact_local();
+            e.insert(&mut w, "startBound", In::from(r.as_str()));
+            e.insert(&mut w, "startFixed", nums_in(&[1.0, 0.5]));
+        }
+        let before = serde_json::to_value(d.element(&f).expect("vue")).expect("json");
+        assert!(before["shape"].get("start").is_none(), "lue libre : {before}");
+        let ch = d
+            .apply(Command::Transform {
+                ids: vec![r.clone()],
+                matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 100.0],
+            })
+            .expect("déplacer");
+        assert_eq!(ch.ids, vec![r.clone()], "flèche non suivie");
+        let after = serde_json::to_value(d.element(&f).expect("vue")).expect("json");
+        assert_eq!(after, before);
     }
 
     /// Review Focus 1, n° 14 (accès brut à la carte yrs) : `AddShape` avec `LineInit::default()` n'écrit aucune clé neuve.
