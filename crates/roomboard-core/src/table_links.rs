@@ -9,8 +9,8 @@ use yrs::{Any, Array, In, Map, MapRef, Out, ReadTxn, TransactionMut};
 use crate::commands::{valid_matrix, Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    cell_link_to_any, compose, finite_positive, fits_f32, out_string, out_transform,
-    read_cell_link, transform_to_any, Transform, IDENTITY,
+    apply_transform, cell_link_to_any, compose, finite_positive, fits_f32, invert, out_string,
+    out_transform, read_cell_link, transform_to_any, Transform, IDENTITY,
 };
 use crate::table::{merges_of, read_cell, read_raw, Line, RawTable, TableAxis, TABLE_KIND};
 
@@ -99,7 +99,6 @@ pub(crate) fn write_line_sizes(
 }
 
 /// Rectangle local `(x0, y0, x1, y1)` de la case `row`, `col` (celui de sa zone si elle en couvre une).
-#[allow(dead_code)] // lu par T1b (sortie de case par `Transform`, D6)
 pub(crate) fn cell_rect<T: ReadTxn>(
     raw: &RawTable,
     txn: &T,
@@ -124,6 +123,82 @@ pub(crate) fn cell_rect<T: ReadTxn>(
 type TableSizes = (String, MapRef, RawTable, Vec<(TableAxis, String, f64)>);
 
 impl Document {
+    /// D6 : ajoute aux cibles d'une `Transform` les objets liés aux tableaux qu'elles contiennent (l'emport vit dans le
+    /// cœur : la CLI pilote `Transform` sans moteur).
+    pub(crate) fn with_linked<T: ReadTxn>(
+        &self,
+        txn: &T,
+        targets: &mut Vec<(MapRef, Transform, String, String)>,
+    ) {
+        let tables: Vec<(String, String)> = targets
+            .iter()
+            .filter(|(e, _, _, _)| out_string(e.get(txn, "kind")).as_deref() == Some(TABLE_KIND))
+            .map(|(_, _, page, id)| (page.clone(), id.clone()))
+            .collect();
+        for (page, tid) in tables {
+            let Some(elements) = self.page_elements(txn, &page) else {
+                continue;
+            };
+            for o in elements.iter(txn) {
+                let Out::YMap(e) = o else { continue };
+                let Some(link) = read_cell_link(txn, &e) else {
+                    continue;
+                };
+                let Some(id) = out_string(e.get(txn, "id")) else {
+                    continue;
+                };
+                let is_table = out_string(e.get(txn, "kind")).as_deref() == Some(TABLE_KIND);
+                if link[0] != tid || is_table || targets.iter().any(|t| t.3 == id) {
+                    continue;
+                }
+                let Some(t) = out_transform(e.get(txn, "transform")) else {
+                    continue;
+                };
+                targets.push((e, t, page.clone(), id));
+            }
+        }
+    }
+
+    /// D6 : ids des cibles liées dont le tableau ne bouge pas et dont le centre de la boîte, après `m`, sort de la case
+    /// (bord compris dedans). Tableau absent ou illisible : lien laissé tel quel ; case disparue : lien retiré.
+    pub(crate) fn leaving_cells<T: ReadTxn>(
+        &self,
+        txn: &T,
+        targets: &[(MapRef, Transform, String, String)],
+        m: &Transform,
+    ) -> HashSet<String> {
+        let moving: HashSet<&str> = targets.iter().map(|t| t.3.as_str()).collect();
+        let mut out = HashSet::new();
+        for (e, _, _, id) in targets {
+            let Some(link) = read_cell_link(txn, e) else {
+                continue;
+            };
+            if moving.contains(link[0].as_str()) {
+                continue;
+            }
+            let Some(b) = self.element_bounds(txn, e) else {
+                continue;
+            };
+            let (nx, ny) = apply_transform(m, (b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0);
+            let Some(f) = self.find_element(txn, &link[0]) else {
+                continue;
+            };
+            let Some(raw) = read_raw(txn, &f.element) else {
+                continue;
+            };
+            let Some(inv) = invert(&raw.transform) else {
+                continue;
+            };
+            let (lx, ly) = apply_transform(&inv, nx, ny);
+            let inside = cell_rect(&raw, txn, &link[1], &link[2])
+                .is_some_and(|(x0, y0, x1, y1)| lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1);
+            if !inside {
+                out.insert(id.clone());
+            }
+        }
+        out
+    }
+
     /// Suivi (D5) dans la transaction ouverte : chaque objet lié au tableau `table_id`, hors `skip`, est translaté du
     /// déplacement du coin de sa case, lu par ids (partie linéaire de la matrice du tableau) ; sa ligne ou sa colonne a
     /// disparu : lien retiré, objet laissé en place (H22). Rend les ids touchés, dans l'ordre de la pile.

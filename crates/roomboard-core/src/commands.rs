@@ -1072,15 +1072,21 @@ impl Document {
         if !valid_matrix(m) {
             return Err(CommandError::BadMatrix);
         }
-        let targets: Vec<(MapRef, Transform, String, String)> = {
+        let (targets, unlink) = {
             let txn = self.read();
-            self.find_unique(&txn, ids)
+            let mut targets: Vec<(MapRef, Transform, String, String)> = self
+                .find_unique(&txn, ids)
                 .into_iter()
                 .filter_map(|(id, f)| {
                     let t = out_transform(f.element.get(&txn, "transform"))?;
                     Some((f.element, t, f.page_id, id))
                 })
-                .collect()
+                .collect();
+            // D6 : un tableau emporte ses objets liés ; un objet lié déplacé sans lui quitte sa case si son centre en
+            // sort, dans cette transaction (jamais par une seconde commande).
+            self.with_linked(&txn, &mut targets);
+            let unlink = self.leaving_cells(&txn, &targets, m);
+            (targets, unlink)
         };
         if targets.is_empty() || *m == IDENTITY {
             return Ok(self.unchanged());
@@ -1093,12 +1099,17 @@ impl Document {
         }
         {
             let mut txn = self.transact_local();
-            for ((e, _, _, _), c) in targets.iter().zip(&composed) {
+            for ((e, _, _, id), c) in targets.iter().zip(&composed) {
                 e.insert(&mut txn, "transform", transform_to_any(c));
+                if unlink.contains(id) {
+                    e.remove(&mut txn, "cell");
+                }
             }
         }
         let pages = sorted_unique(targets.iter().map(|t| t.2.clone()));
-        let ids = targets.into_iter().map(|t| t.3).collect();
+        // Ids triés des cibles élargies (sans objet lié : ceux de `find_unique`, déjà triés, G9).
+        let mut ids: Vec<String> = targets.into_iter().map(|t| t.3).collect();
+        ids.sort();
         Ok(self.done(Change {
             pages,
             ids,
