@@ -4,9 +4,10 @@ use roomboard_core::arrange::ArrangeHow;
 use roomboard_core::commands::{Change, Command, CommandError};
 use roomboard_core::document::Document;
 use roomboard_core::element::{Look, StrokeStyle, Transform};
-use roomboard_core::fill::FillTarget;
 use roomboard_core::query::Bounds;
 use roomboard_core::shape::ShapeKind;
+use yrs::updates::decoder::Decode;
+use yrs::{Any, Array, Doc, In, Map, MapPrelim, Out, ReadTxn, StateVector, Transact, Update};
 
 const EPS: f64 = 1e-9;
 
@@ -337,38 +338,61 @@ fn arrange_empty_ids_no_step() {
     assert_eq!(d.version(), v);
 }
 
+/// Zone du pot brute (genre `fill`, champs de `fill_element.rs`, `read_fill`) posée sur la première page, comme une
+/// autre version l'écrirait : la fonctionnalité `zone` (pot de zone fermée) n'est active que dans `roomboard-wasm`.
+fn with_raw_zone(d: &Document, id: &'static str) -> Document {
+    let raw = Doc::new();
+    let pages = raw.get_or_insert_array("pages");
+    raw.transact_mut()
+        .apply_update(Update::decode_v1(&d.encode_v1()).expect("décodage"))
+        .expect("application");
+    {
+        let mut txn = raw.transact_mut();
+        let Some(Out::YMap(page)) = pages.get(&txn, 0) else {
+            panic!("page")
+        };
+        let Some(Out::YArray(els)) = page.get(&txn, "elements") else {
+            panic!("éléments")
+        };
+        let nums = |v: &[f64]| Any::Array(v.iter().copied().map(Any::from).collect::<Vec<_>>().into());
+        let ring = nums(&[0.0, 0.0, 200.0, 0.0, 200.0, 200.0, 0.0, 200.0]);
+        let fields: Vec<(&'static str, In)> = vec![
+            ("id", In::from(id)),
+            ("kind", In::from("fill")),
+            ("transform", In::Any(nums(&[1.0, 0.0, 0.0, 1.0, 100.0, 100.0]))),
+            ("w", In::from(200.0)),
+            ("h", In::from(200.0)),
+            ("color", In::from("#ff0000")),
+            ("contours", In::Any(Any::Array(vec![ring].into()))),
+        ];
+        els.push_back(&mut txn, MapPrelim::from_iter(fields));
+    }
+    let bytes = raw
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    Document::from_update_v1(&bytes).expect("relecture")
+}
+
 /// Une zone du pot (genre `fill`) sélectionnée avec deux rectangles n'est jamais bougée.
 #[test]
 fn arrange_fill_zone_unchanged() {
     let mut d = blank();
-    let page = first_page(&d);
-    let frame = add_rect(&mut d, 100.0, 100.0, 300.0, 300.0);
-    let c = d
-        .apply(Command::Fill {
-            page: page.clone(),
-            target: FillTarget::Zone {
-                x: 200.0,
-                y: 200.0,
-                tol: 2.0,
-            },
-            color: Some("#ff0000".into()),
-        })
-        .expect("pot");
-    let zone = c
-        .ids
-        .iter()
-        .find(|id| d.element(id).is_some_and(|e| e.kind == "fill"))
-        .expect("zone remplie")
-        .clone();
-    let a = add_rect(&mut d, 400.0, 0.0, 450.0, 20.0);
-    let b = add_rect(&mut d, 500.0, 40.0, 550.0, 60.0);
+    add_rect(&mut d, 600.0, 0.0, 650.0, 20.0);
+    add_rect(&mut d, 700.0, 40.0, 750.0, 60.0);
+    let ids = d.element_ids(&first_page(&d));
+    let (a, b) = (ids[0].clone(), ids[1].clone());
+    let mut d = with_raw_zone(&d, "zone-brute");
+    let zone = "zone-brute".to_string();
+    assert_eq!(d.element(&zone).expect("zone").kind, "fill");
+    assert!(d.snap_box(std::slice::from_ref(&zone)).is_some(), "zone lisible, avec sa boîte");
     let zm = matrix(&d, &zone);
     let change = arrange(&mut d, &[&zone, &a, &b], ArrangeHow::AlignRight).expect("aligner");
     assert_eq!(matrix(&d, &zone), zm, "zone immobile");
-    assert!(!change.ids.contains(&zone));
     assert_eq!(change.ids, vec![a.clone()], "seul a bouge");
-    assert!(close(sbox(&d, &a).x1, 550.0));
-    let _ = frame;
+    assert!(close(sbox(&d, &a).x1, 750.0), "la zone ne compte pas dans la boîte de la sélection");
+    let change = arrange(&mut d, &[&zone, &a, &b], ArrangeHow::FlipH).expect("retourner");
+    assert!(!change.ids.contains(&zone));
+    assert_eq!(matrix(&d, &zone), zm, "zone immobile au retournement");
 }
 
 #[test]

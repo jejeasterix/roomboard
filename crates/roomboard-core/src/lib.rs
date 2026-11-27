@@ -1,4 +1,5 @@
 //! Cœur de RoomBoard : modèle du document, sans dépendance au navigateur.
+pub mod arrange;
 pub mod asset;
 pub mod capabilities;
 pub mod commands;

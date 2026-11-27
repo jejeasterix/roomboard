@@ -92,6 +92,12 @@ pub enum Command {
         ids: Vec<String>,
         matrix: Transform,
     },
+    /// OG23 (DA-2) : aligner, répartir, retourner, tourner les `ids` (une même page) en une étape ; groupes touchés en
+    /// partie étendus ; texte, tableau, média, objet 3D gardent leur matrice (seule leur place suit, H5).
+    Arrange {
+        ids: Vec<String>,
+        how: crate::arrange::ArrangeHow,
+    },
     SetText {
         page: String,
         id: Option<String>,
@@ -755,6 +761,7 @@ impl Document {
                 &look,
             ),
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
+            Command::Arrange { ids, how } => self.cmd_arrange(&ids, how),
             Command::SetText {
                 page,
                 id,
