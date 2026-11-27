@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
+import { newSeed, STROKE_STYLES, lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
 
 describe("look", () => {
   it("toLook : absent ou vide → undefined", () => {
@@ -27,5 +27,15 @@ describe("opacityLook", () => {
   it("opacityLook : 100 neutre, sinon l'opacité seule", () => {
     expect(opacityLook(100)).toBeUndefined();
     expect(opacityLook(40)).toEqual({ opacity: 40 });
+  });
+});
+
+describe("STROKE_STYLES, newSeed", () => {
+  it("STROKE_STYLES : les traits non pleins", () => {
+    expect([...STROKE_STYLES]).toEqual(["dashed", "dotted"]);
+  });
+  it("newSeed : entier 32 bits non signé", () => {
+    const s = newSeed();
+    expect(Number.isInteger(s) && s >= 0 && s <= 0xffffffff).toBe(true);
   });
 });

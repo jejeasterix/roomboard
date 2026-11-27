@@ -2007,10 +2007,10 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(seen).toEqual([]);
   });
 
-  it("Ctrl+D sans sélection : touche laissée à la page (faux)", () => {
+  it("Ctrl+D sans sélection : pris (preventDefault, comme Excalidraw), rien d'écrit", () => {
     const { engine, doc } = styleSetup();
     const v = doc.version();
-    expect(engine.key(key("d", { ctrlKey: true }))).toBe(false);
+    expect(engine.key(key("d", { ctrlKey: true }))).toBe(true);
     expect(doc.version()).toBe(v);
   });
 
