@@ -152,13 +152,13 @@ async function scenario(page, url, { captures, tmp }) {
   await press("Control+y");
   check((await elements()) === 1, "Ctrl+Y dans l'onglet 1 : le trait revient");
 
-  // 4. Page infinie : loin sous la page, le fond sous le trait est blanc.
+  // 4. Fond de page : le fond sous le trait est blanc, pas le gris du pourtour.
+  // Depuis la décision 7, une page neuve est en mode Page 1920 × 1080 (cadre fini) : le
+  // trait est tracé DANS le cadre de la page (ajusté à la fenêtre), plus « loin sous la page ».
   await click("fit-page");
-  await page.mouse.move(box.x + 640, box.y + 350);
-  await page.mouse.wheel(0, 3000);
   await fr();
   await drag([[400, 350], [650, 350], [900, 350]]);
-  check((await elements()) === 2, "page infinie : un trait tracé loin sous la page (data-elements 1 → 2)");
+  check((await elements()) === 2, "un trait tracé dans le cadre de la page (data-elements 1 → 2)");
   const px = await page.$eval("#scene", (c) => {
     const ctx = c.getContext("2d");
     const at = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data.slice(0, 3));
