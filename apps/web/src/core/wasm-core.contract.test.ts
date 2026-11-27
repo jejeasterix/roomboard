@@ -3882,3 +3882,105 @@ describe("contrat elementIdsOfKind : tableau et fill mal formés, élément sans
     d.free();
   });
 });
+
+// personnalisation-1b (Q2, Q4, Q5, Q35) : ApplyBackground à parité, fausse liaison et vrai module (D36).
+const P1B_ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+const P1B_PNG = { id: P1B_ABC, name: "fond.png", mime: "image/png", size: 3 } as const;
+const P1B_PDF = { id: "cd".repeat(32), name: "cours.pdf", mime: "application/pdf", size: 1234 };
+const P1B_GRID: GridInput = {
+  visible: true,
+  snap: false,
+  above: false,
+  levels: [{ kind: "seyes", spacingX: 30.24, spacingY: 30.24, originX: 0, originY: 0, color: "#8f9ad6", line: "solid", lineWidth: 1, snap: true, visible: true }],
+};
+const P1B_BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)";
+const P1B_BAD_ASSET = "asset invalide (empreinte SHA-256 en hexadécimal minuscule, type MIME non vide, taille entière ≥ 0 attendus)";
+const P1B_BAD_IMAGE = "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)";
+const P1B_BAD_GRID = "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)";
+const p1bLook = (d: CoreDocument, p: string) => {
+  const v = d.page(p);
+  return { background: v?.background, grid: v?.grid ?? null, kind: v?.backdrop?.kind ?? null, asset: v?.backdrop?.asset ?? null };
+};
+
+describe("contrôle de forme personnalisation-1b (ApplyBackground)", () => {
+  it("ApplyBackground : arguments dans l'ordre de la liaison ; sans grille, tableaux vides et drapeau faux", () => {
+    const drift = { pages: ["p1"], ids: [], full: false, version: 1 };
+    const calls: unknown[][] = [];
+    const doc = { apply_background: (...args: unknown[]): unknown => { calls.push(args); return drift; } };
+    const stub = { Document: { blank: () => doc, load: () => doc }, StrokeBuilder: class {}, version: () => "factice" };
+    const d = createWasmCore(stub as unknown as WasmModule).blank();
+    expect(() => d.apply({ type: "ApplyBackground", pages: ["p1", "p2"], color: "#fbf7ec", backdrop: { asset: P1B_PNG, w: 3840, h: 2160, fit: "width" }, grid: P1B_GRID })).toThrow("Change invalide");
+    expect(() => d.apply({ type: "ApplyBackground", pages: ["p1"], color: "#2f3e46", backdrop: null, grid: null })).toThrow("Change invalide");
+    expect(calls).toEqual([
+      [["p1", "p2"], "#fbf7ec", P1B_ABC, "fond.png", "image/png", 3, 3840, 2160, "width", true, true, false, false, ["seyes"], ["#8f9ad6"], ["solid"], new Float64Array([30.24, 30.24, 0, 0, 1, 1, 1])],
+      [["p1"], "#2f3e46", undefined, "", "", 0, 0, 0, "width", false, false, false, false, [], [], [], new Float64Array([])],
+    ]);
+  });
+});
+
+describe.each(factories)("contrat personnalisation-1b : $name", ({ f }) => {
+  it("trois pages, une étape, un seul asset ; annuler rend les trois pages blanches", () => {
+    const d = f.blank();
+    const p = first(d);
+    d.apply({ type: "AddPage", after: p });
+    d.apply({ type: "AddPage", after: p });
+    const pages = d.pageIds();
+    const c = d.apply({ type: "ApplyBackground", pages, color: "#fbf7ec", backdrop: { asset: P1B_PNG, w: 3840, h: 2160, fit: "width" }, grid: P1B_GRID });
+    expect(c.pages).toEqual(pages);
+    for (const q of pages) expect(p1bLook(d, q)).toEqual({ background: "#fbf7ec", grid: P1B_GRID, kind: "image", asset: P1B_ABC });
+    expect(d.citedAssets().map((a) => a.id)).toEqual([P1B_ABC]);
+    d.undo();
+    for (const q of pages) expect(p1bLook(d, q)).toEqual({ background: "#ffffff", grid: null, kind: null, asset: null });
+    expect(d.pageIds()).toEqual(pages);
+    d.free();
+  });
+
+  it("même aspect : aucune étape ; seules les pages qui changent sont rendues", () => {
+    const d = f.blank();
+    d.apply({ type: "AddPage", after: first(d) });
+    const [a, b] = d.pageIds() as [string, string];
+    const cmd = (pages: string[]): Command => ({ type: "ApplyBackground", pages, color: "#2f3e46", backdrop: null, grid: null });
+    expect(d.apply(cmd([a])).pages).toEqual([a]);
+    unchanged(d, () => d.apply(cmd([a])));
+    expect(d.apply(cmd([a, b])).pages).toEqual([b]);
+    d.free();
+  });
+
+  it("Q35 : pages PDF : fond gardé, couleur et grille écrites, une étape", () => {
+    const d = f.fromPdfPages(P1B_PDF, [{ w: 612, h: 792 }, { w: 792, h: 612 }]);
+    const pages = d.pageIds();
+    expect(d.apply({ type: "ApplyBackground", pages, color: "#fbf7ec", backdrop: { asset: P1B_PNG, w: 3840, h: 2160, fit: "width" }, grid: P1B_GRID }).pages).toEqual(pages);
+    for (const q of pages) expect(p1bLook(d, q)).toEqual({ background: "#fbf7ec", grid: P1B_GRID, kind: "pdf-page", asset: P1B_PDF.id });
+    d.undo();
+    expect(d.canUndo()).toBe(false);
+    for (const q of pages) expect(p1bLook(d, q)).toEqual({ background: "#ffffff", grid: null, kind: "pdf-page", asset: P1B_PDF.id });
+    d.free();
+  });
+
+  it("Q1 : blanc sans grille ni image retire grille et image en une étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    d.apply({ type: "ApplyBackground", pages: [p], color: "#fbf7ec", backdrop: { asset: P1B_PNG, w: 3840, h: 2160, fit: "width" }, grid: P1B_GRID });
+    expect(d.apply({ type: "ApplyBackground", pages: [p], color: "#ffffff", backdrop: null, grid: null }).pages).toEqual([p]);
+    expect(p1bLook(d, p)).toEqual({ background: "#ffffff", grid: null, kind: null, asset: null });
+    d.free();
+  });
+
+  it("refus sans étape, dans l'ordre couleur, fond, grille, pages", () => {
+    const d = f.blank();
+    const p = first(d);
+    const ok: Command = { type: "ApplyBackground", pages: [p], color: "#ffffff", backdrop: null, grid: null };
+    const level = P1B_GRID.levels[0]!;
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ ...ok, color: "" } as Command))).toBe(P1B_BAD_FILL);
+      expect(messageOf(() => d.apply({ ...ok, color: "", backdrop: { asset: { ...P1B_PNG, mime: "" }, w: 1, h: 1, fit: "width" } } as Command))).toBe(P1B_BAD_FILL);
+      expect(messageOf(() => d.apply({ ...ok, backdrop: { asset: { ...P1B_PNG, mime: "" }, w: 1, h: 1, fit: "width" } } as Command))).toBe(P1B_BAD_ASSET);
+      expect(messageOf(() => d.apply({ ...ok, backdrop: { asset: P1B_PNG, w: 1, h: 1, fit: "contain" } } as Command))).toBe(P1B_BAD_IMAGE);
+      expect(messageOf(() => d.apply({ ...ok, grid: { ...P1B_GRID, levels: [{ ...level, spacingX: 0 }] } } as Command))).toBe(P1B_BAD_GRID);
+      expect(messageOf(() => d.apply({ ...ok, pages: [] } as Command))).toBe("page inconnue : ");
+      expect(messageOf(() => d.apply({ ...ok, pages: [p, p] } as Command))).toBe(`page inconnue : ${p}`);
+      expect(messageOf(() => d.apply({ ...ok, pages: ["nulle-part"] } as Command))).toBe("page inconnue : nulle-part");
+    });
+    d.free();
+  });
+});

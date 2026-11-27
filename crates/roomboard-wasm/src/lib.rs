@@ -924,6 +924,47 @@ impl Document {
         to_js(&self.set_grid_inner(page, None).map_err(cmd_err)?)
     }
 
+    /// Aspect complet de N pages (personnalisation-1b, DA1) : `asset` absent = aucun fond image ; `grid` faux = aucune
+    /// grille (les tableaux qui suivent sont alors ignorés). `nums` comme `set_grid` (`grid_input`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_background(
+        &mut self,
+        pages: Vec<String>,
+        color: &str,
+        asset: Option<String>,
+        name: &str,
+        mime: &str,
+        size: f64,
+        w: f64,
+        h: f64,
+        fit: &str,
+        grid: bool,
+        visible: bool,
+        snap: bool,
+        above: bool,
+        kinds: Vec<String>,
+        colors: Vec<String>,
+        lines: Vec<String>,
+        nums: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let backdrop = asset.map(|id| BackdropInput {
+            asset: asset_ref(&id, name, mime, size),
+            w,
+            h,
+            fit: fit.to_string(),
+        });
+        let grid = if grid {
+            Some(grid_input(visible, snap, above, kinds, colors, lines, nums).map_err(cmd_err)?)
+        } else {
+            None
+        };
+        to_js(
+            &self
+                .apply_background_inner(pages, color, backdrop, grid)
+                .map_err(cmd_err)?,
+        )
+    }
+
     /// Tableau (C10a, T13) : `cols`, `rows` en u32 ; une valeur hors des u32 arrive comme u32::MAX (`toU32` de la page),
     /// refusée en `BadTable`.
     #[allow(clippy::too_many_arguments)]
@@ -1715,6 +1756,22 @@ impl Document {
         })
     }
 
+    /// Couleur, grille et fond image de N pages en une étape (personnalisation-1b, DA1).
+    pub fn apply_background_inner(
+        &mut self,
+        pages: Vec<String>,
+        color: &str,
+        backdrop: Option<BackdropInput>,
+        grid: Option<GridInput>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::ApplyBackground {
+            pages,
+            color: color.to_string(),
+            backdrop,
+            grid,
+        })
+    }
+
     /// Voir `grid_lines_of` ; `view` = `x0, y0, x1, y1, min_step, min_dot_step`.
     pub fn grid_lines_of_inner(
         &self,
@@ -2152,6 +2209,22 @@ impl StrokeBuilder {
 mod tests {
     use super::*;
     use roomboard_core::rich_text::{SpanAttrs, SpanInput};
+
+    // personnalisation-1b (DA1) : deux pages, une étape, par `apply_background_inner`.
+    #[test]
+    fn apply_background_inner_two_pages_one_step() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let q = d.core.add_page();
+        let c = d
+            .apply_background_inner(vec![p.clone(), q.clone()], "#1f2a2e", None, None)
+            .expect("fond");
+        assert_eq!(c.pages, vec![p.clone(), q.clone()]);
+        assert_eq!(d.core.page(&q).expect("page").background, "#1f2a2e");
+        assert!(d.core.undo());
+        assert_eq!(d.core.page(&p).expect("page").background, "#ffffff");
+        assert_eq!(d.core.page(&q).expect("page").background, "#ffffff");
+    }
 
     // C8 (Q10, Q18) : pot dans une zone fermée par son `_inner` ; cellules du masque.
     #[test]
