@@ -1775,4 +1775,157 @@ mod tests {
             vec![ABC]
         );
     }
+
+    /// Grille d'un seul niveau de carreaux de pas `s`, visible et aimantée (tests `grid_clip_*`, T7).
+    fn squares_grid(s: f64) -> GridView {
+        GridView {
+            visible: true,
+            snap: true,
+            above: false,
+            levels: vec![crate::grid::GridLevelView {
+                kind: "squares".into(),
+                spacing_x: s,
+                spacing_y: s,
+                origin_x: 0.0,
+                origin_y: 0.0,
+                color: "#000000".into(),
+                line: "solid".into(),
+                line_width: 1.0,
+                snap: true,
+                visible: true,
+            }],
+        }
+    }
+
+    /// Abscisses des verticales, ordonnées des horizontales, et boîte de tous les segments.
+    fn grid_xy(l: &GridLines) -> (Vec<f64>, Vec<f64>, Bounds) {
+        let (mut v, mut h) = (Vec::new(), Vec::new());
+        let mut b = Bounds {
+            x0: f64::INFINITY,
+            y0: f64::INFINITY,
+            x1: f64::NEG_INFINITY,
+            y1: f64::NEG_INFINITY,
+        };
+        for lv in &l.levels {
+            for s in lv.segments.as_chunks::<4>().0 {
+                if s[0] == s[2] {
+                    v.push(s[0]);
+                } else if s[1] == s[3] {
+                    h.push(s[1]);
+                }
+                b.x0 = b.x0.min(s[0]).min(s[2]);
+                b.y0 = b.y0.min(s[1]).min(s[3]);
+                b.x1 = b.x1.max(s[0]).max(s[2]);
+                b.y1 = b.y1.max(s[1]).max(s[3]);
+            }
+        }
+        (v, h, b)
+    }
+
+    /// Document à une page paysage neuve (1920 × 1080, sans fond) ; rend son id.
+    fn landscape_doc() -> (Document, String) {
+        let mut d = Document::new();
+        d.apply(crate::commands::Command::AddPage {
+            after: None,
+            mode: None,
+        })
+        .expect("page");
+        let p = d.page_ids()[0].clone();
+        (d, p)
+    }
+
+    fn infinite_page(d: &mut Document, p: &str) {
+        d.apply(crate::commands::Command::SetPageMode {
+            page: p.into(),
+            mode: PageLayout::Infinite,
+        })
+        .expect("mode infini");
+    }
+
+    /// T7, décision 9 : en Page, les lignes s'arrêtent au cadre `(0, 0) → (1920, 1080)` d'une page paysage, même
+    /// demandées loin dessous (aucune ligne y > 1080) ; le patron « largeur seule » les prolongeait sans fin.
+    #[test]
+    fn grid_clip_page_lines_stop_at_frame() {
+        let (d, p) = landscape_doc();
+        let g = squares_grid(40.0);
+        let r = Bounds {
+            x0: -500.0,
+            y0: -500.0,
+            x1: 2500.0,
+            y1: 3000.0,
+        };
+        let (v, h, b) = grid_xy(&d.grid_lines_of(&p, &g, r, 0.0, 0.0).expect("visible"));
+        assert_eq!((v.first(), v.last()), (Some(&0.0), Some(&1920.0)));
+        assert_eq!((h.first(), h.last()), (Some(&0.0), Some(&1080.0)));
+        assert_eq!((b.x0, b.y0, b.x1, b.y1), (0.0, 0.0, 1920.0, 1080.0));
+        let far = Bounds {
+            x0: -13.3,
+            y0: 1_000_007.0,
+            x1: 786.7,
+            y1: 1_000_607.0,
+        };
+        assert_eq!(
+            d.grid_lines_of(&p, &g, far, 0.0, 0.0).map(|l| l.levels.len()),
+            Some(0),
+            "rien sous le cadre"
+        );
+    }
+
+    /// T7, H17 : en Infini, aucune borne : lignes aux x < 0 et y < 0, et loin sous 1080.
+    #[test]
+    fn grid_clip_infinite_lines_at_negative_coords() {
+        let (mut d, p) = landscape_doc();
+        infinite_page(&mut d, &p);
+        let g = squares_grid(100.0);
+        let r = Bounds {
+            x0: -500.0,
+            y0: -500.0,
+            x1: 500.0,
+            y1: 500.0,
+        };
+        let (v, h, b) = grid_xy(&d.grid_lines_of(&p, &g, r, 0.0, 0.0).expect("visible"));
+        assert_eq!((v.first(), v.last()), (Some(&-500.0), Some(&500.0)));
+        assert_eq!((h.first(), h.last()), (Some(&-500.0), Some(&500.0)));
+        assert_eq!((b.x0, b.y0, b.x1, b.y1), (-500.0, -500.0, 500.0, 500.0));
+        let far = Bounds {
+            x0: 0.0,
+            y0: 1_000_000.0,
+            x1: 100.0,
+            y1: 1_000_100.0,
+        };
+        let (_, h, _) = grid_xy(&d.grid_lines_of(&p, &g, far, 0.0, 0.0).expect("visible"));
+        assert_eq!(h, vec![1_000_000.0, 1_000_100.0]);
+    }
+
+    /// T7, H17 : en Infini, l'accroche n'a pas de borne : (-500, -500) reste en place ; en Page elle reste au cadre.
+    #[test]
+    fn grid_clip_infinite_snap_at_negative_point() {
+        let (mut d, p) = landscape_doc();
+        d.apply(crate::commands::Command::SetGrid {
+            page: p.clone(),
+            grid: Some(squares_grid(100.0)),
+        })
+        .expect("grille");
+        assert_eq!(d.snap_point(&p, -510.0, 5_010.0), Some((0.0, 1000.0)));
+        infinite_page(&mut d, &p);
+        assert_eq!(d.snap_point(&p, -510.0, -490.0), Some((-500.0, -500.0)));
+        assert_eq!(d.snap_point(&p, -510.0, 5_010.0), Some((-500.0, 5_000.0)));
+    }
+
+    /// T7 : un fond PDF qui descend jusqu'à 2715 allonge le cadre : `max(height, backdrop.rect.y1)`, la règle de
+    /// `pageFrame` ; lignes jusqu'à 2715, aucune au-delà.
+    #[test]
+    fn grid_clip_pdf_backdrop_extends_frame() {
+        let d = Document::from_pdf_pages(&pdf_asset(), &[(1920.0, 2715.0)], None).expect("document");
+        let p = d.page_ids()[0].clone();
+        let r = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 1920.0,
+            y1: 5000.0,
+        };
+        let (_, h, b) = grid_xy(&d.grid_lines_of(&p, &squares_grid(15.0), r, 0.0, 0.0).expect("visible"));
+        assert_eq!(h.last(), Some(&2715.0));
+        assert_eq!(b.y1, 2715.0);
+    }
 }
