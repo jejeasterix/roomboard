@@ -345,10 +345,11 @@ async function buildBoardSession(
     doc,
     renderer: choice.renderer,
     // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
+    // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien.
     fitTop: () =>
       topBelowIslands(
         stage.getBoundingClientRect(),
-        [...stage.ownerDocument.querySelectorAll(".rb-island")].map((e) => e.getBoundingClientRect()),
+        [...stage.ownerDocument.querySelectorAll(".rb-island:not([data-options])")].map((e) => e.getBoundingClientRect()),
         GAP,
       ),
     images,
