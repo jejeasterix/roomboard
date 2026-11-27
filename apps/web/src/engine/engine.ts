@@ -864,6 +864,11 @@ export function createEngine(deps: EngineDeps): Engine {
         tableTool.act("fit-toggle");
         return true;
       }
+      // personnalisation-3 (T9) : Alt+I en outil Tableau met l'image logée de la case active en fond.
+      if (ck === "cell-image" && tool === "table") {
+        tableTool.act("cell-image");
+        return true;
+      }
       const order = orderKey(e);
       if (order !== null) {
         // Lot 2 : Ctrl+↑ ↓ un rang, Ctrl+Maj+↑ ↓ extrémités ; pris seulement avec une sélection (sinon la touche passe).

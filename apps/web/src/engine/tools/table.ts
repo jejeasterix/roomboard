@@ -14,7 +14,7 @@ import { TABLE_MAX_LINES } from "../../core/api";
 import { sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { composeMatrix, translateMatrix } from "../../core/shapes";
-import type { CellMenu } from "../../ui/cell-menu";
+import type { CellMenu, CellMenuItem } from "../../ui/cell-menu";
 import { screenToWorld } from "../camera";
 import { EMPTY_OVERLAY } from "../render/overlay";
 import {
@@ -288,7 +288,18 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     return true;
   };
 
-  /** Appui long (T7) : la cellule appuyée est active ; le menu propose Rétrécir (ou Agrandir). */
+  /** Objets logés dans la case `ref` (T9), du plus bas au plus haut de la pile. */
+  const placedIn = (ref: CellRef): string[] =>
+    ctx.doc.elementIds(ctx.page()).filter((e) => {
+      const l = ctx.doc.element(e)?.cell;
+      return l !== undefined && l[0] === ref.id && l[1] === ref.row && l[2] === ref.col;
+    });
+  const topImage = (ref: CellRef): string | null => {
+    const ids = placedIn(ref).filter((e) => ctx.doc.element(e)?.kind === "image");
+    return ids[ids.length - 1] ?? null;
+  };
+
+  /** Appui long (T7) : la cellule appuyée est active ; le menu propose Rétrécir (ou Agrandir), puis, si des objets y logent (T9), « Mettre en fond » (une image) et « Sortir ». */
   const openMenu = (p: Press): void => {
     p.hold = null;
     if (press !== p || menu === undefined) return;
@@ -296,7 +307,20 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     if (at === null) return;
     p.held = true;
     const shrink = at.table.fit === "shrink";
-    menu.open(p.sx, p.sy, [{ id: "fit", label: shrink ? "Agrandir" : "Rétrécir", run: () => api.act("fit-toggle") }]);
+    const items: CellMenuItem[] = [{ id: "fit", label: shrink ? "Agrandir" : "Rétrécir", run: () => api.act("fit-toggle") }];
+    if (topImage(at.ref) !== null) items.push({ id: "cell-image", label: "Mettre en fond", run: () => api.act("cell-image") });
+    const out = placedIn(at.ref);
+    if (out.length > 0) {
+      items.push({
+        id: "unplace",
+        label: "Sortir",
+        run: () => {
+          ctx.run({ type: "PlaceInCell", ids: out, matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] });
+          ctx.stateChanged?.();
+        },
+      });
+    }
+    menu.open(p.sx, p.sy, items);
   };
 
   const api: TableTool = {
@@ -434,6 +458,11 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         case "fit-toggle":
           ctx.run({ type: "SetTableOptions", id: ref.id, fit: t.fit === "shrink" ? "grow" : "shrink" });
           break;
+        case "cell-image": {
+          const image = topImage(ref);
+          if (image !== null) ctx.run({ type: "SetCellImage", id: ref.id, row: ref.row, col: ref.col, from: image });
+          break;
+        }
         default:
           // Contrôle d'exhaustivité : une action ajoutée à `TableAction` sans cas ici ne compile pas.
           return a satisfies never;

@@ -24,7 +24,7 @@ export const TABLE_SHADE_HATCH_WIDTH = 2;
 export const TABLE_SHADE_HATCH_STEP = 16;
 
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "cell-image";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
