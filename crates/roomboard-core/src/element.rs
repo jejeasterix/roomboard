@@ -193,7 +193,8 @@ pub struct ElementView {
     /// Chemin de groupes (C3, Z1), du plus extérieur au plus intérieur ; absent sans groupe lisible.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<Vec<String>>,
-    /// Aspect facultatif (OG11) de `stroke`, `shape`, `text` et `image` ; absent (omis du JSON) quand il est neutre.
+    /// Aspect facultatif (OG11) de `stroke`, `shape`, `text` et `image` ; `table`, `media` et `model3d` n'y portent que
+    /// `dragCopy` (OG23) ; absent (omis du JSON) quand il est neutre.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub look: Option<Look>,
 }

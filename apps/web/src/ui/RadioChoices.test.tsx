@@ -61,6 +61,14 @@ describe("RadioChoices (design-l3, L3-23, DA-L3-2)", () => {
     await tick();
     expect(document.activeElement).toBe(radio("left"));
   });
+  it("OG23 : une flèche avec Alt, Ctrl ou Méta passe (raccourci d'alignement), sans choix ni preventDefault", () => {
+    const { radio, choose } = setup("tile", "top");
+    for (const mod of [{ altKey: true, shiftKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+      const passed = fireEvent.keyDown(radio("top"), { key: "ArrowLeft", ...mod });
+      expect(passed).toBe(true);
+    }
+    expect(choose).not.toHaveBeenCalled();
+  });
   it("L3-23 : une autre touche ne choisit rien", () => {
     const { radio, choose } = setup();
     fireEvent.keyDown(radio("top"), { key: "a" });

@@ -152,6 +152,8 @@ describe("tool-options OG23 (T2) : accordéon, pression, disposition", () => {
 describe("tool-options : Glisser une copie pour tout objet (OG23, T18)", () => {
   it("admitsDragCopy : tous les genres d'objets, hors inconnu", () => {
     for (const kind of ["stroke", "shape", "text", "image", "table", "media", "model3d"]) expect(admitsDragCopy({ id: "a", kind } as unknown as ElementView), kind).toBe(true);
+    // Zone du pot (`fill`) : le cœur n'y écrit jamais `dragCopy` (style.rs `writes_for`) : la bascule ne la compte pas.
+    expect(admitsDragCopy({ id: "z", kind: "fill" } as unknown as ElementView)).toBe(false);
     expect(admitsDragCopy({ id: "a", kind: "unknown" } as unknown as ElementView)).toBe(false);
   });
 });

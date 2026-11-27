@@ -117,7 +117,8 @@ export function showsPanel(tool: ToolChoice, selection: number, annotating: bool
   if (annotating) return false;
   return DRAW.has(tool) || selection > 0;
 }
-/** OG23 : « Glisser une copie » pour chaque objet (décision 29) : tous les genres, sauf un genre inconnu du cœur. */
+/** OG23 : « Glisser une copie » pour chaque objet (décision 29) : tous les genres, sauf un genre inconnu du cœur et la
+ *  zone du pot (`fill`), où le cœur n'écrit jamais `dragCopy` (`style.rs` `writes_for`). */
 export function admitsDragCopy(e: ElementView): boolean {
-  return e.kind !== "unknown";
+  return e.kind !== "unknown" && e.kind !== "fill";
 }

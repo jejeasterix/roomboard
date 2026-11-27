@@ -11,7 +11,7 @@ const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX:
 
 function setup(zoom = 1, flagged: ReadonlySet<string> = new Set<string>()) {
   const base = fakeCore.blank();
-  // `flagged` : ids dont la vue porte `dragCopy` (le faux cœur ne l'écrit que sur les traits, formes, textes et images).
+  // `flagged` : ids dont la vue porte `dragCopy` (injecté ici sans passer par SetStyle).
   const doc = new Proxy(base, {
     get(t, k) {
       if (k === "element") return (id: string) => { const e = t.element(id); return e !== null && flagged.has(id) ? { ...e, look: { ...e.look, dragCopy: true } } : e; };
