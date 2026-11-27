@@ -102,7 +102,7 @@ import {
   unknownKindMessage,
 } from "./api";
 import { isAssetId } from "./asset-store";
-import type { Look, LookPatch } from "./look";
+import { toLook, type Look, type LookPatch } from "./look";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
@@ -200,8 +200,8 @@ const MESSAGES = {
 
 // OG11 : copie de `style.rs` (`StylePatch::validate`, `writes_for`, `differs`), du pont (`small_int`, `look_of`) et de
 // `Look::sanitized` (`element.rs`) ; aucune règle propre à la fausse liaison.
+const STROKE_STYLES: readonly string[] = ["dashed", "dotted"]; // `look.ts` ne l'exporte pas : lecture littérale dans `toLook`
 type MutableLook = { -readonly [K in keyof Look]: Look[K] };
-const STROKE_STYLES: readonly string[] = ["dashed", "dotted"];
 const absent = (v: unknown): v is null | undefined => v === undefined || v === null;
 const badStyle = (): never => {
   throw new Error(MESSAGES.badStyle);
@@ -221,15 +221,7 @@ function creationLook(l: Look | undefined): Look | undefined {
   const o = opacityArg(l.opacity);
   const r = smallInt(l.roughness, 2);
   const seed = smallInt(l.seed, 0xffffffff);
-  const out: MutableLook = {};
-  if (typeof l.strokeStyle === "string" && STROKE_STYLES.includes(l.strokeStyle)) out.strokeStyle = l.strokeStyle;
-  if (r === 1 || r === 2) {
-    out.roughness = r;
-    if (seed !== undefined) out.seed = seed;
-  }
-  if (l.roundness === "round") out.roundness = "round";
-  if (o !== undefined && o < 100) out.opacity = o;
-  return Object.keys(out).length === 0 ? undefined : out;
+  return toLook({ ...l, opacity: o, roughness: r, seed });
 }
 
 /** `StylePatch::validate` (et `roughness_arg` du pont) : tout le patch avant la moindre lecture ; rend l'opacité arrondie. */
@@ -270,7 +262,7 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
   }
   if (!absent(p.width) && (kind === "stroke" || kind === "shape")) {
     const w = Math.fround(p.width);
-    if (style.width !== w) {
+    if (Math.fround(style.width) !== w) {
       style = { ...style, width: w };
       changed = true;
     }
@@ -289,10 +281,10 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
       put("roughness", undefined);
       put("seed", undefined);
     } else {
-      // Même niveau avec une graine lisible : la graine reste ; sinon graine neuve (`actionProperties.tsx:783`).
-      const keep = e.look?.roughness === r && e.look.seed !== undefined;
+      // Comme `style.rs` : graine neuve seulement si le niveau de tracé change, jamais au même niveau.
+      const changes = e.look?.roughness !== r;
       put("roughness", r);
-      if (!keep) put("seed", newSeed());
+      if (changes) put("seed", newSeed());
     }
   }
   if ("roundness" in p && shape?.shape === "rect") put("roundness", p.roundness ?? undefined);
@@ -1803,6 +1795,8 @@ interface SavedTable {
 }
 
 interface SavedElement {
+  /** OG11 : aspect écrit ; relu par `toLook`. */
+  look?: unknown;
   id: string;
   /** Absent : élément du socle (trait, forme ou texte selon ses champs). */
   kind?: string;
@@ -1838,7 +1832,7 @@ function savedElement(e: FakeElement): SavedElement {
     return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw }, ...group };
   }
   if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...group };
-  if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: { ...e.imageRaw, ...e.image }, ...group };
+  if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: { ...e.imageRaw, ...e.image }, ...(e.look ? { look: e.look } : {}), ...group };
   if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...group };
   if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...group };
   if (e.fill) return { id: e.id, kind: "fill", transform: [...e.transform], fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h, contours: e.fill.contours.map((r) => [...r]) }, ...group };
@@ -1849,6 +1843,7 @@ function savedElement(e: FakeElement): SavedElement {
     ...(e.local ? { local: Array.from(e.local) } : {}),
     ...(e.shape ? { shape: e.shape } : {}),
     ...(e.text ? { text: e.text } : {}),
+    ...(e.look ? { look: e.look } : {}),
     ...group,
   };
 }
@@ -1910,6 +1905,12 @@ function loadTable(v: unknown): FakeTable | null {
 
 const toMatrix6 = (t: unknown): Matrix | null =>
   Array.isArray(t) && t.length === 6 && t.every((v) => typeof v === "number" && Number.isFinite(v)) ? (t as unknown as Matrix) : null;
+
+/** OG11 : aspect relu défensivement (`toLook`), omis s'il est neutre. */
+const lookField = (e: SavedElement): { look?: Look } => {
+  const look = toLook(e.look);
+  return look ? { look } : {};
+};
 
 function loadElement(e: SavedElement): FakeElement {
   const group = withGroup(readGroup(e.group));
@@ -2014,7 +2015,7 @@ function loadElement(e: SavedElement): FakeElement {
     const kept = image as unknown as Readonly<Record<string, unknown>>;
     const imageRaw = Object.fromEntries([...IMAGE_PARAM_KEYS, "sourceAsset"].filter((k) => all[k] !== undefined && kept[k] === undefined).map((k) => [k, all[k]]));
     const rawField = Object.keys(imageRaw).length > 0 ? { imageRaw } : {};
-    return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image, ...rawField, ...group };
+    return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image, ...rawField, ...lookField(e), ...group };
   }
   return {
     id: e.id,
@@ -2023,6 +2024,7 @@ function loadElement(e: SavedElement): FakeElement {
     ...(e.local ? { local: new Float32Array(e.local) } : {}),
     ...(e.shape ? { shape: e.shape } : {}),
     ...(e.text ? { text: withSpans(e.text) } : {}),
+    ...lookField(e),
     ...group,
   };
 }

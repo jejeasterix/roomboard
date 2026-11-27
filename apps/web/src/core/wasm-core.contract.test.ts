@@ -4060,6 +4060,42 @@ describe.each(factories)("contrat OG11 : $name", ({ f }) => {
     expect(d.element(id)).toBeNull();
     d.free();
   });
+
+  it("SetStyle : même niveau de tracé sans graine, aucune étape (graine neuve seulement si le niveau change)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = rect(d, p, { roughness: 1 });
+    expect(d.element(id)?.look?.seed).toBeUndefined();
+    unchanged(d, () => expect(restyle(d, [id], { roughness: 1 }).ids).toEqual([]));
+    d.free();
+  });
+
+  it("SetStyle : largeur f32, la même valeur redonnée ne fait aucune étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 0, y0: 0, x1: 100, y1: 50, style: { color: "#000000", width: 4.1 }, fill: null }).ids[0] ?? "";
+    unchanged(d, () => expect(restyle(d, [id], { width: 4.1 }).ids).toEqual([]));
+    d.free();
+  });
+
+  it("look gardé à l'enregistrement et au chargement (forme, image), fragment compris", () => {
+    const d = f.blank();
+    const p = first(d);
+    const look: Look = { opacity: 50, strokeStyle: "dashed" };
+    const r = rect(d, p, look);
+    const im = picture(d, p);
+    restyle(d, [im], { opacity: 50 });
+    const back = f.load(d.save(now, "0.1.0"));
+    expect(back.element(r)?.look).toEqual(look);
+    expect(back.element(im)?.look).toEqual({ opacity: 50 });
+    const frag = f.loadFragment(d.extract(p, [r, im]).saveFragment(now, "0.1.0", "Sélection"));
+    const e = f.blank();
+    const ids = e.insertFragment(frag, first(e), 0, 0).ids;
+    expect(ids.map((i) => e.element(i)?.look)).toEqual([look, { opacity: 50 }]);
+    back.free();
+    e.free();
+    d.free();
+  });
 });
 
 describe.skipIf(loaded === null)("contrat OG11 : vrai module seulement", () => {
