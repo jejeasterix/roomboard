@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Command, TableData, TextSpan } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import { editSpans, plainSpans } from "../../core/rich-text";
@@ -6,6 +6,7 @@ import type { FormatAction, FormatState } from "../rich-edit";
 import type { InputSample } from "../input/sampler";
 import { cellHeight, TABLE_SHADE_COLOR } from "../table-geom";
 import type { Measure } from "../text-layout";
+import type { CellMenu, CellMenuItem } from "../../ui/cell-menu";
 import { createTableTool, type TablePicker } from "./table";
 import type { TextEditorHost, TextEditSession } from "./text";
 import type { TableTool, ToolContext } from "./tool";
@@ -103,7 +104,9 @@ function setup() {
       changes++;
     },
   };
-  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow);
+  const menuOpens: { x: number; y: number; items: readonly CellMenuItem[] }[] = [];
+  const menu: CellMenu = { open: (x, y, items) => void menuOpens.push({ x, y, items }), close: () => undefined };
+  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow, menu);
   holder.tool = tool;
   const click = (x: number, y: number): void => {
     tool.begin(1, [at(x, y)]);
@@ -122,7 +125,7 @@ function setup() {
     return ids[ids.length - 1] ?? "";
   };
   const last = (): Command | undefined => runs[runs.length - 1];
-  return { doc, page, runs, host, picker, tool, click, create, table, last, type: (s: string) => (host.text = s), changes: () => changes, setShift: (v: boolean) => {
+  return { menuOpens, doc, page, runs, host, picker, tool, click, create, table, last, type: (s: string) => (host.text = s), changes: () => changes, setShift: (v: boolean) => {
     shift = v;
   } };
 }
@@ -745,5 +748,47 @@ describe("outil Tableau (personnalisation-3)", () => {
     const t = s.table(id);
     s.doc.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: [id, t.rows[0]?.id ?? "", t.cols[0]?.id ?? ""], sizes: [] });
     expect(s.tool.cellState()?.linked).toBe(1);
+  });
+});
+
+describe("appui long sur une case (menu de case, personnalisation-3 T7)", () => {
+  it("appui long (500 ms, < 8 px) sur une case : menu ouvert avec l'entrée fit ; < 500 ms : saisie ouverte comme aujourd'hui", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      const id = s.create(100, 200, 3, 3);
+      s.tool.requestCommit();
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      expect(s.menuOpens).toHaveLength(1);
+      expect(s.menuOpens[0]?.items.map((i) => i.id)).toEqual(["fit"]);
+      const opened = s.host.opened.length;
+      s.tool.close(1, "end");
+      expect(s.host.opened.length).toBe(opened);
+      s.menuOpens[0]?.items[0]?.run();
+      expect(s.last()).toEqual({ type: "SetTableOptions", id, fit: "shrink" });
+      s.tool.begin(2, [at(120, 220)]);
+      vi.advanceTimersByTime(300);
+      s.tool.close(2, "end");
+      expect(s.menuOpens).toHaveLength(1);
+      expect(s.host.opened.length).toBe(opened + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("appui long : bouger de plus de 8 px avant 500 ms annule le menu", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      s.create(100, 200, 3, 3);
+      s.tool.requestCommit();
+      s.tool.begin(1, [at(120, 220)]);
+      s.tool.extend(1, [at(135, 220)], []);
+      vi.advanceTimersByTime(600);
+      expect(s.menuOpens).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

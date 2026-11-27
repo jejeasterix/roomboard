@@ -61,6 +61,15 @@ describe("glisser vers une case (cell-drop, DA3)", () => {
     expect(s.t().cols[1]?.width).toBe(240);
   });
 
+  it("S2 : rétrécir : la case garde 240 × 64, l'image est réduite à 64 × 48, posée en haut à gauche", () => {
+    const s = setup();
+    s.doc.apply({ type: "SetTableOptions", id: s.table, fit: "shrink" });
+    s.move([1200, 1150], [360, 96]);
+    expect(s.t().cols[1]?.width).toBe(240);
+    expect(s.t().rows[1]?.height).toBe(64);
+    expect(s.doc.bounds([s.image])).toEqual({ x0: 248, y0: 72, x1: 312, y1: 120 });
+  });
+
   it("Alt : Transform seul (effet de bord, G8 de C9)", () => {
     const s = setup();
     s.setAlt(true);

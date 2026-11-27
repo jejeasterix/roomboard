@@ -2215,6 +2215,20 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     d.free();
   });
 
+  it("personnalisation-3 SetTableOptions : fit et header écrits, relus, aucune étape si inchangé, valeur inconnue refusée", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    expect(d.apply({ type: "SetTableOptions", id: s.t, fit: "shrink", header: true }).ids).toEqual([s.t]);
+    expect(tableOf(d, s.t).fit).toBe("shrink");
+    expect(tableOf(d, s.t).header).toBe(true);
+    unchanged(d, () => d.apply({ type: "SetTableOptions", id: s.t, fit: "shrink" }));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableOptions", id: s.t, fit: "zz" as "grow" }))).toBe(TABLE_MESSAGE));
+    d.apply({ type: "SetTableOptions", id: s.t, fit: "grow", header: false });
+    expect(tableOf(d, s.t).fit).toBeUndefined();
+    expect(tableOf(d, s.t).header).toBeUndefined();
+    d.free();
+  });
+
   it("personnalisation-3 tailles en double : une ligne citée deux fois est refusée, rien d'écrit", () => {
     const d = f.blank();
     const s = p3Placed(d);
