@@ -452,3 +452,100 @@ fn parse_names_roundtrip() {
     assert_eq!(RotateCcw.name(), "rotate-ccw");
     assert_eq!(ArrangeHow::parse("spin"), None);
 }
+
+fn three_rects(d: &mut Document) -> [String; 3] {
+    [
+        add_rect(d, 0.0, 0.0, 50.0, 40.0),
+        add_rect(d, 100.0, 60.0, 180.0, 90.0),
+        add_rect(d, 250.0, 120.0, 300.0, 200.0),
+    ]
+}
+
+#[test]
+fn align_center_on_selection_center() {
+    let mut d = blank();
+    let [a, b, c] = three_rects(&mut d);
+    let (b0, v) = (sbox(&d, &b), d.version());
+    arrange(&mut d, &[&a, &b, &c], ArrangeHow::AlignCenter).expect("centrer");
+    assert_eq!(d.version(), v + 1);
+    for id in [&a, &b, &c] {
+        assert!(close(mid_x(&sbox(&d, id)), 150.0), "centre x de {id}");
+    }
+    assert!(close(sbox(&d, &b).y0, b0.y0), "y inchangé");
+}
+
+#[test]
+fn align_right_with_effect() {
+    let mut d = blank();
+    let [a, b, c] = three_rects(&mut d);
+    let c0 = sbox(&d, &c);
+    let v = d.version();
+    let change = arrange(&mut d, &[&a, &b, &c], ArrangeHow::AlignRight).expect("à droite");
+    assert_eq!(d.version(), v + 1);
+    assert_eq!(change.ids.len(), 2, "le plus à droite ne bouge pas");
+    for id in [&a, &b, &c] {
+        assert!(close(sbox(&d, id).x1, 300.0), "x1 de {id}");
+    }
+    assert_eq!(sbox(&d, &c), c0);
+    assert!(close(sbox(&d, &a).y0, 0.0), "y inchangé");
+}
+
+#[test]
+fn align_middle_on_selection_middle() {
+    let mut d = blank();
+    let [a, b, c] = three_rects(&mut d);
+    let a0 = sbox(&d, &a);
+    arrange(&mut d, &[&a, &b, &c], ArrangeHow::AlignMiddle).expect("milieu");
+    for id in [&a, &b, &c] {
+        assert!(close(mid_y(&sbox(&d, id)), 100.0), "centre y de {id}");
+    }
+    assert!(close(sbox(&d, &a).x0, a0.x0), "x inchangé");
+}
+
+#[test]
+fn align_bottom_on_selection_bottom() {
+    let mut d = blank();
+    let [a, b, c] = three_rects(&mut d);
+    let a0 = sbox(&d, &a);
+    arrange(&mut d, &[&a, &b, &c], ArrangeHow::AlignBottom).expect("en bas");
+    for id in [&a, &b, &c] {
+        assert!(close(sbox(&d, id).y1, 200.0), "y1 de {id}");
+    }
+    assert!(close(sbox(&d, &a).x0, a0.x0), "x inchangé");
+}
+
+#[test]
+fn distribute_v_equal_gaps() {
+    let mut d = blank();
+    let a = add_rect(&mut d, 0.0, 0.0, 20.0, 50.0);
+    let b = add_rect(&mut d, 0.0, 70.0, 20.0, 100.0);
+    let c = add_rect(&mut d, 0.0, 400.0, 20.0, 480.0);
+    let (a0, c0) = (sbox(&d, &a), sbox(&d, &c));
+    let v = d.version();
+    arrange(&mut d, &[&a, &b, &c], ArrangeHow::DistributeV).expect("répartir");
+    assert_eq!(d.version(), v + 1);
+    let (ba, bb, bc) = (sbox(&d, &a), sbox(&d, &b), sbox(&d, &c));
+    assert_eq!((ba, bc), (a0, c0), "extrêmes immobiles");
+    let (g1, g2) = (bb.y0 - ba.y1, bc.y0 - bb.y1);
+    assert!(close(g1, g2), "écarts égaux : {g1} et {g2}");
+    assert!(close(g1, 160.0));
+    assert!(close(bb.x0, 0.0), "x inchangé");
+}
+
+#[test]
+fn flip_v_mirrors_around_selection_center() {
+    let mut d = blank();
+    let r = add_rect(&mut d, 0.0, 0.0, 100.0, 50.0);
+    let t = add_text(&mut d, 0.0, 300.0);
+    let (rb, tb) = (sbox(&d, &r), sbox(&d, &t));
+    let cy = (rb.y0.min(tb.y0) + rb.y1.max(tb.y1)) / 2.0;
+    let tm = matrix(&d, &t);
+    let v = d.version();
+    arrange(&mut d, &[&r, &t], ArrangeHow::FlipV).expect("retourner");
+    assert_eq!(d.version(), v + 1);
+    assert_eq!(matrix(&d, &r)[3], -1.0, "rectangle retourné");
+    assert_eq!(matrix(&d, &t)[..4], tm[..4], "texte : translation seule");
+    assert!(close(sbox(&d, &r).y0, 2.0 * cy - rb.y1));
+    assert!(close(sbox(&d, &t).y0, 2.0 * cy - tb.y1));
+    assert!(close(sbox(&d, &t).x0, tb.x0), "x inchangé");
+}

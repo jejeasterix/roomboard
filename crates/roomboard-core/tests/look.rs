@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use roomboard_core::commands::{Command, CommandError, EraseMode};
 use roomboard_core::document::Document;
 use roomboard_core::element::{apply_transform, Look, StrokeStyle};
-use roomboard_core::fill::FillTarget;
 use roomboard_core::format::load;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput};
 use roomboard_core::shape::ShapeKind;
@@ -1592,5 +1591,37 @@ fn look_variability_written_only_for_stroke() {
     let s = add_stroke(&mut d, l);
     assert!(!raw_keys(&d, &r).contains(&"variability".to_string()));
     assert!(!raw_keys(&d, &t).contains(&"variability".to_string()));
-    assert_eq!(raw_field(&d, &s, "variability").as_deref(), Some("constant"));
+    assert_eq!(
+        raw_field(&d, &s, "variability").as_deref(),
+        Some("constant")
+    );
+}
+
+/// Le cache des contours est clé par `constant` : changer `variability` d'un trait existant (SetStyle) fait relire un
+/// contour différent (recalcul compté), et le retrait rend le premier contour au bit près.
+#[test]
+fn outline_cache_follows_variability_change() {
+    let mut d = blank();
+    let s = stroke_with(&mut d, 0.0, |p| 0.1 + 0.9 * p, Look::default());
+    let bits = |d: &Document| -> Vec<u32> {
+        d.outline(&s)
+            .expect("contour")
+            .iter()
+            .map(|v| v.to_bits())
+            .collect()
+    };
+    let variable = bits(&d);
+    let m = d.outline_cache_misses();
+    assert_eq!(bits(&d), variable);
+    assert_eq!(d.outline_cache_misses(), m, "même aspect : servi du cache");
+    let patch = |v: Option<&str>| StylePatch {
+        variability: Some(v.map(String::from)),
+        ..Default::default()
+    };
+    set_style(&mut d, &[&s], patch(Some("constant"))).expect("constant");
+    let constant = bits(&d);
+    assert_ne!(constant, variable, "contour à pression constante différent");
+    assert_eq!(d.outline_cache_misses(), m + 1, "recalcul");
+    set_style(&mut d, &[&s], patch(None)).expect("retrait");
+    assert_eq!(bits(&d), variable);
 }

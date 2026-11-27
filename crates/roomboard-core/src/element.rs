@@ -491,8 +491,9 @@ impl Look {
     }
 }
 
-/// Champs écrits de `l` : seulement les non neutres (DA-5), dans un ordre fixe.
-pub(crate) fn look_fields(l: &Look) -> Vec<(&'static str, In)> {
+/// Champs écrits de `l` : seulement les non neutres (DA-5), dans un ordre fixe ; `variability` seulement pour un trait
+/// (`stroke`), comme `StylePatch`.
+pub(crate) fn look_fields(l: &Look, stroke: bool) -> Vec<(&'static str, In)> {
     let l = l.sanitized();
     let mut v = Vec::new();
     if let Some(s) = &l.stroke_style {
@@ -519,6 +520,9 @@ pub(crate) fn look_fields(l: &Look) -> Vec<(&'static str, In)> {
         ("variability", &l.variability),
     ];
     for (key, s) in strings {
+        if key == "variability" && !stroke {
+            continue;
+        }
         if let Some(s) = s {
             v.push((key, In::from(s.as_str())));
         }
