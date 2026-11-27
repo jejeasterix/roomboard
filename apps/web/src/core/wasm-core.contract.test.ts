@@ -4727,6 +4727,24 @@ describe.each(factories)("contrat OG12 : $name", ({ f: fab }) => {
     d.undo();
     expect(world(d, l)[1]).toEqual([205, 25]);
   });
+  // C3 (même classe que C1) : retrait de colonne, hauteur exigée par SetTableCell ; sans `follow`, l'extrémité resterait en (205, 25).
+  it("C3 : colonne retirée, puis ligne agrandie par SetTableCell, d'un tableau lié : l'extrémité suit, une étape", () => {
+    const d = fab.blank();
+    const p = d.pageIds()[0]!;
+    const t = d.apply({ type: "AddTable", page: p, x: 0, y: 0, cols: 2, rows: 2, colWidth: 100, rowHeight: 25, color: "#000000", size: 16 }).ids[0]!;
+    const l = add(d, "line", [400, 25, 200, 25], { end: b(t, 1, 0.5) });
+    const v = d.element(t);
+    if (v?.kind !== "table") throw new Error("tableau attendu");
+    const [row, col, col2] = [v.table.rows[0]!.id, v.table.cols[0]!.id, v.table.cols[1]!.id];
+    d.apply({ type: "RemoveTableLine", id: t, axis: "col", line: col2 });
+    expect(world(d, l)[1]).toEqual([105, 25]);
+    d.undo();
+    expect(world(d, l)[1]).toEqual([205, 25]);
+    d.apply({ type: "SetTableCell", id: t, row, col, content: "a", rowHeight: 75 });
+    expect(world(d, l)[1]).toEqual([205, 50]);
+    d.undo();
+    expect(world(d, l)[1]).toEqual([205, 25]);
+  });
   it("C1 : SetStyle épaissit la cible : le départ lié suit (5 + 20 / 2), la flèche touchée garde ses liaisons, une étape", () => {
     const d = fab.blank();
     const [a, z, f] = linked(d);
