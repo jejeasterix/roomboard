@@ -718,7 +718,7 @@ export class Canvas2DRenderer implements Renderer {
       ctx.transform(1, 0, 0, 1, n.tx, n.ty);
       applyOpacity(ctx, s.look);
       const pts = s.points !== undefined && s.points.length > 0 ? s.points.map((v, i) => v - (i % 2 === 0 ? s.x0 : s.y0)) : undefined;
-      paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill, ...(pts ? { points: pts } : {}) }, s.style, s.look, s.seed);
+      paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill, ...(pts ? { points: pts } : {}), ...(s.polygon ? { polygon: true as const } : {}) }, s.style, s.look, s.seed);
       ctx.restore();
     }
   }

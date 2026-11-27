@@ -11,7 +11,7 @@
  */
 import type { Bounds, LinkDir, Matrix, ShapeElement, ElementView } from "../../core/api";
 import { elbowedOf } from "../../core/look";
-import { IDENTITY_MATRIX, isPointsShape, isSegment } from "../../core/shapes";
+import { IDENTITY_MATRIX, isClosedShape, isPointsShape, isSegment } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import { isDoubleTap, type Tap } from "../input/double-tap";
@@ -324,6 +324,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
           const preview: ShapePreview = {
             shape: v.shape.shape, x0: a[0], y0: a[1], x1: z[0], y1: z[1], style: v.style, fill: null,
             ...(v.look ? { look: v.look } : {}),
+            ...(isClosedShape(v.shape) ? { polygon: true as const } : {}),
             ...(inner.length > 0 ? { points: inner } : {}),
           };
           const overlay: EditOverlay = { ...EMPTY_OVERLAY, shapes: [preview], points: pointHandles(p, [], zoom, false), bind: next.hint };

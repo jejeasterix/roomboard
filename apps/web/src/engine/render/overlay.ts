@@ -21,6 +21,8 @@ export interface ShapePreview {
   readonly seed?: number;
   /** OG12 : points intérieurs en monde (absent : segment du socle). */
   readonly points?: readonly number[];
+  /** OG12 lot 2a : ligne fermée (fermeture implicite), tracée fermée pendant le glisser. */
+  readonly polygon?: true;
 }
 
 /** OG12 : poignée de point (« point ») ou de milieu de segment (« mid »), en monde. */

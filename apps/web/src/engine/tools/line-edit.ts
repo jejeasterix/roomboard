@@ -101,7 +101,7 @@ export function createLineEditor(ctx: ToolContext, id: string, exit: () => void)
           hidden: new Set([id]),
           overlay: {
             ...EMPTY_OVERLAY,
-            shapes: [{ shape: v.shape.shape, x0: first[0], y0: first[1], x1: last[0], y1: last[1], points: pts.slice(1, -1).flat(), style: v.style, fill: null, ...(v.look ? { look: v.look } : {}) }],
+            shapes: [{ shape: v.shape.shape, x0: first[0], y0: first[1], x1: last[0], y1: last[1], points: pts.slice(1, -1).flat(), style: v.style, fill: null, ...(v.look ? { look: v.look } : {}), ...(isClosedShape(v.shape) ? { polygon: true as const } : {}) }],
             points: pointHandles(pts, [index], zoom, false, isClosedShape(v.shape)),
             bind: hint,
           },
