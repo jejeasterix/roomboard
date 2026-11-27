@@ -214,6 +214,12 @@ pub enum Command {
         target: crate::fill::FillTarget,
         color: Option<String>,
     },
+    /// OG11 (déc. 25, DA-1) : patch de style sur les éléments qui admettent chaque champ, en une étape ; aucune étape
+    /// si rien ne change (D38) ; `BadStyle` si une valeur est hors domaine (rien d'écrit).
+    SetStyle {
+        ids: Vec<String>,
+        patch: crate::style::StylePatch,
+    },
     /// Média (C14, M5) : élément, métadonnée du média (avec `linked` s'il est lié) et du poster ; une transaction, une
     /// étape.
     AddMedia {
@@ -308,6 +314,7 @@ pub enum CommandError {
     BadMedia,
     BadImageParams,
     BadModel3d,
+    BadStyle,
 }
 
 impl std::fmt::Display for CommandError {
@@ -378,6 +385,7 @@ impl std::fmt::Display for CommandError {
                 f,
                 "objet 3D invalide (format glb, gltf, obj, stl ou ply, boîte finie > 0, pitch de −85° à 85°, yaw dans ]−180°, 180°], 256 fichiers liés au plus, chemins de 1 à 1 024 caractères normalisés et uniques attendus)"
             ),
+            CommandError::BadStyle => write!(f, "style invalide"),
         }
     }
 }
@@ -810,6 +818,9 @@ impl Document {
                 target,
                 color,
             } => self.cmd_fill(&page, &target, color.as_deref()),
+            Command::SetStyle { ids, patch } => {
+                self.cmd_set_style(&ids, &patch, crate::style::random_seed)
+            }
             Command::AddMedia {
                 page,
                 asset,

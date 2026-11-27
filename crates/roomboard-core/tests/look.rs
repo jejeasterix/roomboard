@@ -596,11 +596,11 @@ fn set_style_out_of_range_refused() {
             ..Default::default()
         },
         StylePatch {
-            color: Some("bleu".into()),
+            color: Some("#zzzzzz".into()),
             ..Default::default()
         },
         StylePatch {
-            fill: Some(Some("bleu".into())),
+            fill: Some(Some("#12345".into())),
             ..Default::default()
         },
         StylePatch {
