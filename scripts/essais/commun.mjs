@@ -279,3 +279,13 @@ export function zipEntries(buf) {
 
 /** Empreinte SHA-256 en hexadécimal minuscule (nom d'entrée `assets/<sha>.<ext>`). */
 export const sha256 = (b) => createHash("sha256").update(b).digest("hex");
+
+/** OG11 (personnalisation-2) : replie le panneau d'options à gauche avant tout chargement, pour qu'un tracé ancien ne le
+ *  rencontre pas. Pose par `page.addInitScript` la clé d'îlot de `device-settings.ts` (`roomboard.ilot.<profil>.options`,
+ *  valeur `{ "collapsed": true }`) ; sans `profileId`, pour les profils fournis (« defaut », « simple »). À appeler avant `goto`. */
+export async function foldOptions(page, profileId = null) {
+  const ids = profileId === null ? ["defaut", "simple"] : [profileId];
+  await page.addInitScript((keys) => {
+    for (const k of keys) window.localStorage.setItem(k, JSON.stringify({ collapsed: true }));
+  }, ids.map((id) => `roomboard.ilot.${encodeURIComponent(id).replaceAll(".", "%2E")}.options`));
+}
