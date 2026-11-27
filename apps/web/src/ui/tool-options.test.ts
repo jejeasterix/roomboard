@@ -54,7 +54,8 @@ describe("tool-options", () => {
     expect(appliesTo("opacity", stroke)).toBe(true);
     const line = { id: "l", kind: "shape", shape: { shape: "line" } } as unknown as ElementView;
     expect(appliesTo("background", line)).toBe(false);
-    expect(appliesTo("roundness", line)).toBe(false);
+    // OG12 : « Angles » s'applique à la ligne (polyligne aux angles arrondis).
+    expect(appliesTo("roundness", line)).toBe(true);
   });
   it("backgroundPicks : transparent puis jaune, vert, bleu, rose réels", () => {
     expect(backgroundPicks()).toEqual([

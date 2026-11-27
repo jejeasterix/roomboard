@@ -8,11 +8,11 @@ import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMou
 import type { Command, ElementView, TextAttrsPatch } from "../core/api";
 import {
   endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf,
-  type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
+  elbowedOf, type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
 } from "../core/look";
 import type { DeviceSettings } from "../device-settings";
 import type { Engine, EngineState } from "../engine/engine";
-import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../engine/item-style";
+import { DEFAULT_ITEM_STYLE, type ArrowType, type ItemStyle } from "../engine/item-style";
 import type { ButtonSize, Profile } from "../toolbar";
 import { observeBox } from "./Island";
 import { objectKey, type KeyLike } from "../engine/input/keys";
@@ -58,6 +58,7 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   font: "Police",
   fontSize: "Taille",
   textAlign: "Alignement du texte",
+  arrowType: "Type de flèche",
   arrowheads: "Pointes",
   opacity: "Transparence",
   layers: "Disposition",
@@ -92,6 +93,14 @@ const HEADS: readonly RadioOption<Arrowhead>[] = [
   { value: "arrow", label: "Flèche", icon: "head-arrow" },
   { value: "triangle", label: "Triangle", icon: "head-triangle" },
   { value: "triangle_outline", label: "Triangle creux", icon: "head-triangle-outline" },
+  { value: "bar", label: "Barre", icon: "head-bar" },
+  { value: "circle", label: "Rond", icon: "head-circle" },
+  { value: "circle_outline", label: "Rond creux", icon: "head-circle-outline" },
+];
+const ARROW_TYPES: readonly RadioOption<ArrowType>[] = [
+  { value: "sharp", label: "Droite", icon: "arrow-type-sharp" },
+  { value: "round", label: "Courbe", icon: "arrow-type-round" },
+  { value: "elbow", label: "Coudée", icon: "arrow-type-elbow" },
 ];
 const FONT_OPTIONS: readonly RadioOption<string>[] = FONTS.map((f) => ({ value: f.value, label: f.label }));
 const SIZE_OPTIONS: readonly RadioOption<string>[] = TEXT_SIZES.map((n) => ({ value: String(n), label: String(n) }));
@@ -145,6 +154,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     strokeStyle: (e) => strokeKindOf(e.look),
     roughness: (e) => roughnessOf(e.look),
     roundness: (e) => roundnessOf(e.look),
+    arrowType: (e) => (e.kind === "shape" && e.shape.shape === "arrow" ? (elbowedOf(e.look) ? "elbow" : roundnessOf(e.look) === "round" ? "round" : "sharp") : undefined),
     opacity: (e) => opacityOf(e.look),
     fillStyle: (e) => fillStyleOf(e.look),
     textAlign: (e) => textAlignOf(e.look),
@@ -160,6 +170,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     strokeStyle: (s) => s.strokeStyle,
     roughness: (s) => s.roughness,
     roundness: (s) => s.roundness,
+    arrowType: (s) => s.arrowType,
     opacity: (s) => s.opacity,
     fillStyle: (s) => s.fillStyle,
     textAlign: (s) => s.textAlign,
@@ -330,12 +341,19 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       <RadioChoices keepFocus name="textAlign" label={LABEL.textAlign} look="segment" options={ALIGNS} valueAttr="data-option-value"
         value={(value("textAlign") as TextAlign | null) ?? null} choose={(a) => write({ textAlign: a })} />
     ),
+    arrowType: () => (
+      <RadioChoices keepFocus name="arrowType" label={LABEL.arrowType} look="segment" options={ARROW_TYPES} valueAttr="data-option-value"
+        value={(value("arrowType") as ArrowType | null) ?? null} choose={(t) => write({ arrowType: t })} />
+    ),
     arrowheads: () => (
       <>
         <RadioChoices keepFocus name="startArrowhead" label="Pointe de début" look="segment" options={HEADS} valueAttr="data-option-value"
           value={(value("startArrowhead", "arrowheads") as Arrowhead | null) ?? null} choose={(h) => write({ startArrowhead: h })} />
         <RadioChoices keepFocus name="endArrowhead" label="Pointe de fin" look="segment" options={HEADS} valueAttr="data-option-value"
           value={(value("endArrowhead", "arrowheads") as Arrowhead | null) ?? null} choose={(h) => write({ endArrowhead: h })} />
+        <IconButton keepFocus icon="arrow-binding" label="Liaison des flèches"
+          attrs={{ "data-option-value": "arrow-binding", class: "rb-opt-btn", role: "switch", "aria-checked": String(cur().arrowBinding) }}
+          onPress={() => write({ arrowBinding: !cur().arrowBinding })} />
       </>
     ),
     layers: () => (
