@@ -7,9 +7,9 @@ function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profil
   const engine = {
     setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), setFillColor: vi.fn(), setFillTolerance: vi.fn(), undo: vi.fn(), redo: vi.fn(),
     addPage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
-    fitPage: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
+    fitPage: vi.fn(), deleteElements: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
   };
-  const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), exportPdf: vi.fn(), selection: vi.fn() } as unknown as HostTargets;
+  const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), exportPdf: vi.fn(), selection: vi.fn(), pageElementIds: vi.fn(() => ["a", "b"]), confirm: vi.fn(async () => true) } as unknown as HostTargets;
   const host = createLocalToolbarHost(t, () => profile);
   return { engine, t, host };
 }
@@ -30,6 +30,34 @@ function setupWithAnnotation(active: boolean) {
 }
 
 describe("ToolbarHost local", () => {
+  it("help → toggle(\"help\")", () => {
+    const { host, t } = setup();
+    host.runAction("help");
+    expect(t.toggle).toHaveBeenCalledWith("help");
+  });
+  it("page-clear confirme : un Delete des ids de la page", async () => {
+    const { t, engine } = setup();
+    ACTIONS["page-clear"]!(t);
+    await vi.waitFor(() => expect(engine.deleteElements).toHaveBeenCalledWith(["a", "b"]));
+    expect(t.confirm).toHaveBeenCalledWith("Effacer tout le contenu de la page ? Ctrl+Z le rétablit.");
+    expect(engine.deleteElements).toHaveBeenCalledTimes(1);
+  });
+  it("page-clear refusé : rien", async () => {
+    const { t, engine } = setup();
+    (t.confirm as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+    ACTIONS["page-clear"]!(t);
+    await vi.waitFor(() => expect(t.confirm).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(engine.deleteElements).not.toHaveBeenCalled();
+  });
+  it("page-clear sur page vide : rien, sans question", async () => {
+    const { t, engine } = setup();
+    (t.pageElementIds as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    ACTIONS["page-clear"]!(t);
+    await Promise.resolve();
+    expect(t.confirm).not.toHaveBeenCalled();
+    expect(engine.deleteElements).not.toHaveBeenCalled();
+  });
   it('imagePanel → toggle("image") (C5, I25)', () => {
     const { host, t } = setup();
     host.imagePanel();

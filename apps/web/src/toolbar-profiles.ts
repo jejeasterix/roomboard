@@ -65,7 +65,7 @@ const menuBar = () => ({
         { ...action("edit-original", "Modifier dans l'application d'origine"), requires: ["officeConverter"] },
       ],
     },
-    { id: "vue", items: [sep("sep-6"), action("grid", "Grille"), action("settings", "Réglages"), { id: "menu-profiles", kind: "action", action: "profiles", label: "Profil" }] },
+    { id: "vue", items: [sep("sep-6"), action("help", "Aide"), action("page-clear", "Effacer la page"), action("grid", "Grille"), action("settings", "Réglages"), { id: "menu-profiles", kind: "action", action: "profiles", label: "Profil" }] },
   ],
 });
 
