@@ -68,11 +68,11 @@ ouvertes : — · passées : —
 ---
 id: 2026-11-27-roomboard-personnalisation-1b-clos
 type: journal
-summary: "RoomBoard personnalisation 1b close (OG5, PR #NUMPR) : bouton « Fonds » et fenêtre (5 sections, recherche française tolérante aux fautes, hors ligne), pack livré de 161 fonds (118 dessinés + 43 photos CC0, 13 Mo), « Mes fonds » (image déposée, cette page, cette grille), commande ApplyBackground (une étape d'annulation), CLI backgrounds."
+summary: "RoomBoard personnalisation 1b close (OG5, PR #62) : bouton « Fonds » et fenêtre (5 sections, recherche française tolérante aux fautes, hors ligne), pack livré de 161 fonds (118 dessinés + 43 photos CC0, 13 Mo), « Mes fonds » (image déposée, cette page, cette grille), commande ApplyBackground (une étape d'annulation), CLI backgrounds."
 created: 2026-11-27
 project: "[[roomboard]]"
 tags: [projet/roomboard, journal, personnalisation]
-evidence: "PR jejeasterix/roomboard#NUMPR ; docs/plans/personnalisation-1b-cadrage.md ; docs/sessions/personnalisation-1b-etat.md"
+evidence: "PR jejeasterix/roomboard#62 ; docs/plans/personnalisation-1b-cadrage.md ; docs/sessions/personnalisation-1b-etat.md"
 ---
 
 # RoomBoard — personnalisation 1b close (2026-11-27)
@@ -100,7 +100,7 @@ summary: "RoomBoard : un fond de page est l'aspect complet de la page (couleur, 
 created: 2026-11-27
 project: "[[roomboard]]"
 tags: [projet/roomboard, decision, coeur]
-evidence: "PR jejeasterix/roomboard#NUMPR ; docs/plans/personnalisation-1b-cadrage.md (Q1, Q2, Q35) ; crates/roomboard-core/src/page_look.rs"
+evidence: "PR jejeasterix/roomboard#62 ; docs/plans/personnalisation-1b-cadrage.md (Q1, Q2, Q35) ; crates/roomboard-core/src/page_look.rs"
 ---
 
 # Fond de page : une commande ApplyBackground
@@ -122,7 +122,7 @@ summary: "RoomBoard : pack de fonds livré en fichiers statiques hors Wasm (apps
 created: 2026-11-27
 project: "[[roomboard]]"
 tags: [projet/roomboard, decision, licence]
-evidence: "PR jejeasterix/roomboard#NUMPR ; docs/plans/personnalisation-1b-cadrage.md (Q9-Q14, Q33, Q34) ; apps/web/backgrounds/SOURCES.json"
+evidence: "PR jejeasterix/roomboard#62 ; docs/plans/personnalisation-1b-cadrage.md (Q9-Q14, Q33, Q34) ; apps/web/backgrounds/SOURCES.json"
 ---
 
 # Pack de fonds : CC0, hors Wasm, sans trace de source
@@ -145,7 +145,7 @@ summary: "RoomBoard : « faire de cette page un fond » fige le cadre de la page
 created: 2026-11-27
 project: "[[roomboard]]"
 tags: [projet/roomboard, decision, personnalisation]
-evidence: "PR jejeasterix/roomboard#NUMPR ; docs/plans/personnalisation-1b-cadrage.md (Q20, Q21, Q30)"
+evidence: "PR jejeasterix/roomboard#62 ; docs/plans/personnalisation-1b-cadrage.md (Q20, Q21, Q30)"
 ---
 
 # Page devenue fond, fond en mode Infini
@@ -159,5 +159,5 @@ evidence: "PR jejeasterix/roomboard#NUMPR ; docs/plans/personnalisation-1b-cadra
 ### 5. Segment à ajouter à la ligne 21 de `01_Projets/roomboard.md`
 
 ```markdown
- ; personnalisation 1b (fonds de page : fenêtre « Fonds », pack de 161 fonds dont 43 photos CC0, Mes fonds, ApplyBackground, CLI backgrounds) close (PR #NUMPR) — voir [[2026-11-27-roomboard-personnalisation-1b-clos]]
+ ; personnalisation 1b (fonds de page : fenêtre « Fonds », pack de 161 fonds dont 43 photos CC0, Mes fonds, ApplyBackground, CLI backgrounds) close (PR #62) — voir [[2026-11-27-roomboard-personnalisation-1b-clos]]
 ```
