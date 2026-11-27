@@ -21,7 +21,7 @@ import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
 import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { setLiveOpacity } from "./renderer";
-import { cornerRadius, dashOf, seedOf, sketchShape } from "./sketch";
+import { cornerRadius, dashOf, seedOf, sketchShape, strokeWith, wingDashOf, type SketchMemo, type SketchPlan } from "./sketch";
 import { cellTextBoxes, paintTableGrid, type CellTextBox } from "./table-paint";
 
 export interface PathSink {
@@ -267,9 +267,24 @@ export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: n
 /** Forme dans son repère local (OG11) : tracé roughjs si `roughness` > 0 (graine `look.seed`, sinon `seed`) ; sinon le
  *  tracé net, tirets et angles seulement s'ils sont demandés — aspect absent ou neutre : les appels d'avant OG11, à
  *  l'identique (`ARCHITECTE_RECT_MAIN`). L'opacité est posée par l'appelant, dans le save/restore de l'élément. */
-export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: StrokeStyle, look?: Look, seed?: number): void {
+export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: StrokeStyle, look?: Look, seed?: number, memo?: SketchMemo): void {
   if (roughnessOf(look) > 0) {
-    sketchShape(ctx, s, style, look ?? {}, look?.seed ?? seed ?? 0);
+    sketchShape(ctx, s, style, look ?? {}, look?.seed ?? seed ?? 0, memo);
+    return;
+  }
+  const dash = dashOf(strokeKindOf(look), style.width);
+  const head = s.shape === "arrow" && dash.length > 0 ? arrowWings(s.w, s.h, style.width) : null;
+  if (head) {
+    // Trait en tirets : le fût porte les tirets, la pointe est tracée à part, pleine (ou pointillés resserrés).
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(s.w, s.h);
+    strokeWith(ctx, style, dash);
+    ctx.beginPath();
+    ctx.moveTo(head[0], head[1]);
+    ctx.lineTo(s.w, s.h);
+    ctx.lineTo(head[2], head[3]);
+    strokeWith(ctx, style, wingDashOf(strokeKindOf(look), style.width));
     return;
   }
   traceShape(ctx, s, style.width, roundnessOf(look) === "round");
@@ -277,14 +292,7 @@ export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: S
     ctx.fillStyle = s.fill;
     ctx.fill();
   }
-  const dash = dashOf(strokeKindOf(look), style.width);
-  if (dash.length > 0) ctx.setLineDash(dash);
-  ctx.strokeStyle = style.color;
-  ctx.lineWidth = style.width;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.stroke();
-  if (dash.length > 0) ctx.setLineDash([]);
+  strokeWith(ctx, style, dash);
 }
 
 /** Opacité d'un aspect (0..100) appliquée au contexte ; 100 (neutre) : aucun appel. */
@@ -326,6 +334,8 @@ function paintText(ctx: CanvasRenderingContext2D, lines: readonly RichLine[], co
 
 export class Canvas2DRenderer implements Renderer {
   private readonly paths = new Map<string, Path2D | null>();
+  /** Tracés roughjs par id (clé : forme, taille, remplissage, couleur, épaisseur, aspect, graine), invalidés comme `paths`. */
+  private readonly sketches = new Map<string, SketchPlan>();
   /** Lignes des textes par id (clé : taille, largeur de boîte, segments), invalidées par `Change` comme `paths`. */
   private readonly textLines = new Map<string, { readonly key: string; readonly lines: readonly RichLine[] }>();
   /** Lignes du texte des cellules, par tableau (B1) : même cache et même invalidation que `textLines`. */
@@ -504,7 +514,7 @@ export class Canvas2DRenderer implements Renderer {
       ctx.fillStyle = el.fill.color;
       ctx.fill(path, "evenodd");
     } else if (el.kind === "shape") {
-      paintShape(ctx, el.shape, el.style, el.look, el.look === undefined ? undefined : (el.look.seed ?? seedOf(el.id)));
+      paintShape(ctx, el.shape, el.style, el.look, el.look === undefined ? undefined : (el.look.seed ?? seedOf(el.id)), { id: el.id, cache: this.sketches });
     } else if (el.kind === "text") {
       paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color);
     } else if (el.kind === "image") {
@@ -658,12 +668,14 @@ export class Canvas2DRenderer implements Renderer {
     this.gridCache.invalidate(change);
     if (change.full) {
       this.paths.clear();
+      this.sketches.clear();
       this.textLines.clear();
       this.cellLines.clear();
       return;
     }
     for (const id of [...change.ids, ...change.removed]) {
       this.paths.delete(id);
+      this.sketches.delete(id);
       this.textLines.delete(id);
       this.cellLines.delete(id);
     }

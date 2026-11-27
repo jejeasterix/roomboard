@@ -42,7 +42,7 @@ describe("sketch (OG11, DA-3)", () => {
     const round = rec();
     sketchShape(ctx(round), rect, pen, { roughness: 1, roundness: "round" }, 5);
     const sharp = rec();
-    sketchShape(ctx(sharp), rect, pen, { roughness: 1, roundness: "sharp" }, 5);
+    sketchShape(ctx(sharp), rect, pen, { roughness: 1 }, 5);
     expect(ops(round).length).toBeGreaterThan(0);
     expect(JSON.stringify(ops(round))).not.toBe(JSON.stringify(ops(sharp)));
     const ell = rec();
