@@ -65,10 +65,9 @@ export interface SideBarProps {
   readonly size?: Accessor<ButtonSize>;
 }
 
-/** Part de la largeur utile de la ligne (après le numéro) prise par la miniature, par taille (petites, moyennes, grandes). */
-export const THUMB_SHARE: Readonly<Record<SidebarState["thumb"], number>> = { s: 0.5, m: 0.75, l: 1 };
-/** Largeur utile supposée quand elle n'est pas mesurable (pas de mise en page), en px CSS. */
-const LINE_FALLBACK = 220;
+/** Largeur minimale CSS de la miniature par taille (petites, moyennes, grandes) : la liste ne descend pas dessous, le panneau
+ * s'élargit au besoin ; au-delà (panneau plus large), la miniature prend toute la largeur utile de la ligne. */
+export const THUMB_CSS: Readonly<Record<SidebarState["thumb"], number>> = { s: 160, m: 220, l: 280 };
 /** Ce que la ligne prend en plus de la miniature : marges de la liste (2 × 2), de la ligne (2 × 4), numéro (24) et écart (4). */
 const LINE_CHROME = 40;
 
@@ -129,9 +128,9 @@ export function SideBar(props: SideBarProps): JSX.Element {
   const actions = () => sideActions(props.bar).filter((it) => it.hidden !== true && it.kind === "action");
   const rows = (): HTMLElement[] => [...(list?.querySelectorAll<HTMLElement>("[data-page-id]") ?? [])];
   const pixelRatio = (): number => root?.ownerDocument.defaultView?.devicePixelRatio || 1;
-  const [lineWidth, setLineWidth] = createSignal(LINE_FALLBACK);
-  /** Largeur CSS de la miniature : sa part de la largeur utile de la ligne, mesurée sur la liste. */
-  const bufferWidth = (): number => Math.max(1, Math.round(lineWidth() * THUMB_SHARE[thumbSize()] * pixelRatio()));
+  const [lineWidth, setLineWidth] = createSignal(0);
+  /** Largeur du tampon : la largeur réelle de la miniature (la place utile de la ligne, mesurée, au moins THUMB_CSS) × devicePixelRatio. */
+  const bufferWidth = (): number => Math.round(Math.max(lineWidth(), THUMB_CSS[thumbSize()]) * pixelRatio());
   const index = (id: string): number => pages.ids().indexOf(id);
   /** Après un déplacement (le nœud est repris par le DOM) : le focus revient à la miniature. */
   const refocus = (id: string): void => {
@@ -373,7 +372,7 @@ export function SideBar(props: SideBarProps): JSX.Element {
           }}
           class="rb-pages-list"
           data-thumb={thumbSize()}
-          style={{ "--rb-thumb-share": `${THUMB_SHARE[thumbSize()]}` }}
+          style={{ "--rb-thumb": `${THUMB_CSS[thumbSize()]}px` }}
         >
           <For each={pages.ids()}>
             {(id, n) => (
