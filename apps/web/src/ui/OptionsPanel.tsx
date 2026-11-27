@@ -393,9 +393,8 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     for (const t of targets()) {
       if (t.kind === "text") cmds.push({ type: "FormatText", id: t.id, start: 0, len: t.text.content.length, attrs });
     }
-    // Une étape d'annulation par changement (T37) : plusieurs textes passent par `runAll`.
-    if (cmds.length === 1 && cmds[0]) props.engine().run(cmds[0]);
-    else props.engine().runAll(cmds);
+    // Une étape d'annulation par changement (T37) : `runAll`, une ou plusieurs commandes.
+    props.engine().runAll(cmds);
   };
   const body = (k: OptionKey): JSX.Element => bodies[k]();
   /** T18 (déc. 38) : éditeur de lien sous l'élément (au-dessus faute de place), bord droit sur celui de la boîte. */

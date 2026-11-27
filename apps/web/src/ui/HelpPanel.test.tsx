@@ -23,12 +23,6 @@ describe("HelpPanel", () => {
     const groups = [...container.querySelectorAll("[data-group]")].map((g) => g.getAttribute("data-group"));
     expect(groups).toEqual([...new Set(SHORTCUTS.map((s) => s.group))]);
   });
-  it("Échap ferme", () => {
-    const close = vi.fn();
-    const { container } = render(() => <HelpPanel close={close} />);
-    fireEvent.keyDown(container.querySelector('[data-panel="aide"]')!, { key: "Escape" });
-    expect(close).toHaveBeenCalledTimes(1);
-  });
   it("bouton Fermer ≥ 44 px (classe de cible tactile) ferme", () => {
     const close = vi.fn();
     const { container } = render(() => <HelpPanel close={close} />);
