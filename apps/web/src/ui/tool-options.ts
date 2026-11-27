@@ -6,14 +6,14 @@ import { presetsOf, TABLE_FILLS, type Profile } from "../toolbar";
 
 export type OptionKey =
   | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "pressure" | "strokeStyle" | "roughness" | "roundness"
-  | "font" | "fontSize" | "textAlign" | "arrowheads" | "opacity" | "layers" | "align" | "transform" | "actions";
+  | "font" | "fontSize" | "textAlign" | "arrowheads" | "opacity" | "image" | "layers" | "align" | "transform" | "actions";
 export const OPTION_ORDER: readonly OptionKey[] = [
   "strokeColor", "background", "fillStyle", "strokeWidth", "pressure", "strokeStyle", "roughness", "roundness",
-  "font", "fontSize", "textAlign", "arrowheads", /* editPoints (OG12) */ "opacity", /* image (lot B) */
+  "font", "fontSize", "textAlign", "arrowheads", /* editPoints (OG12) */ "opacity", "image",
   "layers", "align", "transform", "actions",
 ];
-/** OG23 : sections ouvertes au premier affichage (le lot B ajoute `image`). */
-export const OPEN_BY_DEFAULT: ReadonlySet<OptionKey> = new Set<OptionKey>(["strokeColor", "background", "strokeWidth"]);
+/** OG23 : sections ouvertes au premier affichage (`image` : la section de l'image seule). */
+export const OPEN_BY_DEFAULT: ReadonlySet<OptionKey> = new Set<OptionKey>(["strokeColor", "background", "strokeWidth", "image"]);
 /** Section ouverte : l'état gardé sur l'appareil s'il est booléen, sinon le défaut. */
 export function sectionOpen(key: OptionKey, saved: Readonly<Partial<Record<string, boolean>>>): boolean {
   const v = Object.hasOwn(saved, key) ? saved[key] : undefined;
@@ -58,6 +58,7 @@ export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _
   const on = new Set<OptionKey>(BY_TOOL[tool] ?? []);
   for (const t of targets) for (const k of byElement(t)) on.add(k);
   if (targets.length > 0) { on.add("layers"); on.add("transform"); on.add("actions"); }
+  if (targets.length === 1 && targets[0]!.kind === "image") on.add("image");
   if (units >= ALIGN_MIN_UNITS) on.add("align");
   const filled = targets.length > 0 ? targets.some((t) => t.kind === "shape" && t.shape.fill != null) : background !== null;
   if (!filled) on.delete("fillStyle");
@@ -115,4 +116,8 @@ const DRAW = new Set(["pen", "rect", "ellipse", "line", "arrow", "text"]);
 export function showsPanel(tool: ToolChoice, selection: number, annotating: boolean): boolean {
   if (annotating) return false;
   return DRAW.has(tool) || selection > 0;
+}
+/** OG23 : genres qui admettent « Glisser une copie » (traits, formes, textes, images : ceux dont l'aspect est lu). */
+export function admitsDragCopy(e: ElementView): boolean {
+  return e.kind === "stroke" || e.kind === "shape" || e.kind === "text" || e.kind === "image";
 }
