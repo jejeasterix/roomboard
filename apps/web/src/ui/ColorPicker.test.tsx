@@ -24,6 +24,14 @@ describe("open-color", () => {
       for (const c of row) expect(c).toMatch(/^#[0-9a-f]{6}$/);
     }
   });
+  it("aucune couleur en double dans la grille", () => {
+    const all = OPEN_COLOR.flat();
+    expect(new Set(all).size).toBe(all.length);
+  });
+  it("une couleur courante n'enfonce qu'une seule case", () => {
+    const m = render(() => <ColorPicker value="#868e96" choose={() => {}} close={() => {}} anchor={document.body} />);
+    expect(m.container.querySelectorAll("[role=gridcell][aria-selected=true]")).toHaveLength(1);
+  });
 });
 
 describe("ColorPicker (OG11, T16)", () => {
@@ -79,6 +87,23 @@ describe("ColorPicker (OG11, T16)", () => {
     input.value = "ABCDEF";
     fireEvent.keyDown(input, { key: "Enter" });
     expect(m.choose).toHaveBeenLastCalledWith("#abcdef");
+  });
+  it("le champ hexadécimal ne valide pas à la perte du focus (clic sur une case)", () => {
+    const m = mount("#1e1e1e");
+    const input = m.container.querySelector<HTMLInputElement>("input[data-color-hex]")!;
+    input.focus();
+    m.cells()[3]!.focus();
+    fireEvent.blur(input);
+    expect(m.choose).not.toHaveBeenCalled();
+    expect(m.close).not.toHaveBeenCalled();
+  });
+  it("Maj+Tab depuis le champ ne choisit rien", () => {
+    const m = mount("#1e1e1e");
+    const input = m.container.querySelector<HTMLInputElement>("input[data-color-hex]")!;
+    input.focus();
+    fireEvent.keyDown(input, { key: "Tab", shiftKey: true });
+    fireEvent.blur(input);
+    expect(m.choose).not.toHaveBeenCalled();
   });
   it("la case de la valeur courante est enfoncée", () => {
     const m = mount(OPEN_COLOR[3]![4]);

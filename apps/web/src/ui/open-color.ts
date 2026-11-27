@@ -6,7 +6,7 @@
  * `indigo` et `lime` sont les deux teintes d'open-color qu'Excalidraw n'affiche pas ; la première ligne est neutre.
  */
 export const OPEN_COLOR: readonly (readonly string[])[] = Object.freeze([
-  Object.freeze(["#ffffff", "#f1f3f5", "#868e96", "#343a40", "#1e1e1e"]),
+  Object.freeze(["#ffffff", "#f1f3f5", "#adb5bd", "#495057", "#1e1e1e"]),
   Object.freeze(["#f8f9fa", "#e9ecef", "#ced4da", "#868e96", "#343a40"]), // gray
   Object.freeze(["#fff5f5", "#ffc9c9", "#ff8787", "#fa5252", "#e03131"]), // red
   Object.freeze(["#fff0f6", "#fcc2d7", "#f783ac", "#e64980", "#c2255c"]), // pink

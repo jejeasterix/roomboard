@@ -311,7 +311,7 @@ describe("OptionsPanel : sélecteur de couleur complet (T16)", () => {
     const { container, calls } = mount({ tool: "rect", selection: [] });
     fireEvent.keyDown(window, { key: "g" });
     fireEvent.click(container.querySelectorAll<HTMLElement>("[data-color-picker] [role=gridcell]")[2]!);
-    expect(calls.at(-1)).toEqual({ background: "#868e96" });
+    expect(calls.at(-1)).toEqual({ background: "#adb5bd" });
   });
   it("S sans section Trait (outil sélection vide) : rien", () => {
     const { container } = mount({ tool: "select", selection: [] });

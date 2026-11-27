@@ -1,4 +1,5 @@
 // OG11 (DA-6) : une seule table des raccourcis — le menu ☰ les affiche, l'Aide (lot 2) les liste.
+import { inEditable, type KeyLike } from "../engine/input/keys";
 export interface Shortcut { readonly id: string; readonly group: string; readonly label: string; readonly keys: string }
 const s = (id: string, group: string, label: string, keys: string): Shortcut => Object.freeze({ id, group, label, keys });
 export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
@@ -37,12 +38,6 @@ export function shortcutText(id: string, mac: boolean): string | null {
 export const isMac = (): boolean => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /** « ? » : ouvre l'Aide ; hors champ de saisie, sans Ctrl, Méta ni Alt (Maj admis : « ? » le demande), hors composition. */
-export function isHelpKey(e: { readonly key: string; readonly ctrlKey: boolean; readonly metaKey: boolean; readonly altKey: boolean; readonly isComposing: boolean; readonly target: unknown }): boolean {
-  if (e.key !== "?" || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return false;
-  const t = e.target as { readonly tagName?: string; readonly type?: string; readonly isContentEditable?: boolean } | null;
-  if (t === null || typeof t !== "object") return true;
-  if (t.isContentEditable === true) return false;
-  const tag = t.tagName?.toUpperCase();
-  if (tag === "TEXTAREA" || tag === "SELECT") return false;
-  return !(tag === "INPUT" && !["range", "checkbox", "radio", "button", "submit", "reset", "color", "file", "image"].includes((t.type ?? "text").toLowerCase()));
+export function isHelpKey(e: Omit<KeyLike, "target"> & { readonly target: unknown }): boolean {
+  return e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && !inEditable(e.target as KeyLike["target"]);
 }

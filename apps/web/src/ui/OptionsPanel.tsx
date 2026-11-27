@@ -134,7 +134,9 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
 
   /** Valeur commune des segments, ou un marqueur de mélange (jamais égal à une valeur d'option). */
   const common = <T,>(vs: readonly T[]): T | "mixed" => (vs.length > 0 && vs.every((v) => v === vs[0]) ? vs[0]! : ("mixed" as const));
-  const readers: Readonly<Record<string, (e: ElementView) => unknown>> = {
+  /** Clés lisibles : les options, plus les deux pointes (lues ensemble sous la section `arrowheads`). */
+  type ReadKey = OptionKey | "startArrowhead" | "endArrowhead";
+  const readers: Readonly<Partial<Record<ReadKey, (e: ElementView) => unknown>>> = {
     strokeColor: (e) => ("style" in e ? e.style.color : undefined),
     background: (e) => (e.kind === "shape" ? e.shape.fill ?? null : undefined),
     strokeWidth: (e) => ("style" in e ? e.style.width : undefined),
@@ -149,7 +151,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     font: (e) => (e.kind === "text" ? common(e.text.spans.map((x) => x.attrs.font ?? "default")) : undefined),
     fontSize: (e) => (e.kind === "text" ? common(e.text.spans.map((x) => x.attrs.size ?? e.text.size)) : undefined),
   };
-  const fallbacks: Readonly<Record<string, (s: ItemStyle) => unknown>> = {
+  const fallbacks: Readonly<Partial<Record<ReadKey, (s: ItemStyle) => unknown>>> = {
     strokeColor: (s) => s.color,
     background: (s) => s.background,
     strokeWidth: (s) => s.width,
@@ -164,17 +166,20 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     font: (s) => s.font,
     fontSize: (s) => s.fontSize,
   };
-  const fallback = (k: string): unknown => fallbacks[k]?.(cur());
+  const fallback = (k: ReadKey): unknown => fallbacks[k]?.(cur());
   /** Valeur commune des cibles, ou null quand elles diffèrent ; sans cible, le style courant. */
-  const value = (k: string, section: OptionKey = k as OptionKey): unknown => {
+  function value(k: OptionKey): unknown;
+  function value(k: "startArrowhead" | "endArrowhead", section: OptionKey): unknown;
+  function value(k: ReadKey, section?: OptionKey): unknown {
+    const sec: OptionKey = section ?? (k as OptionKey); // sans section, `k` en est une (surcharge 1)
     const read = readers[k];
     if (read === undefined) return undefined;
     // Une cible à qui l'option ne s'applique pas (trait de stylo sans tirets, ligne sans fond) ne compte pas.
-    const own = (e: ElementView): unknown => (appliesTo(section, e) ? read(e) : undefined);
+    const own = (e: ElementView): unknown => (appliesTo(sec, e) ? read(e) : undefined);
     // Un `null` légitime (fond transparent) se lit comme `"transparent"` pour rester distinct de « mixte ».
     const tr = (v: unknown): unknown => (v === null ? "transparent" : v);
     return formValue(targets(), (e) => tr(own(e)) as never, tr(fallback(k)) as never);
-  };
+  }
   const mixed = (k: OptionKey): boolean => readers[k] !== undefined && targets().length > 1 && value(k) === null;
   // Aire réelle : celle du parent positionné, mesurée comme `IslandLayer` ; non mesurée (h = 0) : aucune borne.
   const [area, setArea] = createSignal<Box>({ w: 0, h: 0 }, { equals: (a, b) => a.w === b.w && a.h === b.h });
@@ -217,6 +222,8 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   type ColorKey = "strokeColor" | "background";
   const [picker, setPicker] = createSignal<{ key: ColorKey; anchor: HTMLElement; x: number; y: number; minTop: number } | null>(null);
   const anchors: Partial<Record<ColorKey, HTMLButtonElement>> = {};
+  /** Hauteur supposée du sélecteur avant sa première mesure : `popTop` la remplace par la hauteur réelle (`popH`). */
+  const PICKER_GUESS_H = 440;
   const openPicker = (key: ColorKey): void => {
     const anchor = anchors[key];
     if (anchor === undefined || off(key)) return;
@@ -225,7 +232,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     // T33 (comme Excalidraw) : à droite du panneau d'options, jamais au-dessus de son haut (les îlots du haut restent libres).
     const pr = root?.getBoundingClientRect();
     const minTop = Math.max(8, Math.round(pr?.top ?? 0));
-    setPicker({ key, anchor, x: Math.round((pr?.right ?? r.right) + 8), y: Math.max(minTop, Math.min(Math.round(r.top), h > 0 ? h - 440 : 8)), minTop });
+    setPicker({ key, anchor, x: Math.round((pr?.right ?? r.right) + 8), y: Math.max(minTop, Math.min(Math.round(r.top), h > 0 ? h - PICKER_GUESS_H : 8)), minTop });
   };
   // T31 : hauteur réelle du sélecteur posé (rb-color-pop), mesurée après chaque ouverture ; le haut est borné par elle.
   let pop: HTMLDivElement | undefined;
