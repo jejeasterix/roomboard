@@ -84,3 +84,14 @@ describe("shortcuts", () => {
     expect(SHORTCUTS.map((s) => s.id).sort()).toEqual(Object.keys(EXPECT).sort());
   });
 });
+
+describe("OG12 : raccourcis des lignes", () => {
+  it("line-edit, linked-node et no-binding existent", () => {
+    for (const id of ["line-edit", "linked-node", "no-binding"]) expect(SHORTCUTS.some((x) => x.id === id), id).toBe(true);
+  });
+  it("ariaShortcut : line-edit Control+Enter / Meta+Enter ; linked-node (liste de touches) : null", () => {
+    expect(ariaShortcut("line-edit", false)).toBe("Control+Enter");
+    expect(ariaShortcut("line-edit", true)).toBe("Meta+Enter");
+    expect(ariaShortcut("linked-node", false)).toBeNull();
+  });
+});

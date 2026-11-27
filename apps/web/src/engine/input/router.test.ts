@@ -323,3 +323,57 @@ describe("createRouter (D18)", () => {
     });
   });
 });
+
+describe("OG12 : doigt tardif = Maj (n° 29)", () => {
+  function setupLate(tool: ToolChoice) {
+    const log: string[] = [];
+    const gestures: GestureSink = {
+      begin: (id, t, samples) => log.push(`begin ${id} ${t} ${samples.length}`),
+      extend: (id, samples) => log.push(`extend ${id} ${samples.length}`),
+      close: (id, how) => log.push(`close ${id} ${how}`),
+    };
+    const view: ViewSink = { panBy: () => {}, zoomAt: () => {} };
+    const mods: boolean[] = [];
+    const router = createRouter(DEFAULT_ROUTER_OPTIONS, { currentTool: () => tool, gestures, view, modifier: (h) => mods.push(h) });
+    return { router, log, mods };
+  }
+  it("doigt tardif pendant un geste au doigt de Sélection : modifier(true) puis modifier(false) au lever", () => {
+    const { router, log, mods } = setupLate("select");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    expect(mods).toEqual([true]);
+    router.handle(ev("move", 1, "touch", [s(5, 5, 420)]));
+    expect(log).toContain("extend 1 1");
+    router.handle(ev("end", 2, "touch", []));
+    expect(mods).toEqual([true, false]);
+  });
+  it("doigt tardif pendant un geste au stylet : ignoré", () => {
+    const { router, log, mods } = setupLate("select");
+    router.handle(ev("start", 1, "pen", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    expect(mods).toEqual([]);
+    expect(log.filter((l) => l.startsWith("begin 2"))).toEqual([]);
+  });
+  it("doigt tardif avec le stylo ou la gomme : ignoré", () => {
+    const { router, mods } = setupLate("pen");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    expect(mods).toEqual([]);
+  });
+  it("second doigt sous 150 ms : pincement inchangé", () => {
+    const { router, log, mods } = setupLate("select");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 100)]));
+    expect(log).toContain("close 1 abort");
+    expect(mods).toEqual([]);
+  });
+  it("geste fermé pendant que le doigt tardif est posé : modifier(false)", () => {
+    const { router, mods } = setupLate("select");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    router.handle(ev("end", 1, "touch", []));
+    expect(mods).toEqual([true, false]);
+    router.handle(ev("end", 2, "touch", []));
+    expect(mods).toEqual([true, false]);
+  });
+});
