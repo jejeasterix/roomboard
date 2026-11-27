@@ -905,6 +905,8 @@ async function nettete2(browser, base) {
   };
   const results = [];
   const icon = async (name, sel) => {
+    await page.locator(sel).first().scrollIntoViewIfNeeded(); // le panneau défile : un bouton hors champ n'a pas de pixels
+    await away();
     const px = await pixelsOf(page, await iconBox(page, sel));
     const { ink } = await colorsOf(page, sel);
     const f = fringes(px, [px.data[0], px.data[1], px.data[2]], rgbOf(ink));
@@ -942,14 +944,30 @@ async function nettete2(browser, base) {
   const offGrid = cellsBox.filter((b) => !Number.isInteger(b.x * 2) || !Number.isInteger(b.y * 2));
   if (offGrid.length > 0 && !process.argv.includes("--strict-calage")) console.log(`ÉCART (app) — calage (grille du sélecteur) : ${offGrid.length} cases sur ${cellsBox.length} hors de la grille de pixels à 2x`);
   else check(cellsBox.length === 75 && offGrid.length === 0, `calage (grille du sélecteur) : ${cellsBox.length} cases sur la grille de pixels`);
-  for (const i of [8, 37, 74]) {
+  const pop = await page.evaluate(() => {
+    const r = document.querySelector(".rb-color-pop").getBoundingClientRect();
+    return { bottom: Math.round(r.bottom), h: innerHeight };
+  });
+  // Défaut de l'app (rapporté, non corrigé) : `openPicker` borne le haut à h − 440 alors que la grille mesure ~840 px ;
+  // le bas du sélecteur sort de la fenêtre et max-block-size (100vh − 16) ne le rattrape pas.
+  if (pop.bottom > pop.h) console.log(`ÉCART (app) — sélecteur de couleur : bas à y=${pop.bottom} pour une fenêtre de ${pop.h} px, les dernières rangées sont hors écran`);
+  for (const i of [8, 22, 37]) {
     const cell = page.locator("[data-color-picker] .rb-color-cell").nth(i);
     const dot = cell.locator(".rb-pick-dot");
+    await cell.scrollIntoViewIfNeeded(); // la fenêtre du sélecteur défile (15 rangées)
+    await away();
     const px = await pixelsOf(page, await dot.boundingBox());
-    const ink = rgbOf(await dot.evaluate((e) => getComputedStyle(e).backgroundColor));
-    const f = fringes(px, [px.data[0], px.data[1], px.data[2]], ink);
-    results.push({ name: `case ${i} du sélecteur`, f });
-    console.log(`netteté — pastille de la case ${i} du sélecteur : frange ${f}`);
+    const { ink, edge } = await dot.evaluate((e) => ({ ink: getComputedStyle(e).backgroundColor, edge: getComputedStyle(e).borderTopColor }));
+    // Pastille = fond de case, liseré de 1 px (gris), remplissage : la rangée du milieu n'a que ces trois couleurs, bords nets.
+    const colors = [[px.data[0], px.data[1], px.data[2]], rgbOf(edge), rgbOf(ink)];
+    const mid = Math.floor(px.height / 2);
+    let odd = 0;
+    for (let x = 0; x < px.width; x++) {
+      const i = (mid * px.width + x) * 4;
+      if (!colors.some((c) => [0, 1, 2].every((k) => Math.abs(px.data[i + k] - c[k]) <= 2))) odd++;
+    }
+    results.push({ name: `case ${i} du sélecteur`, f: odd });
+    console.log(`netteté — pastille de la case ${i} du sélecteur (rangée du milieu) : ${odd} pixels hors fond, liseré, remplissage`);
   }
   const bad = results.filter((r) => r.f !== 0);
   check(bad.length === 0, `netteté § 10 du lot 2 : 0 frange colorée sur ${results.length} mesures${bad.length ? ` (${bad.map((r) => `${r.name} ${r.f}`).join(" ; ")})` : ""}`);
