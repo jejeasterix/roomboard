@@ -424,11 +424,12 @@ const HIT_A = { id: "A", fixed: [1, 0.3] as const, onOutline: true, anchors: [[5
 const HIT_B = { id: "B", fixed: [0, 0.5] as const, onOutline: true, anchors: [[450, 0], [500, 25], [450, 50], [400, 25]] as const };
 const atT = (x: number, y: number, t: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t });
 
-function setupLines() {
+function setupLines(pointer: "touch" | "mouse" = "touch") {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
   const edits: string[] = [];
+  let copie = "";
   vi.spyOn(doc, "bindTarget").mockImplementation((_p, x) => (x < 150 ? HIT_A : x > 350 ? HIT_B : null));
   const ctx: ToolContext = {
     doc,
@@ -436,7 +437,12 @@ function setupLines() {
     camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
     run: (cmd) => {
       runs.push(cmd);
-      if (cmd.type === "AddLinked") return { pages: [], ids: ["copie", "fleche"], removed: [], full: false, version: 1 };
+      if (cmd.type === "AddLinked") {
+        // Un segment d'abord, puis la copie : l'aide lit le document, pas l'ordre des ids.
+        const fleche = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 0, y0: 0, x1: 10, y1: 0, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+        copie = doc.apply({ type: "AddShape", page, shape: "rect", x0: 200, y0: 0, x1: 300, y1: 50, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+        return { pages: [], ids: [fleche, copie], removed: [], full: false, version: 1 };
+      }
       try {
         return doc.apply(cmd);
       } catch {
@@ -445,13 +451,13 @@ function setupLines() {
     },
     ctrl: () => false,
     bindingEnabled: () => true,
-    pointerType: () => "touch",
+    pointerType: () => pointer,
     editPoints: (id) => { edits.push(id); },
   };
   const tool = createSelectTool(ctx);
   const add = (shape: "line" | "arrow" | "rect", x0: number, y0: number, x1: number, y1: number): string =>
     doc.apply({ type: "AddShape", page, shape, x0, y0, x1, y1, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
-  return { doc, tool, runs, edits, add };
+  return { doc, tool, runs, edits, add, copie: () => copie };
 }
 
 describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () => {
@@ -505,14 +511,14 @@ describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () =>
   });
 
   it("poignée « + » : AddLinked, la copie devient la sélection", () => {
-    const { tool, runs, add } = setupLines();
+    const { tool, runs, add, copie: getCopie } = setupLines();
     const a = add("rect", 0, 0, 100, 50);
     tool.setSelection([a]);
     expect(tool.live().overlay?.links).toHaveLength(4);
     tool.begin(1, [atT(140, 25, 0)]);
     tool.close(1, "end");
     expect(runs).toEqual([{ type: "AddLinked", id: a, dir: "right" }]);
-    expect(tool.selection()).toEqual(["copie"]);
+    expect(tool.selection()).toEqual([getCopie()]);
   });
 
   it("deux objets sélectionnés : pas de « + »", () => {
@@ -541,4 +547,22 @@ describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () =>
     tool.close(4, "end");
     expect(edits).toEqual([id]);
   });
+});
+
+describe("OG12 C2 : double toucher sur une poignée de la ligne sélectionnée", () => {
+  for (const pointer of ["touch", "mouse"] as const) {
+    for (const [nom, x] of [["milieu", 100], ["près d'un bout", 196]] as const) {
+      it(`${pointer} : double appui sur la poignée du ${nom} : editPoints`, () => {
+        const { tool, edits, runs, add } = setupLines(pointer);
+        const id = add("line", 0, 0, 200, 0);
+        tool.setSelection([id]);
+        tool.begin(1, [atT(x, 0, 0)]);
+        tool.close(1, "end");
+        tool.begin(2, [atT(x, 0, 100)]);
+        tool.close(2, "end");
+        expect(edits).toEqual([id]);
+        expect(runs).toEqual([]);
+      });
+    }
+  }
 });

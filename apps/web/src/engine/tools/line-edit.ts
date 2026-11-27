@@ -10,9 +10,8 @@ import { isSegment } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import { EMPTY_OVERLAY } from "../render/overlay";
-import { bindEnd, pickHandle, pointHandles, worldPoints, type EndBind, type PointHit } from "./line-points";
+import { dragLine, pickHandle, pointHandles, worldPoints, type DraggedLine, type PointHit } from "./line-points";
 import { DRAG_THRESHOLD_PX, SELECT_TOL_PX } from "./select";
-import { constrainEnd } from "./shape";
 import type { GestureTool, LivePart, ToolContext } from "./tool";
 
 export interface LineEditor extends GestureTool {
@@ -41,34 +40,8 @@ export function createLineEditor(ctx: ToolContext, id: string, exit: () => void)
     const v = ctx.doc.element(id);
     return v?.kind === "shape" && isSegment(v.shape.shape) && !elbowedOf(v.look) ? v : null;
   };
-  const binding = (): boolean => (ctx.bindingEnabled?.() ?? true) !== (ctx.ctrl?.() === true);
   const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= DRAG_THRESHOLD_PX;
-  /** Points pendant le glisser : point tiré ou inséré, aimanté (brut avec Alt), puis Maj : 15° depuis son voisin. */
-  const dragged = (v: ShapeElement, d: Drag): { pts: [number, number][]; index: number } => {
-    const pts = worldPoints(v);
-    const index = d.hit.kind === "mid" ? d.hit.index + 1 : d.hit.index;
-    if (d.hit.kind === "mid") pts.splice(index, 0, [d.x, d.y]);
-    let [x, y] = ctx.alt?.() === true ? [d.x, d.y] : (ctx.doc.snapPoint(ctx.page(), d.x, d.y) ?? [d.x, d.y]);
-    const n = index === 0 ? pts[1] : pts[index - 1];
-    if (ctx.shift?.() === true && n) [x, y] = constrainEnd("line", n[0], n[1], x, y);
-    pts[index] = [x, y];
-    return { pts, index };
-  };
-  /** Liaisons : un bout tiré se lie ou se délie (n° 17) ; l'autre garde la sienne. */
-  const ends = (v: ShapeElement, pts: readonly [number, number][], index: number, d: Drag): { start: EndBind["bind"]; end: EndBind["bind"]; hint: EndBind["hint"] } => {
-    const last = pts.length - 1;
-    let start = v.shape.start ?? null;
-    let end = v.shape.end ?? null;
-    let hint: EndBind["hint"] = null;
-    if (index === 0 || index === last) {
-      const p = pts[index]!;
-      const b = bindEnd(ctx.doc, ctx.page(), p[0], p[1], d.zoom, d.touch, binding());
-      if (index === 0) start = b.bind;
-      else end = b.bind;
-      hint = b.hint;
-    }
-    return { start, end, hint };
-  };
+  const dragged = (v: ShapeElement, d: Drag): DraggedLine => dragLine(ctx, v, d.hit, d.x, d.y, d.zoom, d.touch);
   return {
     id,
     begin(pointerId, samples) {
@@ -107,8 +80,7 @@ export function createLineEditor(ctx: ToolContext, id: string, exit: () => void)
       drag = null;
       const v = view();
       if (how !== "end" || v === null || !moved(d)) return;
-      const { pts, index } = dragged(v, d);
-      const { start, end } = ends(v, pts, index, d);
+      const { pts, index, start, end } = dragged(v, d);
       ctx.run({ type: "SetLinePoints", id, points: pts.flat(), start, end });
       selected = [index];
     },
@@ -118,8 +90,7 @@ export function createLineEditor(ctx: ToolContext, id: string, exit: () => void)
       const zoom = ctx.camera().zoom;
       const d = drag;
       if (d && moved(d)) {
-        const { pts, index } = dragged(v, d);
-        const { hint } = ends(v, pts, index, d);
+        const { pts, index, hint } = dragged(v, d);
         const first = pts[0]!;
         const last = pts[pts.length - 1]!;
         return {

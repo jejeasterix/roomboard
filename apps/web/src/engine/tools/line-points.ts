@@ -1,9 +1,11 @@
 /** OG12 : aides pures des poignées de points, de la liaison d'une extrémité et des poignées « + », partagées par les
  *  outils Formes (T8), Sélection (T8) et « Modifier les points » (T9). Distances écran converties par `zoom`. */
 import type { Bounds, CoreDocument, LineBinding, LinkDir, ShapeElement } from "../../core/api";
-import { ANCHOR_RATIOS, applyMatrix, linePath } from "../../core/shapes";
+import { ANCHOR_RATIOS, applyMatrix, isSegment, linePath } from "../../core/shapes";
 import type { BindHint, LinkHandle, PointHandle } from "../render/overlay";
 import { HANDLE_GRAB_PX } from "./handles";
+import { constrainEnd } from "./shape";
+import type { ToolContext } from "./tool";
 
 export const BIND_PX = 15;
 export const BIND_TOUCH_PX = 30;
@@ -95,4 +97,51 @@ export function linkHandles(f: Bounds, zoom: number): LinkHandle[] {
 export function pickLink(handles: readonly LinkHandle[], x: number, y: number, zoom: number): LinkDir | null {
   const reach = LINK_REACH_PX / zoom;
   return handles.find((h) => Math.hypot(h.x - x, h.y - y) <= reach)?.dir ?? null;
+}
+
+/** n° 19 : le réglage « Liaison des flèches », inversé par Ctrl tenu. */
+export const bindingOn = (ctx: ToolContext): boolean => (ctx.bindingEnabled?.() ?? true) !== (ctx.ctrl?.() === true);
+
+export interface DraggedLine {
+  readonly pts: [number, number][];
+  readonly index: number;
+  readonly start: LineBinding | null;
+  readonly end: LineBinding | null;
+  readonly hint: BindHint | null;
+}
+
+/** Ligne après le glisser d'une poignée en (x, y) monde (Sélection et « Modifier les points », n° 17, 20) : point tiré
+ *  ou inséré (`mid`), aimanté (brut avec Alt), puis Maj : 15° depuis son voisin ; un bout tiré se lie ou se délie sous
+ *  le pointeur, sans jamais prendre l'objet de l'autre bout (`exclude`) ; l'autre bout garde sa liaison. */
+export function dragLine(ctx: ToolContext, v: ShapeElement, hit: PointHit, x: number, y: number, zoom: number, touch: boolean): DraggedLine {
+  const pts = worldPoints(v);
+  const index = hit.kind === "mid" ? hit.index + 1 : hit.index;
+  if (hit.kind === "mid") pts.splice(index, 0, [x, y]);
+  let [px, py] = ctx.alt?.() === true ? [x, y] : (ctx.doc.snapPoint(ctx.page(), x, y) ?? [x, y]);
+  const n = index === 0 ? pts[1] : pts[index - 1];
+  if (ctx.shift?.() === true && n) [px, py] = constrainEnd("line", n[0], n[1], px, py);
+  pts[index] = [px, py];
+  let start = v.shape.start ?? null;
+  let end = v.shape.end ?? null;
+  let hint: BindHint | null = null;
+  const last = pts.length - 1;
+  if (hit.kind === "point" && (index === 0 || index === last)) {
+    const other = index === 0 ? end : start;
+    const b = bindEnd(ctx.doc, ctx.page(), px, py, zoom, touch, bindingOn(ctx), other?.id);
+    if (index === 0) start = b.bind;
+    else end = b.bind;
+    hint = b.hint;
+  }
+  return { pts, index, start, end, hint };
+}
+
+/** Copie créée par `AddLinked` : le premier objet neuf qui n'est pas un segment et n'est pas la source (l'autre est la
+ *  flèche) ; l'ordre des ids n'est pas lu. */
+export function linkedCopy(doc: CoreDocument, ids: readonly string[], source: string): string | null {
+  for (const id of ids) {
+    if (id === source) continue;
+    const c = doc.element(id);
+    if (c?.kind === "shape" && !isSegment(c.shape.shape)) return id;
+  }
+  return null;
 }

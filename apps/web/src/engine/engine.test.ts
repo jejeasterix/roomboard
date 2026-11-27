@@ -2833,4 +2833,18 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     frames.tick();
     expect(engine.state().bindHint).toBeNull();
   });
+
+  it("survol : la boucle ne démarre que si l'outil a un hover (OG12 C2)", () => {
+    const { engine, frames } = og12();
+    engine.setTool("select");
+    frames.tick();
+    const spy = vi.spyOn(frames, "requestFrame");
+    engine.hover(10, 10);
+    expect(spy).not.toHaveBeenCalled();
+    engine.setTool("arrow");
+    frames.tick();
+    spy.mockClear();
+    engine.hover(10, 10);
+    expect(spy).toHaveBeenCalled();
+  });
 });

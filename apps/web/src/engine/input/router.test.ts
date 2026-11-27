@@ -367,6 +367,16 @@ describe("OG12 : doigt tardif = Maj (n° 29)", () => {
     expect(log).toContain("close 1 abort");
     expect(mods).toEqual([]);
   });
+  it("deux doigts tardifs : lever le premier garde Maj, lever le second la coupe", () => {
+    const { router, mods } = setupLate("select");
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("start", 2, "touch", [s(50, 50, 400)]));
+    router.handle(ev("start", 3, "touch", [s(90, 90, 600)]));
+    router.handle(ev("end", 2, "touch", []));
+    expect(mods).toEqual([true]);
+    router.handle(ev("end", 3, "touch", []));
+    expect(mods).toEqual([true, false]);
+  });
   it("geste fermé pendant que le doigt tardif est posé : modifier(false)", () => {
     const { router, mods } = setupLate("select");
     router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));

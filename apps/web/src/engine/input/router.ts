@@ -69,10 +69,11 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
 
   /** OG12 (n° 29) : seul un geste au doigt dont l'outil n'est ni le stylo ni la gomme donne ce sens au doigt tardif ;
    *  le doigt garde le rôle `ignored`. */
+  let lateCount = 0;
   const lateFinger = (drawing: Track, track: Track): void => {
     if (drawing.tool === "pen" || drawing.tool === "eraser" || deps.modifier === undefined) return;
     track.late = true;
-    deps.modifier(true);
+    if (lateCount++ === 0) deps.modifier(true);
   };
 
   const onStart = (g: GestureEvent): void => {
@@ -152,14 +153,14 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     const t = tracks.get(g.pointerId);
     if (!t) return;
     tracks.delete(g.pointerId);
-    if (t.late) deps.modifier?.(false);
+    if (t.late && --lateCount === 0) deps.modifier?.(false);
     if (t.role === "draw") {
       const how: CloseReason = g.palm === true ? "abort" : g.kind === "cancel" ? "cancel" : "end";
       deps.gestures.close(g.pointerId, how);
       for (const [, o] of tracks) {
         if (o.late) {
           o.late = false;
-          deps.modifier?.(false);
+          if (--lateCount === 0) deps.modifier?.(false);
         }
       }
     } else if (t.role === "pinch") {

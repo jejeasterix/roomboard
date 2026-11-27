@@ -11,7 +11,7 @@ import { newSeed } from "../render/sketch";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import { EMPTY_OVERLAY, type ShapePreview } from "../render/overlay";
-import { bindEnd, type EndBind } from "./line-points";
+import { bindEnd, bindingOn, type EndBind } from "./line-points";
 import type { GestureTool, LivePart, ToolContext } from "./tool";
 
 export const MIN_SHAPE_PX = 4;
@@ -60,8 +60,7 @@ const NONE: ReadonlySet<string> = new Set<string>();
 export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => StrokeStyle & Partial<ItemStyle>): GestureTool {
   const drafts = new Map<number, Draft>();
   const linear = kind === "line" || kind === "arrow";
-  /** n° 19 : le réglage « Liaison des flèches », inversé par Ctrl tenu. */
-  const binding = (): boolean => (ctx.bindingEnabled?.() ?? true) !== (ctx.ctrl?.() === true);
+  const binding = (): boolean => bindingOn(ctx);
   let hovered: EndBind | null = null;
   /** Point aimanté de la page (C9, G8) ; brut si Alt est tenue ou si rien n'accroche. */
   const snap = (page: string, x: number, y: number): readonly [number, number] =>
