@@ -573,6 +573,8 @@ async function captures(browser, base, nom) {
   await frames(page);
   // Sélection mixte : un second rectangle d'une autre couleur (au repos : rectangle seul, trait du style courant).
   await page.click(item("rect"));
+  // Rouge pour le second (avant : pas de panneau, la couleur vient du préréglage du stylo ; même vue sinon).
+  if ((await page.locator(opt("strokeColor", RED)).count()) > 0) await page.locator(opt("strokeColor", RED)).first().click();
   await touchDrag(page, cdp, [760, 250], [940, 380]);
   await page.click(item("select"));
   await marquee(page, [340, 190], [980, 440]);
