@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, LineBinding, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import type { AssetRef, LineBinding, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeElement, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage } from "./api";
 import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
@@ -4830,7 +4830,7 @@ describe.each(factories)("contrat OG12 lot 2a : $name", ({ f: fab }) => {
       const avant = d.element(id);
       let refus = false;
       try {
-        d.apply({ type: "SetStyle", ids: [id], patch: { roundness: 1 } });
+        d.apply({ type: "SetStyle", ids: [id], patch: { roundness: "round" } });
       } catch {
         refus = true;
       }
