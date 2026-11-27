@@ -17,7 +17,8 @@ describe("rb.css (design-l1, L1-6)", () => {
     for (const d of decls) expect(CSS, d).toContain(d);
   });
   it("toute var(--…) de rb.css est définie dans rb.css (OG23, T19 : --rf-gray-200 n'existait pas, le damier n'était pas peint)", () => {
-    const defined = new Set([...CSS.matchAll(/(--[\w-]+)\s*:/g)].map(([, n]) => n));
+    // Posée à l'exécution par un composant (style en ligne de OptionsPanel, ligne 610), pas dans rb.css.
+    const defined = new Set(["--rb-btn-size", ...[...CSS.matchAll(/(--[\w-]+)\s*:/g)].map(([, n]) => n!)]);
     const used = [...CSS.matchAll(/var\(\s*(--[\w-]+)\s*(,|\))/g)].filter(([, , end]) => end === ")").map(([, n]) => n!);
     expect(used.length).toBeGreaterThan(0);
     expect(used.filter((n) => !defined.has(n))).toEqual([]);

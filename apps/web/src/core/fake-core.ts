@@ -265,9 +265,9 @@ function validStyle(p: LookPatch): number | undefined {
   return opacityArg(p.opacity);
 }
 
-type StyleKind = "stroke" | "shape" | "text" | "image";
+type StyleKind = "stroke" | "shape" | "text" | "image" | "table" | "media" | "model3d";
 const styleKind = (e: FakeElement): StyleKind | null =>
-  e.malformed || e.unknown ? null : e.image ? "image" : e.shape ? "shape" : e.text ? "text" : e.local !== undefined ? "stroke" : null;
+  e.malformed || e.unknown ? null : e.table ? "table" : e.media ? "media" : e.model3d ? "model3d" : e.image ? "image" : e.shape ? "shape" : e.text ? "text" : e.local !== undefined ? "stroke" : null;
 
 /** `writes_for` + `differs` : l'élément restylé, ou null si aucune écriture effective (champ inapplicable ou même valeur). */
 function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): FakeElement | null {
@@ -283,7 +283,7 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
     else look[k] = v;
     changed = true;
   };
-  if (!absent(p.color) && kind !== "image" && style.color !== p.color) {
+  if (!absent(p.color) && (kind === "stroke" || kind === "shape" || kind === "text") && style.color !== p.color) {
     style = { ...style, color: p.color };
     changed = true;
   }
@@ -315,7 +315,8 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
     }
   }
   if ("roundness" in p && shape?.shape === "rect") put("roundness", p.roundness ?? undefined);
-  if (opacity !== undefined) put("opacity", opacity < 100 ? opacity : undefined);
+  const aspect = kind === "stroke" || kind === "shape" || kind === "text" || kind === "image"; // `look_view` : jamais tableau, média, objet 3D
+  if (opacity !== undefined && aspect) put("opacity", opacity < 100 ? opacity : undefined);
   // T12 (`writes_for`) : une pointe égale à son défaut retire le champ, jamais elle ne s'écrit.
   if ("fillStyle" in p && shape && (shape.shape === "rect" || shape.shape === "ellipse")) put("fillStyle", p.fillStyle ?? undefined);
   if (shape?.shape === "arrow") {
@@ -324,7 +325,7 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
     if ("endArrowhead" in p) put("endArrowhead", head(p.endArrowhead, END_ARROWHEAD_DEFAULT));
   }
   if ("textAlign" in p && kind === "text") put("textAlign", p.textAlign ?? undefined);
-  if ("link" in p) put("link", p.link ?? undefined);
+  if ("link" in p && aspect) put("link", p.link ?? undefined);
   // OG23 (`writes_for`) : la pression ne s'écrit que sur un trait.
   if ("variability" in p && kind === "stroke") put("variability", p.variability ?? undefined);
   // OG23 (T10, `writes_for`) : tout genre dont l'aspect est lu ; seul `true` s'écrit.
@@ -2077,10 +2078,10 @@ function savedElement(e: FakeElement): SavedElement {
   if (e.unknown) {
     return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw }, ...group };
   }
-  if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...group };
+  if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...(e.look ? { look: e.look } : {}), ...group };
   if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: { ...e.imageRaw, ...e.image }, ...(e.look ? { look: e.look } : {}), ...group };
-  if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...group };
-  if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...group };
+  if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...(e.look ? { look: e.look } : {}), ...group };
+  if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...(e.look ? { look: e.look } : {}), ...group };
   if (e.fill) return { id: e.id, kind: "fill", transform: [...e.transform], fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h, contours: e.fill.contours.map((r) => [...r]) }, ...group };
   return {
     id: e.id,
@@ -2177,7 +2178,7 @@ function loadElement(e: SavedElement): FakeElement {
     const source = e.table ?? e.raw?.["table"];
     const t = loadTable(source);
     const m = toMatrix6(e.transform);
-    if (t !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, table: t, ...group };
+    if (t !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, table: t, ...lookField(e), ...group };
     const raw = { table: source };
     const unknown: FakeUnknown = {
       sourceKind: "table",
@@ -2194,7 +2195,7 @@ function loadElement(e: SavedElement): FakeElement {
     const source = e.media ?? e.raw?.["media"];
     const media = readMedia(source);
     const m = toMatrix6(e.transform);
-    if (media !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, media, ...group };
+    if (media !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, media, ...lookField(e), ...group };
     const unknown: FakeUnknown = {
       sourceKind: "media",
       raw: { media: source },
@@ -2210,7 +2211,7 @@ function loadElement(e: SavedElement): FakeElement {
     const source = e.model3d ?? e.raw?.["model3d"];
     const model3d = readModel3d(source);
     const m = toMatrix6(e.transform);
-    if (model3d !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, model3d, ...group };
+    if (model3d !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, model3d, ...lookField(e), ...group };
     const unknown: FakeUnknown = {
       sourceKind: "model3d",
       raw: { model3d: source },
