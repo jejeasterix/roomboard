@@ -25,11 +25,12 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("back", "Disposition", "Arrière-plan", "Ctrl+Maj+↓"),
   s("pan", "Vue", "Déplacer la vue", "Espace + glisser"),
   s("help", "Vue", "Aide", "?"),
+  // OG19 (H1-11) : actions de la barre d'outils ; l'id est celui de l'action, l'infobulle de son bouton le montre.
+  // Une ligne se range dans le bloc de son groupe : l'Aide affiche les groupes dans l'ordre de la table.
+  s("backgrounds", "Vue", "Fonds", "Ctrl+Maj+F"),
   s("bold", "Texte", "Gras, italique, souligné", "Ctrl+B, I, U"),
   s("stroke-picker", "Options", "Couleur du trait", "S"),
   s("fill-picker", "Options", "Couleur de l'arrière-plan", "G"),
-  // OG19 (H1-11) : actions de la barre d'outils ; l'id est celui de l'action, l'infobulle de son bouton le montre.
-  s("backgrounds", "Vue", "Fonds", "Ctrl+Maj+F"),
   s("page-prev", "Pages", "Page précédente", "Pg préc"),
   s("page-next", "Pages", "Page suivante", "Pg suiv"),
   s("page-number", "Pages", "Barre latérale, onglet Pages", "Ctrl+Maj+P"),
