@@ -159,6 +159,9 @@ pub struct ElementView {
     /// Chemin de groupes (C3, Z1), du plus extérieur au plus intérieur ; absent sans groupe lisible.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<Vec<String>>,
+    /// Aspect facultatif (OG11) de `stroke`, `shape`, `text` et `image` ; absent (omis du JSON) quand il est neutre.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub look: Option<Look>,
 }
 
 impl ElementView {
@@ -178,6 +181,7 @@ impl ElementView {
             model3d: None,
             fill: None,
             group: None,
+            look: None,
         }
     }
 }
@@ -318,6 +322,93 @@ pub(crate) fn read_style<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<StrokeStyle>
         color: out_string(e.get(txn, "color"))?,
         width: out_f64(e.get(txn, "width"))? as f32,
     })
+}
+
+/// Aspect facultatif (OG11, déc. 24), noms d'Excalidraw : scalaires du `Y.Map` de l'élément (jamais `Any::Map`, D25).
+/// Absent = neutre, et un neutre n'est jamais écrit (DA-5) : à l'inverse de `style_fields`, `look_fields` ne rend que
+/// les champs non neutres, sans quoi un trait ancien recoupé ou recopié gagnerait des clés.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Look {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stroke_style: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roundness: Option<String>,
+    /// 0..=99 ; 100 est le neutre (arbitrage 0..100), jamais gardé.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<u8>,
+}
+
+/// Styles de trait lisibles ; le trait plein est le neutre (champ absent).
+pub const STROKE_STYLES: [&str; 2] = ["dashed", "dotted"];
+
+impl Look {
+    pub fn is_neutral(&self) -> bool {
+        *self == Look::default()
+    }
+
+    /// Valeurs du domaine seulement : une valeur hors domaine devient `None` (lue neutre, gardée dans le `Y.Map`).
+    pub fn sanitized(&self) -> Look {
+        let roughness = self.roughness.filter(|r| (1..=2).contains(r));
+        Look {
+            stroke_style: self
+                .stroke_style
+                .clone()
+                .filter(|s| STROKE_STYLES.contains(&s.as_str())),
+            roughness,
+            seed: self.seed.filter(|_| roughness.is_some()),
+            roundness: self.roundness.clone().filter(|s| s == "round"),
+            opacity: self.opacity.filter(|o| *o < 100),
+        }
+    }
+}
+
+/// Champs écrits de `l` : seulement les non neutres (DA-5), dans un ordre fixe.
+pub(crate) fn look_fields(l: &Look) -> Vec<(&'static str, In)> {
+    let l = l.sanitized();
+    let mut v = Vec::new();
+    if let Some(s) = &l.stroke_style {
+        v.push(("strokeStyle", In::from(s.as_str())));
+    }
+    if let Some(r) = l.roughness {
+        v.push(("roughness", In::Any(Any::from(f64::from(r)))));
+    }
+    if let Some(s) = l.seed {
+        v.push(("seed", In::Any(Any::from(f64::from(s)))));
+    }
+    if let Some(s) = &l.roundness {
+        v.push(("roundness", In::from(s.as_str())));
+    }
+    if let Some(o) = l.opacity {
+        v.push(("opacity", In::Any(Any::from(f64::from(o)))));
+    }
+    v
+}
+
+/// Entier fini de `0..=max`, sinon `None`.
+fn out_small_int(v: Option<Out>, max: f64) -> Option<f64> {
+    out_f64(v).filter(|x| x.is_finite() && x.fract() == 0.0 && *x >= 0.0 && *x <= max)
+}
+
+/// Aspect lu (déc. 24) : toute valeur hors domaine est lue `None`, jamais réécrite à la lecture (G12).
+pub(crate) fn read_look<T: ReadTxn>(txn: &T, e: &MapRef) -> Look {
+    Look {
+        stroke_style: out_string(e.get(txn, "strokeStyle")),
+        roughness: out_small_int(e.get(txn, "roughness"), 2.0).map(|x| x as u8),
+        seed: out_small_int(e.get(txn, "seed"), f64::from(u32::MAX)).map(|x| x as u32),
+        roundness: out_string(e.get(txn, "roundness")),
+        opacity: out_small_int(e.get(txn, "opacity"), 100.0).map(|x| x as u8),
+    }
+    .sanitized()
+}
+
+/// Vue de l'aspect : `None` quand il est neutre (omis du JSON).
+pub(crate) fn look_view<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<Look> {
+    Some(read_look(txn, e)).filter(|l| !l.is_neutral())
 }
 
 pub(crate) fn finite_positive(v: f64) -> bool {

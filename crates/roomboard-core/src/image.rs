@@ -375,6 +375,7 @@ pub(crate) fn is_zero_i8(v: &i8) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::element::Look;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -799,6 +800,7 @@ mod tests {
                     color: "#000000".into(),
                     width: 4.0,
                 },
+                look: Look::default(),
             })
             .expect("trait")
             .ids[0]

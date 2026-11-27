@@ -9,7 +9,7 @@ use roomboard_core::asset::AssetRef;
 use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
 use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, EraseMode};
 use roomboard_core::document::Document as CoreDocument;
-use roomboard_core::element::{StrokeStyle, Transform};
+use roomboard_core::element::{Look, StrokeStyle, Transform};
 use roomboard_core::fill::FillTarget;
 use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
 use roomboard_core::grid::{GridInput, GridLevelView, GridLines};
@@ -1984,6 +1984,7 @@ impl Document {
             page: page.to_string(),
             points: points.to_vec(),
             style,
+            look: Look::default(),
         })
     }
 
@@ -2035,6 +2036,7 @@ impl Document {
                 width,
             },
             fill,
+            look: Look::default(),
         })
     }
 
@@ -2061,6 +2063,7 @@ impl Document {
             box_width: boxes[0],
             box_height: boxes[1],
             spans,
+            look: Look::default(),
         })
     }
 

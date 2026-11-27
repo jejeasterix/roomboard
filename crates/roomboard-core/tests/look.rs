@@ -251,7 +251,10 @@ fn set_text_on_existing_box_ignores_look() {
     set_text(&mut d, Some(t.clone()), "Bonjour !", dashed());
     let el = d.element(&t).expect("texte");
     assert_eq!(el.text.expect("vue texte").content, "Bonjour !");
-    assert_eq!(el.look, None, "le style d'un texte existant passe par SetStyle (T2)");
+    assert_eq!(
+        el.look, None,
+        "le style d'un texte existant passe par SetStyle (T2)"
+    );
 }
 
 #[test]
@@ -384,7 +387,11 @@ fn unreadable_value_is_neutral_and_kept() {
         let kept = raw_field(&edited, &id, k);
         let reloaded = Document::from_update_v1(&edited.encode_v1()).expect("relecture");
         assert!(kept.is_some(), "{label} : gardé");
-        assert_eq!(raw_field(&reloaded, &id, k), kept, "{label} : gardé au rechargement");
+        assert_eq!(
+            raw_field(&reloaded, &id, k),
+            kept,
+            "{label} : gardé au rechargement"
+        );
     }
 }
 

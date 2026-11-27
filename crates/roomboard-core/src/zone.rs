@@ -888,7 +888,7 @@ mod tests {
     use super::*;
     use crate::asset::AssetRef;
     use crate::commands::Command;
-    use crate::element::StrokeStyle;
+    use crate::element::{Look, StrokeStyle};
     use crate::fill::FillTarget;
     use crate::fill_element::read_fill;
     use crate::shape::ShapeKind;
@@ -1262,6 +1262,7 @@ mod tests {
             page: p.to_string(),
             points,
             style: pen(),
+            look: Look::default(),
         })
         .expect("trait")
         .ids[0]
@@ -1446,6 +1447,7 @@ mod tests {
             y1,
             style: pen(),
             fill: fill.map(str::to_string),
+            look: Look::default(),
         };
         d.apply(shape(100.0, 100.0, 500.0, 500.0, None))
             .expect("rectangle vide");
@@ -1540,6 +1542,7 @@ mod tests {
                 page: p.clone(),
                 points,
                 style: pen(),
+                look: Look::default(),
             })
             .expect("côté");
         };

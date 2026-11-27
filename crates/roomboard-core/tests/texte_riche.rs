@@ -3,6 +3,7 @@
 //! deux ordres.
 use roomboard_core::commands::{Command, CommandError};
 use roomboard_core::document::Document;
+use roomboard_core::element::Look;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextSpanView};
 use std::sync::Arc;
 use yrs::updates::decoder::Decode;
@@ -62,6 +63,7 @@ fn set_text(page: &str, id: Option<&str>, content: &str, spans: Option<Vec<SpanI
         box_width: 600.0,
         box_height: 45.0,
         spans,
+        look: Look::default(),
     }
 }
 
