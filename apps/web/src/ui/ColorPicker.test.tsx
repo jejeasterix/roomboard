@@ -139,6 +139,12 @@ describe("ColorPicker : pipette (OG23, T8)", () => {
     const r = render(() => <ColorPicker value={null} choose={choose} close={close} anchor={anchor} pick={pick} />);
     return { ...r, anchor, choose, close };
   }
+  it("pipette : libellé sans raccourci, raccourci par aria-keyshortcuts (T18)", () => {
+    const m = withPick(() => Promise.resolve(null));
+    const b = m.container.querySelector("[data-color-pipette]")!;
+    expect(b.getAttribute("aria-label")).toBe("Pipette");
+    expect(b.getAttribute("aria-keyshortcuts")).toBe("I");
+  });
   it("pipette : bouton absent sans pick", () => {
     const m = mount();
     expect(m.container.querySelector("[data-color-pipette]")).toBeNull();

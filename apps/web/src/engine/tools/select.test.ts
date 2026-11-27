@@ -9,8 +9,16 @@ import type { SelectionTool, ToolContext } from "./tool";
 
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
 
-function setup(zoom = 1) {
-  const doc = fakeCore.blank();
+function setup(zoom = 1, flagged: ReadonlySet<string> = new Set<string>()) {
+  const base = fakeCore.blank();
+  // `flagged` : ids dont la vue porte `dragCopy` (le faux cœur ne l'écrit que sur les traits, formes, textes et images).
+  const doc = new Proxy(base, {
+    get(t, k) {
+      if (k === "element") return (id: string) => { const e = t.element(id); return e !== null && flagged.has(id) ? { ...e, look: { ...e.look, dragCopy: true } } : e; };
+      const v = Reflect.get(t, k) as unknown;
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    },
+  });
   const page = doc.pageIds()[0] ?? "";
   let shift = false;
   let alt = false;
@@ -476,4 +484,53 @@ describe("outil Sélection : Glisser une copie (OG23, T11)", () => {
     expect(doc.element(a)?.transform?.[4]).toBe(200);
     expect(doc.element(a)?.look?.dragCopy).toBe(true);
   });
+
+  it("poignée haute de taille prioritaire sur la poignée Déplacer au doigt (T18)", () => {
+    const { doc, tool, runs, a } = copyRect();
+    gesture(tool, [[200, 200]]);
+    const frame = doc.bounds([a])!;
+    const cx = (frame.x0 + frame.x1) / 2;
+    runs.length = 0;
+    // 8 px au-dessus du bord haut : dans la portée de la poignée n (12) et dans la zone Déplacer (6 à 50)
+    gesture(tool, [[cx, frame.y0 - 8], [cx, frame.y0 - 28]]);
+    const t = runs.find((r) => r.type === "Transform") as { matrix: number[] } | undefined;
+    expect(t).toBeDefined();
+    expect(t!.matrix[0]).toBe(1);
+    expect(t!.matrix[3]).not.toBe(1);
+  });
+
+  it("poignée Déplacer : saisie hors de la portée de la poignée n (au-dessus de 12 px)", () => {
+    const { doc, tool, runs, a } = copyRect();
+    gesture(tool, [[200, 200]]);
+    const frame = doc.bounds([a])!;
+    const cx = (frame.x0 + frame.x1) / 2;
+    runs.length = 0;
+    gesture(tool, [[cx, frame.y0 - 30], [cx + 40, frame.y0 - 30]]);
+    const t = runs.find((r) => r.type === "Transform") as { matrix: number[] } | undefined;
+    expect(t?.matrix).toEqual([1, 0, 0, 1, 40, 0]);
+  });
+});
+
+describe("outil Sélection : Glisser une copie pour tout genre d'objet (OG23, T18)", () => {
+  const A1 = { id: "a".repeat(64), mime: "image/png", size: 1 };
+  const kinds: [string, (d: ReturnType<typeof setup>["doc"]) => string][] = [
+    ["tableau", (d) => d.apply({ type: "AddTable", page: d.pageIds()[0] ?? "", x: 100, y: 100, cols: 2, rows: 2, colWidth: 100, rowHeight: 50, color: "#000000", size: 16 }).ids[0] ?? ""],
+    ["média", (d) => d.apply({ type: "AddMedia", page: d.pageIds()[0] ?? "", asset: A1 as never, linked: null, mediaType: "video", w: 200, h: 100, duration: 1, poster: null, matrix: [1, 0, 0, 1, 100, 100] }).ids[0] ?? ""],
+    ["objet 3D", (d) => d.apply({ type: "AddModel3d", page: d.pageIds()[0] ?? "", asset: A1 as never, format: "glb", files: [], w: 200, h: 100, yaw: 0, pitch: 0, snapshot: null, matrix: [1, 0, 0, 1, 100, 100] } as never).ids[0] ?? ""],
+  ];
+  for (const [name, add] of kinds) {
+    it(`${name} : glisser fait une copie, l'original reste`, () => {
+      const flagged = new Set<string>();
+      const t = setup(1, flagged);
+      const id = add(t.doc);
+      expect(id).not.toBe("");
+      flagged.add(id);
+      const b = t.doc.bounds([id])!;
+      const [px, py] = [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
+      const before = t.doc.element(id)?.transform?.[4];
+      gesture(t.tool, [[px, py], [px + 150, py]]);
+      expect(t.doc.elementIds(t.doc.pageIds()[0] ?? "")).toHaveLength(2);
+      expect(t.doc.element(id)?.transform?.[4]).toBe(before);
+    });
+  }
 });

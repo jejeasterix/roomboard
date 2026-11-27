@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ElementView } from "../core/api";
-import { ALIGN_MIN_UNITS, appliesTo, backgroundPicks, DISTRIBUTE_MIN_UNITS, OPEN_BY_DEFAULT, sectionOpen, disabledIn, formValue, sectionsFor, showsPanel, strokePicks, TEXT_SIZES } from "./tool-options";
+import { admitsDragCopy, ALIGN_MIN_UNITS, appliesTo, backgroundPicks, DISTRIBUTE_MIN_UNITS, OPEN_BY_DEFAULT, sectionOpen, disabledIn, formValue, sectionsFor, showsPanel, strokePicks, TEXT_SIZES } from "./tool-options";
 
 const rect = (id: string, color: string, look?: ElementView["look"]): ElementView =>
   ({ id, kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null }, ...(look ? { look } : {}) }) as ElementView;
@@ -146,5 +146,12 @@ describe("tool-options OG23 (T2) : accordéon, pression, disposition", () => {
     expect(strokePicks({} as never, "pen").map((x) => x.label)).toEqual(["Noir", "Rouge", "Bleu", "Vert"]);
     expect(backgroundPicks().map((x) => x.color)).toEqual([null, "#fef08a", "#bbf7d0", "#bfdbfe"]);
     expect(backgroundPicks().map((x) => x.label)).toEqual(["Transparent", "Jaune", "Vert", "Bleu"]);
+  });
+});
+
+describe("tool-options : Glisser une copie pour tout objet (OG23, T18)", () => {
+  it("admitsDragCopy : tous les genres d'objets, hors inconnu", () => {
+    for (const kind of ["stroke", "shape", "text", "image", "table", "media", "model3d"]) expect(admitsDragCopy({ id: "a", kind } as unknown as ElementView), kind).toBe(true);
+    expect(admitsDragCopy({ id: "a", kind: "unknown" } as unknown as ElementView)).toBe(false);
   });
 });

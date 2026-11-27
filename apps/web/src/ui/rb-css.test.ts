@@ -339,4 +339,7 @@ describe("rb.css (T33)", () => {
   it("choix de texte du panneau : marge intérieure de 8 px de chaque côté", () => {
     expect(rule('.rb-options .rb-radios[data-look="segment"] .rb-radio:not(:has(.rb-icon))')).toContain("padding-inline: 8px");
   });
+  it("OG23 T18 : la pipette du sélecteur de couleur est une cible de 44 px au moins", () => {
+    expect(rule(".rb-color-picker .rb-color-pipette")).toMatch(/inline-size: max\(44px, var\(--rb-btn-size, 44px\)\);.*block-size: max\(44px, var\(--rb-btn-size, 44px\)\);/);
+  });
 });
