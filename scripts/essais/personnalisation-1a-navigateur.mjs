@@ -14,7 +14,7 @@ import { mkdir } from "node:fs/promises";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { DIST, Echec, ROOT, TAB, clickItem, frames, gitSha, inkIn, item, loadPlaywright, serve } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, clickItem, foldOptions, frames, gitSha, inkIn, item, loadPlaywright, serve } from "./commun.mjs";
 import { edgeRow, fringes, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "personnalisation-1a";
@@ -172,6 +172,7 @@ async function newContext(browser, { viewport = MID, dsf = 1 } = {}) {
 }
 async function start(browser, base, o) {
   const c = await newContext(browser, o);
+  await foldOptions(c.page);
   await c.page.goto(`${base}/?fichiers=repli`);
   await ready(c.page);
   return c;

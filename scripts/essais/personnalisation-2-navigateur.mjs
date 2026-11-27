@@ -176,8 +176,9 @@ const looks = (els) => els.map((e) => e.look ?? {});
 /** S1 : rectangle réglé. */
 async function s1(browser, base, mode, tmp) {
   const { ctx, page, cdp, errors } = await newPage(browser, base);
-  const rect = [[300, 300], [520, 430]];
-  const box = [296, 296, 524, 434];
+  // Fusion OG4 : le panneau se pose à droite de la barre latérale (repliée comprise), le geste passe à x ≥ 400.
+  const rect = [[400, 300], [620, 430]];
+  const box = [396, 296, 624, 434];
   await useTool(page, mode, "rect");
   check((await page.locator(OPT).count()) === 1 && (await page.locator(OPT).isVisible()), `S1.1 (${mode}) : [data-options] visible avec l'outil Rectangle`);
   const keys = await page.$$eval(`${OPT} [data-option]`, (els) => els.map((e) => e.getAttribute("data-option")));
