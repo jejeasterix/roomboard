@@ -21,6 +21,9 @@ export interface ShapePreview {
   readonly seed?: number;
 }
 
+/** personnalisation-3 (D13, D18) : poignée de l'outil Tableau, point monde ; 44 px de cible, disque de 16 px dessiné. */
+export interface OverlayGrip { readonly x: number; readonly y: number; readonly kind: "col" | "row" }
+
 export interface EditOverlay {
   readonly ghosts: readonly GhostView[];
   readonly shapes: readonly ShapePreview[];
@@ -32,6 +35,8 @@ export interface EditOverlay {
   readonly band: Bounds | null;
   /** personnalisation-3 : cadre de la case visée (monde), ou null. */
   readonly target?: Bounds | null;
+  /** personnalisation-3 (D13) : poignées de taille de la case active. */
+  readonly grips?: readonly OverlayGrip[];
 }
 
 export const EMPTY_OVERLAY: EditOverlay = { ghosts: [], shapes: [], frame: null, handles: false, band: null };
@@ -47,6 +52,7 @@ export function mergeOverlays(parts: readonly (EditOverlay | undefined)[]): Edit
     handles: present.some((p) => p.handles),
     band: present.find((p) => p.band !== null)?.band ?? null,
     target: present.find((p) => (p.target ?? null) !== null)?.target ?? null,
+    grips: present.flatMap((p) => p.grips ?? []),
   };
 }
 
@@ -54,4 +60,4 @@ export function mergeOverlays(parts: readonly (EditOverlay | undefined)[]): Edit
 export const overlayKey = (o: EditOverlay): string => JSON.stringify(o);
 
 export const isEmptyOverlay = (o: EditOverlay): boolean =>
-  o.ghosts.length === 0 && o.shapes.length === 0 && o.frame === null && o.band === null && (o.target ?? null) === null;
+  o.ghosts.length === 0 && o.shapes.length === 0 && o.frame === null && o.band === null && (o.target ?? null) === null && (o.grips ?? []).length === 0;

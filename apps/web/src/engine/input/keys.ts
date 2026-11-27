@@ -72,6 +72,19 @@ export function cellKey(e: KeyLike): CellKey | null {
   return null;
 }
 
+export type TableKey = "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
+/** personnalisation-3 (H12) : touches de l'outil Tableau : Alt+Maj+→ ← largeur ± 8, Alt+Maj+↓ ↑ hauteur ± 8 ; hors champ,
+ *  hors IME, sans Ctrl ni Cmd. */
+export function tableKey(e: KeyLike): TableKey | null {
+  if (e.isComposing || e.metaKey || inEditable(e.target)) return null;
+  if (!e.altKey || e.ctrlKey || !e.shiftKey) return null;
+  if (e.key === "ArrowRight") return "col-wider";
+  if (e.key === "ArrowLeft") return "col-narrower";
+  if (e.key === "ArrowDown") return "row-taller";
+  if (e.key === "ArrowUp") return "row-shorter";
+  return null;
+}
+
 export type EditAction = "delete" | "escape";
 
 /** Suppr / Retour arrière (supprimer la sélection, D12) et Échap (la vider), hors champ, hors composition, sans modificateur. */
