@@ -648,7 +648,6 @@ async function s4(browser, base, mode, tmp) {
   await marquee(page, [340, 200], [920, 560]);
   await waitAttr(page, "data-selection", "3");
   for (const sc of SHORTCUTS) {
-    const baseline = JSON.stringify(await boxesNow(`s4-d-${sc.how}`));
     await press(page, mode, opt(sc.how.startsWith("distribute") || sc.how.startsWith("align") ? "align" : "transform", sc.how));
     const viaButton = JSON.stringify(await boxesNow(`s4-b-${sc.how}`));
     await page.keyboard.press("Control+z");
@@ -657,12 +656,6 @@ async function s4(browser, base, mode, tmp) {
       if (!sc.alt && layout === "mac") continue; // sans Alt, `key` donne la lettre : le Mac n'y change rien
       await fire(page, sc, layout);
       const viaKey = JSON.stringify(await boxesNow(`s4-k-${sc.how}-${layout}`));
-      // Défaut vu (hors périmètre) : `keyOf` (apps/web/src/main.ts:63-71) ne passe pas `code` au moteur ; Alt + lettre (Alt+Maj+H/V/R,
-      // Alt+H/V) est lue par `code` (keys.ts:124) : la touche est morte. Consigné au rapport ; l'essai ne le juge pas.
-      if (sc.alt && sc.letter && viaKey === baseline) {
-        lire(`S4.defaut.${sc.how}.${layout}`, "touche sans effet (code non transmis au moteur)");
-        continue;
-      }
       check(viaKey === viaButton, `S4.5 : ${sc.how} au clavier ${layout} = le bouton${viaKey === viaButton ? "" : ` (bouton ${viaButton} ; clavier ${viaKey})`}`);
       await page.keyboard.press("Control+z");
       await frames(page);
@@ -734,8 +727,9 @@ async function s4suite(browser, base, mode, tmp) {
   await useTool(p2.page, mode, "rect");
   await touchDrag(p2.page, p2.cdp, [420, 300], [660, 360]);
   await waitAttr(p2.page, "data-elements", "1");
-  await useTool(p2.page, mode, "select");
-  await p2.page.keyboard.press("Control+a");
+  await p2.page.click(item("select")); // un tap juste après un contact du protocole se perd parfois
+  await waitAttr(p2.page, "data-tool", "select");
+  await tapStage(p2.page, 420, 330); // le bord gauche du rectangle
   await frames(p2.page);
   lire("S4.rotation.etat", `tool=${await attr(p2.page, "data-tool")} elements=${await attr(p2.page, "data-elements")} selection=${await attr(p2.page, "data-selection")}`);
   await waitAttr(p2.page, "data-selection", "1");
