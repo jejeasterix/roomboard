@@ -3919,6 +3919,18 @@ describe("contrôle de forme personnalisation-1b (ApplyBackground)", () => {
 });
 
 describe.each(factories)("contrat personnalisation-1b : $name", ({ f }) => {
+  it("ligne brute sans grille ni fond : traitée comme null, page blanche inchangée, rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const raw = JSON.parse(`{"type":"ApplyBackground","pages":["${p}"],"color":"#ffffff"}`) as Command;
+    const v = d.version();
+    const c = d.apply(raw);
+    expect(c.pages).toEqual([]);
+    expect(c.version).toBe(v);
+    expect(d.page(p)?.grid ?? null).toBeNull();
+    expect(d.canUndo()).toBe(false);
+  });
+
   it("trois pages, une étape, un seul asset ; annuler rend les trois pages blanches", () => {
     const d = f.blank();
     const p = first(d);

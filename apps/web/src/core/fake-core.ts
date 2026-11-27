@@ -1013,12 +1013,12 @@ class FakeDocument implements CoreDocument {
       case "ApplyBackground": {
         // Ordre du cœur (page_look.rs) : couleur, fond, grille, pages ; seules les pages qui changent ; page PDF : fond gardé.
         if (!validColor(cmd.color)) throw new Error(MESSAGES.badFill);
-        const b = cmd.backdrop;
+        const b = cmd.backdrop ?? null;
         if (b !== null) {
           if (!validAsset(b.asset)) throw new Error(MESSAGES.badAsset);
           if (!positive(b.w) || !positive(b.h) || b.fit !== "width") throw new Error(MESSAGES.badImage);
         }
-        const g = cmd.grid;
+        const g = cmd.grid ?? null;
         if (g !== null && !validGrid(g)) throw new Error(MESSAGES.badGrid);
         if (cmd.pages.length === 0) throw new Error("page inconnue : ");
         const seen = new Set<string>();
