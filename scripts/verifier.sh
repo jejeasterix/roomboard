@@ -145,6 +145,8 @@ if [ "$E2E" = 1 ]; then
   echo "design L4 : OK"
   node scripts/essais/personnalisation-2-navigateur.mjs
   echo "personnalisation-2 : OK"
+  node scripts/essais/personnalisation-2-retours-navigateur.mjs
+  echo "personnalisation-2-retours : OK"
   node scripts/essais/design-l3-navigateur.mjs
   echo "design L3 : OK"
   node scripts/essais/personnalisation-1a-navigateur.mjs
