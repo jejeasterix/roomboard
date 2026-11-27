@@ -491,7 +491,9 @@ fn duplicate_with_targets_rebinds_to_copies_alone_frees() {
     let v = view(&d, cf);
     assert_eq!(v["shape"]["start"]["id"], ca.as_str());
     assert_eq!(v["shape"]["end"]["id"], cb.as_str());
-    let alone = d.extract(&p, &[f.clone()]).expect("extrait seul");
+    let alone = d
+        .extract(&p, std::slice::from_ref(&f))
+        .expect("extrait seul");
     let ch = d
         .insert_fragment(&alone, &p, 10.0, 10.0)
         .expect("coller seul");
