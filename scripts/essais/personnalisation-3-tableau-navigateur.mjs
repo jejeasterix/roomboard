@@ -170,7 +170,8 @@ async function scenario(page, url, { captures }) {
     const box = await stageBox(page);
     const pt = { x: box.x + p[0], y: box.y + p[1], id: 1, radiusX: 4, radiusY: 4, force: 0.5 };
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [pt] });
-    await page.waitForTimeout(600);
+    // Le doigt reste posé jusqu'à l'ouverture du menu (HOLD_MS), jamais un délai fixe.
+    await page.waitForSelector(".rb-cell-menu:not([hidden])", { timeout: 5000 });
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await fr();
   };
@@ -214,7 +215,7 @@ async function scenario(page, url, { captures }) {
   await fr();
   await longPress(cellPt2(2, 2));
   await page.waitForSelector('.rb-cell-menu:not([hidden]) button:has-text("Agrandir")', { timeout: 5000 });
-  check(true, "S2 : table en mode rétrécir : le menu propose « Agrandir »");
+  check((await page.locator(".rb-cell-menu button").first().innerText()).includes("Agrandir"), "S2 : table en mode rétrécir : le menu propose « Agrandir »");
   await page.keyboard.press("Escape");
   await mouse.click(...cellPt2(2, 2));
   await page.keyboard.press("Escape");
@@ -222,7 +223,7 @@ async function scenario(page, url, { captures }) {
   await fr();
   await longPress(cellPt2(2, 2));
   await page.waitForSelector('.rb-cell-menu:not([hidden]) button:has-text("Rétrécir")', { timeout: 5000 });
-  check(true, "S2 : Alt+F bascule le mode : le menu propose de nouveau « Rétrécir »");
+  check((await page.locator(".rb-cell-menu button").first().innerText()).includes("Rétrécir"), "S2 : Alt+F bascule le mode : le menu propose de nouveau « Rétrécir »");
   await page.keyboard.press("Escape");
   await fr();
 
@@ -312,6 +313,34 @@ async function scenario(page, url, { captures }) {
   check((await attr("data-table-linked")) === "0" && (await inkIn(page, fondBox, brown)) > 1000, "S5 : Alt+I sur la case active met aussi l'image en fond");
   await page.keyboard.press("Control+z");
   await fr();
+  await page.keyboard.press("Escape");
+  await fr();
+
+  // D11 : « Sortir » du menu, au doigt, réduit la case comme Alt+Maj+Entrée : une photo 400 × 300 agrandit la colonne de la
+  // case (2, 2) du second tableau à 416 ; après « Sortir », la colonne revient à 240 (tableau 720 de large).
+  await page.click(item("select"));
+  await fr();
+  await dropFile(page, "#stage", "photo3.png", solidPng(400, 300, [30, 90, 60]), "image/png", imageAt);
+  await fr();
+  await touchDrag(imageAt, cellPt2(2, 2));
+  await selectAt(tb2);
+  const [gx0, , gx1] = await boundsOf();
+  check(near(gx1 - gx0, 896), `D11 : la photo agrandit la colonne de la case (2, 2) : tableau de 896 de large (lu ${gx1 - gx0})`);
+  await page.keyboard.press("Escape");
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...cellPt2(2, 2));
+  await page.keyboard.press("Escape");
+  await fr();
+  await longPress(cellPt2(2, 2));
+  await page.waitForSelector('.rb-cell-menu:not([hidden]) button:has-text("Sortir")', { timeout: 5000 });
+  await page.click('.rb-cell-menu button:has-text("Sortir")');
+  await fr();
+  await page.click(item("select"));
+  await fr();
+  await selectAt(tb2);
+  const [hx0, , hx1] = await boundsOf();
+  check(near(hx1 - hx0, 720), `D11 : « Sortir » du menu : la colonne revient à 240, tableau de 720 de large (lu ${hx1 - hx0})`);
   await page.keyboard.press("Escape");
   await fr();
 
