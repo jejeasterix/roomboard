@@ -9,7 +9,7 @@
  * (`TIP_HOLD_MS`) ou Maj+F10 ouvre le menu de la page. Clavier : voir `onThumbKey`. Calques : toucher une ligne
  * sélectionne l'objet (Ctrl, Cmd ou Maj : ajoute ou retire) ; glisser une ligne (`startSortDrag`) la réordonne.
  */
-import { For, Show, createEffect, createSignal, onCleanup, type Accessor, type JSX } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount, type Accessor, type JSX } from "solid-js";
 import type { LayerRow } from "../app/layer-list";
 import type { ToolbarHost } from "../app/toolbar-host";
 import type { PageLayout } from "../core/api";
@@ -129,6 +129,13 @@ export function SideBar(props: SideBarProps): JSX.Element {
   const rows = (): HTMLElement[] => [...(list?.querySelectorAll<HTMLElement>("[data-page-id]") ?? [])];
   const pixelRatio = (): number => root?.ownerDocument.defaultView?.devicePixelRatio || 1;
   const [lineWidth, setLineWidth] = createSignal(0);
+  const measure = (): void => {
+    const w = (list?.clientWidth ?? 0) - LINE_CHROME;
+    if (w > 0) setLineWidth(w);
+  };
+  // Mesurée avant le premier rendu des miniatures (effets dans l'ordre de création) : une seule demande, pas deux (une
+  // URL révoquée avant son chargement donnerait ERR_FILE_NOT_FOUND).
+  onMount(measure);
   /** Largeur du tampon : la largeur réelle de la miniature (la place utile de la ligne, mesurée, au moins THUMB_CSS) × devicePixelRatio. */
   const bufferWidth = (): number => Math.round(Math.max(lineWidth(), THUMB_CSS[thumbSize()]) * pixelRatio());
   const index = (id: string): number => pages.ids().indexOf(id);
@@ -363,10 +370,8 @@ export function SideBar(props: SideBarProps): JSX.Element {
         <div
           ref={(el) => {
             list = el;
-            const w = (): number => el.clientWidth - LINE_CHROME;
-            if (w() > 0) setLineWidth(w());
             if (typeof ResizeObserver === "undefined") return;
-            const ro = new ResizeObserver(() => w() > 0 && setLineWidth(w()));
+            const ro = new ResizeObserver(() => measure());
             ro.observe(el);
             onCleanup(() => ro.disconnect());
           }}
