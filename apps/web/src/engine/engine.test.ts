@@ -2693,9 +2693,16 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(engine.state()).toMatchObject({ lineEditing: id, linePointsSelected: 0, selection: [id] });
     tap(2, 100, 100); // toucher d'un bout : point choisi
     expect(engine.state().linePointsSelected).toBe(1);
-    expect(engine.removeLinePoints()).toBe(true);
     expect(engine.key(key("Escape"))).toBe(true);
     expect(engine.state()).toMatchObject({ lineEditing: null, selection: [id], tool: "select" });
+    expect(doc.element(id)).not.toBeNull();
+    // Bouton « Retirer le point » : sur une ligne de deux points, la ligne part et l'édition se ferme.
+    engine.editLinePoints();
+    tap(3, 100, 100);
+    expect(engine.removeLinePoints()).toBe(true);
+    expect(doc.element(id)).toBeNull();
+    expect(engine.state()).toMatchObject({ lineEditing: null, selection: [] });
+    expect(engine.removeLinePoints()).toBe(false);
   });
 
   it("en édition : le calque montre les poignées de l'éditeur, sans le cadre de l'outil Sélection", () => {

@@ -12,9 +12,11 @@ import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from ".
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
+import { editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
-import type { LookPatch } from "../core/look";
+import { elbowedOf, type LookPatch } from "../core/look";
+import { isSegment } from "../core/shapes";
+import { createLineEditor, type LineEditor } from "./tools/line-edit";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
@@ -67,6 +69,13 @@ export interface EngineState {
   /** T18 (H5, déc. 38) : élément dont l'éditeur de lien est ouvert (Ctrl+K ou bouton Lien, un seul élément) ; null
    *  sinon. Facultatif comme fillColor (PC5) : le moteur le publie toujours. */
   readonly linkEditing?: string | null;
+  /** OG12 T11 (n° 20 à 23) : ligne ou flèche en « Modifier les points » ; null hors édition. Facultatif comme
+   *  linkEditing : le moteur le publie toujours. */
+  readonly lineEditing?: string | null;
+  /** OG12 T11 : nombre de points choisis dans l'éditeur ; 0 hors édition. */
+  readonly linePointsSelected?: number;
+  /** OG12 T11 (n° 16) : objet surligné comme cible d'une liaison par le calque d'édition ; null sinon. */
+  readonly bindHint?: string | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -247,6 +256,20 @@ export interface Engine {
   setLink(url: string | null): boolean;
   /** T18 : ferme l'éditeur de lien sans écrire. */
   closeLink(): void;
+  /** OG12 T11 (n° 21) : « Modifier les points » sur la ligne ou flèche non coudée seule sélectionnée ; l'outil reste
+   *  Sélection et la sélection est gardée. Faux sinon. */
+  editLinePoints(): boolean;
+  /** OG12 T11 : retire les points choisis de l'éditeur (une SetLinePoints) ; faux hors édition ou sans point choisi. */
+  removeLinePoints(): boolean;
+  /** OG12 T11 : sort de « Modifier les points » sans changer d'outil ni de sélection. */
+  exitLineEdit(): void;
+  /** OG12 T11 (n° 27, 28) : objet relié (AddLinked) depuis le rectangle ou l'ellipse seul sélectionné ; la copie devient
+   *  la sélection. Faux sinon ou si le cœur refuse. */
+  addLinked(dir: LinkDir): boolean;
+  /** OG12 T11 (n° 29) : doigt tardif tenu pendant un geste, lu comme Maj par les outils (routeur, `RouterDeps.modifier`). */
+  setTouchModifier(held: boolean): void;
+  /** OG12 T11 : survol souris ou stylet sans bouton, px de la scène (surlignage de l'outil Ligne ou Flèche). */
+  hover(x: number, y: number): void;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
    *  invalide est ignorée. */
   setFillColor(color: string | null): void;
@@ -380,6 +403,14 @@ export function createEngine(deps: EngineDeps): Engine {
   let spaceHeld = false;
   let shiftHeld = false;
   let altHeld = false;
+  /** OG12 T11 : Ctrl ou Cmd tenu (n° 19), doigt tardif tenu (n° 29, vaut Maj), type du pointeur du dernier appui. */
+  let ctrlHeld = false;
+  let touchShift = false;
+  let lastPointer = "mouse";
+  /** OG12 T11 : séance « Modifier les points » (comme l'orbite C15 : un état du moteur, pas un outil de la barre). */
+  let lineEditor: LineEditor | null = null;
+  /** OG12 T11 : cible surlignée du dernier calque peint (`overlay.bind`). */
+  let bindHint: string | null = null;
   let lastOverlay = overlayKey(EMPTY_OVERLAY);
   let eraserMode: EraseMode = "partial";
   let error: string | null = null;
@@ -484,6 +515,9 @@ export function createEngine(deps: EngineDeps): Engine {
       fillTolerance,
       itemStyle: item,
       linkEditing: linkTarget(),
+      lineEditing: lineEditor?.id ?? null,
+      linePointsSelected: lineEditor?.selectedPoints().length ?? 0,
+      bindHint,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -496,8 +530,43 @@ export function createEngine(deps: EngineDeps): Engine {
     return linkEditing !== null && sel.length === 1 && sel[0] === linkEditing ? linkEditing : null;
   }
 
+  /** OG12 T11 : l'éditeur de points tombe dès que sa ligne n'est plus l'unique sélection (supprimée, annulée, page
+   *  changée, autre sélection) ; vrai s'il est tombé. Sans émission (appelé par `emit`). */
+  function dropLineEditor(): boolean {
+    if (lineEditor === null) return false;
+    const sel = selectTool.selection();
+    if (sel.length === 1 && sel[0] === lineEditor.id && doc.element(lineEditor.id) !== null) return false;
+    lineEditor.leave?.("tool");
+    lineEditor = null;
+    requestScene();
+    return true;
+  }
+
+  /** OG12 (n° 21) : entre dans « Modifier les points » pour `id` (ligne ou flèche non coudée), sélection = `id`. */
+  function enterLineEdit(id: string): boolean {
+    const v = doc.element(id);
+    if (v?.kind !== "shape" || !isSegment(v.shape.shape) || elbowedOf(v.look)) return false;
+    if (!doc.elementIds(pageId).includes(id)) return false;
+    if (tool !== "select") engine.setTool("select");
+    lineEditor?.leave?.("tool");
+    lineEditor = createLineEditor(ctx, id, exitLineEdit);
+    selectTool.setSelection([id]);
+    requestScene();
+    emit();
+    return true;
+  }
+
+  function exitLineEdit(): void {
+    if (lineEditor === null) return;
+    lineEditor.leave?.("tool");
+    lineEditor = null;
+    requestScene();
+    emit();
+  }
+
   function emit(): void {
     linkEditing = linkTarget();
+    dropLineEditor();
     const s = state();
     for (const cb of stateListeners) cb(s);
   }
@@ -516,6 +585,8 @@ export function createEngine(deps: EngineDeps): Engine {
   function switchTo(id: string): void {
     closeAll("abort");
     leaveAll("page");
+    lineEditor?.leave?.("page");
+    lineEditor = null;
     stopPreview();
     imageEdit?.close();
     orbit?.close();
@@ -696,10 +767,14 @@ export function createEngine(deps: EngineDeps): Engine {
     page: () => pageId,
     camera: () => camera,
     run,
-    shift: () => shiftHeld,
+    shift: () => shiftHeld || touchShift,
     alt: () => altHeld,
     requestFrame: requestScene,
     stateChanged: () => emit(),
+    ctrl: () => ctrlHeld,
+    bindingEnabled: () => item.arrowBinding,
+    pointerType: () => lastPointer,
+    editPoints: (id) => void enterLineEdit(id),
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   /** Style de texte de l'outil Tableau et de l'import : couleur du stylo, taille par défaut ; l'outil Texte a `textToolStyle`. */
@@ -727,15 +802,26 @@ export function createEngine(deps: EngineDeps): Engine {
     for (const t of toolList) t.leave?.(reason);
   }
 
+  /** OG12 T11 : outils peints ; en « Modifier les points », l'éditeur remplace le calque de l'outil Sélection. */
+  function liveTools(): readonly GestureTool[] {
+    return lineEditor === null ? toolList : [...toolList.filter((t) => t !== selectTool), lineEditor];
+  }
+
   function frame(now: number): void {
-    for (const t of toolList) t.frame();
-    const parts: LivePart[] = toolList.map((t) => t.live());
+    const painted = liveTools();
+    for (const t of painted) t.frame();
+    const parts: LivePart[] = painted.map((t) => t.live());
     const hidden = new Set<string>();
     for (const p of parts) for (const id of p.hidden) hidden.add(id);
     const merged = mergeOverlays(parts.map((p) => p.overlay));
     // C5 (I28) : pendant le rognage, le cadre de la sélection cède la place au cadre de rognage.
     const overlay = imageEdit?.mode() === "crop" ? { ...merged, frame: null, handles: false } : merged;
     const key = overlayKey(overlay);
+    const hint = overlay.bind?.id ?? null;
+    if (hint !== bindHint) {
+      bindHint = hint;
+      emit();
+    }
     if (sceneDirty || !sameSet(hidden, lastHidden) || key !== lastOverlay) {
       // Un seul `doc.page` par scène (PF29) : fond de couleur (C6a) et fond de page (C12).
       const view = doc.page(pageId);
@@ -761,7 +847,7 @@ export function createEngine(deps: EngineDeps): Engine {
       camera,
     );
     for (const cb of drawnListeners) cb(now);
-    if (!toolList.some((t) => t.active()) && imageEdit?.gesture.active() !== true && orbit?.gesture.active() !== true) loop.stop();
+    if (!toolList.some((t) => t.active()) && lineEditor?.active() !== true && imageEdit?.gesture.active() !== true && orbit?.gesture.active() !== true) loop.stop();
   }
 
   const loop = createFrameLoop(deps.frames, frame, ENGINE_FRAME_HISTORY);
@@ -871,6 +957,7 @@ export function createEngine(deps: EngineDeps): Engine {
   const sink: GestureSink = {
     begin(pointerId, t, samples, pointerType) {
       lastDeleted = null;
+      lastPointer = pointerType ?? "mouse";
       // T18 (déc. 38) : toucher du badge d'un lien avec l'outil Sélection, hors rognage, pipette et orbite.
       if (t === "select" && orbit === null && (imageEdit === null || imageEdit.mode() === "idle")) {
         const url = badgeLinkAt(samples[0], pointerType);
@@ -886,7 +973,15 @@ export function createEngine(deps: EngineDeps): Engine {
         owner.set(pointerId, missedOrbit(tools[t], pointerId, samples));
         return;
       }
-      const g = imageEdit !== null && imageEdit.mode() !== "idle" ? imageEdit.gesture : orbit !== null ? orbit.gesture : tools[t];
+      // OG12 T11 : « Modifier les points » reçoit les gestes de l'outil Sélection, après le rognage et l'orbite.
+      const g =
+        imageEdit !== null && imageEdit.mode() !== "idle"
+          ? imageEdit.gesture
+          : orbit !== null
+            ? orbit.gesture
+            : lineEditor !== null && t === "select"
+              ? lineEditor
+              : tools[t];
       owner.set(pointerId, g);
       emitIfSelectionChanged(() => g.begin(pointerId, samples));
       loop.start();
@@ -974,6 +1069,7 @@ export function createEngine(deps: EngineDeps): Engine {
     view,
     tool: () => tool,
     setTool(t) {
+      if (t !== "select") exitLineEdit();
       if (t !== tool) {
         leaveAll("tool");
         tool = t;
@@ -1043,6 +1139,10 @@ export function createEngine(deps: EngineDeps): Engine {
     undo: () => history("undo"),
     redo: () => history("redo"),
     key(e) {
+      if (isCtrlKey(e)) {
+        ctrlHeld = true;
+        return false;
+      }
       if (e.key === "Shift") {
         shiftHeld = true;
         return false;
@@ -1088,6 +1188,21 @@ export function createEngine(deps: EngineDeps): Engine {
         orbit.close();
         return true;
       }
+      // OG12 T11 (n° 21 à 23, 28) : Ctrl+Entrée, puis Suppr et Échap de l'éditeur de points, Alt+Maj+flèche.
+      if (lineEditKey(e)) {
+        const sel = selectTool.selection();
+        return sel.length === 1 && enterLineEdit(sel[0]!);
+      }
+      if (lineEditor !== null && edit === "delete") {
+        lineEditor.removeSelected();
+        return true;
+      }
+      if (lineEditor !== null && edit === "escape") {
+        exitLineEdit();
+        return true;
+      }
+      const dir = linkedKey(e);
+      if (dir !== null) return engine.addLinked(dir);
       // OG11 (DA-6, déc. 39) : Ctrl+D duplique ; toujours pris (preventDefault), comme Excalidraw : pas de favori du navigateur.
       if (objectKey(e) === "duplicate") {
         engine.duplicateSelection();
@@ -1121,6 +1236,10 @@ export function createEngine(deps: EngineDeps): Engine {
       return true;
     },
     keyUp(e) {
+      if (isCtrlKey(e)) {
+        ctrlHeld = false;
+        return false;
+      }
       if (e.key === "Shift") {
         shiftHeld = false;
         return false;
@@ -1137,6 +1256,8 @@ export function createEngine(deps: EngineDeps): Engine {
       spaceHeld = false;
       shiftHeld = false;
       altHeld = false;
+      ctrlHeld = false;
+      touchShift = false;
     },
     panHeld: () => spaceHeld,
     showPage(id) {
@@ -1287,6 +1408,38 @@ export function createEngine(deps: EngineDeps): Engine {
       linkEditing = null;
       emit();
     },
+    editLinePoints() {
+      const sel = selectTool.selection();
+      return sel.length === 1 && enterLineEdit(sel[0]!);
+    },
+    removeLinePoints() {
+      return lineEditor?.removeSelected() ?? false;
+    },
+    exitLineEdit,
+    addLinked(dir) {
+      const sel = selectTool.selection();
+      const id = sel.length === 1 ? sel[0]! : null;
+      const v = id === null ? null : doc.element(id);
+      if (id === null || v?.kind !== "shape" || (v.shape.shape !== "rect" && v.shape.shape !== "ellipse")) return false;
+      const change = run({ type: "AddLinked", id, dir });
+      if (change === null) return false;
+      // La copie est l'objet neuf qui n'est pas un segment (l'autre est la flèche) : l'ordre des ids n'est pas lu.
+      const copy = change.ids.find((x) => {
+        const c = x === id ? null : doc.element(x);
+        return c?.kind === "shape" && !isSegment(c.shape.shape);
+      });
+      if (copy !== undefined) selectTool.setSelection([copy]);
+      requestScene();
+      emit();
+      return true;
+    },
+    setTouchModifier(held) {
+      touchShift = held;
+    },
+    hover(x, y) {
+      tools[tool].hover?.(x, y);
+      loop.start();
+    },
     itemStyle: () => item,
     adoptItemStyle(s) {
       const changed = (Object.keys(s) as (keyof ItemStyle)[]).some((k) => s[k] !== item[k]);
@@ -1346,6 +1499,7 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     frameDurations: () => loop.durations(),
     dispose() {
+      lineEditor = null;
       imageEdit?.close();
       orbit?.close();
       closeAll("abort");
