@@ -43,7 +43,7 @@ describe("profils livrés (T83, CL5b-9)", () => {
   it("design-l2 L2-4 : Grille et Réglages dans le groupe vue du menu de defaut et d'annotation ; absente de simple", () => {
     for (const id of ["defaut", "annotation"]) {
       const vue = builtinProfile(id)!.toolbars.find((b) => b.id === "menu")!.groups.find((g) => g.id === "vue")!;
-      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["grid", "settings"]);
+      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["grid", "settings", "menu-profiles"]);
     }
     expect(ids("simple")).not.toContain("grid");
   });
@@ -236,7 +236,7 @@ describe("design-l2 : profils fournis en îlots (L2-2 à L2-4)", () => {
     }
   });
   it("design-l2 L2-4 : menu, historique, panneaux et pages de defaut", () => {
-    expect(flat("defaut", "menu")).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "sep-5", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "edit-original", "sep-6", "grid", "settings"]);
+    expect(flat("defaut", "menu")).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "sep-5", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "edit-original", "sep-6", "grid", "settings", "menu-profiles"]);
     expect(flat("defaut", "historique")).toEqual(["undo", "redo", "fit-page"]);
     expect(flat("defaut", "panneaux")).toEqual(["library", "profiles"]);
     expect(flat("defaut", "pages")).toEqual(["page-add", "page-duplicate", "page-remove"]);
@@ -255,6 +255,13 @@ describe("design-l2 : profils fournis en îlots (L2-2 à L2-4)", () => {
     for (const p of BUILTIN_PROFILES) {
       expect(p.toolbars.filter((b) => b.role !== "annotation" && (b.dock === "top" || b.dock === "bottom")).map((b) => b.id), p.id).toEqual([]);
     }
+  });
+
+  it("menu livré : Profil en dernier", () => {
+    const menu = builtinProfile("defaut")!.toolbars.find((b) => b.role === MENU_ROLE)!;
+    const vue = menu.groups.find((g) => g.id === "vue")!;
+    expect(vue.items.map((i) => i.id)).toEqual(["sep-6", "grid", "settings", "menu-profiles"]);
+    expect(vue.items.at(-1)!.action).toBe("profiles");
   });
 });
 

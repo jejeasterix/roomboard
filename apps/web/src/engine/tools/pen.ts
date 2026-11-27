@@ -5,6 +5,8 @@
  * Pression (D8, HL3-4) : 0,5 tant qu'aucune valeur hors de {0 ; 0,5} n'a été vue, suivie ensuite.
  */
 import type { StrokeBuilderApi, StrokeStyle } from "../../core/api";
+import { opacityLook, type Look } from "../../core/look";
+import type { ItemStyle } from "../item-style";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
@@ -14,6 +16,8 @@ import type { GestureTool, LivePart, ToolContext } from "./tool";
 interface LiveStroke {
   readonly page: string;
   readonly style: StrokeStyle;
+  /** OG11 : transparence du style courant, figée au début du trait (le stylo n'a ni tirets, ni tracé, ni angles). */
+  readonly look: Look | undefined;
   readonly builder: StrokeBuilderApi;
   /** Triplets x, y, pression monde de tout le trait (envoyés au relâché). */
   readonly all: number[];
@@ -29,7 +33,8 @@ interface LiveStroke {
 const EMPTY = new Float32Array(0);
 const NONE: ReadonlySet<string> = new Set<string>();
 
-export function createPenTool(ctx: ToolContext, style: () => StrokeStyle): GestureTool {
+/** OG11 : le style courant (`ItemStyle`) ; un style de stylo seul (couleur, épaisseur) vaut opaque. */
+export function createPenTool(ctx: ToolContext, style: () => StrokeStyle & Partial<Pick<ItemStyle, "opacity">>): GestureTool {
   const strokes = new Map<number, LiveStroke>();
   let pressureVaries = false;
 
@@ -80,10 +85,12 @@ export function createPenTool(ctx: ToolContext, style: () => StrokeStyle): Gestu
 
   return {
     begin(pointerId, samples) {
-      const st = style();
+      const cur = style();
+      const st: StrokeStyle = { color: cur.color, width: cur.width };
       const l: LiveStroke = {
         page: ctx.page(),
         style: st,
+        look: opacityLook(cur.opacity ?? 100),
         builder: ctx.doc.newStrokeBuilder(st),
         all: [],
         pending: [],
@@ -109,14 +116,16 @@ export function createPenTool(ctx: ToolContext, style: () => StrokeStyle): Gestu
       strokes.delete(pointerId);
       l.builder.free();
       if (how === "abort" || l.all.length < 3) return;
-      ctx.run({ type: "CommitStroke", page: l.page, points: new Float32Array(l.all), style: l.style });
+      ctx.run({ type: "CommitStroke", page: l.page, points: new Float32Array(l.all), style: l.style, ...(l.look ? { look: l.look } : {}) });
     },
     live(): LivePart {
       const views: LiveStrokeView[] = [];
+      let opacity: number | undefined;
       for (const l of strokes.values()) {
         views.push({ outline: l.outline, color: l.style.color });
+        opacity ??= l.look?.opacity;
       }
-      return { strokes: views, erasers: [], hidden: NONE };
+      return { strokes: views, erasers: [], hidden: NONE, ...(opacity !== undefined ? { opacity } : {}) };
     },
     active: () => strokes.size > 0,
   };

@@ -881,6 +881,44 @@ describe("C4 : grille en ressource (faux cœur)", () => {
   });
 });
 
+// OG11 (T4) : la fausse liaison suit `style.rs` (plan vide : aucune étape), pas le chemin propre de Fill.
+describe("fausse liaison : SetStyle (OG11)", () => {
+  const rectOf = (d: CoreDocument, page: string): string =>
+    d.apply({ type: "AddShape", page, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style, fill: null }).ids[0] ?? "";
+
+  it("SetStyle sans changement : aucune étape, l'annulation retire la création", () => {
+    const d = fakeCore.blank();
+    const page = d.pageIds()[0] ?? "";
+    const id = rectOf(d, page);
+    const v = d.version();
+    expect(d.apply({ type: "SetStyle", ids: [id], patch: { opacity: 100, strokeStyle: null, roughness: 0 } }).ids).toEqual([]);
+    expect(d.apply({ type: "SetStyle", ids: [id], patch: { color: "#000000", width: 4, fill: null } }).ids).toEqual([]);
+    expect(d.version()).toBe(v);
+    d.undo();
+    expect(d.element(id)).toBeNull();
+    expect(d.canUndo()).toBe(false);
+  });
+
+  it("look gardé par extract et insertFragment (Dupliquer)", () => {
+    const d = fakeCore.blank();
+    const page = d.pageIds()[0] ?? "";
+    const id = rectOf(d, page);
+    d.apply({ type: "SetStyle", ids: [id], patch: { strokeStyle: "dotted", opacity: 30 } });
+    const c = d.insertFragment(d.extract(page, [id]), page, 10, 10);
+    const copy = c.ids[0] ?? "";
+    expect(copy).not.toBe(id);
+    expect(d.element(copy)?.look).toEqual({ strokeStyle: "dotted", opacity: 30 });
+  });
+
+  it("créations : look assaini comme `Look::sanitized` (champ hors domaine lu neutre, graine sans tracé retirée)", () => {
+    const d = fakeCore.blank();
+    const page = d.pageIds()[0] ?? "";
+    const look = { strokeStyle: "wavy", roundness: "sharp", seed: 7, opacity: 100 } as unknown as import("./api").Look;
+    const id = d.apply({ type: "AddShape", page, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style, fill: null, look }).ids[0] ?? "";
+    expect(d.element(id)?.look).toBeUndefined();
+  });
+});
+
 describe("fakeCore — personnalisation-1a (mode de page, MovePage, DuplicatePage, grille au cadre)", () => {
   const PORTRAIT = (1920 * 16) / 9;
   const squaresGrid = (step: number): GridInput => ({

@@ -108,6 +108,20 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   // lucide-icons/lucide@7981a0798a), bouton Menu et Replier de la barre d'outils ; Déplier reprend `down`.
   "menu": [["path", { d: "M4 5h16" }], ["path", { d: "M4 12h16" }], ["path", { d: "M4 19h16" }]],
   "collapse": [["path", { d: "m18 15-6-6-6 6" }]],
+  // OG11 (panneau d'options) : Lucide @7981a0798a, ISC (copy-plus, trash-2, sliders-horizontal, chevron-left).
+  "copy-plus": [["path", { d: "M15 12v6" }], ["path", { d: "M12 15h6" }], ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" }], ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" }]],
+  "trash-2": [["path", { d: "M10 11v6" }], ["path", { d: "M14 11v6" }], ["path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" }], ["path", { d: "M3 6h18" }], ["path", { d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }]],
+  "sliders-horizontal": [["path", { d: "M10 5H3" }], ["path", { d: "M12 19H3" }], ["path", { d: "M14 3v4" }], ["path", { d: "M16 17v4" }], ["path", { d: "M21 12h-9" }], ["path", { d: "M21 19h-5" }], ["path", { d: "M21 5h-7" }], ["path", { d: "M8 10v4" }], ["path", { d: "M8 12H3" }]],
+  "chevron-left": [["path", { d: "m15 18-6-6 6-6" }]],
+  // Dessinées pour RoomBoard (même grille, trait 1,5) : style du trait, style de tracé, angles, transparence.
+  "stroke-solid": [["path", { d: "M4 12h16" }]],
+  "stroke-dashed": [["path", { d: "M4 12h3" }], ["path", { d: "M10.5 12h3" }], ["path", { d: "M17 12h3" }]],
+  "stroke-dotted": [["path", { d: "M4 12h.01" }], ["path", { d: "M8 12h.01" }], ["path", { d: "M12 12h.01" }], ["path", { d: "M16 12h.01" }], ["path", { d: "M20 12h.01" }]],
+  "sloppiness-0": [["path", { d: "M4 16c4-8 12-8 16 0" }]],
+  "sloppiness-1": [["path", { d: "M4 16c3-7 6-9 8-6s5 3 8 6" }]],
+  "sloppiness-2": [["path", { d: "M4 15c2-6 4-7 5-4s2 4 4 1 3-5 4-2 2 4 3 5" }]],
+  "corner-sharp": [["path", { d: "M6 18V6h12" }]],
+  "corner-round": [["path", { d: "M6 18v-6a6 6 0 0 1 6-6h6" }]],
 });
 
 /** Outil → icône (§ 2 bis). */

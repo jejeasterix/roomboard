@@ -313,3 +313,13 @@ describe("rb.css (design-l2)", () => {
     expect(Number.isInteger((512 - 2 * 4) / 3)).toBe(true);
   });
 });
+
+describe("empilement et calage du panneau d'options (T22)", () => {
+  const z = (sel: string): number => Number(/z-index: (\d+)/.exec(rule(sel))?.[1] ?? NaN);
+  it("le panneau d'options est sous le calque des îlots, qui porte les menus, ouvert au-dessus de lui", () => {
+    expect(z(".rb-options")).toBeLessThan(z(".rb-islands"));
+    expect(z("[data-menu-list]")).toBeGreaterThan(z(".rb-options"));
+    expect(z(".rb-popover")).toBeGreaterThan(z(".rb-options"));
+    expect(z(".rb-tip")).toBeGreaterThan(z(".rb-islands"));
+  });
+});

@@ -149,6 +149,36 @@ export function nudge(at: Point, key: string, big: boolean): Point | null {
   return { x: at.x + dx * step, y: at.y + dy * step };
 }
 
+/** T22 : largeur du panneau d'options pour des boutons de `btn` px : 5 cibles, 4 écarts de 4, 2 marges de 12, et un
+ *  intérieur de segments (2 marges de 4 en moins) multiple de 12, pour que 2 et 3 segments aient une largeur paire
+ *  entière : chaque icône de 24 px tombe sur la grille de pixels à 1x et 2x. */
+export function optionsWidth(btn: number): number {
+  const inner = Math.ceil((5 * btn + 4 * 4 - 2 * 4) / 12) * 12;
+  return inner + 2 * 4 + 2 * 12;
+}
+
+/** OG11 : bas de la rangée du haut (îlots posés à `EDGE`, hauts de `btn` + 8) pour la taille de bouton `btn` du profil. */
+export function topRowBottom(btn: number): number {
+  return EDGE + btn + 8;
+}
+
+/** OG11 : coin haut-gauche du panneau d'options, sous la rangée du haut (`tops` = son bas, `topRowBottom`), à droite de
+ *  l'îlot latéral de début quand il existe (`sideStart` : rectangle posé de la barre latérale d'OG4, dépliée ou repliée ;
+ *  `x` absent : 0, bord gauche de la zone), jamais par-dessus ; sans îlot : contre le bord. `above` : îlots qui le
+ *  surplombent (îlot d'outils descendu, non déplacé), le panneau passe dessous. y borné dans la zone. */
+export function placeOptions(
+  area: Box,
+  sideStart: (Box & { readonly x?: number }) | null,
+  tops: number,
+  above: readonly Rect[] = [],
+  width = 0,
+): Point {
+  const x = sideStart !== null && sideStart.w > 0 ? Math.max(EDGE, Math.ceil((sideStart.x ?? 0) + sideStart.w + GAP)) : EDGE;
+  // Comme la voie latérale (`belowAbove`) : sous l'îlot d'outils descendu qui croise les abscisses du panneau (`width`).
+  const y = belowAbove(x, width, tops + GAP, above);
+  return { x, y: Math.min(y, Math.max(EDGE, area.h - EDGE)) };
+}
+
 /** L2-16 : panneau des profils ouvert, voie de l'îlot d'outils dans la place à sa gauche, sous la rangée du haut ;
  *  null si cette place est plus étroite que 2 × 16 + 3 boutons (H13 : les îlots restent sous le panneau). */
 export function sheetLane(area: Box, sheet: number, band: number, btn: number): Lane | null {

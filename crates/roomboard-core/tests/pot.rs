@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use roomboard_core::commands::{Command, CommandError};
 use roomboard_core::document::Document;
-use roomboard_core::element::StrokeStyle;
+use roomboard_core::element::{Look, StrokeStyle};
 use roomboard_core::fill::FillTarget;
 use roomboard_core::format::{load, save, SaveMeta};
 use roomboard_core::shape::ShapeKind;
@@ -39,6 +39,7 @@ fn shape(d: &mut Document, p: &str, kind: ShapeKind, c: [f64; 4]) -> String {
         y1: c[3],
         style: pen(),
         fill: None,
+        look: Look::default(),
     })
     .expect("forme")
     .ids[0]
@@ -53,6 +54,7 @@ fn stroke(d: &mut Document, p: &str) -> String {
         page: p.to_string(),
         points,
         style: pen(),
+        look: Look::default(),
     })
     .expect("trait")
     .ids[0]
@@ -71,6 +73,7 @@ fn text(d: &mut Document, p: &str) -> String {
         box_width: 600.0,
         box_height: 45.0,
         spans: None,
+        look: Look::default(),
     })
     .expect("texte")
     .ids[0]

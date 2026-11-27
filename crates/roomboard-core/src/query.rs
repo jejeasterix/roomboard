@@ -365,6 +365,7 @@ impl Document {
 mod tests {
     use super::*;
     use crate::commands::{Command, EraseMode};
+    use crate::element::Look;
     use crate::element::StrokeStyle;
     use crate::ink::outline::{outline as ink_outline, InkStyle};
 
@@ -390,6 +391,7 @@ mod tests {
                 page: p.clone(),
                 points: a,
                 style: pen(),
+                look: Look::default(),
             })
             .expect("a")
             .ids[0]
@@ -399,6 +401,7 @@ mod tests {
                 page: p.clone(),
                 points: b,
                 style: pen(),
+                look: Look::default(),
             })
             .expect("b")
             .ids[0]
@@ -670,6 +673,7 @@ mod tests {
                 page: p.clone(),
                 points: pts,
                 style: pen(),
+                look: Look::default(),
             })
             .expect("commit");
         }
@@ -698,6 +702,7 @@ mod tests {
             y1: c[3],
             style: pen(),
             fill: None,
+            look: Look::default(),
         })
         .expect("rect")
         .ids[0]
@@ -728,6 +733,7 @@ mod tests {
                 y1: c[3],
                 style: pen(),
                 fill: None,
+                look: Look::default(),
             })
             .expect("forme")
             .ids[0]
@@ -803,6 +809,7 @@ mod tests {
                 page: p.clone(),
                 points: pts,
                 style: pen(),
+                look: Look::default(),
             })
             .expect("trait")
             .ids[0]
@@ -1025,6 +1032,7 @@ mod tests {
                 box_width: 600.0,
                 box_height: 45.0,
                 spans: None,
+                look: Look::default(),
             })
             .expect("texte")
             .ids[0]
@@ -1052,6 +1060,7 @@ mod tests {
                 page: p.clone(),
                 points: pts,
                 style: pen(),
+                look: Look::default(),
             })
             .expect("trait")
             .ids[0]

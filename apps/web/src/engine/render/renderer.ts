@@ -45,6 +45,17 @@ export interface EraserPreview {
 export interface LiveLayer {
   readonly strokes: readonly LiveStrokeView[];
   readonly erasers: readonly EraserPreview[];
+  /** OG11 : opacité du trait vif (0..100 ; absent = 100), posée en CSS sur le canvas d'interaction. */
+  readonly opacity?: number;
+}
+
+/** OG11 : opacité CSS du canvas d'interaction — `opacity` < 100 → o / 100 ; absente ou 100 → "" ; écrite si elle change.
+ *  Sans `style` (OffscreenCanvas, faux canvas des tests) : rien. */
+export function setLiveOpacity(canvas: unknown, opacity: number | undefined): void {
+  const style = (canvas as { style?: { opacity: string } } | null)?.style;
+  if (!style) return;
+  const v = opacity !== undefined && opacity < 100 ? String(Math.max(0, opacity) / 100) : "";
+  if (style.opacity !== v) style.opacity = v;
 }
 
 export const EMPTY_LIVE: LiveLayer = { strokes: [], erasers: [] };

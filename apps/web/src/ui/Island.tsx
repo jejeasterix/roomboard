@@ -352,6 +352,9 @@ export interface IslandLayerProps {
   /** L2-16 : panneau des profils ouvert. */
   readonly sheetOpen: Accessor<boolean>;
   readonly watch?: Accessor<unknown>;
+  /** T22 : îlot posé dans la zone du calque (panneau d'options) : mêmes bornes que les îlots. OG11 × OG4 : reçoit le
+   *  rectangle de l'îlot latéral de début (`side-start`, barre latérale ou outils, déplié ou replié) pour se poser à sa droite. */
+  readonly extra?: (sideStart: Accessor<Rect | null>, above: Accessor<readonly Rect[]>) => JSX.Element;
   /** T16 (design-l4) : haut libre des panneaux passagers, px de la case : 16 px sous la rangée des coins et sous l'îlot
    *  d'outils qu'elle place (sur la rangée ou descendu sur la voie suivante ; déplacé : non compté). */
   onTopFree?(y: number): void;
@@ -378,6 +381,24 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   const [statusBox, setStatusBox] = createSignal<Box>(ZERO, { equals: sameBox });
   const statusW = (): number => statusBox().w;
   const [tools, setTools] = createSignal<Placed | null>(null);
+  /** OG11 × OG4 : îlots latéraux de début posés (par id de barre) ; le panneau d'options se pose à droite du plus à droite. */
+  const [sidePlaced, setSidePlaced] = createSignal<Readonly<Record<string, Rect>>>({});
+  const sideStart = createMemo((): Rect | null => {
+    let best: Rect | null = null;
+    for (const r of Object.values(sidePlaced())) if (r.w > 0 && r.h > 0 && (best === null || r.x + r.w > best.x + best.w)) best = r;
+    return best;
+  });
+  /** Îlot d'outils posé et non déplacé : le panneau d'options passe dessous s'il le surplombe (comme la voie latérale). */
+  const toolsAbove = createMemo((): readonly Rect[] => {
+    const t = tools();
+    return t === null || t.moved ? [] : [{ x: t.x, y: t.y, w: t.w, h: t.h }];
+  });
+  const placeSide = (id: string, p: Placed | null): void => {
+    setSidePlaced((m) => {
+      const { [id]: _old, ...rest } = m;
+      return p === null ? rest : { ...rest, [id]: { x: p.x, y: p.y, w: p.w, h: p.h } };
+    });
+  };
   /** Îlot posé par `left` / `top` dans le calque : centré, latéral ou mobile ; les autres vont dans leur groupe de coin. */
   const free = (b: Bar): boolean => isCentered(anchorOf(b)) || isSide(anchorOf(b)) || MOVABLE_ROLES.has(b.role);
   const byAnchor = (anchor: Anchor) => createMemo(() => props.bars().filter((b) => !free(b) && anchorOf(b) === anchor));
@@ -450,7 +471,14 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         corners={isSide(anchor) ? sideCornersOf(bar.role) : anchor.startsWith("top") ? topCorners : bottomCorners}
         sheet={sheet}
         {...(props.watch !== undefined ? { watch: props.watch } : {})}
-        {...(bar.role === "tools" ? { onPlaced: (p: Placed | null) => setTools(p) } : {})}
+        {...(bar.role === "tools" || anchor === "side-start"
+          ? {
+              onPlaced: (p: Placed | null) => {
+                if (bar.role === "tools") setTools(p);
+                if (anchor === "side-start") placeSide(bar.id, p);
+              },
+            }
+          : {})}
       >
         {(c, expand) => props.render(bar, c, expand)}
       </Island>
@@ -458,6 +486,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   };
   return (
     <div ref={layer} class="rb-islands">
+      {props.extra?.(sideStart, toolsAbove)}
       <div ref={topStart} class="rb-corner" data-corner="top-start">
         <div ref={menu} class="rb-corner-menu">
           {islands(starts)}

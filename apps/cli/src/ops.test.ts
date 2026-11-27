@@ -39,9 +39,12 @@ describe("lecture d'une opération (D6)", () => {
     expect(codeOf(() => parseOp({ type: "CommitStroke", page: "p", points: [1, "a"], style }, ctx()))).toBe("usage");
     expect(codeOf(() => parseOp({ type: "Erase", page: "p", path: "0,0", radius: 4, mode: "object" }, ctx()))).toBe("usage");
   });
-  it("COMMAND_TYPES couvre les 35 commandes de Command, sans doublon", () => {
+  it("COMMAND_TYPES couvre les 36 commandes de Command, sans doublon", () => {
     expect(ALL_COMMANDS).toBe(true);
-    expect(new Set(COMMAND_TYPES).size).toBe(35);
+    expect(new Set(COMMAND_TYPES).size).toBe(36);
+  });
+  it("SetStyle accepté", () => {
+    expect(COMMAND_TYPES).toContain("SetStyle");
   });
   it("Restack lu (T13, D15) : références d'éléments résolues, rang gardé", () => {
     const op = parseOp({ type: "Restack", ids: ["$1.2", "$1"], to: 0 }, ctx());

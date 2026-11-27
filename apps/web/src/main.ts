@@ -16,7 +16,7 @@ import { createAssetStore } from "./core/asset-store";
 import { createMyBackgrounds, probeImage } from "./app/my-backgrounds";
 import { fetchPackFiles, sourceThumbnail } from "./app/backgrounds-apply";
 import type { ThumbDeps } from "./app/thumbnail";
-import { createBoardSession, type SessionShared } from "./app/board-session";
+import { createBoardSession, createSharedItemStyle, type SessionShared } from "./app/board-session";
 import { pageShortcut } from "./engine/engine";
 import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
@@ -229,6 +229,8 @@ async function start(): Promise<void> {
     container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker, modelView,
     ...(ports === null ? {} : { mediaUrl: ports.assetUrl }),
     pageMode: () => active.profile().behavior.pageMode,
+    // OG11 (déc. 23) : style courant gardé sur l'appareil ; `device` (plus bas) n'est lu qu'à la création d'une session.
+    ...createSharedItemStyle(() => device.itemStyle(), (s) => void device.setItemStyle(s)),
   };
 
   // C16 (O24) : capacité `officeConverter` lue de la coque avant le profil (convertisseur cherché une fois au lancement).

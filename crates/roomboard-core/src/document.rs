@@ -16,10 +16,10 @@ use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 #[cfg(test)]
 use crate::element::ImageView;
 use crate::element::{
-    backdrop_view, finite_positive, out_f64, out_string, out_transform, read_backdrop, read_group,
-    read_image, read_style, read_unknown, unknown_view, ElementView, FillView, PageLayout,
-    PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH, INFINITE_MODE,
-    PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
+    backdrop_view, finite_positive, look_view, out_f64, out_string, out_transform, read_backdrop,
+    read_group, read_image, read_style, read_unknown, unknown_view, ElementView, FillView,
+    PageLayout, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH,
+    INFINITE_MODE, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
@@ -376,6 +376,7 @@ impl Document {
         let view = match out_string(e.get(&txn, "kind")).as_deref() {
             Some("stroke") => Some(ElementView {
                 style: Some(read_style(&txn, e)?),
+                look: look_view(&txn, e),
                 ..ElementView::bare(id, "stroke", out_transform(e.get(&txn, "transform"))?)
             }),
             Some("shape") => {
@@ -389,6 +390,7 @@ impl Document {
                         h: s.h,
                         fill: s.fill,
                     }),
+                    look: look_view(&txn, e),
                     ..ElementView::bare(id, "shape", transform)
                 })
             }
@@ -408,6 +410,7 @@ impl Document {
                         box_height: t.box_height,
                         spans,
                     }),
+                    look: look_view(&txn, e),
                     ..ElementView::bare(id, "text", transform)
                 })
             }
@@ -415,6 +418,7 @@ impl Document {
                 let (transform, image) = read_image(&txn, e)?;
                 Some(ElementView {
                     image: Some(image),
+                    look: look_view(&txn, e),
                     ..ElementView::bare(id, "image", transform)
                 })
             }
@@ -807,6 +811,7 @@ impl Default for Document {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::element::Look;
 
     #[test]
     fn new_document_has_no_page() {
@@ -968,6 +973,7 @@ mod tests {
                 color: "#000000".into(),
                 width: 4.0,
             },
+            look: Look::default(),
         })
         .expect("commit")
         .ids[0]
@@ -1439,6 +1445,7 @@ mod tests {
                     page: p.clone(),
                     points: vec![10.0, 10.0, 0.5, 60.0, 60.0, 0.5],
                     style: pen.clone(),
+                    look: Look::default(),
                 },
                 "shape" => Command::AddShape {
                     page: p.clone(),
@@ -1449,6 +1456,7 @@ mod tests {
                     y1: 40.0,
                     style: pen.clone(),
                     fill: None,
+                    look: Look::default(),
                 },
                 "text" => Command::SetText {
                     page: p.clone(),
@@ -1461,6 +1469,7 @@ mod tests {
                     box_width: 600.0,
                     box_height: 45.0,
                     spans: None,
+                    look: Look::default(),
                 },
                 "image" => Command::AddImage {
                     page: p.clone(),

@@ -1,7 +1,7 @@
 //! Scénarios S2, S3 et S4 du cadrage, au niveau du cœur (sans interface).
 use roomboard_core::commands::{Command, CommandError, EraseMode};
 use roomboard_core::document::Document;
-use roomboard_core::element::StrokeStyle;
+use roomboard_core::element::{Look, StrokeStyle};
 use roomboard_core::format::{load, save, SaveMeta};
 use roomboard_core::query::Bounds;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextAttr};
@@ -33,6 +33,7 @@ fn commit(d: &mut Document, page: &str, pts: Vec<f32>) -> String {
         page: page.into(),
         points: pts,
         style: pen(),
+        look: Look::default(),
     })
     .expect("commit")
     .ids[0]
@@ -142,6 +143,7 @@ fn s3_text_stroke_shape_survive_save_load() {
             box_width: 600.0,
             box_height: 45.0,
             spans: None,
+            look: Look::default(),
         })
         .expect("texte")
         .ids[0]
@@ -157,6 +159,7 @@ fn s3_text_stroke_shape_survive_save_load() {
             y1: 300.0,
             style: pen(),
             fill: None,
+            look: Look::default(),
         })
         .expect("rect")
         .ids[0]
@@ -194,6 +197,7 @@ fn s4_transform_two_elements_then_undo_twice() {
         y1: 700.0,
         style: pen(),
         fill: None,
+        look: Look::default(),
     })
     .expect("rect");
     let ids = d.ids_in_rect(
@@ -248,6 +252,7 @@ fn s2_rich_text_survives_save_load() {
             box_width: 600.0,
             box_height: 90.0,
             spans: None,
+            look: Look::default(),
         })
         .expect("texte")
         .ids[0]
@@ -319,6 +324,7 @@ fn rich_text_set_text_round_trips() {
             box_width: 600.0,
             box_height: 45.0,
             spans: Some(spans),
+            look: Look::default(),
         })
         .expect("texte")
         .ids[0]

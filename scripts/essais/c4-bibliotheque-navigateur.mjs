@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clickItem, coqueCsp, DIST, Echec, frames, gitSha, item, loadPlaywright, ROOT, serve, stageMouse, VIEWPORT } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, Echec, frames, gitSha, item, loadPlaywright, ROOT, serve, stageMouse, VIEWPORT , foldOptions } from "./commun.mjs";
 
 const LABEL = "C4 bibliothèque";
 const FIXED = new Date("2026-11-21T08:00:00.000Z");
@@ -231,6 +231,7 @@ async function main() {
       return route.abort();
     });
     const page = await context.newPage();
+    await foldOptions(page);
     await page.clock.setFixedTime(FIXED);
     await scenario(page, `http://127.0.0.1:${port}/?fichiers=repli`, { captures: process.argv.includes("--captures"), tmp });
     if (external.length > 0) throw new Echec(`requêtes hors de 127.0.0.1 : ${external.join(", ")}`);

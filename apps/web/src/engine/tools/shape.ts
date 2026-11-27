@@ -1,10 +1,13 @@
 /**
  * Outil Formes (D13, D38, CL4-7) : rectangle, ellipse, ligne, flèche. Aperçu dans le calque d'édition (CL4-1), une
  * seule AddShape au relâché ; "cancel" et "abort" n'écrivent rien (D39). Maj : carré, cercle, angle par pas de 15°.
- * Couleur et épaisseur du stylo, sans remplissage. Plus petit que 4 px écran sur les deux axes (points bruts), points
+ * Style courant (OG11) : couleur, épaisseur, fond (rectangle, ellipse) et aspect `look`. Plus petit que 4 px écran sur les deux axes (points bruts), points
  * aimantés confondus, ou rectangle et ellipse aplatis par l'aimant : ni aperçu ni écriture (même prédicat, `drawn`).
  */
 import type { ShapeKind, StrokeStyle } from "../../core/api";
+import { lookFrom, type Look } from "../../core/look";
+import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../item-style";
+import { newSeed } from "../render/sketch";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import { EMPTY_OVERLAY, type ShapePreview } from "../render/overlay";
@@ -30,7 +33,12 @@ export function constrainEnd(kind: ShapeKind, x0: number, y0: number, x1: number
 
 interface Draft {
   readonly page: string;
+  /** Couleur et épaisseur écrites (AddShape) ; le reste du style courant est dans `look` et `fill`. */
   readonly style: StrokeStyle;
+  readonly fill: string | null;
+  /** OG11 : aspect du geste, graine comprise, figé à l'ouverture (même tracé à l'aperçu et posé, déc. 12) ; absent : neutre. */
+  readonly look: Look | undefined;
+  readonly seed: number | null;
   readonly x0: number;
   readonly y0: number;
   x1: number;
@@ -43,7 +51,8 @@ interface Draft {
 
 const NONE: ReadonlySet<string> = new Set<string>();
 
-export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => StrokeStyle): GestureTool {
+/** OG11 : le style courant (`ItemStyle`) ; un style de stylo seul (couleur, épaisseur) vaut le reste neutre. */
+export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => StrokeStyle & Partial<ItemStyle>): GestureTool {
   const drafts = new Map<number, Draft>();
   /** Point aimanté de la page (C9, G8) ; brut si Alt est tenue ou si rien n'accroche. */
   const snap = (page: string, x: number, y: number): readonly [number, number] =>
@@ -90,7 +99,12 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       const [x, y] = screenToWorld(cam, s.x, s.y);
       const page = ctx.page();
       const startAlt = ctx.alt?.() === true;
-      drafts.set(pointerId, { page, style: style(), x0: x, y0: y, x1: x, y1: y, zoom: cam.zoom, start: snap(page, x, y), startAlt });
+      const st: ItemStyle = { ...DEFAULT_ITEM_STYLE, ...style() };
+      // Graine tirée au début du geste et gardée dans le brouillon, jamais au relâché (déc. 12).
+      const seed = st.roughness > 0 ? newSeed() : null;
+      const look = lookFrom(kind === "rect" ? st : { ...st, roundness: "sharp" }, seed);
+      const fill = kind === "rect" || kind === "ellipse" ? st.background : null;
+      drafts.set(pointerId, { page, style: { color: st.color, width: st.width }, fill, look, seed, x0: x, y0: y, x1: x, y1: y, zoom: cam.zoom, start: snap(page, x, y), startAlt });
     },
     extend(pointerId, samples) {
       const d = drafts.get(pointerId);
@@ -111,7 +125,7 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       const c = drawn(d);
       if (c === null) return;
       const [x0, y0, x1, y1] = c;
-      ctx.run({ type: "AddShape", page: d.page, shape: kind, x0, y0, x1, y1, style: d.style, fill: null });
+      ctx.run({ type: "AddShape", page: d.page, shape: kind, x0, y0, x1, y1, style: d.style, fill: d.fill, ...(d.look ? { look: d.look } : {}) });
     },
     live(): LivePart {
       if (drafts.size === 0) return { strokes: [], erasers: [], hidden: NONE };
@@ -120,7 +134,17 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
         const c = drawn(d);
         if (c === null) continue;
         const [x0, y0, x1, y1] = c;
-        shapes.push({ shape: kind, x0, y0, x1, y1, style: d.style, fill: null });
+        shapes.push({
+          shape: kind,
+          x0,
+          y0,
+          x1,
+          y1,
+          style: d.style,
+          fill: d.fill,
+          ...(d.look ? { look: d.look } : {}),
+          ...(d.seed !== null ? { seed: d.seed } : {}),
+        });
       }
       if (shapes.length === 0) return { strokes: [], erasers: [], hidden: NONE };
       return { strokes: [], erasers: [], hidden: NONE, overlay: { ...EMPTY_OVERLAY, shapes } };

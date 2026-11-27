@@ -10,7 +10,7 @@
 // synthétique), le tactile, la rotation, l'export, le multi-fenêtre.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { DIST, ROOT, VIEWPORT, Echec, frames, gitSha, inkIn, item, loadPlaywright, openSideOf, serve, stageMouse } from "./commun.mjs";
+import { DIST, ROOT, VIEWPORT, Echec, foldOptions, frames, gitSha, inkIn, item, loadPlaywright, openSideOf, serve, stageMouse } from "./commun.mjs";
 
 const LABEL = "S3/S4 lot 4";
 const NON_COUVERT = [
@@ -364,6 +364,7 @@ async function main() {
       return 2;
     }
     const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+    await foldOptions(page);
     await scenario(page, `http://127.0.0.1:${port}/`, process.argv.includes("--captures"));
     console.log(`${LABEL} : OK`);
     return 0;

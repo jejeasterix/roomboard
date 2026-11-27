@@ -1,3 +1,4 @@
+import { parseItemStyle, type ItemStyle } from "./engine/item-style";
 import type { KeyValue } from "./profile-store";
 
 // Réglages de l'appareil (cadrage design-l4, L4-14, Q4) : gardés sur le poste (stockage local), jamais dans le profil
@@ -7,6 +8,9 @@ import type { KeyValue } from "./profile-store";
 /** Cadre violet de l'annotation : « non » quand il est masqué ; absente (ou toute autre valeur) : affiché. */
 export const FRAME_KEY = "roomboard.annotation.cadre";
 const FRAME_HIDDEN = "non";
+
+/** OG11 (déc. 23) : style courant commun aux outils (`ItemStyle`), JSON ; illisible : style par défaut (null). */
+export const ITEM_STYLE_KEY = "roomboard.style-courant";
 
 /** design-l2 (L2-7, DA-L2-3) : position et repli d'un îlot, par profil et par barre, sur le poste ; jamais dans le
  *  profil (format `.rbprofile` inchangé). Valeur : JSON `{ "x", "y", "collapsed" }`, champs facultatifs. */
@@ -87,6 +91,10 @@ export interface DeviceSettings {
   island(profileId: string, barId: string): IslandState;
   /** Vrai si gardé sur l'appareil ; faux : mémoire seule. Ne déclenche pas `onChange`. */
   setIsland(profileId: string, barId: string, s: IslandState): boolean;
+  /** OG11 (déc. 23) : style courant gardé ; null : rien de gardé ou illisible (style par défaut). */
+  itemStyle(): ItemStyle | null;
+  /** Vrai si gardé sur l'appareil ; faux : mémoire seule. Ne déclenche pas `onChange`. */
+  setItemStyle(s: ItemStyle): boolean;
   /** personnalisation-1a (T2) : onglet et vignettes de la barre latérale ; rien ou illisible : `{ tab: "pages", thumb: "m" }`. */
   sidebar(): SidebarState;
   /** Gardé en mémoire, puis sur le poste s'il le permet. Ne déclenche pas `onChange` (comme `setIsland`). */
@@ -106,6 +114,8 @@ export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
   let frame = readFrame(kv);
   const listeners = new Set<() => void>();
   const islands = new Map<string, IslandState>();
+  /** Style courant écrit dans cette séance (gardé même si le stockage refuse) ; undefined : lire le stockage. */
+  let item: ItemStyle | null | undefined;
   let sidebar: SidebarState | null = null;
   return {
     frame: () => frame,
@@ -142,6 +152,25 @@ export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
       try {
         if (text === null) kv.removeItem(key);
         else kv.setItem(key, text);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    itemStyle() {
+      if (item !== undefined) return item;
+      try {
+        return parseItemStyle(kv?.getItem(ITEM_STYLE_KEY) ?? null);
+      } catch {
+        return null;
+      }
+    },
+    setItemStyle(s) {
+      const text = JSON.stringify(s);
+      item = parseItemStyle(text);
+      if (kv === null) return false;
+      try {
+        kv.setItem(ITEM_STYLE_KEY, text);
         return true;
       } catch {
         return false;

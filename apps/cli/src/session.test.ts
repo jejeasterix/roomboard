@@ -26,6 +26,14 @@ describeWasm("session (D5, D6, D7, DA4)", () => {
     expect(st.state).toMatchObject({ schema: "roomboard-cli/1", file: null, canUndo: false, canRedo: true });
     expect(st.state.pages[0].elements).toEqual([]);
   });
+  it("SetStyle : opacité hors domaine refusée, 44.6 arrondie à 45 dans l'état", async () => {
+    const s = await fresh();
+    await s.exec(JSON.stringify(rect("$page:0")));
+    await expect(s.exec(JSON.stringify({ type: "SetStyle", ids: ["$1"], patch: { opacity: 150 } }))).rejects.toMatchObject({ code: "command" });
+    await s.exec(JSON.stringify({ type: "SetStyle", ids: ["$1"], patch: { opacity: 44.6 } }));
+    const st: Json = await s.exec('{"op":"state"}');
+    expect(JSON.stringify(st.state)).toContain('"opacity":45');
+  });
   it("AddPage : $n vise la page créée", async () => {
     const s = await fresh();
     const added: Json = await s.exec('{"type":"AddPage","after":"$page:0"}');

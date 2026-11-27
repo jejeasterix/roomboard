@@ -11,6 +11,7 @@ import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, type PageRect
 import { frameOfView, PEN_HALF_WIDTH } from "./canvas2d";
 import type { EditOverlay } from "./overlay";
 import type { EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer } from "./renderer";
+import { setLiveOpacity } from "./renderer";
 
 export type Rgba = readonly [number, number, number, number];
 
@@ -332,6 +333,7 @@ export class WebGL2LiveRenderer implements Renderer {
   }
 
   drawLive(live: LiveLayer, camera: Camera): void {
+    setLiveOpacity(this.gl.canvas, live.opacity);
     if (this.contextLost) return;
     const gl = this.gl;
     gl.disable(gl.SCISSOR_TEST);

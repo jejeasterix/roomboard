@@ -30,6 +30,7 @@ import type {
   TextSpan,
 } from "./api";
 import { MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, UNKNOWN_BOX } from "./api";
+import { toLook } from "./look";
 import { isAssetId } from "./asset-store";
 import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
@@ -166,6 +167,10 @@ export function toTable(v: unknown): TableData {
   };
 }
 
+/** OG11 : nombre passé au pont en `f64`. Absent ou null : `None` ; autre chose qu'un nombre : NaN, refusé par le pont
+ *  (wasm-bindgen appliquerait `ToNumber`, « 45 » deviendrait 45, là où la fausse liaison refuse). */
+const num = (v: unknown): number | undefined => (v === undefined || v === null ? undefined : typeof v === "number" ? v : Number.NaN);
+
 /** Kind connu : forme contrôlée ; kind non reconnu : UnknownElement (U3, K8) ; id et transform toujours exigés. */
 export function toElementView(v: unknown): ElementView | null {
   if (v === null || v === undefined) return null;
@@ -175,7 +180,9 @@ export function toElementView(v: unknown): ElementView | null {
   // C3 (Z1) : chemin de groupes, chaînes non vide ; absent (Option::None → undefined) laissé absent.
   const group = v["group"];
   if (group !== undefined && group !== null && (!isStrings(group) || group.length === 0)) throw new Error(ELEMENT);
-  const base = { id, transform: toMatrix(v["transform"]), ...(isStrings(group) ? { group } : {}) };
+  // OG11 : aspect lu défensivement (`toLook`), omis s'il est neutre.
+  const look = toLook(v["look"]);
+  const base = { id, transform: toMatrix(v["transform"]), ...(isStrings(group) ? { group } : {}), ...(look ? { look } : {}) };
   switch (kind) {
     case "stroke":
       return { ...base, kind, style: toStyle(v["style"]) };
@@ -520,20 +527,38 @@ class WasmCoreDocument implements CoreDocument {
       case "MovePage": return toChange(this.d.move_page(cmd.page, cmd.to));
       case "DuplicatePage": return toChange(this.d.duplicate_page(cmd.page));
       case "Restack": return toChange(this.d.restack([...cmd.ids], cmd.to));
-      case "CommitStroke": return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width));
+      case "CommitStroke": {
+        const l = cmd.look;
+        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity)));
+      }
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
       case "Group": return toChange(this.d.group([...cmd.ids]));
       case "Ungroup": return toChange(this.d.ungroup([...cmd.ids]));
-      case "AddShape":
+      case "AddShape": {
+        const l = cmd.look;
         return toChange(
-          this.d.add_shape(cmd.page, cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1, cmd.style.color, cmd.style.width, cmd.fill ?? undefined),
+          this.d.add_shape(cmd.page, cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1, cmd.style.color, cmd.style.width, cmd.fill ?? undefined,
+            l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity)),
         );
-      case "SetText":
-        // Avec un id, `page`, `x` et `y` ne placent rien (la position passe par Transform), comme la fausse liaison.
+      }
+      case "SetText": {
+        // Avec un id, `page`, `x` et `y` ne placent rien (la position passe par Transform), comme la fausse liaison ;
+        // `look` est contrôlé, puis ignoré par le cœur sur un texte existant.
+        const l = cmd.look;
         return toChange(
-          this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight, spansArg(cmd.spans)),
+          this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight, spansArg(cmd.spans),
+            l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity)),
         );
+      }
+      case "SetStyle": {
+        // OG11 : `"x" in p` dit si le champ est touché ; null ou absent dans un champ touché le retire (Option::None).
+        const p = cmd.patch;
+        return toChange(this.d.set_style(
+          [...cmd.ids], p.color ?? undefined, num(p.width), "fill" in p, p.fill ?? undefined, "strokeStyle" in p, p.strokeStyle ?? undefined,
+          num(p.roughness), "roundness" in p, p.roundness ?? undefined, num(p.opacity),
+        ));
+      }
       case "Transform":
         return toChange(this.d.transform([...cmd.ids], new Float64Array(cmd.matrix)));
       case "AddImage": {

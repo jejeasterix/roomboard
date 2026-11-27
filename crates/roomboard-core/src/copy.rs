@@ -340,6 +340,7 @@ impl Document {
 
 #[cfg(test)]
 mod tests {
+    use crate::element::Look;
     use yrs::{Any, Array, Map, Out};
 
     use crate::asset::AssetRef;
@@ -369,6 +370,7 @@ mod tests {
             page: p.into(),
             points,
             style: pen(),
+            look: Look::default(),
         })
         .expect("trait")
         .ids[0]
@@ -384,6 +386,7 @@ mod tests {
             y1: 150.0,
             style: pen(),
             fill: None,
+            look: Look::default(),
         })
         .expect("forme")
         .ids[0]
@@ -505,6 +508,7 @@ mod tests {
                 box_width: 400.0,
                 box_height: 45.0,
                 spans: None,
+                look: Look::default(),
             })
             .expect("texte")
             .ids[0]

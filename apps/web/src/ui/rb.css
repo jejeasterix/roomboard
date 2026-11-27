@@ -268,6 +268,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 :is([data-profiles], [data-menu-list]) button:disabled { color: var(--rf-text-muted-aa); cursor: default; }
 :is([data-profiles], [data-menu-list]) button:disabled .rb-icon { color: var(--rf-gray-500); }
 :is([data-profiles], [data-menu-list]) button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+.rb-menu-key { margin-inline-start: auto; padding-inline-start: 16px; color: var(--rf-text-muted-aa); font-size: 0.875em; }
+@media (max-width: 599px) { .rb-menu-key { display: none; } }
 .rb-menu-blank { flex: none; inline-size: var(--rb-icon); }
 .rb-menu-sep { border-block-start: 1px solid var(--rf-gray-300); margin: 4px 0; }
 .rb-editor { display: grid; gap: var(--rb-gap); padding: var(--rb-pad); }
@@ -412,3 +414,29 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 /* C16 (O25) : conversion Office en cours : curseur d'attente sur la scène (le moteur pose son curseur en ligne). */
 :root[data-conversion="en-cours"] .rb-stage,
 :root[data-conversion="en-cours"] .rb-stage * { cursor: progress !important; }
+
+/* OG11 (T10) : panneau d'options de l'outil, îlot à gauche sous la rangée du haut ; cibles = --rb-btn-size posé par le
+   panneau (44, 48 ou 64 px), traits fins de 1,5 comme les icônes voisines. */
+/* T22 : z 0 et premier du calque, sous tous les îlots, menus et panneaux flottants ; compact : écart de 4 entre sections,
+   le repli (absolu, en haut à droite) partage la rangée du premier titre. */
+.rb-options { position: absolute; z-index: 0; flex-direction: column; align-items: stretch; gap: var(--rf-space-xs); box-sizing: border-box; max-block-size: calc(100% - 100px); overflow-y: auto; padding: 12px; }
+.rb-options:not([data-collapsed]) > [data-options-toggle] { position: absolute; inset-block-start: 12px; inset-inline-end: 12px; }
+.rb-options-sec:first-of-type h3 { display: flex; align-items: center; min-block-size: var(--rb-btn-size); padding-inline-end: var(--rb-btn-size); }
+.rb-options[data-collapsed] { padding: 4px; inline-size: auto; }
+.rb-options .rb-opt-btn { display: inline-grid; place-items: center; flex: none; inline-size: var(--rb-btn-size); block-size: var(--rb-btn-size); padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
+.rb-options .rb-opt-btn:hover, .rb-options .rb-pick:hover { background: var(--rf-gray-50); }
+.rb-options button:focus-visible, .rb-options input:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+.rb-options-sec { display: grid; gap: 4px; min-inline-size: 0; }
+.rb-options-sec h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--rf-text-muted-aa); }
+.rb-pick-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.rb-pick { display: grid; place-items: center; flex: none; inline-size: var(--rb-btn-size); block-size: var(--rb-btn-size); padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; cursor: pointer; }
+.rb-pick-dot { display: block; inline-size: 24px; block-size: 24px; box-sizing: border-box; border-radius: var(--rf-radius-md); border: 1px solid var(--rf-gray-300); }
+.rb-pick[data-transparent] .rb-pick-dot { background: linear-gradient(to top left, transparent calc(50% - 0.75px), var(--rf-gray-500) calc(50% - 0.75px) calc(50% + 0.75px), transparent calc(50% + 0.75px)); }
+.rb-pick[aria-pressed="true"] { background: var(--rf-violet-100); box-shadow: inset 0 0 0 1px var(--rf-violet-600); }
+.rb-options .rb-radios[data-look="segment"] { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.rb-options .rb-radios[data-look="segment"] .rb-radio { min-block-size: var(--rb-btn-size); min-inline-size: var(--rb-btn-size); padding: 0; display: grid; place-items: center; }
+.rb-options .rb-radios[data-look="segment"] .rb-radio-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.rb-options .rb-radios[data-look="segment"] .rb-radio:not(:has(.rb-icon)) .rb-radio-label { position: static; inline-size: auto; block-size: auto; clip-path: none; }
+.rb-opacity { display: flex; align-items: center; gap: 8px; }
+.rb-options input[type="range"] { flex: 1 1 auto; min-inline-size: 0; block-size: 44px; accent-color: var(--rf-violet-600); }
+.rb-opacity output { flex: none; min-inline-size: 3.5em; font-size: 14px; color: var(--rf-gray-800); }

@@ -12,7 +12,9 @@ import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from ".
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { editAction, enterAction, inEditable, isPanKey, keyAction, orderKey, pageKey, type KeyLike } from "./input/keys";
+import { editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
+import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
+import type { LookPatch } from "../core/look";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
@@ -58,6 +60,9 @@ export interface EngineState {
   readonly fillColor?: string | null;
   /** Tolérance du pot sur une image (C6b, B10), entier de 0 à 100 ; facultative comme fillColor (le moteur la publie). */
   readonly fillTolerance?: number;
+  /** OG11 (déc. 23) : style courant des créations et du panneau d'options. Facultatif comme fillColor (PC5) : le moteur
+   *  le publie toujours. */
+  readonly itemStyle?: ItemStyle;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -74,11 +79,12 @@ export interface WheelInput {
 }
 
 export interface ToolFactories {
-  pen(ctx: ToolContext, style: () => StrokeStyle): GestureTool;
+  /** OG11 : le style courant (`ItemStyle` étend la couleur et l'épaisseur du stylo). */
+  pen(ctx: ToolContext, style: () => ItemStyle): GestureTool;
   eraser(ctx: ToolContext, mode: () => EraseMode): GestureTool;
   /** Outils d'édition (lot 4) ; absents : outils inertes (tests du moteur, amorce partielle). */
   select?(ctx: ToolContext): SelectionTool;
-  shape?(ctx: ToolContext, kind: ShapeKind, style: () => StrokeStyle): GestureTool;
+  shape?(ctx: ToolContext, kind: ShapeKind, style: () => ItemStyle): GestureTool;
   text?(ctx: ToolContext, style: () => TextStyle): TextTool;
   /** Outil Tableau (C10a) ; absent : outil inerte. */
   table?(ctx: ToolContext, style: () => TextStyle): TableTool;
@@ -92,6 +98,8 @@ export interface EngineDeps {
   readonly frames: FrameLoopDeps;
   readonly tools: ToolFactories;
   readonly penStyle?: StrokeStyle;
+  /** OG11 (déc. 23) : style courant gardé sur l'appareil ; absent : `penStyle` fusionné au style par défaut. */
+  readonly itemStyle?: ItemStyle;
   /** C5 (I29) : couleur d'origine d'un pixel source, pour la pipette ; absent : la pipette ne rend rien. */
   readonly images?: { colorAt(asset: string, x: number, y: number): string | null; dropPreview?(id: string): void };
   /** OF83 : haut de la page ajustée, en px de scène, lu à chaque ajustement (sous les îlots du haut) ; absent : 16. */
@@ -208,8 +216,20 @@ export interface Engine {
   orbitModel(id: string, opts: OrbitOptions): ModelOrbit | null;
   /** C5 (I24) : message dans l'état (`#etat`), sans écriture. */
   report(message: string): void;
-  /** Préréglage reçu de la barre : couleur et épaisseur du stylo (et des formes, texte : couleur). Invalide : ignoré. */
+  /** Préréglage reçu de la barre : couleur et épaisseur du style courant, fusionnées (le reste est gardé, S2.4) ; la
+   *  sélection n'est pas écrite. Invalide : ignoré. */
   setPenStyle(s: StrokeStyle): void;
+  /** OG11 : écrit la sélection (un SetStyle, une étape ; champs invalides ignorés) et fusionne le style courant. */
+  setItemStyle(patch: Partial<ItemStyle>): void;
+  itemStyle(): ItemStyle;
+  /** OG11 : adopte tel quel le style courant venu de l'appareil (autre onglet) : ni sélection écrite, ni écho à `onItemStyle`. */
+  adoptItemStyle(s: ItemStyle): void;
+  /** Chaque changement du style courant (pour le garder sur l'appareil) ; rend le désabonnement. */
+  onItemStyle(cb: (s: ItemStyle) => void): () => void;
+  /** Supprime la sélection comme Suppr ; faux sans sélection. */
+  deleteSelection(): boolean;
+  /** OG11 (Ctrl+D) : copie de la sélection décalée de +10/+10, sélectionnée ; une étape ; faux sans sélection. */
+  duplicateSelection(): boolean;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
    *  invalide est ignorée. */
   setFillColor(color: string | null): void;
@@ -299,7 +319,9 @@ export function createEngine(deps: EngineDeps): Engine {
   if (first === undefined) throw new Error("document sans page");
   let pageId: string = first;
   let lastIndex = 0;
-  let style = deps.penStyle ?? DEFAULT_PEN_STYLE;
+  /** OG11 (déc. 23) : style courant, fusionné à chaque changement (jamais remplacé, S2.4). */
+  let item: ItemStyle = deps.itemStyle ?? (deps.penStyle ? mergeItemStyle(DEFAULT_ITEM_STYLE, deps.penStyle) : DEFAULT_ITEM_STYLE);
+  const itemListeners = new Set<(s: ItemStyle) => void>();
   let fillColor: string | null = DEFAULT_FILL_COLOR;
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
@@ -441,6 +463,7 @@ export function createEngine(deps: EngineDeps): Engine {
       textFormat: tool === "text" ? textTool.formatState() : tool === "table" ? tableTool.formatState() : null,
       fillColor,
       fillTolerance,
+      itemStyle: item,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -565,12 +588,12 @@ export function createEngine(deps: EngineDeps): Engine {
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   /** Style de texte des outils Texte et Tableau : couleur du stylo, taille par défaut. */
-  const textStyle = (): TextStyle => ({ color: style.color, size: DEFAULT_TEXT_SIZE });
+  const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}) });
   const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
   const textTool: TextTool = deps.tools.text?.(ctx, textStyle) ?? inertText();
-  const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => style) ?? inertTool();
+  const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => item) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
-    pen: deps.tools.pen(ctx, () => style),
+    pen: deps.tools.pen(ctx, () => item),
     eraser: deps.tools.eraser(ctx, () => eraserMode),
     select: selectTool,
     rect: shapeTool("rect"),
@@ -615,7 +638,11 @@ export function createEngine(deps: EngineDeps): Engine {
       lastHidden = hidden;
       lastOverlay = key;
     }
-    renderer.drawLive({ strokes: parts.flatMap((p) => p.strokes), erasers: parts.flatMap((p) => p.erasers) }, camera);
+    const opacity = parts.find((p) => p.opacity !== undefined && p.strokes.length > 0)?.opacity;
+    renderer.drawLive(
+      { strokes: parts.flatMap((p) => p.strokes), erasers: parts.flatMap((p) => p.erasers), ...(opacity !== undefined ? { opacity } : {}) },
+      camera,
+    );
     for (const cb of drawnListeners) cb(now);
     if (!toolList.some((t) => t.active()) && imageEdit?.gesture.active() !== true && orbit?.gesture.active() !== true) loop.stop();
   }
@@ -701,6 +728,38 @@ export function createEngine(deps: EngineDeps): Engine {
     },
   };
 
+  /** Champs du style courant en commande SetStyle (noms du cœur ; neutre = champ retiré). */
+  function patchOf(p: Partial<ItemStyle>): LookPatch {
+    return {
+      ...(p.color !== undefined ? { color: p.color } : {}),
+      ...(p.width !== undefined ? { width: p.width } : {}),
+      ...("background" in p ? { fill: p.background ?? null } : {}),
+      ...(p.strokeStyle !== undefined ? { strokeStyle: p.strokeStyle === "solid" ? null : p.strokeStyle } : {}),
+      ...(p.roughness !== undefined ? { roughness: p.roughness } : {}),
+      ...(p.roundness !== undefined ? { roundness: p.roundness === "round" ? "round" : null } : {}),
+      ...(p.opacity !== undefined ? { opacity: p.opacity } : {}),
+    };
+  }
+
+  /** Fusion du style courant (`mergeItemStyle`, jamais un remplacement) ; `writeSelection` : un SetStyle sur la
+   *  sélection, des seuls champs acceptés, une étape. */
+  function setItem(p: Partial<ItemStyle>, writeSelection: boolean): void {
+    const next = mergeItemStyle(item, p);
+    const keys = Object.keys(next) as (keyof ItemStyle)[];
+    const changed = keys.some((k) => next[k] !== item[k]);
+    item = next;
+    if (changed) for (const cb of [...itemListeners]) cb(item);
+    const sel = selectTool.selection();
+    if (writeSelection && sel.length > 0) {
+      const accepted = Object.fromEntries(keys.filter((k) => k in p && p[k] === next[k]).map((k) => [k, p[k]])) as Partial<ItemStyle>;
+      if (Object.keys(accepted).length > 0) {
+        run({ type: "SetStyle", ids: [...sel], patch: patchOf(accepted) });
+        return;
+      }
+    }
+    if (changed) emit();
+  }
+
   const view: ViewSink = {
     panBy(dx, dy) {
       setCamera(panCamera(camera, dx, dy));
@@ -731,6 +790,24 @@ export function createEngine(deps: EngineDeps): Engine {
     run,
     group,
     ungroup,
+    deleteSelection() {
+      const sel = selectTool.selection();
+      if (sel.length === 0) return false;
+      engine.deleteElements(sel);
+      return true;
+    },
+    duplicateSelection() {
+      const sel = selectTool.selection();
+      if (sel.length === 0) return false;
+      // Ni commande du cœur ni presse-papiers : l'extrait de la sélection réinséré à +10/+10 (une étape, copies sélectionnées).
+      const fragment = doc.extract(pageId, sel);
+      try {
+        const change = engine.insertFragment(fragment, 10, 10);
+        return change !== null && change.ids.length > 0;
+      } finally {
+        fragment.free();
+      }
+    },
     restack,
     bringToFront,
     sendToBack,
@@ -797,7 +874,7 @@ export function createEngine(deps: EngineDeps): Engine {
           imageEdit.cancelMode();
           return true;
         }
-        if (edit === "delete") return true;
+        if (edit === "delete" || objectKey(e) === "duplicate") return true;
         if (enterAction(e)) {
           if (imageEdit.mode() === "crop") imageEdit.finishCrop(true);
           return true;
@@ -812,19 +889,21 @@ export function createEngine(deps: EngineDeps): Engine {
         orbit.close();
         return true;
       }
+      // OG11 (DA-6, déc. 39) : Ctrl+D duplique ; toujours pris (preventDefault), comme Excalidraw : pas de favori du navigateur.
+      if (objectKey(e) === "duplicate") {
+        engine.duplicateSelection();
+        return true;
+      }
       if (edit !== null) {
         // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
         if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
         // PC18 : Échap avec l'outil Tableau (saisie fermée) retire d'abord la plage.
         if (edit === "escape" && tool === "table" && tableTool.clearRange()) return true;
-        const sel = selectTool.selection();
-        if (sel.length === 0) return false;
-        if (edit === "delete") engine.deleteElements(sel);
-        else {
-          selectTool.setSelection([]);
-          requestScene();
-          emit();
-        }
+        if (edit === "delete") return engine.deleteSelection();
+        if (selectTool.selection().length === 0) return false;
+        selectTool.setSelection([]);
+        requestScene();
+        emit();
         return true;
       }
       if (action === null) return false;
@@ -979,7 +1058,22 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     setPenStyle(s) {
       if (typeof s.color !== "string" || s.color === "" || !Number.isFinite(s.width) || !(s.width > 0)) return;
-      style = { color: s.color, width: s.width };
+      setItem({ color: s.color, width: s.width }, false);
+    },
+    setItemStyle(p) {
+      setItem(p, true);
+    },
+    itemStyle: () => item,
+    adoptItemStyle(s) {
+      const changed = (Object.keys(s) as (keyof ItemStyle)[]).some((k) => s[k] !== item[k]);
+      item = s;
+      if (changed) emit();
+    },
+    onItemStyle(cb) {
+      itemListeners.add(cb);
+      return () => {
+        itemListeners.delete(cb);
+      };
     },
     tableAction(a) {
       tableTool.act(a);
@@ -1035,6 +1129,7 @@ export function createEngine(deps: EngineDeps): Engine {
       stateListeners.clear();
       drawnListeners.clear();
       cameraListeners.clear();
+      itemListeners.clear();
     },
   };
   return engine;

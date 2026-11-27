@@ -18,6 +18,7 @@ pub mod page_look;
 pub mod query;
 pub mod rich_text;
 pub mod shape;
+pub mod style;
 pub mod table;
 #[cfg(feature = "zone")]
 pub mod zone;

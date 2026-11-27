@@ -179,3 +179,16 @@ describe("IconButton (L1-4)", () => {
     expect(tips()).toHaveLength(0);
   });
 });
+
+describe("Espace sur un bouton de barre", () => {
+  it("Espace n'est pas arrêté par IconButton : il atteint la fenêtre (la vue se déplace, même focus sur un bouton)", () => {
+    const seen: KeyboardEvent[] = [];
+    const on = (e: KeyboardEvent): void => { seen.push(e); };
+    window.addEventListener("keydown", on);
+    const { btn } = one();
+    btn.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.key).toBe(" ");
+    window.removeEventListener("keydown", on);
+  });
+});

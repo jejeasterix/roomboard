@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Toolbar as Bar } from "../toolbar";
 import {
-  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, beyondObstacles, sheetLane, sideCorners, tabsWidth,
-  type Anchor, type Corners,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, placeOptions, beyondObstacles, sheetLane, sideCorners, tabsWidth,
+  optionsWidth, topRowBottom, type Anchor, type Corners,
 } from "./island-place";
 
 const MID = { w: 1280, h: 900 };
@@ -168,6 +168,66 @@ describe("design-l2 T11 : #etat dans la rangée du haut", () => {
     expect(tabsWidth(MID, 80, 108, null, 100)).toBe(1280 - 16 - 108 - 8 - 80 - 100 - 8);
     expect(tabsWidth(MID, 80, 108, { x: 360, y: 16 }, 0)).toBe(360 - 8 - 80);
     expect(tabsWidth(MID, 80, 108, { x: 360, y: 16 }, 1000)).toBe(144);
+  });
+});
+
+describe("island-place : panneau d'options (OG11, T10)", () => {
+  it("à gauche sous la rangée du haut ; décalé par la barre latérale quand elle existe", () => {
+    expect(placeOptions(MID, null, 64)).toEqual({ x: 16, y: 72 });
+    expect(placeOptions(MID, { w: 80, h: 900 }, 64)).toEqual({ x: 88, y: 72 });
+    expect(topRowBottom(44)).toBe(16 + 44 + 8);
+  });
+  it("barre latérale d'OG4 à gauche, dépliée : panneau à sa droite, même haut, aucun recouvrement ; repliée : à droite de la colonne ; absente : contre le bord", () => {
+    const tops = topRowBottom(BUTTON_PX.m);
+    const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
+      a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    // Voie latérale de début (`laneOf`), barre dépliée de 325 px puis repliée à une colonne d'onglets.
+    for (const w of [325, BUTTON_PX.m + 8]) {
+      const lane = laneOf("side-start", { w, h: 600 }, MID, { ...TOP, foot: 56 });
+      const side = { x: lane.x, y: lane.y, w, h: 600 };
+      const p = placeOptions(MID, side, tops);
+      expect(p.y).toBe(tops + GAP);
+      expect(p.x).toBe(side.x + side.w + GAP);
+      expect(overlaps({ ...p, w: optionsWidth(BUTTON_PX.m), h: 500 }, side), `largeur ${w}`).toBe(false);
+    }
+    expect(placeOptions(MID, null, tops).x).toBe(EDGE);
+  });
+  it("îlot d'outils descendu qui surplombe le panneau (barre latérale dépliée) : panneau sous lui, aucun recouvrement ; hors de ses abscisses : inchangé", () => {
+    const tops = topRowBottom(BUTTON_PX.m);
+    const side = { x: 16, y: 80, w: 280, h: 600 };
+    const tools = { x: 170, y: 80, w: 940, h: 56 };
+    const w = optionsWidth(BUTTON_PX.m);
+    const p = placeOptions(MID, side, tops, [tools], w);
+    expect(p).toEqual({ x: 304, y: 80 + 56 + GAP });
+    const hit = p.x < tools.x + tools.w && tools.x < p.x + w && p.y < tools.y + tools.h;
+    expect(hit).toBe(false);
+    expect(placeOptions(MID, null, tops, [{ x: 400, y: 16, w: 300, h: 56 }], w)).toEqual({ x: 16, y: tops + GAP });
+  });
+  it("sous la rangée du haut : haut du panneau >= bas de l'îlot ☰ + GAP, en S, M, L", () => {
+    for (const size of ["s", "m", "l"] as const) {
+      const btn = BUTTON_PX[size];
+      const menuBottom = EDGE + btn + 8; // îlot ☰ posé à EDGE, haut de btn + 8
+      const y = placeOptions({ w: 1280, h: 800 }, null, topRowBottom(btn)).y;
+      expect(y, size).toBeGreaterThanOrEqual(menuBottom + GAP);
+    }
+  });
+  it("y reste dans la zone", () => {
+    expect(placeOptions({ w: 1280, h: 100 }, null, 400).y).toBe(84);
+  });
+});
+
+describe("optionsWidth (T22)", () => {
+  it("segments à largeur entière et icône (24) à x entier : 2 et 3 segments, trois tailles", async () => {
+    const { optionsWidth } = await import("./island-place");
+    for (const btn of [44, 48, 64]) {
+      const inner = optionsWidth(btn) - 2 * 12 - 2 * 4;
+      expect(inner).toBeGreaterThanOrEqual(5 * btn + 4 * 4 - 2 * 4);
+      for (const n of [2, 3]) {
+        expect(inner % n).toBe(0);
+        expect(((inner / n) - 24) % 2).toBe(0);
+      }
+    }
+    expect(optionsWidth(44)).toBe(260);
   });
 });
 

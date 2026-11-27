@@ -23,7 +23,7 @@ describe("FORMAT_LOTS (D9)", () => {
     expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".iwb", ".pdf", ".rbitem", ".rbpack", ".roomboard", ".ubz"]);
     expect(rows.find((r) => r.ext === ".pdf")?.notes.join(" ")).toContain("pdf-page");
     expect(rows.find((r) => r.ext === ".pdf")?.notes.join(" ")).toContain("aucun décodeur");
-    expect(rows).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: ["mode de page `mode` facultatif (`infinite`), hauteur portrait 3413,33 ; ordre des objets = ordre d'`elements` (`Restack`)"] });
+    expect(rows).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: ["mode de page `mode` facultatif (`infinite`), hauteur portrait 3413,33 ; ordre des objets = ordre d'`elements` (`Restack`)", "options d'aspect (strokeStyle, roughness, roundness, opacity)"] });
     expect(rows.find((r) => r.ext === ".rbitem")?.notes.join(" ")).toContain("--grid");
     expect(rows).toContainEqual(expect.objectContaining({ ext: ".rbitem", read: true, write: true, readLot: 2, writeLot: 1 }));
     expect(rows.find((r) => r.ext === ".svg")?.notes.join(" ")).toContain("300 × 150");

@@ -9,7 +9,7 @@ use roomboard_core::asset::AssetRef;
 use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
 use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, EraseMode};
 use roomboard_core::document::Document as CoreDocument;
-use roomboard_core::element::{PageLayout, StrokeStyle, Transform};
+use roomboard_core::element::{Look, PageLayout, StrokeStyle, Transform};
 use roomboard_core::fill::FillTarget;
 use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
 use roomboard_core::grid::{GridInput, GridLevelView, GridLines};
@@ -22,6 +22,7 @@ use roomboard_core::model3d::Model3dFormat;
 use roomboard_core::query::Bounds;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextAttr};
 use roomboard_core::shape::ShapeKind;
+use roomboard_core::style::StylePatch;
 use roomboard_core::table::TableAxis;
 use wasm_bindgen::prelude::*;
 
@@ -42,6 +43,44 @@ fn js_message<E: Display>(e: &E) -> String {
 
 fn cmd_err(e: CommandError) -> JsError {
     JsError::new(&js_message(&e))
+}
+
+/// OG11 : nombre venu de JS reçu en `f64` et vérifié avant conversion. Un paramètre `u8` ou `u32` serait tronqué par
+/// wasm-bindgen sans erreur (257 deviendrait 1, 2^32 + 5 deviendrait 5) : la borne se contrôle ici, jamais après.
+fn small_int(v: Option<f64>, max: f64) -> Result<Option<f64>, CommandError> {
+    match v {
+        None => Ok(None),
+        Some(x) if x.is_finite() && x.fract() == 0.0 && (0.0..=max).contains(&x) => Ok(Some(x)),
+        Some(_) => Err(CommandError::BadStyle),
+    }
+}
+
+/// Tracé : entier de 0..=2.
+fn roughness_arg(v: Option<f64>) -> Result<Option<u8>, CommandError> {
+    Ok(small_int(v, 2.0)?.map(|x| x as u8))
+}
+
+/// Aspect d'une création (OG11) : bornes des nombres vérifiées (tracé entier 0..=2, graine entière 0..=u32::MAX,
+/// opacité finie 0..=100 arrondie), hors bornes `BadStyle` ; le reste est assaini par le cœur (`Look::sanitized`).
+fn look_of(
+    stroke_style: Option<String>,
+    roughness: Option<f64>,
+    seed: Option<f64>,
+    roundness: Option<String>,
+    opacity: Option<f64>,
+) -> Result<Look, CommandError> {
+    let opacity = match opacity {
+        None => None,
+        Some(o) if o.is_finite() && (0.0..=100.0).contains(&o) => Some(o.round() as u8),
+        Some(_) => return Err(CommandError::BadStyle),
+    };
+    Ok(Look {
+        stroke_style,
+        roughness: roughness_arg(roughness)?,
+        seed: small_int(seed, f64::from(u32::MAX))?.map(|x| x as u32),
+        roundness,
+        opacity,
+    })
 }
 
 fn fmt_err(e: FormatError) -> JsError {
@@ -1273,16 +1312,24 @@ impl Document {
         to_js(&self.restack_inner(ids, to).map_err(cmd_err)?)
     }
 
+    /// OG11 : les cinq derniers arguments sont l'aspect (`look_of`), contrôlé avant tout le reste.
+    #[allow(clippy::too_many_arguments)]
     pub fn commit_stroke(
         &mut self,
         page: &str,
         points: &[f32],
         color: &str,
         width: f32,
+        stroke_style: Option<String>,
+        roughness: Option<f64>,
+        seed: Option<f64>,
+        roundness: Option<String>,
+        opacity: Option<f64>,
     ) -> Result<JsValue, JsError> {
+        let look = look_of(stroke_style, roughness, seed, roundness, opacity).map_err(cmd_err)?;
         to_js(
             &self
-                .commit_stroke_inner(page, points, color, width)
+                .commit_stroke_inner(page, points, color, width, look)
                 .map_err(cmd_err)?,
         )
     }
@@ -1317,12 +1364,48 @@ impl Document {
         color: &str,
         width: f32,
         fill: Option<String>,
+        stroke_style: Option<String>,
+        roughness: Option<f64>,
+        seed: Option<f64>,
+        roundness: Option<String>,
+        opacity: Option<f64>,
     ) -> Result<JsValue, JsError> {
+        let look = look_of(stroke_style, roughness, seed, roundness, opacity).map_err(cmd_err)?;
         to_js(
             &self
-                .add_shape_inner(page, shape, [x0, y0, x1, y1], color, width, fill)
+                .add_shape_inner(page, shape, [x0, y0, x1, y1], color, width, fill, look)
                 .map_err(cmd_err)?,
         )
+    }
+
+    /// OG11 (déc. 25) : `SetStyle`. Un champ `*_set` à faux laisse le champ ; à vrai avec `None`, le retire. Le tracé
+    /// arrive en `f64` (entier 0..=2 vérifié ici), l'opacité en `f64` (0..=100, arrondie par le cœur) ; hors bornes :
+    /// « style invalide », rien d'écrit ; rien ne change : aucune étape.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_style(
+        &mut self,
+        ids: Vec<String>,
+        color: Option<String>,
+        width: Option<f32>,
+        fill_set: bool,
+        fill: Option<String>,
+        stroke_style_set: bool,
+        stroke_style: Option<String>,
+        roughness: Option<f64>,
+        roundness_set: bool,
+        roundness: Option<String>,
+        opacity: Option<f64>,
+    ) -> Result<JsValue, JsError> {
+        let patch = StylePatch {
+            color,
+            width,
+            fill: fill_set.then_some(fill),
+            stroke_style: stroke_style_set.then_some(stroke_style),
+            roughness: roughness_arg(roughness).map_err(cmd_err)?,
+            roundness: roundness_set.then_some(roundness),
+            opacity,
+        };
+        to_js(&self.set_style_inner(ids, patch).map_err(cmd_err)?)
     }
 
     /// Avec un `id`, `page`, `x` et `y` ne placent rien (la position passe par `transform`) ; `x` et `y` restent
@@ -1340,7 +1423,13 @@ impl Document {
         box_width: f64,
         box_height: f64,
         spans: JsValue,
+        stroke_style: Option<String>,
+        roughness: Option<f64>,
+        seed: Option<f64>,
+        roundness: Option<String>,
+        opacity: Option<f64>,
     ) -> Result<JsValue, JsError> {
+        let look = look_of(stroke_style, roughness, seed, roundness, opacity).map_err(cmd_err)?;
         let spans = spans_arg(spans).map_err(cmd_err)?;
         to_js(
             &self
@@ -1353,6 +1442,7 @@ impl Document {
                     size,
                     [box_width, box_height],
                     spans,
+                    look,
                 )
                 .map_err(cmd_err)?,
         )
@@ -2020,6 +2110,14 @@ impl Document {
         })
     }
 
+    pub fn set_style_inner(
+        &mut self,
+        ids: Vec<String>,
+        patch: StylePatch,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetStyle { ids, patch })
+    }
+
     pub fn fill_inner(
         &mut self,
         page: &str,
@@ -2124,6 +2222,7 @@ impl Document {
         points: &[f32],
         color: &str,
         width: f32,
+        look: Look,
     ) -> Result<Change, CommandError> {
         let style = StrokeStyle {
             color: color.to_string(),
@@ -2133,6 +2232,7 @@ impl Document {
             page: page.to_string(),
             points: points.to_vec(),
             style,
+            look,
         })
     }
 
@@ -2161,6 +2261,7 @@ impl Document {
     }
 
     /// Nom de forme inconnu : `BadShape`, comme des coins non finis.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_shape_inner(
         &mut self,
         page: &str,
@@ -2169,6 +2270,7 @@ impl Document {
         color: &str,
         width: f32,
         fill: Option<String>,
+        look: Look,
     ) -> Result<Change, CommandError> {
         let shape = ShapeKind::parse(shape).ok_or(CommandError::BadShape)?;
         let [x0, y0, x1, y1] = corners;
@@ -2184,6 +2286,7 @@ impl Document {
                 width,
             },
             fill,
+            look,
         })
     }
 
@@ -2198,6 +2301,7 @@ impl Document {
         size: f32,
         boxes: [f64; 2],
         spans: Option<Vec<SpanInput>>,
+        look: Look,
     ) -> Result<Change, CommandError> {
         self.run(Command::SetText {
             page: page.to_string(),
@@ -2210,6 +2314,7 @@ impl Document {
             box_width: boxes[0],
             box_height: boxes[1],
             spans,
+            look,
         })
     }
 
@@ -2329,7 +2434,7 @@ mod tests {
             [500.0, 500.0, 0.5, 100.0, 500.0, 0.5],
             [100.0, 500.0, 0.5, 100.0, 100.0, 0.5],
         ] {
-            d.commit_stroke_inner(&p, &pts, "#000000", 4.0)
+            d.commit_stroke_inner(&p, &pts, "#000000", 4.0, Look::default())
                 .expect("trait");
         }
         assert!(d.zone_cells(&p, 2.0) > 160_000);
@@ -2345,9 +2450,17 @@ mod tests {
     }
 
     fn c3_rect(d: &mut Document, p: &str, x: f64) -> String {
-        d.add_shape_inner(p, "rect", [x, 100.0, x + 50.0, 150.0], "#000000", 4.0, None)
-            .expect("forme")
-            .ids[0]
+        d.add_shape_inner(
+            p,
+            "rect",
+            [x, 100.0, x + 50.0, 150.0],
+            "#000000",
+            4.0,
+            None,
+            Look::default(),
+        )
+        .expect("forme")
+        .ids[0]
             .clone()
     }
 
@@ -2465,7 +2578,7 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let c = d
-            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0)
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
             .expect("commit");
         assert_eq!(c.ids.len(), 1);
         let u = d.undo_inner();
@@ -2477,7 +2590,7 @@ mod tests {
     fn erase_inner_partial_splits() {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0)
+        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
             .expect("commit");
         let c = d
             .erase_inner(&p, &[300.0, 50.0, 300.0, 150.0], 10.0, false)
@@ -2490,7 +2603,7 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let id = d
-            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0)
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
             .expect("commit")
             .ids[0]
             .clone();
@@ -2516,7 +2629,7 @@ mod tests {
     fn save_then_load_inner_keeps_elements() {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0)
+        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
             .expect("commit");
         let bytes = d.save_inner("2026-11-16T12:00:00Z", "0.1.0").expect("save");
         let e = Document::load_inner(&bytes).expect("load");
@@ -2583,7 +2696,15 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let c = d
-            .add_shape_inner(&p, "ellipse", [10.0, 10.0, 30.0, 5.0], "#000000", 4.0, None)
+            .add_shape_inner(
+                &p,
+                "ellipse",
+                [10.0, 10.0, 30.0, 5.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+            )
             .expect("forme");
         let e = d.core.element(&c.ids[0]).expect("élément");
         assert_eq!(e.kind, "shape");
@@ -2598,7 +2719,15 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         assert_eq!(
-            d.add_shape_inner(&p, "triangle", [0.0, 0.0, 1.0, 1.0], "#000000", 4.0, None),
+            d.add_shape_inner(
+                &p,
+                "triangle",
+                [0.0, 0.0, 1.0, 1.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default()
+            ),
             Err(CommandError::BadShape)
         );
     }
@@ -2617,6 +2746,7 @@ mod tests {
                 36.0,
                 [600.0, 45.0],
                 None,
+                Look::default(),
             )
             .expect("texte")
             .ids[0]
@@ -2635,6 +2765,7 @@ mod tests {
                 36.0,
                 [600.0, 45.0],
                 None,
+                Look::default(),
             )
             .expect("vider");
         assert_eq!(c.removed, vec![id]);
@@ -2645,7 +2776,7 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let id = d
-            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0)
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
             .expect("trait")
             .ids[0]
             .clone();
@@ -3228,6 +3359,7 @@ mod tests {
                 36.0,
                 [600.0, 45.0],
                 None,
+                Look::default(),
             )
             .expect("texte")
             .ids[0]
@@ -3399,7 +3531,7 @@ mod tests {
         d.set_grid_inner(&p, Some(g)).expect("grille");
         assert_eq!(d.snap_point(&p, 118.0, 97.0), Some(vec![120.0, 80.0]));
         let mut rect = |c: [f64; 4]| {
-            d.add_shape_inner(&p, "rect", c, "#000000", 4.0, None)
+            d.add_shape_inner(&p, "rect", c, "#000000", 4.0, None, Look::default())
                 .expect("forme")
                 .ids[0]
                 .clone()
@@ -3755,6 +3887,7 @@ mod tests {
                 36.0,
                 [600.0, 45.0],
                 Some(spans),
+                Look::default(),
             )
             .expect("texte")
             .ids[0]
@@ -3774,7 +3907,8 @@ mod tests {
                 "#000000",
                 36.0,
                 [600.0, 45.0],
-                Some(bad)
+                Some(bad),
+                Look::default()
             ),
             Err(CommandError::BadFormat)
         );
@@ -3828,6 +3962,7 @@ mod tests {
                 "#000000",
                 4.0,
                 None,
+                Look::default(),
             )
             .expect("forme")
             .ids[0]
@@ -3854,6 +3989,75 @@ mod tests {
         );
         assert!(d.edge_hit(&r, 103.0, 150.0, 6.0));
         assert!(!d.edge_hit(&r, 200.0, 150.0, 6.0));
+    }
+
+    /// OG11 (T4) : aucune troncature silencieuse ; un `u8` de wasm-bindgen ferait de 257 un 1.
+    #[test]
+    fn look_bounds_checked_before_conversion() {
+        let bad = |r: Result<Look, CommandError>| matches!(r, Err(CommandError::BadStyle));
+        for r in [257.0, 1.5, -1.0, 3.0, f64::NAN, f64::INFINITY] {
+            assert!(bad(look_of(None, Some(r), None, None, None)), "tracé {r}");
+            assert!(
+                matches!(roughness_arg(Some(r)), Err(CommandError::BadStyle)),
+                "tracé {r}"
+            );
+        }
+        for seed in [4_294_967_296.0, 4_294_967_301.0, -1.0, 1.5, f64::NAN] {
+            assert!(
+                bad(look_of(None, Some(1.0), Some(seed), None, None)),
+                "graine {seed}"
+            );
+        }
+        for o in [300.0, 296.0, 100.5, -1.0, f64::NAN, f64::NEG_INFINITY] {
+            assert!(bad(look_of(None, None, None, None, Some(o))), "opacité {o}");
+        }
+        let l = look_of(
+            Some("dashed".into()),
+            Some(2.0),
+            Some(4_294_967_295.0),
+            Some("round".into()),
+            Some(44.6),
+        )
+        .expect("dans les bornes");
+        assert_eq!(l.roughness, Some(2));
+        assert_eq!(l.seed, Some(u32::MAX));
+        assert_eq!(l.opacity, Some(45));
+        assert_eq!(roughness_arg(Some(0.0)).ok(), Some(Some(0)));
+        assert_eq!(roughness_arg(None).ok(), Some(None));
+    }
+
+    #[test]
+    fn set_style_inner_one_step_then_noop() {
+        let mut d = Document::blank();
+        let page = d.page_ids()[0].clone();
+        let id = d
+            .add_shape_inner(
+                &page,
+                "rect",
+                [0.0, 0.0, 10.0, 10.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+            )
+            .expect("forme")
+            .ids[0]
+            .clone();
+        let patch = StylePatch {
+            opacity: Some(44.6),
+            ..Default::default()
+        };
+        assert_eq!(
+            d.set_style_inner(vec![id.clone()], patch.clone())
+                .expect("style")
+                .ids,
+            vec![id.clone()]
+        );
+        assert!(d
+            .set_style_inner(vec![id], patch)
+            .expect("même valeur")
+            .ids
+            .is_empty());
     }
 
     // Personnalisation 1a : disposition lue par le pont, commandes de page par leur `_inner`.
@@ -3894,9 +4098,15 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let [a, b, c] = [100.0, 200.0, 300.0].map(|y| {
-            d.commit_stroke_inner(&p, &[100.0, y, 0.5, 500.0, y, 0.5], "#000000", 4.0)
-                .expect("trait")
-                .ids[0]
+            d.commit_stroke_inner(
+                &p,
+                &[100.0, y, 0.5, 500.0, y, 0.5],
+                "#000000",
+                4.0,
+                Look::default(),
+            )
+            .expect("trait")
+            .ids[0]
                 .clone()
         });
         let ch = d.restack_inner(vec![a.clone()], 2).expect("premier plan");
@@ -3917,7 +4127,13 @@ mod tests {
             .is_empty());
         let q = d.add_page_after_inner(Some(p.clone())).expect("page").pages[0].clone();
         let x = d
-            .commit_stroke_inner(&q, &[100.0, 100.0, 0.5, 500.0, 100.0, 0.5], "#000000", 4.0)
+            .commit_stroke_inner(
+                &q,
+                &[100.0, 100.0, 0.5, 500.0, 100.0, 0.5],
+                "#000000",
+                4.0,
+                Look::default(),
+            )
             .expect("trait")
             .ids[0]
             .clone();

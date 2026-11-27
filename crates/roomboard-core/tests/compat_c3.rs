@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use roomboard_core::commands::Command;
 use roomboard_core::document::Document;
-use roomboard_core::element::StrokeStyle;
+use roomboard_core::element::{Look, StrokeStyle};
 use roomboard_core::format::{load, load_fragment, save, save_fragment, SaveMeta, KIND_FRAGMENT};
 use roomboard_core::rich_text::TextAttr;
 use roomboard_core::shape::ShapeKind;
@@ -40,6 +40,7 @@ fn fragment_document() -> Document {
             page: p.clone(),
             points,
             style: pen(),
+            look: Look::default(),
         })
         .unwrap()
         .ids[0]
@@ -54,6 +55,7 @@ fn fragment_document() -> Document {
             y1: 300.0,
             style: pen(),
             fill: None,
+            look: Look::default(),
         })
         .unwrap()
         .ids[0]
@@ -70,6 +72,7 @@ fn fragment_document() -> Document {
             box_width: 400.0,
             box_height: 45.0,
             spans: None,
+            look: Look::default(),
         })
         .unwrap()
         .ids[0]

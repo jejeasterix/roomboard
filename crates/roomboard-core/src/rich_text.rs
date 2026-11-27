@@ -514,6 +514,7 @@ pub(crate) fn spans_unchanged<T: ReadTxn>(
 
 #[cfg(test)]
 mod tests {
+    use crate::element::Look;
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -924,6 +925,7 @@ mod tests {
             box_width: 600.0,
             box_height: 45.0,
             spans: None,
+            look: Look::default(),
         };
         let fmt = |id: &str, start: u32, len: u32, attrs: Vec<TextAttr>| Command::FormatText {
             id: id.into(),
@@ -988,6 +990,7 @@ mod tests {
             box_width: 600.0,
             box_height: 45.0,
             spans: None,
+            look: Look::default(),
         };
         let id = d.apply(set).expect("texte").ids[0].clone();
         let text = {
@@ -1122,6 +1125,7 @@ mod tests {
             box_width: 600.0,
             box_height: 45.0,
             spans: None,
+            look: Look::default(),
         };
         d.apply(set).expect("SetText");
         let v = view(&d);
@@ -1360,6 +1364,7 @@ mod tests {
             box_width: 600.0,
             box_height: 45.0,
             spans: Some(spans),
+            look: Look::default(),
         };
         let first = set(target.clone());
         let again = set(target);

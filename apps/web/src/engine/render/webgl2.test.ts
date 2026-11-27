@@ -352,6 +352,20 @@ describe("WebGL2 — fond de page (C6a)", () => {
   });
 });
 
+describe("OG11 (T8) — couche vive WebGL2", () => {
+  it("opacité du trait vif : style.opacity du canvas WebGL2, remise à \"\" sans opacité", () => {
+    const { gl, r } = make();
+    const style = { opacity: "" };
+    Object.assign(gl.canvas, { style });
+    r.drawLive({ ...stroke(U), opacity: 50 } as LiveLayer, IDENTITY);
+    expect(style.opacity).toBe("0.5");
+    r.drawLive({ strokes: [], erasers: [] }, IDENTITY);
+    expect(style.opacity).toBe("");
+    r.drawLive({ ...stroke(U), opacity: 100 } as LiveLayer, IDENTITY);
+    expect(style.opacity).toBe("");
+  });
+});
+
 /** Même cas que `canvas2d.test.ts` « cadre de page (T9) » : cadre 1920 × 1080 vu à z = 0,05 (96 × 54 px en (10, 20)). */
 describe("WebGL2 — cadre de page (DA4, T9)", () => {
   const pageView = (mode?: string): PageView => ({ id: "p", elementIds: [], width: 1920, height: 1080, backdrop: null, ...(mode === undefined ? {} : { mode }) }) as PageView;

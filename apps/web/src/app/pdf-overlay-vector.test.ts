@@ -2,7 +2,7 @@ import { PDFDict, PDFDocument, PDFName, PDFStream } from "pdf-lib";
 import { describe, expect, it, vi } from "vitest";
 import type { AssetInfo } from "../core/api";
 import { fakeCore } from "../core/fake-core";
-import { RecordingContext2D, type RecordedList } from "../engine/render/record-ctx";
+import { OP, RecordingContext2D, SEG, type RecordedList } from "../engine/render/record-ctx";
 import { hasPdfWriter, type FormatsBinding } from "../platform/container";
 import type { WorkerLike } from "../platform/one-shot-worker";
 import { createVectorOverlay, fallbackOverlay, PDF_WRITE_FAILED_MESSAGE, vectorPainter, workerPdfWriter, type PdfWriter } from "./pdf-overlay-vector";
@@ -263,3 +263,100 @@ async function paintStroke(): Promise<void> {
   expect(out).toEqual([{ kind: "pdf", bytes: new Uint8Array([7]), index: 0 }]);
   expect(lists[0]!.drawn[0]).toBeGreaterThan(0);
 }
+
+/** Traits d'une liste enregistrée (codes de `record-ctx.ts`) : alpha de la couleur, tirets, nombre de cubiques. */
+function strokesOf(l: RecordedList): { alpha: number; dash: number[]; cubics: number }[] {
+  const o = Array.from(l.ops);
+  const out: { alpha: number; dash: number[]; cubics: number }[] = [];
+  let k = 0;
+  const path = (): number => {
+    const n = o[k++] ?? 0;
+    let cubics = 0;
+    for (let i = 0; i < n; i++) {
+      const s = o[k++];
+      if (s === SEG.move || s === SEG.line) k += 2;
+      else if (s === SEG.cubic) (k += 6), cubics++;
+    }
+    return cubics;
+  };
+  while (k < o.length) {
+    const op = o[k++];
+    if (op === OP.page) k += 2;
+    else if (op === OP.save || op === OP.restore) continue;
+    else if (op === OP.fill) (k += 11), path();
+    else if (op === OP.clip) (k += 7), path();
+    else if (op === OP.text) k += 16;
+    else if (op === OP.image) k += 12;
+    else if (op === OP.stroke) {
+      k += 6;
+      const alpha = o[k + 3] ?? 1;
+      k += 7;
+      const n = o[k++] ?? 0;
+      const dash = o.slice(k, k + n);
+      k += n + 1;
+      out.push({ alpha, dash, cubics: path() });
+    } else throw new Error(`code inconnu ${String(op)} à ${k - 1}`);
+  }
+  return out;
+}
+
+describe("vectorPainter (OG11, T8)", () => {
+  it("export vectoriel : tirets et alpha — rectangle en tirets, transparence 50, angles arrondis : dash [8, 12], alpha 0,5, Bézier", async () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0]!;
+    doc.apply({ type: "AddShape", page, shape: "rect", x0: 100, y0: 100, x1: 300, y1: 200, style: { color: "#1e40af", width: 4 }, fill: null });
+    const look = { strokeStyle: "dashed", opacity: 50, roundness: "round" } as const;
+    // Le faux cœur ne pose pas encore `look` (T4) : la vue de l'élément le reçoit ici, le reste est le cœur tel quel.
+    const withLook = new Proxy(doc, {
+      get(t, k) {
+        if (k === "element") return (id: string) => {
+          const v = t.element(id);
+          return v && v.kind === "shape" ? { ...v, look } : v;
+        };
+        const v: unknown = Reflect.get(t, k, t);
+        return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+      },
+    });
+    const lists: RecordedList[] = [];
+    await createVectorOverlay({
+      doc: withLook,
+      assets: { get: () => undefined },
+      alive: () => true,
+      measure: new Real() as unknown as CanvasRenderingContext2D,
+      painter: vectorPainter(withLook),
+      fonts: async () => [new Uint8Array([9])],
+      toPng: async () => new Uint8Array(0),
+      write: async (l) => {
+        lists.push(l);
+        return new Uint8Array([7]);
+      },
+    }).pages([req(page)]);
+    expect(lists).toHaveLength(1);
+    const strokes = strokesOf(lists[0]!);
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0]!.dash).toEqual([8, 12]);
+    expect(strokes[0]!.alpha).toBeCloseTo(0.5);
+    expect(strokes[0]!.cubics).toBe(4);
+  });
+
+  it("export vectoriel : architecte — même rectangle sans aspect : trait plein, opaque, sans Bézier", async () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0]!;
+    doc.apply({ type: "AddShape", page, shape: "rect", x0: 100, y0: 100, x1: 300, y1: 200, style: { color: "#1e40af", width: 4 }, fill: null });
+    const lists: RecordedList[] = [];
+    await createVectorOverlay({
+      doc,
+      assets: { get: () => undefined },
+      alive: () => true,
+      measure: new Real() as unknown as CanvasRenderingContext2D,
+      painter: vectorPainter(doc),
+      fonts: async () => [new Uint8Array([9])],
+      toPng: async () => new Uint8Array(0),
+      write: async (l) => {
+        lists.push(l);
+        return new Uint8Array([7]);
+      },
+    }).pages([req(page)]);
+    expect(strokesOf(lists[0]!)).toEqual([{ alpha: 1, dash: [], cubics: 0 }]);
+  });
+});

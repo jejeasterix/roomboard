@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, editAction, inEditable, isPanKey, keyAction, orderKey, pageKey, type KeyLike } from "./keys";
+import { appShortcut, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -98,6 +98,30 @@ describe("keyAction : groupes (Z13)", () => {
   it("Ctrl+G dans un champ : rien", () => {
     expect(keyAction(k("g", { ctrlKey: true, target: { tagName: "INPUT" } }))).toBeNull();
     expect(keyAction(k("g", { ctrlKey: true, target: { isContentEditable: true } }))).toBeNull();
+  });
+});
+
+describe("objectKey (OG11)", () => {
+  it("objectKey : Ctrl+D duplique, pas en champ, pas avec Maj", () => {
+    const k = (over: Partial<KeyLike>): KeyLike => ({ key: "d", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...over });
+    expect(objectKey(k({}))).toBe("duplicate");
+    expect(objectKey(k({ ctrlKey: false, metaKey: true }))).toBe("duplicate");
+    expect(objectKey(k({ shiftKey: true }))).toBeNull();
+    expect(objectKey(k({ target: { tagName: "INPUT" } }))).toBeNull();
+    expect(objectKey(k({ isComposing: true }))).toBeNull();
+  });
+});
+
+describe("keyAction : réglette et cases (le focus y reste après un réglage)", () => {
+  it("Ctrl+Z sur un input range, checkbox, radio, button : annuler", () => {
+    for (const type of ["range", "checkbox", "radio", "button", "color"]) {
+      expect(keyAction(k("z", { ctrlKey: true, target: { tagName: "INPUT", type } }))).toBe("undo");
+    }
+  });
+  it("Ctrl+Z sur un input texte ou un champ sans type : rien", () => {
+    for (const type of ["text", "number", "search", undefined]) {
+      expect(keyAction(k("z", { ctrlKey: true, target: { tagName: "INPUT", type } }))).toBeNull();
+    }
   });
 });
 

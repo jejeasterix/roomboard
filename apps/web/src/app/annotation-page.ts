@@ -10,6 +10,7 @@ import type { AssetStore } from "../core/asset-store";
 import { IDENTITY_MATRIX } from "../core/shapes";
 import { screenToWorld, type Camera } from "../engine/camera";
 import type { EngineState } from "../engine/engine";
+import type { ItemStyle } from "../engine/item-style";
 import type { KeyLike } from "../engine/input/keys";
 import { SELECT_TOL_PX } from "../engine/tools/select";
 import {
@@ -52,8 +53,12 @@ export function mountAnnotationFrame(doc: Document): (on: boolean) => void {
   };
 }
 
+/** Vue publiée : les champs de `ToolbarView` que l'état du moteur porte (sans la sélection ni le tableau), et le style
+ *  courant (OG11), que `ToolbarView` ne porte pas. */
+export type AnnotationView = ToolbarView & { readonly itemStyle?: ItemStyle };
+
 /** Vue de barre publiée : les champs de `ToolbarView` que l'état du moteur porte, sans la sélection ni le tableau. */
-export function viewOf(s: EngineState): ToolbarView {
+export function viewOf(s: EngineState): AnnotationView {
   return {
     tool: s.tool,
     eraserMode: s.eraserMode,
@@ -65,6 +70,7 @@ export function viewOf(s: EngineState): ToolbarView {
     pageLayout: s.pageLayout,
     textFormat: s.textFormat,
     ...(s.fillTolerance === undefined ? {} : { fillTolerance: s.fillTolerance }),
+    ...(s.itemStyle === undefined ? {} : { itemStyle: s.itemStyle }),
   };
 }
 

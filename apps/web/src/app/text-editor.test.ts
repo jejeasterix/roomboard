@@ -159,6 +159,26 @@ describe("zone de saisie du texte (CL4-2, CL4-3)", () => {
     expect(zone.hidden).toBe(true);
   });
 
+  it("réglette : saisie gardée (blur vers le panneau d'options sans validation, focus rendu après change)", () => {
+    const { calls, events } = recorder();
+    const { parent, zone, editor } = mount(() => events);
+    const panel = document.createElement("aside");
+    panel.setAttribute("data-options", "");
+    const range = document.createElement("input");
+    range.type = "range";
+    panel.append(range);
+    document.body.append(panel);
+    parents.push(panel);
+    editor.open(session, IDENTITY);
+    const focus = vi.spyOn(zone, "focus");
+    fire(zone, new FocusEvent("blur", { relatedTarget: range }));
+    expect(calls).not.toContain("commit");
+    range.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(focus).toHaveBeenCalledTimes(1);
+    // Un second blur vers une zone hors du panneau valide encore.
+    fire(zone, new FocusEvent("blur", { relatedTarget: parent }));
+    expect(calls).toContain("commit");
+  });
   it("perte du focus : validation demandée ; zone fermée, la perte du focus ne redemande rien", () => {
     const { calls, events } = recorder();
     const { zone, editor } = mount(() => events);

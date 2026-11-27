@@ -3,7 +3,7 @@
 //! cellules gardent `FormatText`, `SetTableCell`, `SetTableFill` (D6, D8, D9). C6b : zone d'une image
 //! (`FillTarget::Image`, écrite par `image.rs`, `cmd_fill_image`) ; C8 : zone fermée (`FillTarget::Zone`,
 //! `cmd_fill_zone`, `zone.rs`) ; un `fill` se recolore par `color`.
-use yrs::{In, Map, MapRef, ReadTxn};
+use yrs::{In, Map, MapRef, Out, ReadTxn, TransactionMut};
 
 use crate::asset::AssetRef;
 use crate::commands::{read_shape, Change, CommandError};
@@ -14,6 +14,42 @@ use crate::ink::hit::dist_to_edges;
 use crate::query::world_outline;
 use crate::rich_text::valid_color;
 use crate::shape::shape_polygon;
+
+/// Pose `v` sous `key` (ou retire la clé si `None`) ; faux si la valeur lue dans `txn` est déjà celle-là (aucune
+/// écriture, D38). Partagée par `cmd_fill` et `cmd_set_style` (OG11, T2).
+pub(crate) fn set_or_remove(
+    map: &MapRef,
+    txn: &mut TransactionMut,
+    key: &str,
+    v: Option<In>,
+) -> bool {
+    if !differs(txn, map, key, v.as_ref()) {
+        return false;
+    }
+    match v {
+        None => {
+            map.remove(txn, key);
+        }
+        Some(next) => {
+            map.insert(txn, key, next);
+        }
+    }
+    true
+}
+
+/// Vrai si écrire `v` sous `key` changerait l'élément (règle de `set_or_remove`).
+pub(crate) fn differs<T: ReadTxn>(txn: &T, e: &MapRef, key: &str, v: Option<&In>) -> bool {
+    match (e.get(txn, key), v) {
+        (None, None) => false,
+        (Some(_), None) | (None, Some(_)) => true,
+        (Some(cur), Some(next)) => !same_value(&cur, next),
+    }
+}
+
+/// Même scalaire : `Any` comparé par yrs (un `Number::Int` relu d'un fichier égale le `Number::Float` du même nombre).
+fn same_value(cur: &Out, next: &In) -> bool {
+    matches!((cur, next), (Out::Any(a), In::Any(b)) if a == b)
+}
 
 /// Cible du pot (D12) : contour d'une forme ou d'un trait (`color`), intérieur d'un rectangle ou d'une ellipse (`fill`),
 /// fond de la page (`background`) ; C6b (B2) : image, avec le nouvel asset calculé par la page (pixels remplis ou effacés).
@@ -119,14 +155,7 @@ impl Document {
         }
         {
             let mut txn = self.transact_local();
-            match &value {
-                Some(v) => {
-                    map.insert(&mut txn, key, In::from(v.as_str()));
-                }
-                None => {
-                    map.remove(&mut txn, key);
-                }
-            }
+            set_or_remove(&map, &mut txn, key, value.as_deref().map(In::from));
         }
         Ok(self.done(Change {
             pages: vec![page.to_string()],

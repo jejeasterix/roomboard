@@ -35,7 +35,7 @@ const LIST = '[data-toolbar="menu"] [data-menu-list]';
 const PANEL = '.rb-popover[data-panel="profils"]';
 const EDITOR = "[data-profile-editor]";
 const tile = (d) => `[data-edit-bar="outils"] [data-edit="dock"] [data-choice="${d}"]`;
-const MENU_ROWS = ["file-new", "file-open", "file-import", "file-save", "file-save-as", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "grid", "settings"];
+const MENU_ROWS = ["file-new", "file-open", "file-import", "file-save", "file-save-as", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "grid", "settings", "menu-profiles"];
 const ISLANDS = ["menu", "onglets", "outils", "panneaux", "historique", "pages"];
 const BAR_KEYS = ["id", "role", "dock", "collapsed", "groups"];
 const WHITE = hex("#ffffff");

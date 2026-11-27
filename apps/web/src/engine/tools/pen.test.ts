@@ -198,3 +198,16 @@ describe("createPenTool — grille (C9)", () => {
     expect(Array.from(commitOf(runs).points)).toEqual([13, 17, 0.5, 53, 21, 0.5, 118, 97, 0.5].map((v) => Math.fround(v)));
   });
 });
+
+describe("outil Stylo : transparence (OG11 T9b)", () => {
+  it("CommitStroke porte look.opacity du style courant ; 100 : pas de look", () => {
+    for (const [opacity, look] of [[40, { opacity: 40 }], [100, undefined]] as const) {
+      const { runs, tool, setStyle } = setup();
+      setStyle({ ...PEN, opacity } as StrokeStyle);
+      tool.begin(1, [s(10, 10)]);
+      tool.extend(1, [s(20, 10)], []);
+      tool.close(1, "end");
+      expect(commitOf(runs).look).toEqual(look);
+    }
+  });
+});

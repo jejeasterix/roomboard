@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { RoughGenerator } from "roughjs/bin/generator";
 import type { Bounds, CoreDocument, ElementView, MediaData, Model3dData, GridInput, GridLevel, GridView, ImageElement, TableElement, TextElement } from "../../core/api";
 import { NO_CHANGE } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
@@ -8,7 +9,7 @@ import { orientMatrix } from "../../core/image-params";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, HANDLE_FILL, MODEL3D_CARD_LABEL, PLACEHOLDER_FILL, SELECTION_COLOR, traceRings, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, HANDLE_FILL, MODEL3D_CARD_LABEL, paintShape, PLACEHOLDER_FILL, SELECTION_COLOR, traceRings, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import type { ImageSource } from "./image-cache";
@@ -1291,6 +1292,312 @@ describe("C11a : rendu transparent (P14)", () => {
     createCanvas2DRenderer(canvas(new FakeCtx()), canvas(new FakeCtx()), src);
     expect(asked[0]).toEqual({ alpha: true });
     expect(asked[2]).toEqual({ alpha: false });
+  });
+});
+
+// OG11 (T8) : trace complète d'un contexte — chaque appel avec ses arguments, chaque propriété affectée avec sa valeur.
+// `FakeCtx.log` ne voit ni `globalAlpha`, ni `lineCap`, ni les coordonnées : un relevé sur lui ne prouverait pas
+// « au pixel près ». `bezierCurveTo` est ajouté, `quadraticCurveTo` et `roundRect` non (comme `RecordingContext2D`).
+class CurveCtx extends FakeCtx {
+  bezierCurveTo(): void { this.log.push("bezierCurveTo"); }
+}
+type Call = readonly unknown[];
+function tracing(): { ctx: CanvasRenderingContext2D; calls: Call[]; base: CurveCtx } {
+  const base = new CurveCtx();
+  const calls: Call[] = [];
+  const norm = (v: unknown): unknown => (Array.isArray(v) ? [...(v as unknown[])] : typeof v === "object" && v !== null ? "<obj>" : v);
+  const ctx = new Proxy(base, {
+    get(t, k) {
+      const v: unknown = Reflect.get(t, k, t);
+      if (typeof v !== "function" || typeof k !== "string") return v;
+      return (...a: unknown[]) => {
+        calls.push([k, ...a.map(norm)]);
+        return (v as (...x: unknown[]) => unknown).apply(t, a);
+      };
+    },
+    set(t, k, v) {
+      if (typeof k === "string") calls.push([`${k}=`, norm(v)]);
+      return Reflect.set(t, k, v, t);
+    },
+  });
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, calls, base };
+}
+const withLook = (look: unknown): SceneSource => ({
+  element: (id) => {
+    const v = VIEWS[id];
+    return v === undefined ? null : ({ ...v, ...(look === undefined ? {} : { look }) } as ElementView);
+  },
+  outline: (id) => (id === "a" ? square : null),
+});
+const BOX: Bounds = { x0: 0, y0: 0, x1: 400, y1: 300 };
+/** `paintContent` (export, même `paintElement` que l'écran) des éléments `ids`, aspect `look` posé sur chacun. */
+function traceContent(ids: string[], look?: unknown): Call[] {
+  const r = new Canvas2DRenderer(asCtx(new FakeCtx()), asCtx(new FakeCtx()), withLook(look), { makePath: () => new FakePath() as unknown as Path2D });
+  const t = tracing();
+  r.paintContent(t.ctx, { id: "p", elementIds: ids }, BOX, 1);
+  return t.calls;
+}
+/** Calque d'édition seul (aperçu d'une forme) sur la scène. */
+function traceOverlay(shape: Record<string, unknown>): Call[] {
+  const t = tracing();
+  const r = new Canvas2DRenderer(t.ctx, asCtx(new FakeCtx()), withLook(undefined), { makePath: () => new FakePath() as unknown as Path2D });
+  r.resize(400, 300, 1);
+  t.calls.length = 0;
+  r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set(), { ...EMPTY_OVERLAY, shapes: [shape as never] });
+  return t.calls;
+}
+
+// Relevé sur `main` AVANT toute modification de canvas2d.ts (console.log(JSON.stringify(...)) une fois, recopié tel quel).
+const ARCHITECTE_RECT_MAIN: readonly Call[] = [
+  ["save"],
+  ["setTransform",1,0,0,1,-0,-0], // -rect.x0 * scale : -0 (JSON.stringify l’efface)
+  ["beginPath"],
+  ["rect",0,0,400,300],
+  ["clip"],
+  ["save"],
+  ["transform",1,0,0,1,10,20],
+  ["beginPath"],
+  ["rect",0,0,200,100],
+  ["strokeStyle=","#1e40af"],
+  ["lineWidth=",4],
+  ["lineCap=","round"],
+  ["lineJoin=","round"],
+  ["stroke"],
+  ["restore"],
+  ["restore"],
+];
+const ARCHITECTE_SCENE_MAIN: readonly Call[] = [
+  ["save"],
+  ["setTransform",1,0,0,1,-0,-0], // -rect.x0 * scale : -0 (JSON.stringify l’efface)
+  ["beginPath"],
+  ["rect",0,0,400,300],
+  ["clip"],
+  ["save"],
+  ["transform",1,0,0,1,5,6],
+  ["fillStyle=","#000000"],
+  ["fill","<obj>","nonzero"],
+  ["restore"],
+  ["save"],
+  ["transform",1,0,0,1,0,0],
+  ["beginPath"],
+  ["ellipse",25,15,25,15,0,0,6.283185307179586],
+  ["fillStyle=","#ff0000"],
+  ["fill"],
+  ["strokeStyle=","#1e40af"],
+  ["lineWidth=",4],
+  ["lineCap=","round"],
+  ["lineJoin=","round"],
+  ["stroke"],
+  ["restore"],
+  ["save"],
+  ["transform",1,0,0,1,0,0],
+  ["beginPath"],
+  ["moveTo",0,0],
+  ["lineTo",100,0],
+  ["moveTo",89.1243065555602,-5.071419140888394],
+  ["lineTo",100,0],
+  ["lineTo",89.1243065555602,5.071419140888391],
+  ["strokeStyle=","#1e40af"],
+  ["lineWidth=",4],
+  ["lineCap=","round"],
+  ["lineJoin=","round"],
+  ["stroke"],
+  ["restore"],
+  ["save"],
+  ["transform",1,0,0,1,0,0],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["measureText","un"],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["measureText","un"],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["measureText","un"],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["measureText","un deux"],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["measureText","un deux"],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["measureText","un deux"],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["measureText","trois"],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["measureText","trois"],
+  ["textBaseline=","top"],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["fillStyle=","#000000"],
+  ["fillText","un deux",0,0],
+  ["font=","20px \"Atkinson Hyperlegible\", system-ui, sans-serif"],
+  ["fillStyle=","#000000"],
+  ["fillText","trois",0,25],
+  ["restore"],
+  ["restore"],
+];
+// Aperçu relevé de nouveau après la fusion d'OG4 (fond de page de `main` changé par OG4, non touché par OG11).
+const ARCHITECTE_APERCU_MAIN: readonly Call[] = [
+  ["setTransform",1,0,0,1,0,0],
+  ["fillStyle=","#ffffff"],
+  ["fillStyle=","#ffffff"],
+  ["fillStyle=","#f5f5f8"],
+  ["fillRect",0,0,400,300],
+  ["setTransform",1,0,0,1,0,0],
+  ["fillStyle=","#ffffff"],
+  ["fillRect",0,0,400,300],
+  ["save"],
+  ["transform",1,0,0,1,100,50],
+  ["beginPath"],
+  ["rect",0,0,200,150],
+  ["strokeStyle=","#000000"],
+  ["lineWidth=",4],
+  ["lineCap=","round"],
+  ["lineJoin=","round"],
+  ["stroke"],
+  ["restore"],
+];
+
+describe("OG11 (T8) — rendu net inchangé", () => {
+  it("architecte au pixel près : mêmes appels qu'avant (rectangle, scène, aperçu), aspect absent ou neutre", () => {
+    const preview = { shape: "rect", x0: 300, y0: 200, x1: 100, y1: 50, style: { color: "#000000", width: 4 }, fill: null };
+    // Aspect absent, vide ou à ses valeurs neutres (opacité 100) : exactement la suite d'appels de main.
+    for (const look of [undefined, {}, { opacity: 100 }]) {
+      expect(traceContent(["r"], look)).toEqual(ARCHITECTE_RECT_MAIN);
+      expect(traceContent(["a", "e", "f", "t"], look)).toEqual(ARCHITECTE_SCENE_MAIN);
+      expect(traceOverlay(look === undefined ? preview : { ...preview, look, seed: 0 })).toEqual(ARCHITECTE_APERCU_MAIN);
+    }
+    expect(ARCHITECTE_RECT_MAIN.length).toBeGreaterThan(0);
+  });
+});
+
+const RECT_R = { shape: "rect" as const, w: 200, h: 100, fill: null };
+const PEN_R = { color: "#1e40af", width: 4 };
+const named = (calls: readonly Call[], name: string): Call[] => calls.filter((c) => c[0] === name);
+/** Appels entre le `save` de l'élément (après la découpe de `paintContent`) et son `restore`. */
+const elementPart = (calls: readonly Call[]): Call[] => calls.slice(calls.findIndex((c) => c[0] === "clip") + 1, -1);
+
+describe("OG11 (T8) — tirets, alpha, angles, roughjs", () => {
+  it("architecte au pixel près : paintShape exporté, aspect absent ou vide, graine 0 — la suite de main", () => {
+    const inner = ARCHITECTE_RECT_MAIN.slice(ARCHITECTE_RECT_MAIN.findIndex((c) => c[0] === "transform") + 1, -2);
+    expect(inner.length).toBeGreaterThan(0);
+    const a = tracing();
+    paintShape(a.ctx, RECT_R, PEN_R);
+    expect(a.calls).toEqual(inner);
+    const b = tracing();
+    paintShape(b.ctx, RECT_R, PEN_R, {}, 0);
+    expect(b.calls).toEqual(inner);
+  });
+
+  it("tirets, alpha, angles en Bézier : setLineDash [8, 12], globalAlpha 0,5 dans le save/restore de l'élément, jamais roundRect ni quadraticCurveTo", () => {
+    const calls = traceContent(["r"], { strokeStyle: "dashed", roundness: "round", opacity: 50 });
+    const part = elementPart(calls);
+    expect(part[0]).toEqual(["save"]);
+    expect(part[part.length - 1]).toEqual(["restore"]);
+    expect(part).toContainEqual(["globalAlpha=", 0.5]);
+    expect(part).toContainEqual(["setLineDash", [8, 12]]);
+    const dash = part.findIndex((c) => c[0] === "setLineDash" && (c[1] as number[]).length > 0);
+    const stroke = part.findIndex((c) => c[0] === "stroke");
+    expect(dash).toBeGreaterThan(-1);
+    expect(stroke).toBeGreaterThan(dash);
+    expect(calls.some((c) => c[0] === "roundRect" || c[0] === "quadraticCurveTo" || c[0] === "rect" && c[3] === 200)).toBe(false);
+    expect(named(part, "bezierCurveTo")).toHaveLength(4);
+    // Coins à min(0,25 · min(w, h), 32) = 25 : le premier côté va de (25, 0) à (175, 0).
+    expect(named(part, "moveTo")[0]).toEqual(["moveTo", 25, 0]);
+    expect(named(part, "lineTo")[0]).toEqual(["lineTo", 175, 0]);
+  });
+
+  it("pointillés : setLineDash [0, 6 + w] ; alpha posé aussi sur un trait et un texte (dans leur save/restore)", () => {
+    expect(elementPart(traceContent(["r"], { strokeStyle: "dotted" }))).toContainEqual(["setLineDash", [0, 10]]);
+    for (const id of ["a", "t"]) {
+      const part = elementPart(traceContent([id], { opacity: 40 }));
+      expect(part[0]).toEqual(["save"]);
+      expect(part).toContainEqual(["globalAlpha=", 0.4]);
+      expect(part[part.length - 1]).toEqual(["restore"]);
+    }
+  });
+
+  it("aperçu et objet posé : même empreinte (graine du geste)", () => {
+    const look = { roughness: 1 as const, seed: 7 };
+    const a = tracing();
+    paintShape(a.ctx, RECT_R, { color: "#000000", width: 4 }, look, 7);
+    const curves = named(a.calls, "bezierCurveTo");
+    expect(curves.length).toBeGreaterThan(0);
+    const preview = traceOverlay({ shape: "rect", x0: 0, y0: 0, x1: 200, y1: 100, style: { color: "#000000", width: 4 }, fill: null, look, seed: 7 });
+    expect(named(preview, "bezierCurveTo")).toEqual(curves);
+    expect(named(elementPart(traceContent(["r"], look)), "bezierCurveTo")).toEqual(curves);
+    const other = tracing();
+    paintShape(other.ctx, RECT_R, { color: "#000000", width: 4 }, { roughness: 1, seed: 8 }, 8);
+    expect(named(other.calls, "bezierCurveTo")).not.toEqual(curves);
+  });
+
+  it("graine absente : seedOf(id) de l'élément ; aperçu : alpha de son aspect", async () => {
+    const { seedOf } = await import("./sketch");
+    const a = tracing();
+    paintShape(a.ctx, RECT_R, PEN_R, { roughness: 2 }, seedOf("r"));
+    expect(named(elementPart(traceContent(["r"], { roughness: 2 })), "bezierCurveTo")).toEqual(named(a.calls, "bezierCurveTo"));
+    const preview = traceOverlay({ shape: "rect", x0: 0, y0: 0, x1: 200, y1: 100, style: { color: "#000000", width: 4 }, fill: null, look: { opacity: 50 } });
+    expect(preview).toContainEqual(["globalAlpha=", 0.5]);
+  });
+
+  /** Motif de tirets en vigueur à chaque `stroke` (suivi des `setLineDash`). */
+  const dashAtStrokes = (calls: readonly Call[]): number[][] => {
+    let cur: number[] = [];
+    const out: number[][] = [];
+    for (const c of calls) {
+      if (c[0] === "setLineDash") cur = c[1] as number[];
+      else if (c[0] === "stroke") out.push(cur);
+    }
+    return out;
+  };
+
+  it("flèche en tirets : pointe pleine (ailes sans tirets, fût en tirets), net et roughjs", () => {
+    const arrow = { shape: "arrow" as const, w: 100, h: 0, fill: null };
+    const net = tracing();
+    paintShape(net.ctx, arrow, PEN_R, { strokeStyle: "dashed" }, 0);
+    expect(dashAtStrokes(net.calls)).toEqual([[8, 12], []]);
+    const rough = tracing();
+    paintShape(rough.ctx, arrow, PEN_R, { strokeStyle: "dashed", roughness: 1 }, 5);
+    expect(dashAtStrokes(rough.calls)).toEqual([[8, 12], [], []]);
+    const dotted = tracing();
+    paintShape(dotted.ctx, arrow, PEN_R, { strokeStyle: "dotted", roughness: 1 }, 5);
+    expect(dashAtStrokes(dotted.calls)).toEqual([[0, 10], [0, 9], [0, 9]]);
+    // Trait plein : un seul tracé pour le fût et les ailes, comme au socle.
+    const solid = tracing();
+    paintShape(solid.ctx, arrow, PEN_R);
+    expect(named(solid.calls, "stroke")).toHaveLength(1);
+  });
+
+  it("roughjs en cache : une génération par élément entre deux rendus ; un changement d'aspect la rappelle", () => {
+    const spy = vi.spyOn(RoughGenerator.prototype, "rectangle");
+    try {
+      let look: unknown = { roughness: 1 };
+      const src: SceneSource = {
+        element: (id) => ({ ...VIEWS[id], look }) as ElementView,
+        outline: () => null,
+      };
+      const r = new Canvas2DRenderer(asCtx(new FakeCtx()), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D });
+      const page = { id: "p", elementIds: ["r"] };
+      r.paintContent(tracing().ctx, page, BOX, 1);
+      r.paintContent(tracing().ctx, page, BOX, 1);
+      expect(spy).toHaveBeenCalledTimes(1);
+      look = { roughness: 2 };
+      r.paintContent(tracing().ctx, page, BOX, 1);
+      expect(spy).toHaveBeenCalledTimes(2);
+      r.invalidate({ ids: ["r"], removed: [], full: false } as never);
+      r.paintContent(tracing().ctx, page, BOX, 1);
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("opacité du trait vif : style.opacity du canvas d'interaction, remise à \"\" sans opacité", () => {
+    const { r, live } = make({});
+    const style = { opacity: "" };
+    Object.assign(live.canvas, { style });
+    r.resize(100, 100, 1);
+    r.drawLive({ strokes: [{ outline: square, color: "#1e40af" }], erasers: [], opacity: 50 } as never, IDENTITY);
+    expect(style.opacity).toBe("0.5");
+    r.drawLive({ strokes: [], erasers: [] }, IDENTITY);
+    expect(style.opacity).toBe("");
+    r.drawLive({ strokes: [{ outline: square, color: "#1e40af" }], erasers: [], opacity: 100 } as never, IDENTITY);
+    expect(style.opacity).toBe("");
   });
 });
 
