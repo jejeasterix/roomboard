@@ -11,6 +11,7 @@ use yrs::{
 use crate::asset::{is_asset_id, AssetRef};
 use crate::copy::reinsert_kept;
 use crate::document::{insert_page, Document, FoundElement};
+use crate::element::read_look;
 use crate::element::{
     apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, look_fields,
     out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group, read_style,
@@ -20,9 +21,10 @@ use crate::element::{
 use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
+use crate::linear::{self, BindInput, LineInit, MAX_INNER_POINTS};
 use crate::query::path_hits_stroke;
 use crate::rich_text::{self, SpanInput, TextAttr};
-use crate::shape::{normalize, ShapeKind};
+use crate::shape::{normalize, ShapeGeom, ShapeKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EraseMode {
@@ -87,6 +89,8 @@ pub enum Command {
         fill: Option<String>,
         /// OG11 : aspect écrit dans la même transaction ; neutre = aucune clé (DA-5).
         look: Look,
+        /// OG12 (n° 12 a) : points intérieurs (monde) et liaisons ; vide : la forme du socle.
+        line: LineInit,
     },
     Transform {
         ids: Vec<String>,
@@ -253,6 +257,14 @@ pub enum Command {
     SetStyle {
         ids: Vec<String>,
         patch: crate::style::StylePatch,
+    },
+    /// OG12 (n° 12 b, DA-4) : tous les points en monde (≥ 2) et les liaisons d'une ligne ou d'une flèche ; une étape ;
+    /// même géométrie et mêmes liaisons : aucune (D38).
+    SetLinePoints {
+        id: String,
+        points: Vec<f64>,
+        start: Option<BindInput>,
+        end: Option<BindInput>,
     },
     /// Média (C14, M5) : élément, métadonnée du média (avec `linked` s'il est lié) et du poster ; une transaction, une
     /// étape.
@@ -458,18 +470,64 @@ pub(crate) struct ShapeFields {
     pub h: f64,
     pub style: StrokeStyle,
     pub fill: Option<String>,
+    /// OG12 (DA-1) : points intérieurs locaux à plat ; vide = segment du socle.
+    pub points: Vec<f64>,
+    /// Courbe : `roundness: "round"` sur une ligne ou une flèche non coudée (n° 2).
+    pub curve: bool,
+    /// Flèche coudée (`elbowed: true`, flèche seule).
+    #[allow(dead_code)] // lu par T4 (route coudée)
+    pub elbowed: bool,
+    pub start: Option<BindInput>,
+    pub end: Option<BindInput>,
+}
+
+impl ShapeFields {
+    pub fn geom(&self) -> ShapeGeom<'_> {
+        ShapeGeom {
+            kind: self.kind,
+            w: self.w,
+            h: self.h,
+            path: &self.points,
+            curve: self.curve,
+        }
+    }
 }
 
 pub(crate) fn read_shape<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<ShapeFields> {
     if out_string(e.get(txn, "kind"))? != "shape" {
         return None;
     }
+    let kind = ShapeKind::parse(&out_string(e.get(txn, "shape"))?)?;
+    let seg = kind.is_segment();
+    let look = if seg {
+        read_look(txn, e)
+    } else {
+        Look::default()
+    };
+    let elbowed = kind == ShapeKind::Arrow && look.elbowed == Some(true);
     Some(ShapeFields {
-        kind: ShapeKind::parse(&out_string(e.get(txn, "shape"))?)?,
+        kind,
         w: out_f64(e.get(txn, "w"))?,
         h: out_f64(e.get(txn, "h"))?,
         style: read_style(txn, e)?,
         fill: out_string(e.get(txn, "fill")),
+        points: if seg {
+            linear::read_inner(txn, e)
+        } else {
+            Vec::new()
+        },
+        curve: seg && !elbowed && look.roundness.as_deref() == Some("round"),
+        elbowed,
+        start: if seg {
+            linear::read_binding(txn, e, linear::End::Start)
+        } else {
+            None
+        },
+        end: if seg {
+            linear::read_binding(txn, e, linear::End::End)
+        } else {
+            None
+        },
     })
 }
 
@@ -513,6 +571,14 @@ struct TextInput<'a> {
     box_height: f64,
     spans: Option<&'a [SpanInput]>,
     look: &'a Look,
+}
+
+/// Points intérieurs admis (n° 1) : paires finies, au plus `MAX_INNER_POINTS`, tenues en f32.
+fn valid_inner(p: &[f64]) -> bool {
+    p.len().is_multiple_of(2)
+        && p.len() <= 2 * MAX_INNER_POINTS
+        && p.iter().all(|v| v.is_finite())
+        && fits_f32(p)
 }
 
 /// Chemin monde (paires x, y) ramené au repère local par l'inverse de `t` ; `None` si `t` n'est pas inversible.
@@ -746,6 +812,7 @@ impl Document {
                 style,
                 fill,
                 look,
+                line,
             } => self.cmd_add_shape(
                 &page,
                 shape,
@@ -753,7 +820,14 @@ impl Document {
                 &style,
                 fill.as_deref(),
                 &look,
+                &line,
             ),
+            Command::SetLinePoints {
+                id,
+                points,
+                start,
+                end,
+            } => self.cmd_set_line_points(&id, &points, start.as_ref(), end.as_ref()),
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
             Command::SetText {
                 page,
@@ -986,6 +1060,7 @@ impl Document {
         Ok(change)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn cmd_add_shape(
         &mut self,
         page: &str,
@@ -994,6 +1069,7 @@ impl Document {
         style: &StrokeStyle,
         fill: Option<&str>,
         look: &Look,
+        line: &LineInit,
     ) -> Result<Change, CommandError> {
         if corners.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadShape);
@@ -1008,7 +1084,56 @@ impl Document {
         if !finite_positive(f64::from(style.width)) {
             return Err(CommandError::BadWidth);
         }
+        // OG12 (n° 12 a) : points intérieurs et liaisons, ligne et flèche seulement.
+        if !line.is_empty() && !kind.is_segment() {
+            return Err(CommandError::BadShape);
+        }
+        if !valid_inner(&line.points) {
+            return Err(CommandError::BadPoints);
+        }
         let elements = self.page_elements_or_err(page)?;
+        let ends = {
+            let txn = self.read();
+            let s = line
+                .start
+                .as_ref()
+                .map(|b| self.checked_binding(&txn, b))
+                .transpose()?;
+            let e = line
+                .end
+                .as_ref()
+                .map(|b| self.checked_binding(&txn, b))
+                .transpose()?;
+            [s, e]
+        };
+        // Extrémités liées recalées sur leur ancre (n° 17) ; repère : translation au départ, comme `normalize`.
+        let mut world: Vec<(f64, f64)> = vec![(x0, y0)];
+        world.extend(line.points.as_chunks::<2>().0.iter().map(|c| (c[0], c[1])));
+        world.push((x1, y1));
+        let last = world.len() - 1;
+        if let Some((b, bx)) = &ends[0] {
+            world[0] = linear::anchor(bx, [b.fx, b.fy]);
+        }
+        if let Some((b, bx)) = &ends[1] {
+            world[last] = linear::anchor(bx, [b.fx, b.fy]);
+        }
+        let (tx, ty, w, h) = if kind.is_segment() {
+            (
+                world[0].0,
+                world[0].1,
+                world[last].0 - world[0].0,
+                world[last].1 - world[0].1,
+            )
+        } else {
+            (tx, ty, w, h)
+        };
+        if !fits_f32(&[tx, ty, w, h]) {
+            return Err(CommandError::BadShape);
+        }
+        let look = Look {
+            elbowed: look.elbowed.filter(|_| kind == ShapeKind::Arrow),
+            ..look.clone()
+        };
         let id = yrs::uuid_v4().to_string();
         let mut fields: Vec<(&str, In)> = vec![
             ("id", In::from(id.as_str())),
@@ -1026,7 +1151,20 @@ impl Document {
         if let Some(f) = fill {
             fields.push(("fill", In::from(f)));
         }
-        fields.extend(look_fields(look));
+        fields.extend(look_fields(&look));
+        let inner: Vec<f64> = world[1..last]
+            .iter()
+            .flat_map(|p| [p.0 - world[0].0, p.1 - world[0].1])
+            .collect();
+        if !inner.is_empty() {
+            fields.push(("points", linear::nums_in(&inner)));
+        }
+        for (end, b) in [(linear::End::Start, &ends[0]), (linear::End::End, &ends[1])] {
+            if let Some((b, _)) = b {
+                fields.push((end.bound_key(), In::from(b.id.as_str())));
+                fields.push((end.fixed_key(), linear::nums_in(&[b.fx, b.fy])));
+            }
+        }
         {
             let mut txn = self.transact_local();
             elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
@@ -1034,6 +1172,76 @@ impl Document {
         Ok(self.done(Change {
             pages: vec![page.to_string()],
             ids: vec![id],
+            ..Default::default()
+        }))
+    }
+
+    /// `SetLinePoints` (n° 12 b) : contrôles dans l'ordre du cadrage, plan en lecture, au plus une écriture (D38).
+    fn cmd_set_line_points(
+        &mut self,
+        id: &str,
+        points: &[f64],
+        start: Option<&BindInput>,
+        end: Option<&BindInput>,
+    ) -> Result<Change, CommandError> {
+        let n = points.len() / 2;
+        if !points.len().is_multiple_of(2)
+            || !(2..=MAX_INNER_POINTS + 2).contains(&n)
+            || !points.iter().all(|v| v.is_finite())
+            || !fits_f32(points)
+        {
+            return Err(CommandError::BadPoints);
+        }
+        let (e, page, plan) = {
+            let txn = self.read();
+            let found = self
+                .find_element(&txn, id)
+                .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
+            let _s = read_shape(&txn, &found.element)
+                .filter(|s| s.kind.is_segment())
+                .ok_or(CommandError::BadShape)?;
+            let t = out_transform(found.element.get(&txn, "transform"))
+                .ok_or(CommandError::BadShape)?;
+            let a = start.map(|b| self.checked_binding(&txn, b)).transpose()?;
+            let b = end.map(|b| self.checked_binding(&txn, b)).transpose()?;
+            let mut world: Vec<(f64, f64)> = points
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| (c[0], c[1]))
+                .collect();
+            let last = world.len() - 1;
+            if let Some((bi, bx)) = &a {
+                world[0] = linear::anchor(bx, [bi.fx, bi.fy]);
+            }
+            if let Some((bi, bx)) = &b {
+                world[last] = linear::anchor(bx, [bi.fx, bi.fy]);
+            }
+            // T4 : une flèche coudée (`_s.elbowed`) est reroutée ici, entre `world[0]` et `world[last]`.
+            let writes = linear::line_writes(
+                &t,
+                &world,
+                a.as_ref().map(|x| &x.0),
+                b.as_ref().map(|x| &x.0),
+            )?;
+            let plan: Vec<(&'static str, Option<In>)> = writes
+                .into_iter()
+                .filter(|(k, v)| crate::fill::differs(&txn, &found.element, k, v.as_ref()))
+                .collect();
+            (found.element, found.page_id, plan)
+        };
+        if plan.is_empty() {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            for (k, v) in plan {
+                crate::fill::set_or_remove(&e, &mut txn, k, v);
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: vec![id.to_string()],
             ..Default::default()
         }))
     }
@@ -2726,6 +2934,7 @@ pub(crate) mod tests {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: LineInit::default(),
         }
     }
 
@@ -2842,7 +3051,10 @@ pub(crate) mod tests {
                 shape: "rect".into(),
                 w: 200.0,
                 h: 150.0,
-                fill: None
+                fill: None,
+                points: None,
+                start: None,
+                end: None,
             })
         );
         assert!(d.undo());
@@ -2958,6 +3170,7 @@ pub(crate) mod tests {
                 style: pen(),
                 fill: Some("#ff0000".into()),
                 look: Look::default(),
+                line: LineInit::default(),
             })
             .expect("flèche")
             .ids[0]
@@ -2970,7 +3183,10 @@ pub(crate) mod tests {
                 shape: "arrow".into(),
                 w: -200.0,
                 h: -150.0,
-                fill: Some("#ff0000".into())
+                fill: Some("#ff0000".into()),
+                points: None,
+                start: None,
+                end: None,
             })
         );
         let id = d
@@ -4411,6 +4627,7 @@ pub(crate) mod tests {
                 },
                 fill: None,
                 look: Look::default(),
+                line: LineInit::default(),
             })
             .expect("b")
             .ids[0]
@@ -4466,6 +4683,7 @@ pub(crate) mod tests {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: LineInit::default(),
         })
         .expect("forme")
         .ids[0]

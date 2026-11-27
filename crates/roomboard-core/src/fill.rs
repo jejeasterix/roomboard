@@ -13,7 +13,7 @@ use crate::fill_element::FILL_KIND;
 use crate::ink::hit::dist_to_edges;
 use crate::query::world_outline;
 use crate::rich_text::valid_color;
-use crate::shape::shape_polygon;
+use crate::shape::{shape_polygon, ShapeGeom};
 
 /// Pose `v` sous `key` (ou retire la clé si `None`) ; faux si la valeur lue dans `txn` est déjà celle-là (aucune
 /// écriture, D38). Partagée par `cmd_fill` et `cmd_set_style` (OG11, T2).
@@ -218,7 +218,7 @@ impl Document {
         }
         let scale = (t[0] * t[3] - t[1] * t[2]).abs().sqrt();
         let band = f64::from(tol) + f64::from(s.style.width) / 2.0 * scale;
-        let outline = world_outline(&t, &shape_polygon(s.kind, s.w, s.h, 0.0));
+        let outline = world_outline(&t, &shape_polygon(&ShapeGeom::plain(s.kind, s.w, s.h), 0.0));
         f64::from(dist_to_edges(&outline, x as f32, y as f32)) <= band
     }
 }

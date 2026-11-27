@@ -40,6 +40,7 @@ fn shape(d: &mut Document, p: &str, kind: ShapeKind, c: [f64; 4]) -> String {
         style: pen(),
         fill: None,
         look: Look::default(),
+        line: roomboard_core::linear::LineInit::default(),
     })
     .expect("forme")
     .ids[0]
