@@ -9,7 +9,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, ROOT, serve, stageBox, stageMouse, TAB, VIEWPORT } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, ROOT, serve, stageBox, stageMouse, TAB, VIEWPORT, foldOptions } from "./commun.mjs";
 import { pdfPages, readLibs, readPdf } from "./fabriques/pdf.mjs";
 
 const LABEL = "C12 PDF";
@@ -54,6 +54,7 @@ async function scenario(page, url, { captures, tmp, requests }) {
       return click.call(this);
     };
   });
+  await foldOptions(page);
   await page.goto(url);
   await page.waitForSelector("#stage");
   await fr();
