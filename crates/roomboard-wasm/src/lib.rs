@@ -46,6 +46,20 @@ fn cmd_err(e: CommandError) -> JsError {
     JsError::new(&js_message(&e))
 }
 
+/// Lien de case venu de JS : les trois champs ou aucun ; un triplet incomplet (JSON de la CLI) est refusé
+/// (`BadTable`), comme par le faux cœur, au lieu de retirer le lien sans erreur.
+fn cell_of(
+    table: Option<String>,
+    row: Option<String>,
+    col: Option<String>,
+) -> Result<Option<[String; 3]>, CommandError> {
+    match (table, row, col) {
+        (Some(t), Some(r), Some(c)) => Ok(Some([t, r, c])),
+        (None, None, None) => Ok(None),
+        _ => Err(CommandError::BadTable),
+    }
+}
+
 /// OG11 : nombre venu de JS reçu en `f64` et vérifié avant conversion. Un paramètre `u8` ou `u32` serait tronqué par
 /// wasm-bindgen sans erreur (257 deviendrait 1, 2^32 + 5 deviendrait 5) : la borne se contrôle ici, jamais après.
 fn small_int(v: Option<f64>, max: f64) -> Result<Option<f64>, CommandError> {
@@ -1178,10 +1192,7 @@ impl Document {
         size_keys: Vec<String>,
         size_values: &[f64],
     ) -> Result<JsValue, JsError> {
-        let cell = match (table, row, col) {
-            (Some(t), Some(r), Some(c)) => Some([t, r, c]),
-            _ => None,
-        };
+        let cell = cell_of(table, row, col).map_err(cmd_err)?;
         to_js(
             &self
                 .place_in_cell_inner(ids, matrix, cell, &size_keys, size_values)
@@ -1400,10 +1411,7 @@ impl Document {
         cell_col: Option<String>,
     ) -> Result<JsValue, JsError> {
         let look = look_of(stroke_style, roughness, seed, roundness, opacity).map_err(cmd_err)?;
-        let cell = match (cell_table, cell_row, cell_col) {
-            (Some(t), Some(r), Some(c)) => Some([t, r, c]),
-            _ => None,
-        };
+        let cell = cell_of(cell_table, cell_row, cell_col).map_err(cmd_err)?;
         to_js(
             &self
                 .commit_stroke_inner(page, points, color, width, look, cell)
@@ -2577,6 +2585,19 @@ impl StrokeBuilder {
 mod tests {
     use super::*;
     use roomboard_core::rich_text::{SpanAttrs, SpanInput};
+
+    // Constat C2-2 : un lien de case incomplet est refusé, jamais lu comme « aucun lien ».
+    #[test]
+    fn cell_of_refuses_partial_triplet() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(cell_of(None, None, None), Ok(None));
+        assert_eq!(
+            cell_of(s("t"), s("r"), s("c")),
+            Ok(Some(["t".into(), "r".into(), "c".into()]))
+        );
+        assert_eq!(cell_of(s("t"), s("r"), None), Err(CommandError::BadTable));
+        assert_eq!(cell_of(None, None, s("c")), Err(CommandError::BadTable));
+    }
 
     // personnalisation-1b (DA1) : deux pages, une étape, par `apply_background_inner`.
     #[test]
