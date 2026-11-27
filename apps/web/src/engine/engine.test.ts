@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Change, ElementView, StrokeStyle } from "../core/api";
+import type { Change, Command, ElementView, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
@@ -2024,6 +2024,29 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     engine.undo();
     expect(colorOf(a)).toBe("#000000");
     expect(colorOf(b)).toBe("#000000");
+  });
+
+  it("arrowType sur une sélection mixte : SetStyle des seules flèches", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const r = addRect();
+    const page = engine.state().page;
+    const a = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 10, y0: 10, x1: 90, y1: 60, style: PEN, fill: null }).ids[0] ?? "";
+    sel().setSelection([r, a]);
+    // Le faux cœur n'écrit `roundness`/`elbowed` sur une flèche qu'avec T5 : on lit les commandes envoyées.
+    const sent: Command[] = [];
+    const apply = doc.apply.bind(doc);
+    vi.spyOn(doc, "apply").mockImplementation((c) => { sent.push(c); return apply(c); });
+    engine.setItemStyle({ arrowType: "round" });
+    expect(sent).toEqual([{ type: "SetStyle", ids: [a], patch: { roundness: "round", elbowed: null } }]);
+    sent.length = 0;
+    engine.setItemStyle({ arrowType: "elbow" });
+    expect(sent).toEqual([{ type: "SetStyle", ids: [a], patch: { roundness: null, elbowed: true } }]);
+    sent.length = 0;
+    const v = doc.version();
+    engine.setItemStyle({ arrowBinding: false });
+    expect(sent).toEqual([]);
+    expect(doc.version()).toBe(v);
+    expect(engine.itemStyle().arrowBinding).toBe(false);
   });
 
   it("setItemStyle sans sélection : style courant seul, rien d'écrit", () => {

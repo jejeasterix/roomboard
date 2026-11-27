@@ -934,10 +934,24 @@ export function createEngine(deps: EngineDeps): Engine {
     const ids = sel.length > 0 ? [...sel] : editedId !== null ? [editedId] : [];
     if (writeSelection && ids.length > 0) {
       const accepted = Object.fromEntries(keys.filter((k) => k in p && p[k] === next[k]).map((k) => [k, p[k]])) as Partial<ItemStyle>;
-      const patch = patchOf(accepted);
+      // OG12 : `arrowBinding` est un réglage de l'appareil (aucune commande) ; `arrowType` ne touche que les flèches.
+      const { arrowType, arrowBinding: _device, ...rest } = accepted;
+      const cmds: Command[] = [];
+      const patch = patchOf(rest);
       // `font` et `fontSize` ne sont que le style du prochain texte : aucune commande.
-      if (Object.keys(patch).length > 0) {
-        run({ type: "SetStyle", ids, patch });
+      if (Object.keys(patch).length > 0) cmds.push({ type: "SetStyle", ids, patch });
+      if (arrowType !== undefined) {
+        const arrows = ids.filter((id) => {
+          const v = doc.element(id);
+          return v?.kind === "shape" && v.shape.shape === "arrow";
+        });
+        if (arrows.length > 0) {
+          cmds.push({ type: "SetStyle", ids: arrows, patch: { roundness: arrowType === "round" ? "round" : null, elbowed: arrowType === "elbow" ? true : null } });
+        }
+      }
+      if (cmds.length > 0) {
+        if (cmds.length === 1) run(cmds[0]!);
+        else runAll(cmds);
         return;
       }
     }
