@@ -102,11 +102,9 @@ const HEADS: readonly RadioOption<Arrowhead>[] = [
   { value: "triangle_outline", label: "Triangle creux", icon: "head-triangle-outline" },
 ];
 const PRESSURE: readonly RadioOption<"constant" | "variable">[] = [
-  { value: "constant", label: "Constante", icon: "pressure-constant" },
-  { value: "variable", label: "Variable", icon: "pressure-variable" },
+  { value: "constant", label: "Constante", icon: "pressure-constant", tip: "Épaisseur constante" },
+  { value: "variable", label: "Variable", icon: "pressure-variable", tip: "Épaisseur selon la pression du stylet" },
 ];
-/** Infobulles des deux segments Pression (posées en `aria-description` : les segments de RadioChoices n'ont pas de bulle). */
-const PRESSURE_TIPS: Readonly<Record<string, string>> = { constant: "Épaisseur constante", variable: "Épaisseur selon la pression du stylet" };
 interface ArrangeButton { readonly value: ArrangeHow; readonly label: string; readonly icon: string }
 const ALIGN_H: readonly ArrangeButton[] = [
   { value: "align-left", label: "Aligner à gauche", icon: "align-start-vertical" },
@@ -183,6 +181,20 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     const next = !isOpen(k);
     props.settings.setOptionSection(k, next);
     setOpenSections({ ...openSections(), [k]: next });
+  };
+  // En-tête de section : Entrée bascule au keydown, Espace au keyup (comme un bouton natif). Le keydown est arrêté ici :
+  // sinon la fenêtre le prend pour le panoramique (`isPanKey`) et l'annule (`preventDefault`), et rien ne bascule.
+  const headKeyDown = (e: KeyboardEvent, k: OptionKey): void => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === "Enter" && !e.repeat) toggleSection(k);
+  };
+  const headKeyUp = (e: KeyboardEvent, k: OptionKey): void => {
+    if (e.key !== " " || e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault(); // pas de `click` natif en plus
+    toggleSection(k);
   };
   const cur = (): ItemStyle => props.state().itemStyle ?? DEFAULT_ITEM_STYLE;
   const write = (patch: Partial<ItemStyle>): void => props.engine().setItemStyle(patch);
@@ -374,8 +386,10 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     return null;
   };
   // Sélecteur fermé (Autres couleurs, repli du panneau…) pendant l'armement : la pipette est désarmée.
+  // Ou ouvert sur une autre section (Fond après Trait) : la couleur lue n'ira pas à la section armée.
   createEffect(() => {
-    if (picker() === null && armed !== null) {
+    const p = picker();
+    if (armed !== null && (p === null || p.key !== armed.key || p.anchor !== armed.anchor)) {
       armed = null;
       props.engine().cancelPick?.();
     }
@@ -508,14 +522,8 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       </label>
     ),
     pressure: () => (
-      <div
-        ref={(el) => queueMicrotask(() => {
-          for (const b of el.querySelectorAll<HTMLElement>("[data-option-value]")) b.setAttribute("aria-description", PRESSURE_TIPS[b.getAttribute("data-option-value") ?? ""] ?? "");
-        })}
-      >
-        <RadioChoices keepFocus name="pressure" label={LABEL.pressure} look="segment" options={PRESSURE} valueAttr="data-option-value"
-          value={(value("pressure") as "constant" | "variable" | null) ?? null} choose={(v) => write({ variability: v })} />
-      </div>
+      <RadioChoices keepFocus name="pressure" label={LABEL.pressure} look="segment" options={PRESSURE} valueAttr="data-option-value"
+        value={(value("pressure") as "constant" | "variable" | null) ?? null} choose={(v) => write({ variability: v })} />
     ),
     align: () => (
       <>
@@ -611,6 +619,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
           <For each={keys()}>
             {(k) => (
               <section class="rb-options-sec" data-option={k} data-open={isOpen(k) ? "" : undefined} data-mixed={mixed(k) ? "" : undefined} data-disabled={off(k) ? "" : undefined}>
+                <h3 class="rb-opt-h" style={{ margin: "0", font: "inherit" }}>
                 <button
                   type="button"
                   class="rb-opt-head"
@@ -621,11 +630,14 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
                   onPointerDown={keep}
                   onMouseDown={keep}
                   onClick={() => toggleSection(k)}
+                  onKeyDown={(e) => headKeyDown(e, k)}
+                  onKeyUp={(e) => headKeyUp(e, k)}
                 >
                   <span class="rb-opt-title">{LABEL[k]}</span>
                   <Show when={summary(k)}>{(t) => <span class="rb-opt-sum">· {t()}</span>}</Show>
                   <Icon name="chevron-down" />
                 </button>
+                </h3>
                 <div id={`opt-body-${k}`} class="rb-opt-body" hidden={!isOpen(k)}>{body(k)}</div>
               </section>
             )}

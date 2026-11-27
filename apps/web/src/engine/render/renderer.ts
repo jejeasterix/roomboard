@@ -93,7 +93,7 @@ export interface Renderer {
   /** Oublie les chemins en cache des éléments touchés (`full` : tous). */
   invalidate(change: Change): void;
   /** OG23 (pipette de scène) : couleur `#rrggbb` (minuscules) affichée au point (x, y) en px CSS de la scène ; null si
-   *  transparent ou hors du tampon. Facultative : un rendu sans lecture de pixel (WebGL2) n'en a pas. */
+   *  transparent ou hors du tampon. Facultative : `WebGL2LiveRenderer` relaie celle de la scène Canvas 2D ; un rendu sans lecture de pixel n'en a pas. */
   colorAt?(x: number, y: number): string | null;
   /** Aperçu de grille (DAE1) : rien n'est écrit ; `null` rend la grille du document. */
   setGridPreview(p: GridPreview | null): void;
