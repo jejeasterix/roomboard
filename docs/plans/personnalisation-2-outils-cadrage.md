@@ -14,7 +14,7 @@ connecteurs façon carte mentale, objet relié créé en un geste), avec une fic
 (autres outils, édition des points des formes, fiche complète) reste au périmètre. Il ne tient pas dans les 5 h 30 :
 il sera écrit au bloc final comme reste à faire (§ 7).
 
-Budget de questions : 38 sur 40 (tableau du § 2).
+Budget de questions : 39 sur 40 (tableau du § 2).
 
 ## 2. Décisions
 
@@ -30,13 +30,13 @@ Légende de la colonne « source » : `XL:` = code d'Excalidraw (`packages/…`)
 | 3 | Forme de la courbe | Catmull-Rom cubique, tension 0,5, extrémités doublées, comme Excalidraw. Le cœur l'aplatit en 16 pas par segment pour la collision et les bornes. Le rendu trace les mêmes Bézier, et le miroir TS fait le même aplatissement. | XL: `math/src/curve.ts:361` (`curveCatmullRomCubicApproxPoints`, `tension = 0.5`) ; `element/src/shape.ts:994` (`generator.curve`) | oui |
 | 4 | Liaison d'une extrémité | Champs facultatifs de la flèche ou de la ligne : `startBound` / `endBound` (id de l'objet) et `startFixed` / `endFixed` (`Any::Array [fx, fy]`, ratio de la boîte locale de l'objet, borné à ±10). C'est le `fixedPoint` d'Excalidraw. Pas de `mode` écrit : « sur le contour » (avec écart) ou « dedans » se déduit du point. **Aucun `boundElements` côté objet** : on retrouve les flèches liées en parcourant la page. | XL: `element/src/types.ts:320-328` (`FixedPointBinding`), `binding.ts:normalizeFixedPoint` ; DA-2 | oui (U3) ; DA-2 |
 | 5 | Écart entre pointe et contour | Excalidraw : `5 + épaisseur de l'objet / 2`, appliqué quand l'extrémité est sur le contour (orbite). Copié. | XL: `element/src/binding.ts:127-133` (`getBindingGap`, `BASE_BINDING_GAP`) | oui |
-| 6 | Objets accrochables | Rectangle, ellipse, texte, image, tableau, média, modèle 3D (tout élément à boîte). Pas les traits du stylo, ni les lignes et les flèches, ni le remplissage de zone (`fill`). Losange au lot 2 (n° 33). | XL: `element/src/typeChecks.ts:isBindableElement` (pas de freedraw ni de linéaire) ; `element.rs:36` (kinds) | oui |
+| 6 | Objets accrochables | Rectangle, ellipse, texte, image, tableau, média, modèle 3D (tout élément à boîte). Pas les traits du stylo, ni les lignes et les flèches, ni le remplissage de zone (`fill`). Losange au lot 2 (n° 33). Exclure les traits s'écarte du « n'importe quel objet » de Jérôme : H13. | XL: `element/src/typeChecks.ts:isBindableElement` (pas de freedraw ni de linéaire) ; `element.rs:36` (kinds) ; H13 | oui |
 | 7 | Suivi quand l'objet bouge | Dans **la même transaction** que la commande qui change la boîte de l'objet, le cœur recalcule les extrémités liées. Au lot 1 : `Transform` (déplacer, redimensionner, toute matrice), `SetText` et `FormatText` (boîte du texte). Les points intérieurs restent en place, sauf si les deux bouts sont liés à des objets qui bougent ensemble : la flèche suit alors en bloc. Une coudée est reroutée. Une étape d'annulation. | XL: `binding.ts:updateBoundElements` → `updateBoundArrow` → `LinearElementEditor.movePoints`, `moveMidPointsWithElement` ; `history.rs:1-4` (une transaction locale = une étape) ; `commands.rs:1043` (`cmd_transform`) | oui |
-| 8 | Flèche déplacée seule | Déplacer une flèche liée sans ses objets **rompt** ses liaisons (même transaction que le `Transform`), comme Excalidraw. Les déplacer avec ses deux objets garde tout. | XL: `element/src/dragElements.ts:148-175` (« Moving the bound arrow should unbind it ») | oui |
+| 8 | Flèche déplacée seule | Comme Excalidraw, la rupture se fait **bout par bout**, dans la même transaction que le `Transform`. Un bout dont l'objet ne bouge pas avec la flèche est rompu. Un bout dont l'objet est dans la sélection déplacée reste lié : flèche plus un de ses objets, seul l'autre bout se rompt ; flèche plus ses deux objets, tout est gardé. **Seuil** : une flèche liée déplacée seule ne bouge qu'au-delà de 10 px écran (`DRAGGING_THRESHOLD`), pour qu'un toucher qui la sélectionne ne la détache pas. Notre seuil de 2 px (`select.ts:33`) reste celui des autres objets. | XL: `element/src/dragElements.ts:149-155` (petit glisser initial), `:159-174` (`shouldUnbindStart`, `shouldUnbindEnd`), `common/src/constants.ts:34` (`DRAGGING_THRESHOLD`) ; `select.ts:33` | oui |
 | 9 | Objet lié supprimé | Rien n'est écrit sur la flèche. Une liaison vers un id absent **se lit libre** (lecture tolérante, comme U3 ailleurs) : la flèche garde sa dernière forme. Annuler la suppression rétablit la liaison sans écriture. Écart avec Excalidraw (`fixBindingsAfterDeletion` réécrit la flèche), voulu : aucun champ à réparer, annulation exacte. | XL: `binding.ts:fixBindingsAfterDeletion` ; `commands.rs:1727` (`cmd_delete`) ; DA-2 | oui |
-| 10 | Duplication, copier-coller, bibliothèque | La recopie (`copy.rs`) renumérote `startBound` / `endBound` vers les copies quand l'objet lié est copié aussi, et retire la liaison sinon. C'est la règle d'Excalidraw. Même table d'ids que les groupes. | XL: `binding.ts:fixDuplicatedBindingsAfterDuplication` ; `copy.rs:1-5,26` (`renumber`), `engine.ts:984` (`duplicateSelection` = extrait + `insertFragment`) | oui |
+| 10 | Duplication, copier-coller, bibliothèque, pages | La renumérotation se fait dans **`copy.rs:61` `copy_elements`**, le chemin commun à l'extraction, à l'insertion d'un fragment, à l'insertion de pages et à la duplication de page (`commands.rs:1443` = `extract_page` + `insert_pages`, `copy.rs:285-330`). Elle renvoie `startBound` / `endBound` vers les copies quand l'objet lié est copié aussi, et retire la liaison sinon. C'est la règle d'Excalidraw. Même table d'ids que les groupes. | XL: `binding.ts:fixDuplicatedBindingsAfterDuplication` ; `copy.rs:1-5,26,61` ; `engine.ts:984` (`duplicateSelection` = extrait + `insertFragment`) | oui |
 | 11 | Routage d'une flèche coudée | Dans le cœur (Rust), portage réduit de la **route simple** d'Excalidraw : sortie perpendiculaire au côté de liaison (ou vers l'autre bout si libre), marge 40, au plus 5 segments, sans A* ni évitement d'obstacles. Les points calculés sont écrits dans `points` : le rendu ne route jamais. Segments fixes déplaçables au lot 2. Le fichier adapté garde la mention MIT. | XL: `element/src/elbowArrow.ts:1433` (`getSimpleRoute`), `:1545`, `updateElbowArrowPoints`, `BASE_PADDING` 40 ; brief (mention MIT) ; DA-3 | oui |
-| 12 | Commandes | (a) `AddShape` gagne trois champs facultatifs : `points` (points intérieurs, monde), `start` et `end` (`{ id, fx, fy }` ou absent). (b) Nouvelle commande **`SetLinePoints { id, points, start, end }`** : tous les points en monde (≥ 2), liaisons ; une étape ; refus `BadPoints` (moins de 2, non fini, plus de 514) ou `BadShape` (cible ni ligne ni flèche, objet lié inconnu ou non accrochable). (c) `SetStyle` : `roundness` admis sur ligne et flèche, patch `elbowed` (flèche ; passer à coudée reroute dans la transaction, quitter coudée garde les deux extrémités, comme Excalidraw). (d) Nouvelle commande **`AddLinked { id, dir }`** (n° 27). | `commands.rs:79-94,253` ; XL: `actionChangeArrowType` (elbow : points réduits au début et à la fin) ; DA-4 | oui (additif, `contract.ts:1-4`) |
+| 12 | Commandes | (a) `AddShape` gagne trois champs facultatifs : `points` (points intérieurs, monde), `start` et `end` (`{ id, fx, fy }` ou absent). (b) Nouvelle commande **`SetLinePoints { id, points, start, end }`** : tous les points en monde (≥ 2), liaisons ; une étape ; refus `BadPoints` (moins de 2, non fini, plus de 514) ou `BadShape` (cible ni ligne ni flèche, objet lié inconnu ou non accrochable). (c) `SetStyle` : `roundness` admis sur ligne et flèche, patch `elbowed` (flèche ; passer à coudée reroute dans la transaction, quitter coudée garde les deux extrémités, comme Excalidraw). (d) Nouvelle commande **`AddLinked { id, dir }`** (n° 27), écrite dans **une seule** `transact_local` : elle appelle `copy_elements` (`copy.rs:61`, qui prend un `&mut TransactionMut`), jamais `insert_fragment`, qui ouvre sa propre transaction (`copy.rs:268`). | `commands.rs:79-94,253` ; XL: `actionChangeArrowType` (elbow : points réduits au début et à la fin) ; DA-4 | oui (additif, `contract.ts:1-4`) |
 | 13 | Pointes | La liste s'étend aux noms d'Excalidraw : `bar`, `circle`, `circle_outline` au lot 1 ; `diamond`, `diamond_outline` et `cardinality_*` au lot 2. Toujours flèche seulement (décision 17 d'OG11). | XL: `element/src/types.ts` (`Arrowhead`), `arrowheads.ts:normalizeArrowhead` ; `element.rs:402` ; `personnalisation-2-cadrage.md:47` | oui |
 | 14 | Fichier et version | `schema` 1 et `formatVersion` 1 inchangés ; tous les champs neufs sont facultatifs, et un neutre n'est jamais écrit (DA-5 d'OG11). Un fichier de `main` se relit à l'identique, octet pour octet. | U3 ; `element.rs:362,477` (DA-5 d'OG11) | oui jusqu'à la release |
 | 15 | Export `.iwb` / `.ubz` | Une ligne ou une flèche à plusieurs points s'écrit en **polyligne** des points aplatis quand le flux le permet. Sinon, elle s'écrit en segment de la corde, avec l'avis « ligne à plusieurs points écrite droite », sur le patron de l'avis existant des flèches `.ubz`. PDF, miniatures et vignettes passent par le rendu Canvas 2D : rien à faire de plus. | `board-io.ts:266,290-292` ; `board/read.rs:1216` (`polyline` déjà lu) ; `personnalisation-2-cadrage.md:57` (rendu Canvas 2D seul) | oui ; H6 |
@@ -46,12 +46,13 @@ Légende de la colonne « source » : `XL:` = code d'Excalidraw (`packages/…`)
 | # | point | décision | source | réversible ? |
 |---|---|---|---|---|
 | 16 | Création | Glisser crée la flèche à deux points, comme aujourd'hui. Excalidraw finalise un glisser de plus de 20 px écran ; nous gardons notre seuil de 4 px (`MIN_SHAPE_PX`, essais existants). Le mode multi-points au clic va au lot 2 : au doigt, Excalidraw ne l'a pas non plus (un tap y pose une flèche fixe). | XL: `App.tsx` ~l.9780-9805 (`MINIMUM_ARROW_SIZE`, `FIXED_DELTA_X`, `multiElement`), `common/src/constants.ts:35` ; `shape.ts:16` | oui |
-| 17 | Liaison à la création | Départ ou arrivée à moins de 15 px écran du contour d'un objet accrochable (30 px au doigt, borne haute d'Excalidraw) : l'extrémité se lie. Dedans, loin du contour : liée « dedans », sans écart. Près du contour : projetée sur le contour, avec écart. Pendant le glisser, l'objet visé est surligné (contour à l'accent de la charte). Le plus proche gagne, et un objet plus petit qui contient le point passe devant. | XL: `binding.ts:maxBindingDistance_simple` (15 à 30 px), `getBindingStrategyForDraggingBindingElementEndpoints_simple` (inside / orbit), `collision.ts:getBindingCandidates`, `renderer/interactiveScene.ts:renderBindingHighlightForBindableElement_simple` | oui |
+| 17 | Liaison à la création | Départ ou arrivée à moins de 15 px écran du contour d'un objet accrochable (30 px au doigt, borne haute d'Excalidraw) : l'extrémité se lie. Dedans, loin du contour : liée « dedans », sans écart. Près du contour : projetée sur le contour, avec écart. Pendant le glisser, l'objet visé est surligné (contour à l'accent de la charte). Le plus proche gagne, et un objet plus petit qui contient le point passe devant. La recherche se fait dans le cœur, par `bind_target` (§ 3, Modules). | XL: `binding.ts:maxBindingDistance_simple` (15 à 30 px), `getBindingStrategyForDraggingBindingElementEndpoints_simple` (inside / orbit), `collision.ts:getBindingCandidates`, `renderer/interactiveScene.ts:renderBindingHighlightForBindableElement_simple` | oui |
 | 18 | Points d'accroche visibles | Au survol (souris, stylet) et sous le doigt pendant un glisser de flèche, l'objet visé montre **4 points d'accroche** (milieux des côtés). Une extrémité lâchée à moins de 16 px écran (24 au doigt) d'un de ces points s'y cale. Actif par défaut, comme « S'accrocher aux points intermédiaires » d'Excalidraw. | XL: `actions/actionToggleMidpointSnapping.tsx` (« Snap to midpoints », actif par défaut) ; brief (« points d'accroche visibles au survol et au toucher ») | oui |
 | 19 | Désactiver la liaison | Souris et clavier : **Ctrl tenu** (Cmd sous macOS) pendant le glisser inverse la liaison, comme Excalidraw. Au doigt : réglage persistant **« Liaison des flèches »** (libellé FR d'Excalidraw), interrupteur de la section Pointes du panneau, gardé sur l'appareil avec le style courant. Pour une flèche déjà liée, tirer l'extrémité hors de portée la détache. | XL: `App.tsx:onKeyDown` ~l.5397 (`isBindingEnabled` inversé), `actions/actionToggleArrowBinding.tsx`, `locales/fr-FR.json:204` ; DA-6 | oui |
 | 20 | Nom de l'action « Modifier la flèche » | **« Modifier les points »**, pour la ligne comme pour la flèche (et pour les formes au lot 2). Raison en § 5, DA-7. | XL: `locales/fr-FR.json:162-163` (`lineEditor.edit`, `editArrow`), `helpDialog.editLineArrowPoints` ; brief (nom jugé peu approprié) | oui (libellé) |
 | 21 | Entrer dans « Modifier les points » | Bouton « Modifier les points » de la section Actions du panneau (44 px) ; double toucher (300 ms, 35 px) ou double-clic sur une ligne, ou sur une flèche ; **Ctrl+Entrée** (Cmd+Entrée). Écart : Excalidraw demande Ctrl+double-clic pour une flèche, parce que son double-clic y pose une étiquette. Les étiquettes vont au lot 2 : le double toucher simple sert ici, il est plus facile au doigt. Une coudée n'y entre pas (seules ses extrémités se tirent, n° 25). | XL: `actions/actionLinearEditor.tsx` (`toggleLinearEditor`, `predicate` sans coudée), `App.tsx:handleCanvasDoubleClick`, `onKeyDown` ~l.5486, `onTouchStart` (`TAP_TWICE_TIMEOUT` 300, `DOUBLE_TAP_POSITION_THRESHOLD` 35) | oui ; H3 |
 | 22 | Dans « Modifier les points » | Une poignée par point (cible de 44 px au doigt) et une poignée de milieu par segment, masquée sous 40 px écran. Toucher un point le sélectionne ; Maj+clic en ajoute un. Tirer un point le déplace ; tirer un milieu insère un point (sur une courbe, la courbe passe par lui). Suppr ou Retour arrière retire les points choisis. Au doigt, le bouton « Retirer le point » du panneau fait de même. S'il reste moins de deux points, la flèche est supprimée. Sortie : Échap, ou toucher hors de l'objet. **Une `SetLinePoints` au relâché, une étape par glisser.** | XL: `linearElementEditor.ts` (`getEditorMidPoints`, `isSegmentTooShort`, `shouldAddMidpoint`, `addMidpoint`, `handlePointerDown`, `deletePoints`), `actions/actionDeleteSelected.tsx`, `actionFinalize.tsx:keyTest` | oui |
+| 39 | Ligne ou flèche sélectionnée, hors édition | **Pas de cadre à 8 poignées** pour une ligne ou une flèche seule sélectionnée. À la place, comme Excalidraw : une poignée à chaque extrémité, et une poignée de milieu si la flèche a deux points ou si elle est coudée. Tirer une extrémité la déplace et la lie, ou la délie (n° 17) ; tirer le milieu insère un point (courbure). Une `SetLinePoints` au relâché, une étape. Le cadre de redimensionnement (`Transform`) ne sert plus qu'aux sélections de plusieurs objets : il ne rompt donc plus de liaison par accident. | XL: `renderer/interactiveScene.ts:1164`, `linearElementEditor.ts:822-830` (poignées hors édition) ; `select.ts:79-87` (`grabbedHandle`, 8 poignées) | oui |
 | 23 | Contrainte d'angle | Maj tenue (création, point tiré) : pas de 15°, comme aujourd'hui (`ANGLE_STEP_DEG`) et comme Excalidraw. Au doigt : n° 29. Le point tiré se contraint par rapport à son voisin. | XL: `common/src/constants.ts:40` (`SHIFT_LOCKING_ANGLE` = π/12), `sizeHelpers.ts:getLockedLinearCursorAlignSize` ; `shape.ts:17-31` | oui |
 | 24 | Type dans le panneau | Flèche : nouvelle section **« Type de flèche »** (libellé FR d'Excalidraw) avec Droite · Courbe · Coudée, placée juste avant Pointes. Ligne : la section existante **« Angles »** (Droits · Arrondis) s'ouvre à la ligne, comme le fait Excalidraw (roundness). Défaut du style courant : **Droite**. Écart : Excalidraw part sur « round » ; nous gardons le tracé d'aujourd'hui, pour qu'aucun essai ne bouge. | XL: `locales/fr-FR.json:71-74` (`arrowtypes`, « Flèche pointue / incurvée / coudée »), `appState.ts` (`currentItemArrowType` = round) ; `tool-options.ts:7-28`, `OptionsPanel.tsx:57-64,362` ; H1 | oui |
 | 25 | Flèche coudée : édition | Seules les deux extrémités se tirent, et le reste est reroutée par le cœur. Pas de rotation. Segments fixes (milieux tirés) et leur suppression au double toucher : lot 2. | XL: `elbowArrow.ts` (`isPointHandle` début et fin), `LinearElementEditor.moveFixedSegment`, `deleteFixedSegment` | oui |
@@ -62,13 +63,13 @@ Légende de la colonne « source » : `XL:` = code d'Excalidraw (`packages/…`)
 | # | point | décision | source | réversible ? |
 |---|---|---|---|---|
 | 27 | Créer un objet relié en un geste | Commande du cœur **`AddLinked { id, dir }`** (`dir` : `up`, `down`, `left`, `right`), sur un rectangle ou une ellipse seul sélectionné. Elle pose dans la même transaction : une copie de l'objet (taille, couleurs, trait, remplissage, angles) à 100 unités dans la direction, centrée, et une **flèche coudée liée aux deux** côtés en regard, avec la pointe de fin du style courant. Si la place est prise par un nœud déjà relié dans cette direction, la copie glisse sur le côté (taille + 100) jusqu'à une place libre. La grappe centrée d'Excalidraw va au lot 2. La copie devient la sélection. | XL: `element/src/flowchart.ts:addNewNodes`, `cloneFlowchartNode`, `createBindingArrow`, `VERTICAL_OFFSET` / `HORIZONTAL_OFFSET` 100, `placeCluster` ; `typeChecks.ts:isFlowchartNodeElement` ; DA-4 | oui |
-| 28 | Geste au doigt et au clavier | **Doigt** : quatre poignées « + » de 44 px autour d'un rectangle ou d'une ellipse seul sélectionné, à 24 px hors du cadre ; toucher une poignée lance `AddLinked`. Excalidraw n'a pas de flèches rapides au survol : c'est une adaptation au tactile. **Clavier** : **Ctrl+Alt+↑ ↓ ← →** (Cmd+Alt sous macOS). Excalidraw prend Ctrl+flèche, mais chez nous Ctrl+↑ et Ctrl+↓ rangent déjà les objets (OG14). Une pression crée un nœud tout de suite, sans attendre le relâchement de Ctrl. | XL: `components/App.flowchart.ts:112,186-192` (`resolveKeyboardEventToOperation`, Ctrl/Cmd+flèche), `HintViewer.tsx` ; `keys.ts:78-84` (`orderKey`) ; H2 | oui |
+| 28 | Geste au doigt et au clavier | **Doigt** : quatre poignées « + » de 44 px autour d'un rectangle ou d'une ellipse seul sélectionné, centrées à 40 px hors du cadre ; toucher une poignée lance `AddLinked`. Excalidraw n'a pas de flèches rapides au survol : c'est une adaptation au tactile. **Clavier** : **Alt+Maj+↑ ↓ ← →** (⌥⇧ sous macOS). Excalidraw prend Ctrl+flèche, mais chez nous Ctrl+↑ et Ctrl+↓ rangent déjà les objets (OG14). Ctrl+Alt est écarté parce que Windows le livre comme AltGr, que `keys.ts:78` refuse (H2). Une pression crée un nœud tout de suite. **Conflit de portée** : la poignée de redimensionnement gagne dans ses 12 px (`handles.ts:9`, `HANDLE_GRAB_PX`). La poignée « + » est donc centrée à 40 px du cadre : sa cible de 44 px va de 18 à 62 px et ne chevauche pas cette portée. | XL: `components/App.flowchart.ts:112,186-192` (`resolveKeyboardEventToOperation`, Ctrl/Cmd+flèche), `HintViewer.tsx` ; `keys.ts:78-84` (`orderKey`, Alt refusé) ; `handles.ts:9` ; H2 | oui |
 
 ### 2.4 Gestes tactiles à la place des touches tenues
 
 | # | point | décision | source | réversible ? |
 |---|---|---|---|---|
-| 29 | Maj (proportions, depuis l'axe, 15°, carré et cercle) | **Un second doigt posé et tenu pendant un geste déjà commencé** (plus de 150 ms après le premier) vaut Maj tant qu'il reste posé. Le routeur ignore aujourd'hui ce doigt tardif : il gagne ce sens. Il vaut pour Sélection, formes, ligne, flèche et « Modifier les points », jamais pour le stylo ni la gomme. Si un stylet ou une souris tient le geste, un doigt posé vaut aussi Maj (au lieu de déplacer la vue) pendant un geste de Sélection, de forme ou de flèche. Lot 1 : il sert déjà au redimensionnement (proportions) par `ctx.shift`. | `router.ts:85-100` (second doigt tardif ignoré, pincement sous 150 ms) ; `tool.ts:15-18` (`shift`, `alt`) ; DA-6 | oui |
+| 29 | Maj (proportions, depuis l'axe, 15°, carré et cercle) | **Un second doigt posé et tenu pendant un geste déjà commencé** (plus de 150 ms après le premier) vaut Maj tant qu'il reste posé. Le routeur ignore aujourd'hui ce doigt tardif : il gagne ce sens. Il vaut pour Sélection, formes, ligne, flèche et « Modifier les points », jamais pour le stylo ni la gomme. **Seulement pour un geste tenu par un doigt** : pendant un geste au stylet ou à la souris, un doigt posé garde son rôle actuel, parce qu'une paume posée n'y est pas annulée et deviendrait un Maj fantôme. Lot 1 : il sert déjà au redimensionnement (proportions) par `ctx.shift`. | `router.ts:85-101` (second doigt tardif ignoré, pincement sous 150 ms) ; `sampler.ts:144` (paume) ; `tool.ts:15-18` (`shift`, `alt`) ; DA-6 | oui |
 | 30 | Ctrl (sans liaison) | Réglage « Liaison des flèches » (n° 19) ; pas de geste tenu. | n° 19 | oui |
 | 31 | Alt (depuis le centre, sans aimant de grille, liaison forcée « dedans ») | Lot 2 : îlot **« Modificateurs »** collant (deux boutons de 44 px, « Proportions » et « Depuis le centre »), montré au doigt pendant Sélection et formes ; la souris garde Alt. Lot 1 : Alt garde son sens actuel (aucun aimant de grille, C9) ; la liaison forcée dedans n'a pas de geste tactile (lâcher l'extrémité au milieu de l'objet suffit, n° 17). | XL: `common/src/keys.ts:shouldResizeFromCenter`, `binding.ts` (Alt force inside) ; `shape.ts:56-58` (Alt = sans aimant) ; H4 | oui |
 | 32 | Alt-glisser (dupliquer), clic droit, double-clic | Alt-glisser : **hors périmètre**, porté par OG23 (« Glisser une copie », `personnalisation-2-retours`). Clic droit : appui long de 500 ms, convention existante (décision 0294 du coffre), comme Excalidraw (`TOUCH_CTX_MENU_TIMEOUT`). Double-clic : double toucher (n° 21). | `~/projets/roomboard-wt/personnalisation-2-retours/docs/sessions/personnalisation-2-retours-etat.md:5` ; coffre `02_Decisions/0294` ; XL: `App.tsx` (`TOUCH_CTX_MENU_TIMEOUT` 500) | oui |
@@ -106,13 +107,15 @@ Graphe frais : `~/.cache/graphes/roomboard/graphify-out/graph.json` (27 nov., 18
 | `src/element.rs:367-399` `Look`, `:402` `ARROWHEADS`, `:437` `LOOK_KEYS`, `:478` `look_fields`, `:517` `read_look` | oui | `elbowed`, `roundness` sur segment, nouvelles pointes | V |
 | `src/style.rs:140-163` admission par genre, `:181` `cmd_set_style` | oui | roundness sur ligne et flèche, `elbowed`, reroutage | V |
 | `src/document.rs:387-395` `ShapeView` | oui | vue : `points`, liaisons (lues libres si la cible manque) | V |
-| `src/copy.rs:26` `renumber`, `:181` `extract`, `:246` `insert_fragment` | oui | renumérotation des liaisons (n° 10) | V |
+| `src/copy.rs:26` `renumber`, `:61` `copy_elements`, `:181` `extract`, `:246` `insert_fragment`, `:285-330` `insert_pages` | oui | renumérotation des liaisons dans `copy_elements`, chemin commun (n° 10) ; `AddLinked` l'appelle dans sa transaction | V |
+| `src/commands.rs:1443` `cmd_duplicate_page` | non (passe par `copy_elements`) | la duplication de page renumérote les liaisons | V |
+| `src/query.rs:278` `hit_test`, `:139` `outline` | oui (ajout à côté) | nouvelle requête `bind_target` (cible d'accroche, n° 17) | V |
 | `src/query.rs:246-252` `element_geom`, `:318` `element_bounds`, `:342` `snap_box` | non (passent par `shape_polygon`) | collision et bornes suivent la polyligne | V |
 | `src/fill.rs:206-221` `edge_hit` | oui (signature seule) | appel de `shape_polygon` adapté ; un segment n'a toujours pas de bord pour le pot (`is_segment`, `:216`) | V |
 | `src/zone.rs:843` `wall_of` | non (passe par `shape_polygon`) | une flèche courbe devient un mur courbe : voulu | V |
 | `src/history.rs` | non | une transaction locale = une étape | V |
 | `tests/look.rs`, `tests/pot.rs`, `tests/compat_*.rs`, `tests/scenarios.rs` | non : à garder verts | compatibilité des anciens fichiers, pot sur formes | V |
-| nouveau `tests/fleches.rs` | oui | liaisons, suivi, rupture, copie, route, `AddLinked`, une étape | — |
+| nouveau `tests/fleches.rs` | oui | liaisons, suivi, rupture bout par bout, copie, **duplication de page** (liaisons vers les copies), route, `AddLinked` en une étape | — |
 
 ### 3.2 Pont Wasm et faux cœur
 
@@ -120,7 +123,7 @@ Graphe frais : `~/.cache/graphes/roomboard/graphify-out/graph.json` (27 nov., 18
 |---|---|---|---|
 | `crates/roomboard-wasm/src/lib.rs` | oui | nouvelles commandes, vue de forme | V |
 | `apps/web/src/core/api.ts:28,73,102,210,368` | oui | `Command` (`SetLinePoints`, `AddLinked`, champs d'`AddShape`), `ShapeView`, `LookPatch.elbowed` | V |
-| `apps/web/src/core/wasm-core.ts` | oui | lecture des vues | V |
+| `apps/web/src/core/wasm-core.ts`, `:554` `add_shape` (arguments positionnels) | oui | lecture des vues ; `add_shape` gagne `points`, `start`, `end`, ou passe à un objet JSON comme les commandes récentes (choix du plan) ; `bindTarget` exposé à côté de `hitTest` (`api.ts:392`) | V |
 | `apps/web/src/core/fake-core.ts:986,1507,1731` | oui | miroir des points, liaisons, suivi ; route coudée **exclue du contrat commun** (DA-3) | V |
 | `apps/web/src/core/shapes.ts` | oui | miroir de `shape_polygon` et de la courbe | V |
 | `apps/web/src/core/look.ts:7` `Arrowhead` | oui | nouvelles pointes, `elbowed` | V |
@@ -133,6 +136,7 @@ Graphe frais : `~/.cache/graphes/roomboard/graphify-out/graph.json` (27 nov., 18
 |---|---|---|---|
 | `apps/web/src/engine/render/canvas2d.ts:242` `traceShape`, `:297` `paintShape`, `:668` aperçu | oui | polyligne, courbe (Bézier de Catmull-Rom), coudée, pointes nouvelles | V |
 | `apps/web/src/engine/render/sketch.ts:62,151` | oui | tracé roughjs d'une polyligne et d'une courbe | V |
+| `apps/web/src/engine/render/sketch.ts:114-118` `keyOf`, `:59` `adjustRoughness` | oui | la clé du cache ne lit que w, h et l'aspect : elle doit lire aussi `points` et `elbowed`, sinon un point intérieur déplacé garde l'ancien tracé roughjs ; `adjustRoughness` mesure la taille sur le chemin | V |
 | `apps/web/src/engine/render/overlay.ts` | oui | poignées de points et de milieux, points d'accroche, surlignage, poignées « + » | V |
 | `apps/web/src/engine/render/select.ts`, `webgl2.ts` | non | la scène passe par Canvas 2D (`personnalisation-2-cadrage.md:57`) | V |
 | `apps/web/src/app/thumbnail.ts`, `pdf-overlay-vector.ts` | non | même rendu Canvas 2D | V |
@@ -143,11 +147,11 @@ Graphe frais : `~/.cache/graphes/roomboard/graphify-out/graph.json` (27 nov., 18
 |---|---|---|---|
 | `apps/web/src/engine/tools/shape.ts:20,55` | oui | liaison à la création, accroche, Ctrl qui inverse | V |
 | nouveau `apps/web/src/engine/tools/line-edit.ts` | oui | « Modifier les points » | — |
-| `apps/web/src/engine/tools/select.ts` | oui | double toucher et double-clic qui entrent dans l'éditeur, poignées « + » | V |
+| `apps/web/src/engine/tools/select.ts:33,79-87` | oui | double toucher et double-clic qui entrent dans l'éditeur ; poignées « + » ; ligne ou flèche seule sans cadre (n° 39) ; seuil de 10 px pour une flèche liée seule (n° 8) | V |
 | `apps/web/src/engine/tools/handles.ts` | non (réutilisé) | `hitHandle` sert aux poignées de points | V |
 | `apps/web/src/engine/tools/tool.ts:11-25` `ToolContext` | oui | `ctrl?()` (inversion de liaison) | V |
 | `apps/web/src/engine/input/router.ts:85-100` | oui | doigt tardif = Maj (n° 29) | V |
-| `apps/web/src/engine/input/keys.ts:55,78-84` | oui | Ctrl+Entrée, Ctrl+Alt+flèche ; `orderKey` inchangé | V |
+| `apps/web/src/engine/input/keys.ts:55,78-84` | oui | Ctrl+Entrée, Alt+Maj+flèche ; `orderKey` inchangé | V |
 | `apps/web/src/engine/engine.ts` | oui | éditeur de points, `AddLinked`, réglage de liaison | V |
 | `apps/web/src/engine/item-style.ts` | oui | `arrowType` et liaison dans le style courant | V |
 
@@ -158,7 +162,8 @@ Graphe frais : `~/.cache/graphes/roomboard/graphify-out/graph.json` (27 nov., 18
 | `apps/web/src/ui/tool-options.ts:7-28` | oui | `arrowType`, `roundness` pour la ligne | V |
 | `apps/web/src/ui/OptionsPanel.tsx:57-64,333-338,362` | oui | sections Type de flèche, Pointes (+3, interrupteur Liaison), bouton Modifier les points, Retirer le point | V |
 | `apps/web/src/ui/icons.ts`, `icons.test.ts` | oui | icônes Droite, Courbe, Coudée, Barre, Rond, Rond creux, Modifier les points, « + » (Lucide ou dessinées, § 10 du design) | V |
-| `apps/web/src/ui/shortcuts.ts:5-37` | oui | Ctrl+Entrée, Ctrl+Alt+flèche, Ctrl tenu | V |
+| `apps/web/src/ui/shortcuts.ts:5-37` | oui | Ctrl+Entrée, Alt+Maj+flèche, Ctrl tenu | V |
+| `apps/web/src/ui/shortcuts.ts:45` `ARIA` | oui | ←, → et Entrée manquent (`ArrowLeft`, `ArrowRight`, `Enter`) pour `aria-keyshortcuts` | V |
 | `apps/web/src/ui/HelpPanel.tsx` | non (lit la table) | l'aide liste les raccourcis de la table | V |
 | `apps/web/src/toolbar.ts:100-112` `TOOL_TABLE` | non (lot 1) ; oui au lot 2 (losange) | — | V |
 | `apps/web/src/ui/rb.css` | oui | poignées « + » et de points (44 px), surlignage | S |
@@ -180,12 +185,12 @@ Graphe frais : `~/.cache/graphes/roomboard/graphify-out/graph.json` (27 nov., 18
 |---|---|---|---|
 | `apps/web/src/engine/tools/shape.test.ts`, `select.test.ts` | oui (ajouts) | liaison à la création, doigt tardif, double toucher | V |
 | `apps/web/src/engine/input/router.test.ts` | oui (ajouts) | doigt tardif = Maj ; pincement sous 150 ms inchangé | V |
-| `apps/web/src/engine/render/canvas2d.test.ts`, `sketch.test.ts` | oui (ajouts) | courbe, polyligne, pointes | V |
+| `apps/web/src/engine/render/canvas2d.test.ts`, `sketch.test.ts` | oui (ajouts) | courbe, polyligne, pointes ; « point intérieur déplacé : tracé roughjs changé » (`keyOf`) | V |
 | `apps/web/src/ui/OptionsPanel.test.tsx`, `tool-options.test.ts`, `shortcuts.test.ts`, `icons.test.ts` | oui (ajouts) | sections, raccourcis, icônes | V |
 | `apps/web/src/app/board-io.test.ts`, `crates/roomboard-formats/tests/board_roundtrip.rs` | oui (ajouts) | export polyligne ; flux témoin `W1` inchangé | V |
 | `apps/cli/src/main.test.ts`, `formats.test.ts` | non | à garder verts | V |
 | `scripts/essais/s34-navigateur.mjs`, `s5b-navigateur.mjs`, `personnalisation-2-navigateur.mjs`, `c9-grille-navigateur.mjs`, `c3-groupes-navigateur.mjs`, `c4-bibliotheque-navigateur.mjs`, `c13-tableaux-navigateur.mjs` | non | essais des formes, de la grille, des groupes, de la bibliothèque et des tableaux : verts sans réécriture | V |
-| nouveau `scripts/essais/outils-excalidraw-navigateur.mjs` + ligne de `scripts/verifier.sh` (près de `:146`) | oui | S1 à S4 | V |
+| nouveau `scripts/essais/outils-excalidraw-navigateur.mjs` + ligne de `scripts/verifier.sh` (près de `:146`) | oui | S1 à S4, S6 | V |
 
 ### 3.8 Documents et licences
 
@@ -196,12 +201,16 @@ Graphe frais : `~/.cache/graphes/roomboard/graphify-out/graph.json` (27 nov., 18
 
 ### Effets de bord sur l'existant
 
-1. Un doigt posé après 150 ms pendant un geste de Sélection, de forme ou de flèche était ignoré ; il vaut désormais Maj.
-   Pendant un geste au stylet de ces outils, il ne déplace plus la vue. Le stylo et la gomme ne changent pas. Tests :
+1. Un doigt posé après 150 ms pendant un geste **au doigt** de Sélection, de forme ou de flèche était ignoré ; il vaut
+   désormais Maj. Les gestes au stylet ou à la souris ne changent pas, ni le stylo ni la gomme. Tests :
    `router.test.ts` (nouveaux cas, et les cas existants du pincement et du doigt tardif du stylo restent verts).
 2. Déplacer un rectangle relié déplace aussi l'extrémité de ses flèches, dans la même étape. Annuler revient sur les
    deux. Test : `tests/fleches.rs` (suivi, une étape) et S1.
-3. Déplacer une flèche liée seule rompt ses liaisons. Test : `tests/fleches.rs` (rupture) et le contrat commun.
+3. Déplacer une flèche liée seule (au-delà de 10 px) rompt ses liaisons, bout par bout. Test : `tests/fleches.rs`
+   (rupture) et le contrat commun.
+8. Une ligne ou une flèche seule sélectionnée n'a plus de cadre à 8 poignées (n° 39). Test : `select.test.ts` ;
+   `s34-navigateur.mjs` et `personnalisation-2-navigateur.mjs` sont à relire au plan, s'ils redimensionnent une flèche par
+   son cadre (S).
 4. La section « Angles » apparaît pour la ligne, et la section Pointes gagne trois choix. Test : `tool-options.test.ts` ;
    `personnalisation-2-navigateur.mjs:1047` parcourt les quatre pointes actuelles par leur valeur : il reste vert s'il ne
    compte pas les choix (à vérifier au plan, S).
@@ -253,14 +262,16 @@ Graphe frais : `~/.cache/graphes/roomboard/graphify-out/graph.json` (27 nov., 18
 | pointe aux deux bouts | `shape.rs:52` `arrow_wings` ; `core/shapes.ts` `arrowWings` | appelés sur le premier et le dernier segment | réutiliser |
 | lire et écrire les champs d'aspect (`elbowed`, pointes) | `element.rs:437` `LOOK_KEYS`, `:478` `look_fields`, `:517` `read_look`, `:451` `sanitized` | une clé de plus, domaine étendu | étendre |
 | patch de style sur une sélection | `style.rs:181` `cmd_set_style` | `StylePatch.elbowed: Option<Option<bool>>` ; admission de `roundness` sur segment | étendre |
+| cible d'accroche sous le pointeur (n° 17) | `crates/roomboard-core/src/query.rs:278` `hit_test`, `:139` `outline` ; `api.ts:392` `hitTest` | **étendre** `query.rs` d'une requête voisine : `pub fn bind_target(&self, page: &str, x: f64, y: f64, tol: f32) -> Option<BindHit>` avec `BindHit { id: String, fixed: [f64; 2], on_outline: bool }`. Elle reprend les géométries de `hit_test` (même cache), filtre les objets accrochables et préfère le plus petit qui contient le point. Côté page : `bindTarget(page, x, y, tol)` à côté de `hitTest` | étendre |
 | géométrie des chemins, courbe, liaisons, route simple | aucun (cherché : `points`, `Binding`, `bind`, `curve`, `route`, `elbow` dans `crates/`) | **nouveau** `crates/roomboard-core/src/linear.rs` : `pub fn path(s: &ShapeFields) -> Vec<(f64, f64)>` (tous les points locaux) ; `pub fn flatten(path, curve: bool) -> Vec<(f64, f64)>` ; `pub fn anchor(target: &Geom, fixed: [f64; 2], gap: f64) -> (f64, f64)` ; `pub fn elbow_route(a: End, b: End) -> Vec<(f64, f64)>` ; `pub(crate) fn follow(txn, moved: &[String])` (appelée par `cmd_transform`, `SetText`, `FormatText`) | nouveau module (DA-1, DA-3) |
-| renuméroter les liaisons à la copie | `copy.rs:26` `renumber` (ids de groupe), table `IdMap` | même table, étendue aux ids d'éléments pour `startBound` / `endBound` ; liaison retirée si la cible n'est pas copiée | étendre |
-| copie de l'objet pour `AddLinked` | `copy.rs:181` `extract` / `:246` `insert_fragment` (recopie profonde de tous les champs) | `AddLinked` appelle la recopie d'un seul élément en interne, puis écrit la flèche dans la même transaction | réutiliser |
+| renuméroter les liaisons à la copie | `copy.rs:61` `copy_elements` (chemin commun d'`extract`, `insert_fragment`, `insert_pages` et de la duplication de page), `:26` `renumber`, table `IdMap` | dans `copy_elements` : la table s'étend aux ids d'éléments pour `startBound` / `endBound`, et la liaison est retirée si la cible n'est pas copiée | étendre |
+| copie de l'objet pour `AddLinked` | `copy.rs:61` `copy_elements(src, from, dst: &mut TransactionMut, into, ids, dx, dy)` | appelé dans la transaction unique d'`AddLinked`, qui y écrit ensuite la flèche ; pas `insert_fragment` (`copy.rs:268` ouvre sa propre `transact_local`) | réutiliser |
+| cache du tracé roughjs | `engine/render/sketch.ts:114-118` `keyOf` | la clé ajoute `points` et `elbowed` | étendre |
 | poignées et portée de prise | `engine/tools/handles.ts` `hitHandle`, `HANDLE_GRAB_PX` | `hitHandle` sur les points, portée de 22 px au doigt (cible de 44) | réutiliser |
 | contrainte de 15° | `engine/tools/shape.ts:20` `constrainEnd` | appelé pour le point tiré, par rapport à son voisin | réutiliser |
 | aimant de grille pendant le glisser | `CoreDocument.snapPoint` (`shape.ts:56-58`) | même appel pour le point tiré | réutiliser |
 | style courant, valeurs mixtes, sections | `ui/tool-options.ts:7-28` (`OPTION_ORDER`, `BY_TOOL`, `BY_KIND`), `OptionsPanel.tsx:57-64` (`LABEL`), `RadioChoices` | clé `arrowType`, ligne dans `BY_TOOL`, `roundness` pour la ligne | étendre |
-| raccourcis | `ui/shortcuts.ts:5` `SHORTCUTS`, `engine/input/keys.ts` | lignes `line-edit`, `linked-node`, `no-binding` ; `lineEditKey`, `linkedKey` à côté d'`orderKey` | étendre |
+| raccourcis | `ui/shortcuts.ts:5` `SHORTCUTS`, `:45` `ARIA`, `engine/input/keys.ts` | lignes `line-edit`, `linked-node`, `no-binding` ; `ARIA` gagne ←, →, Entrée ; `lineEditKey`, `linkedKey` à côté d'`orderKey` | étendre |
 | double toucher | aucun dans le moteur (cherché : `double`, `dblclick`, `TAP_TWICE` dans `apps/web/src/engine`) | **nouveau**, petit : `engine/input/double-tap.ts`, `isDoubleTap(prev: Tap \| null, cur: Tap): boolean` (300 ms, 35 px) | nouveau module |
 | glisser au pointeur dans l'interface (poignées « + » dans le DOM si besoin) | `ui/pointer-gesture.ts` (décision 0299 du coffre) | appelé tel quel ; les poignées du canevas passent par le moteur | réutiliser |
 | icônes | `ui/icons.ts` (table Lucide, trait 1,5, grille de pixels) | nouvelles entrées | étendre |
@@ -277,10 +288,12 @@ Aucun « Constats à fermer » : la demande ne vient pas d'`audit-architecture`.
 
 - **H1 — Type par défaut « Droite »** (n° 24). Excalidraw part sur « Courbe ». Nous gardons le tracé d'aujourd'hui, pour
   que les essais et les habitudes ne bougent pas. Changer le défaut ne demande qu'une ligne de `item-style.ts`.
-- **H2 — Ctrl+Alt+flèche pour créer un objet relié** (n° 28). Excalidraw prend Ctrl+flèche, et ses touches de rangement
-  sont Ctrl+[ ]. OG14 a posé le rangement sur Ctrl+↑ ↓. Risque : sur certains PC Windows à pilote Intel ancien,
-  Ctrl+Alt+flèche fait pivoter l'écran. Autre option : passer le rangement sur Ctrl+[ ] comme Excalidraw, et rendre
-  Ctrl+flèche au flowchart. Les poignées « + » restent le geste principal.
+- **H2 — Alt+Maj+flèche pour créer un objet relié** (n° 28). Excalidraw prend Ctrl+flèche, et ses touches de rangement
+  sont Ctrl+[ ]. OG14 a posé le rangement sur Ctrl+↑ ↓. Ctrl+Alt, envisagé d'abord, est écarté : Windows le livre comme
+  AltGr, que `keys.ts:78` refuse, et certains pilotes Intel anciens y font pivoter l'écran. Risque restant : Alt+Maj
+  change la disposition du clavier sous Windows s'il est pressé seul (pas avec une flèche entre les deux, à vérifier sur
+  le PC). Autre option : passer le rangement sur Ctrl+[ ] comme Excalidraw, et rendre Ctrl+flèche au flowchart. Les
+  poignées « + » restent le geste principal.
 - **H3 — Double toucher simple sur une flèche = « Modifier les points »** (n° 21). Au lot 2, l'étiquette sur flèche
   voudra peut-être le double toucher, comme chez Excalidraw. Il faudra alors choisir.
 - **H4 — Îlot « Modificateurs » au lot 2** (n° 31). Seul Maj a un geste au lot 1 (doigt tardif). Alt (depuis le centre)
@@ -288,6 +301,9 @@ Aucun « Constats à fermer » : la demande ne vient pas d'`audit-architecture`.
 - **H5 — Forme éditée = ligne fermée** (n° 34). Une forme passée en édition de points perd son genre (rectangle,
   ellipse) et devient une ligne fermée, comme chez Excalidraw. Annulable, mais un rectangle converti n'a plus les
   arrondis ni le texte lié d'un rectangle.
+- **H13 — Traits du stylo non accrochables** (n° 6). Jérôme demande de rattacher une extrémité à « n'importe quel
+  objet ». Excalidraw exclut le freedraw, et la boîte d'un trait à main levée donne un ancrage peu lisible. L'ajouter plus
+  tard ne change que la liste des genres accrochables.
 - **H6 — Export `.iwb` / `.ubz`** (n° 15) : polyligne si le flux la porte, sinon la corde avec un avis.
 
 ### Niveau 2
@@ -296,7 +312,7 @@ Aucun « Constats à fermer » : la demande ne vient pas d'`audit-architecture`.
 - **H8 — Plafond de 512 points intérieurs** (n° 1) : Excalidraw n'en a pas. Il borne le coût de la collision et du
   fichier.
 - **H9 — Portées** : 15 px écran pour la liaison (30 au doigt), 16 px pour les points d'accroche (24 au doigt), poignée
-  « + » à 24 px du cadre. À régler à l'ENI.
+  « + » centrée à 40 px du cadre (hors de la portée de 12 px des poignées de redimensionnement). À régler à l'ENI.
 - **H10 — `AddLinked` sur rectangle et ellipse seulement** (losange au lot 2 ; texte et image écartés, comme chez
   Excalidraw).
 - **H11 — Suivi au lot 1 limité à `Transform`, `SetText` et `FormatText`**. Les autres changements de boîte
@@ -342,9 +358,9 @@ nouveau type de tracé ne touche que `linear.rs` et son miroir.
 
 **DA-6 — Modificateurs tactiles : le doigt tardif, et des réglages à la place des touches qu'on tient.**
 Contexte : au doigt, pas de Maj, d'Alt ni de Ctrl ; deux doigts posés en moins de 150 ms font déjà un pincement. Le
-doigt tardif est ignoré. Décision : doigt tardif tenu = Maj ; Ctrl (sans liaison) devient le réglage « Liaison des
-flèches » ; Alt aura des boutons collants au lot 2. Conséquences : rien ne change pour le pincement ni pour le stylo. Un
-geste de forme au stylet ne déplace plus la vue d'un doigt posé. La règle tient dans le routeur et `ctx.shift`.
+doigt tardif est ignoré. Décision : doigt tardif tenu = Maj, seulement pendant un geste au doigt ; Ctrl (sans liaison) devient le réglage « Liaison des
+flèches » ; Alt aura des boutons collants au lot 2. Conséquences : rien ne change pour le pincement, le stylet ni la souris,
+et une paume posée pendant un geste au stylet ne devient pas Maj. La règle tient dans le routeur et `ctx.shift`.
 
 **DA-7 — « Modifier les points » plutôt que « Modifier la flèche ».**
 Contexte : Excalidraw nomme l'action « Modifier la ligne » ou « Modifier la flèche » (`fr-FR.json:162-163`), alors
@@ -362,8 +378,8 @@ d'abord, avec des événements `pointerType: "touch"`, puis la souris et le clav
 
 - **S1 — Relier deux objets au doigt, les déplacer, annuler.** Au doigt : poser deux rectangles A et B, prendre la Flèche,
   glisser de A vers B. Les 4 points d'accroche de B s'affichent sous le doigt, et B est surligné. Au relâché, l'état
-  montre une flèche avec `startBound = A`, `endBound = B`. Glisser B de 200 px avec la Sélection : l'extrémité de fin
-  suit, et la pointe reste à `5 + épaisseur / 2` du contour. Annuler une fois : B et la flèche reviennent ensemble (une
+  montre une flèche avec `startBound = A`, `endBound = B`. Toucher la flèche : deux poignées d'extrémité et une de milieu, sans cadre à 8 poignées. Glisser B de
+  200 px avec la Sélection : l'extrémité de fin suit, et la pointe reste à `5 + épaisseur / 2` du contour. Annuler une fois : B et la flèche reviennent ensemble (une
   étape).
 - **S2 — Courber une flèche au doigt, puis l'enregistrer.** Au doigt : double toucher sur une flèche, et « Modifier les
   points » s'ouvre (poignées visibles). Tirer le point milieu de 80 px : la flèche a 3 points. Dans le panneau, Type de
@@ -377,14 +393,18 @@ d'abord, avec des événements `pointerType: "touch"`, puis la souris et le clav
   coudée se reroute. Une étape par création.
 - **S4 — Souris et clavier.** Avec la souris : flèche tirée de A vers B **en tenant Ctrl** : elle reste libre.
   Maj tenue : angle à 15°. Sélectionner une flèche, **Ctrl+Entrée** : « Modifier les points ». Clic sur un point,
-  **Suppr** : le point part. **Échap** : sortie. Sélectionner un rectangle, **Ctrl+Alt+→** : objet relié créé à droite.
+  **Suppr** : le point part. **Échap** : sortie. Sélectionner un rectangle, **Alt+Maj+→** : objet relié créé à droite.
   Ctrl+D de la flèche avec A et B : la copie est liée aux copies. Ctrl+D de la flèche seule : copie libre. Interrupteur
-  « Liaison des flèches » coupé : une flèche tirée sur B reste libre. Chaque nouveau raccourci (Ctrl+Entrée, Ctrl+Alt+
+  « Liaison des flèches » coupé : une flèche tirée sur B reste libre. Chaque nouveau raccourci (Ctrl+Entrée, Alt+Maj+
   ↑ ↓ ← →, Ctrl tenu) figure dans le menu des raccourcis et dans l'Aide.
 - **S5 — CLI.** `node scripts/essais/cli-essai.mjs` : `run --new` avec deux `AddShape` rect puis un `AddShape` arrow avec
   `start` et `end`. `Transform` du second rectangle : l'`state` montre l'extrémité déplacée. `undo` : retour en une
   étape. `SetLinePoints` avec un seul point : code 1, `BadPoints`. `AddLinked` à droite : deux éléments de plus, une
   étape. La sortie affiche `CLI : OK`.
+- **S6 — Ligne au doigt.** Au doigt : prendre la Ligne, glisser du rectangle A au rectangle B. La ligne est liée aux deux
+  bouts (`startBound = A`, `endBound = B`). Panneau, Angles → Arrondis. Double toucher sur la ligne : « Modifier les
+  points ». Tirer le milieu de 60 px : la ligne passe par le point, en courbe. Toucher hors de l'objet, glisser A : le
+  bout de départ suit. Annuler : A revient, la ligne aussi. Aucune pointe n'apparaît sur la ligne.
 
 ### Annexe A — ossature de `docs/essais/outils-excalidraw.md`
 
@@ -400,13 +420,13 @@ Un tableau par outil : `comportement · source Excalidraw · état · essai`. É
   suppression de la cible (adapté : lecture tolérante) · duplication (`fixDuplicatedBindingsAfterDuplication`) · point
   milieu (`addMidpoint`) · « Modifier les points » (`toggleLinearEditor`, renommé) · Suppr d'un point (`deletePoints`) ·
   Maj 15° · Alt+clic au bout (lot 2) · Ctrl+D de points (lot 2) · coudée : route simple (adapté : sans A*), segments
-  fixes (lot 2) · étiquette (lot 2) · flowchart Ctrl+flèche (adapté : Ctrl+Alt, poignées « + ») · navigation Alt+flèche
+  fixes (lot 2) · étiquette (lot 2) · flowchart Ctrl+flèche (adapté : Alt+Maj, poignées « + ») · navigation Alt+flèche
   (lot 2) · A répété (lot 2).
 - **Ligne** : la même liste, sans pointes ni coudée ; Angles = courbe ; fermeture en polygone (lot 2).
 - **Sélection et sélection d'objets** : Maj proportions (copié, doigt tardif) · Alt depuis le centre (lot 2) · rotation
   et Maj 15° (lot 2) · Maj verrou d'axe (lot 2) · Alt-glisser (OG23) · Ctrl+D +10 (copié) · rectangle « contain »
-  (copié) · Maj+clic (copié) · flèches du clavier (lot 2) · lasso Ctrl+Alt (écarté : Ctrl+Alt est pris par le
-  flowchart, à revoir) · verrou (lot 2) · poignées de 28 px au doigt (adapté : 44).
+  (copié) · Maj+clic (copié) · flèches du clavier (lot 2) · lasso Ctrl+Alt (écarté : pas d'outil lasso chez nous,
+  et Ctrl+Alt arrive comme AltGr sous Windows) · verrou (lot 2) · poignées de 28 px au doigt (adapté : 44).
 - **Main** : H, Espace, bouton du milieu, pincement (copié ou existant).
 - **Rectangle, Ellipse, Losange** : Maj carré ou cercle (copié) · double toucher = texte lié (lot 2) · Entrée (lot 2) ·
   « Modifier les points » vers forme libre (lot 2) · losange (lot 2).
@@ -434,10 +454,11 @@ Un tableau par outil : `comportement · source Excalidraw · état · essai`. É
   - T2 cœur : liaisons, `follow`, rupture, `copy.rs`, `AddLinked`, `elbow_route`, `tests/fleches.rs`.
   - T3 pont : `lib.rs`, `api.ts`, `wasm-core.ts`, `fake-core.ts`, `shapes.ts`, contrat.
   - T4 rendu : polyligne, courbe, coudée, pointes, roughjs, calque d'édition.
-  - T5 outil : liaison à la création, accroche, Ctrl, doigt tardif dans le routeur.
+  - T5 outil : liaison à la création (`bind_target`), accroche, Ctrl, doigt tardif dans le routeur, poignées
+    d'extrémité et de milieu hors édition (n° 39), seuil de 10 px.
   - T6 « Modifier les points » : `line-edit.ts`, double toucher, Ctrl+Entrée, Suppr, Échap.
   - T7 panneau et icônes : Type de flèche, Angles de la ligne, Pointes, Liaison, boutons.
-  - T8 carte mentale : poignées « + », Ctrl+Alt+flèche, branchement d'`AddLinked`.
+  - T8 carte mentale : poignées « + », Alt+Maj+flèche, branchement d'`AddLinked`.
   - T9 CLI et export : `COMMAND_TYPES`, `cli-essai.mjs`, `board-io.ts`.
   - T10 essai, fiche et licences : `outils-excalidraw-navigateur.mjs`, `verifier.sh`, fiche, `THIRD_PARTY_NOTICES.md`,
     table des raccourcis.
