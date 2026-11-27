@@ -308,7 +308,9 @@ export function createEngine(deps: EngineDeps): Engine {
     const view = doc.page(pageId);
     const top = deps.fitTop?.() ?? 16;
     if (view === null) return fitFor("landscape", w, h, null, null, top);
-    const layout = pageLayoutOf(view);
+    // décision 10 : Infini = contenu ∪ fond ; page plus haute que large (portrait choisi) = cadre entier ; sinon largeur.
+    // Le cadre d'un fond PDF A4 dépasse la hauteur de page : il ne décide pas de l'ajustement.
+    const layout = pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape";
     return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(view.backdrop?.rect ?? null) : null, top);
   };
   const contentRect = (backdrop: Bounds | null): PageRect | null => {
@@ -881,8 +883,11 @@ export function createEngine(deps: EngineDeps): Engine {
       return engine.showPage(id);
     },
     setPageMode(mode) {
+      const before = doc.page(pageId);
       if (run({ type: "SetPageMode", page: pageId, mode }) === null) return false;
-      engine.fitPage(); // comme PowerPoint : le changement de mode recadre la page
+      const after = doc.page(pageId);
+      // comme PowerPoint : le changement de mode recadre la page ; mode inchangé, la vue reste où elle est
+      if (before === null || after === null || before.mode !== after.mode || before.height !== after.height) engine.fitPage();
       return true;
     },
     removePage() {
