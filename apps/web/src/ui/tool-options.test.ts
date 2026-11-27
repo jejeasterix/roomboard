@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ElementView } from "../core/api";
-import { appliesTo, backgroundPicks, disabledIn, formValue, sectionsFor, showsPanel, strokePicks, TEXT_SIZES } from "./tool-options";
+import { ALIGN_MIN_UNITS, appliesTo, backgroundPicks, DISTRIBUTE_MIN_UNITS, OPEN_BY_DEFAULT, sectionOpen, disabledIn, formValue, sectionsFor, showsPanel, strokePicks, TEXT_SIZES } from "./tool-options";
 
 const rect = (id: string, color: string, look?: ElementView["look"]): ElementView =>
   ({ id, kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null }, ...(look ? { look } : {}) }) as ElementView;
@@ -14,13 +14,13 @@ describe("tool-options", () => {
     expect(sectionsFor("ellipse", [], false)).not.toContain("roundness");
   });
   it("sectionsFor pen : trait, largeur, transparence", () => {
-    expect(sectionsFor("pen", [], false)).toEqual(["strokeColor", "strokeWidth", "opacity"]);
+    expect(sectionsFor("pen", [], false)).toEqual(["strokeColor", "strokeWidth", "pressure", "opacity"]);
   });
   it("sectionsFor select vide : rien", () => {
     expect(sectionsFor("select", [], false)).toEqual([]);
   });
   it("sectionsFor select + image : transparence, disposition et actions", () => {
-    expect(sectionsFor("select", [img], false)).toEqual(["opacity", "layers", "actions"]);
+    expect(sectionsFor("select", [img], false)).toEqual(["opacity", "layers", "transform", "actions"]);
   });
   it("formValue commune", () => {
     expect(formValue([rect("a", "#000000"), rect("b", "#000000")], (e) => (e.kind === "shape" ? e.style.color : undefined), "#111111")).toBe("#000000");
@@ -34,15 +34,15 @@ describe("tool-options", () => {
   it("formValue ignore les éléments sans la propriété", () => {
     expect(formValue([rect("a", "#000000"), img], (e) => (e.kind === "shape" ? e.style.color : undefined), "#111111")).toBe("#000000");
   });
-  it("strokePicks : 5 couleurs distinctes, liste fixe en complément", () => {
+  it("strokePicks : 4 couleurs distinctes, liste fixe en complément", () => {
     const p = strokePicks({ pen: [{ color: "#dc2626", width: 4 }] } as never, "pen");
-    expect(p).toHaveLength(5);
-    expect(new Set(p).size).toBe(5);
+    expect(p).toHaveLength(4);
+    expect(new Set(p).size).toBe(4);
     expect(p[0]!.color).toBe("#dc2626");
     expect(p[0]!.label).toBe("Rouge");
   });
   it("strokePicks : noms lisibles pour les teintes de repli", () => {
-    expect(strokePicks({} as never, "pen").map((x) => x.label)).toEqual(["Noir", "Rouge", "Bleu", "Vert", "Jaune"]);
+    expect(strokePicks({} as never, "pen").map((x) => x.label)).toEqual(["Noir", "Rouge", "Bleu", "Vert"]);
   });
   it("appliesTo : suit la table des sections de l'élément", () => {
     expect(appliesTo("strokeStyle", rect("a", "#000000"))).toBe(true);
@@ -56,13 +56,12 @@ describe("tool-options", () => {
     expect(appliesTo("background", line)).toBe(false);
     expect(appliesTo("roundness", line)).toBe(false);
   });
-  it("backgroundPicks : transparent puis jaune, vert, bleu, rose réels", () => {
+  it("backgroundPicks : transparent puis jaune, vert, bleu réels", () => {
     expect(backgroundPicks()).toEqual([
       { color: null, label: "Transparent" },
       { color: "#fef08a", label: "Jaune" },
       { color: "#bbf7d0", label: "Vert" },
       { color: "#bfdbfe", label: "Bleu" },
-      { color: "#fecdd3", label: "Rose" },
     ]);
   });
   it("showsPanel : masqué avec Main, Gomme, Pot, Tableau sans sélection, et en annotation", () => {
@@ -107,5 +106,40 @@ describe("tool-options lot 2 (T15)", () => {
   });
   it("TEXT_SIZES", () => {
     expect(TEXT_SIZES).toEqual([24, 36, 48, 72]);
+  });
+});
+
+describe("tool-options OG23 (T2) : accordéon, pression, disposition", () => {
+  const stroke = { id: "s", kind: "stroke" } as unknown as ElementView;
+  it("sectionOpen : défauts puis état gardé", () => {
+    expect(sectionOpen("strokeWidth", {})).toBe(true);
+    expect(sectionOpen("strokeStyle", {})).toBe(false);
+    expect(sectionOpen("strokeStyle", { strokeStyle: true })).toBe(true);
+    expect(sectionOpen("background", { background: false })).toBe(false);
+    expect(sectionOpen("strokeStyle", { strokeStyle: "oui" } as never)).toBe(false);
+    expect([...OPEN_BY_DEFAULT].sort()).toEqual(["background", "strokeColor", "strokeWidth"]);
+  });
+  it("pressure : stylo et trait seulement", () => {
+    expect(sectionsFor("pen", [], false)).toEqual(["strokeColor", "strokeWidth", "pressure", "opacity"]);
+    expect(sectionsFor("rect", [], false)).not.toContain("pressure");
+    expect(sectionsFor("select", [stroke], false)).toContain("pressure");
+    expect(sectionsFor("select", [rect("a", "#000000")], false)).not.toContain("pressure");
+  });
+  it("align à partir de 2 unités, transform pour toute cible", () => {
+    const two = [rect("a", "#000000"), rect("b", "#000000")];
+    const s2 = sectionsFor("select", two, false, null, 2);
+    expect(s2).toContain("align");
+    expect(s2).toContain("transform");
+    expect(s2.indexOf("align")).toBeGreaterThan(s2.indexOf("layers"));
+    expect(s2.indexOf("transform")).toBeGreaterThan(s2.indexOf("align"));
+    expect(sectionsFor("select", two, false, null, 1)).not.toContain("align");
+    expect(sectionsFor("select", [rect("a", "#000000")], false, null, 1)).toContain("transform");
+    expect(sectionsFor("rect", [], false)).not.toContain("transform");
+    expect([ALIGN_MIN_UNITS, DISTRIBUTE_MIN_UNITS]).toEqual([2, 3]);
+  });
+  it("4 pastilles", () => {
+    expect(strokePicks({} as never, "pen").map((x) => x.label)).toEqual(["Noir", "Rouge", "Bleu", "Vert"]);
+    expect(backgroundPicks().map((x) => x.color)).toEqual([null, "#fef08a", "#bbf7d0", "#bfdbfe"]);
+    expect(backgroundPicks().map((x) => x.label)).toEqual(["Transparent", "Jaune", "Vert", "Bleu"]);
   });
 });
