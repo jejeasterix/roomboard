@@ -342,3 +342,48 @@ fn rich_text_set_text_round_trips() {
     );
     assert_eq!(got[1].attrs, red_bold);
 }
+
+/// OG23 (T1) : `Arrange` sur trois formes = une étape ; une annulation rend les trois, un rétablissement les replace.
+#[test]
+fn arrange_is_one_undo_step() {
+    use roomboard_core::arrange::ArrangeHow;
+    let mut d = Document::blank();
+    let page = d.page_ids()[0].clone();
+    let ids: Vec<String> = [(0.0, 10.0), (100.0, 80.0), (200.0, 150.0)]
+        .into_iter()
+        .map(|(x, y)| {
+            d.apply(Command::AddShape {
+                page: page.clone(),
+                shape: ShapeKind::Rect,
+                x0: x,
+                y0: y,
+                x1: x + 50.0,
+                y1: y + 30.0,
+                style: pen(),
+                fill: None,
+                look: Look::default(),
+            })
+            .expect("forme")
+            .ids[0]
+                .clone()
+        })
+        .collect();
+    let tops = |d: &Document| -> Vec<f64> {
+        ids.iter()
+            .map(|id| d.snap_box(std::slice::from_ref(id)).expect("boîte").y0)
+            .collect()
+    };
+    let before = tops(&d);
+    let v = d.version();
+    d.apply(Command::Arrange {
+        ids: ids.clone(),
+        how: ArrangeHow::AlignTop,
+    })
+    .expect("aligner");
+    assert_eq!(d.version(), v + 1);
+    assert_eq!(tops(&d), vec![10.0, 10.0, 10.0]);
+    assert!(d.undo());
+    assert_eq!(tops(&d), before, "une annulation rend les trois");
+    assert!(d.redo());
+    assert_eq!(tops(&d), vec![10.0, 10.0, 10.0]);
+}

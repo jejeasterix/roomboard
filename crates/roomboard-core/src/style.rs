@@ -6,7 +6,7 @@ use yrs::{Any, In, Map, MapRef};
 use crate::commands::{Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    finite_positive, out_string, read_look, valid_link, ARROWHEADS, END_ARROWHEAD_DEFAULT,
+    finite_positive, out_string, read_look, valid_link, ARROWHEADS, VARIABILITY_CONSTANT, END_ARROWHEAD_DEFAULT,
     FILL_STYLES, START_ARROWHEAD_DEFAULT, STROKE_STYLES, TEXT_ALIGNS,
 };
 use crate::fill::{differs, set_or_remove};
@@ -29,6 +29,8 @@ pub struct StylePatch {
     pub end_arrowhead: Option<Option<String>>,
     pub text_align: Option<Option<String>>,
     pub link: Option<Option<String>>,
+    /// OG23 : `Some(Some("constant"))` pose la pression constante, `Some(None)` la retire ; traits seuls.
+    pub variability: Option<Option<String>>,
 }
 
 /// `Some(Some(s))` hors de `allowed`.
@@ -63,6 +65,7 @@ impl StylePatch {
             || outside(&self.end_arrowhead, &ARROWHEADS)
             || outside(&self.text_align, &TEXT_ALIGNS)
             || matches!(&self.link, Some(Some(l)) if !valid_link(l))
+            || outside(&self.variability, &[VARIABILITY_CONSTANT])
         {
             return bad;
         }
@@ -169,6 +172,11 @@ fn writes_for(
         // Tout élément dont l'aspect est lu (`look_view`) ; jamais le remplissage de zone (`fill`).
         if matches!(kind, "stroke" | "shape" | "text" | "image") {
             w.push(("link", l.as_deref().map(In::from)));
+        }
+    }
+    if let Some(v) = &p.variability {
+        if kind == "stroke" {
+            w.push(("variability", v.as_deref().map(In::from)));
         }
     }
     w

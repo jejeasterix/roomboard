@@ -144,14 +144,14 @@ mod tests {
 
     #[test]
     fn empty_builder_gives_empty_outline() {
-        assert!(StrokeBuilder::new(InkStyle { width: 6.0 })
+        assert!(StrokeBuilder::new(InkStyle { width: 6.0, constant: false })
             .finish()
             .is_empty());
     }
 
     #[test]
     fn push_returns_single_polygon_under_limit() {
-        let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut b = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         let o = b.push(&flat(500));
         assert!(!o.is_empty());
         assert_eq!(nan_pairs(&o), 0);
@@ -160,17 +160,17 @@ mod tests {
 
     #[test]
     fn finish_matches_outline_under_limit() {
-        let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut b = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         b.push(&flat(300));
         assert_eq!(
             b.finish(),
-            outline(&from_flat(&flat(300)), &InkStyle { width: 6.0 })
+            outline(&from_flat(&flat(300)), &InkStyle { width: 6.0, constant: false })
         );
     }
 
     #[test]
     fn push_drops_close_points_across_calls() {
-        let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut b = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         b.push(&[0.0, 0.0, 0.5]);
         b.push(&[0.1, 0.0, 0.5, 1.0, 0.0, 0.5]);
         assert_eq!(b.points().len(), 2);
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn long_stroke_freezes_blocks_of_256() {
-        let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut b = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         let o = b.push(&flat(2500));
         assert_eq!(b.frozen_blocks(), 9);
         assert_eq!(nan_pairs(&o), 9);
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn frozen_blocks_overlap_by_one_point() {
-        let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut b = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         b.push(&flat(2500));
         assert_eq!(b.frozen_upto(), b.frozen_blocks() * BLOCK);
         assert!(b.points().len() - b.frozen_upto() <= BLOCK + 1);
@@ -195,9 +195,9 @@ mod tests {
     #[test]
     fn chunking_does_not_change_frozen_blocks() {
         let all = flat(2500);
-        let mut one = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut one = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         one.push(&all);
-        let mut many = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut many = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         for chunk in all.chunks(300) {
             many.push(chunk);
         }
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn frozen_blocks_leave_no_gap() {
         let straight: Vec<f32> = (0..2500).flat_map(|i| [i as f32 * 8.0, 0.0, 0.5]).collect();
-        let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut b = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         let live = b.push(&straight);
         for o in [live, b.finish()] {
             let ranges = x_ranges(&o);
@@ -236,9 +236,9 @@ mod tests {
         let line = |x0: usize, x1: usize, p: f32| -> Vec<f32> {
             (x0..x1).flat_map(|i| [i as f32 * 4.0, 0.0, p]).collect()
         };
-        let mut plain = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut plain = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         let without = plain.push(&line(0, 60, 0.15));
-        let mut ahead = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut ahead = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         let with = ahead.push_ahead(&line(0, 60, 0.15), &line(60, 64, 0.15));
         assert_eq!(ahead.points().len(), plain.points().len());
         let max_x = |o: &[f32]| x_ranges(o)[0].1;
@@ -258,7 +258,7 @@ mod tests {
         };
         assert!((half(&with) - half(&without)).abs() < 0.01);
         // Le push suivant sans prédits rend le contour des seuls points reçus.
-        let mut again = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut again = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         again.push(&line(0, 60, 0.15));
         let bits = |o: Vec<f32>| o.into_iter().map(f32::to_bits).collect::<Vec<u32>>();
         assert_eq!(bits(ahead.push(&[])), bits(again.push(&[])));
@@ -270,7 +270,7 @@ mod tests {
         let straight = |x0: usize, x1: usize| -> Vec<f32> {
             (x0..x1).flat_map(|i| [i as f32 * 4.0, 0.0, 0.5]).collect()
         };
-        let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let mut b = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
         let plain = b.push(&straight(0, 2500));
         let blocks = b.frozen_blocks();
         let with = b.push_ahead(&[], &straight(2500, 2504));
@@ -293,7 +293,7 @@ mod tests {
         const SAMPLES: usize = 200;
         let mut p95_at_10k = f64::MAX;
         for n in [2_000_usize, 5_000, 10_000] {
-            let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+            let mut b = StrokeBuilder::new(InkStyle { width: 6.0, constant: false });
             let all: Vec<f32> = (0..n + FRAME * SAMPLES)
                 .flat_map(|i| [i as f32 * 2.0, (i as f32 * 0.05).sin() * 40.0, 0.5])
                 .collect();
