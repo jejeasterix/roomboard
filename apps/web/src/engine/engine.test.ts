@@ -1451,6 +1451,82 @@ describe("moteur — pot (C6a)", () => {
     expect(engine.camera().zoom).toBeCloseTo(portrait.zoom, 6);
   });
 
+  it("page paysage au fond PDF A4 : affichée portrait, elle a l'ascenseur ; bas du fond à 16 px du bas (OG27, P2 de la PR 68)", () => {
+    const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
+    const e = createEngine({ doc: pdf, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) }, fitTop: () => 100 });
+    e.resize(1000, 800, 1);
+    expect(e.state().pageLayout).toBe("portrait");
+    expect(e.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 100));
+    const s = e.pageScroll()!;
+    expect(s).not.toBeNull();
+    expect(s.at).toBe(0);
+    expect(e.scrollPageTo(1)).toBe(true);
+    const view = pdf.page(pdf.pageIds()[0]!)!;
+    const cam = e.camera();
+    expect(cam.ty + view.backdrop!.rect!.y1 * cam.zoom).toBeCloseTo(800 - 16, 6);
+  });
+
+  describe("îlot du haut déplacé : ajustement et ascenseur recalés (OG27)", () => {
+    const moving = () => {
+      let top = 100;
+      const s = setup({ fitTop: () => top });
+      s.engine.resize(1000, 800, 1);
+      s.engine.setPageMode("portrait");
+      s.engine.fitPage();
+      return { ...s, setTop: (t: number) => (top = t) };
+    };
+    it("vue encore ajustée : réajustée sous le nouveau haut, l'ascenseur suit", () => {
+      const { engine, setTop } = moving();
+      setTop(40);
+      expect(engine.topChanged()).toBe(true);
+      expect(engine.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 40));
+      expect(engine.pageScroll()).toMatchObject({ at: 0, top: 40, span: 800 - 40 - 16 });
+    });
+    it("vue défilée : caméra gardée, l'ascenseur relit ses bornes", () => {
+      const { engine, setTop } = moving();
+      engine.scrollPageBy(200);
+      const before = engine.camera();
+      const at = engine.pageScroll()!.at;
+      setTop(40);
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toEqual(before);
+      expect(engine.pageScroll()!.top).toBe(40);
+      expect(engine.pageScroll()!.at).not.toBe(at);
+    });
+    it("page quittée encore ajustée : réajustée à son retour", () => {
+      const { engine, setTop } = moving();
+      const p1 = engine.state().page;
+      engine.addPage();
+      setTop(40);
+      engine.topChanged();
+      engine.showPage(p1);
+      expect(engine.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 40));
+    });
+    it("vue ajustée : seul le haut se décale ; zoom gardé après un redimensionnement (HL3-6)", () => {
+      const { engine, setTop } = moving();
+      engine.resize(1400, 800, 1);
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(true);
+      expect(engine.camera()).toEqual({ ...before, ty: before.ty - 60 });
+    });
+    it("Infini : rien (l'ajustement suit le contenu, aucun ascenseur)", () => {
+      const { engine, setTop } = moving();
+      engine.setPageMode("infinite");
+      engine.fitPage();
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toBe(before);
+    });
+    it("haut inchangé : rien", () => {
+      const { engine } = moving();
+      const before = engine.camera();
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toBe(before);
+    });
+  });
+
   it("setFillColor : défaut rouge, couleur valide gardée, invalide ignorée, null = « Aucune » ; le stylo ne change pas (D16)", () => {
     const { engine } = setup();
     expect(engine.state().fillColor).toBe("#dc2626");

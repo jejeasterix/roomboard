@@ -216,8 +216,10 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-side .rb-page-thumb[aria-current="page"] { box-shadow: inset 0 0 0 2px var(--rf-violet-600); }
 .rb-side .rb-page-thumb:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: 2px; }
 .rb-page-num { padding-block-start: 4px; font-size: 13px; font-weight: 500; color: var(--rf-gray-800); text-align: end; font-variant-numeric: tabular-nums; }
-.rb-page-img { display: block; contain: inline-size; inline-size: 100%; max-inline-size: var(--rb-thumb); aspect-ratio: 16 / 9; min-block-size: var(--rb-btn-s); box-sizing: border-box; overflow: hidden; background: var(--rf-white); border-radius: var(--rf-radius-sm); box-shadow: 0 0 0 1px var(--rf-gray-300); }
-.rb-page-img img { display: block; inline-size: 100%; block-size: 100%; object-fit: contain; object-position: center; pointer-events: none; -webkit-user-drag: none; }
+/* OG27 : la boîte (16:9, même hauteur pour toute page, T20) est grise ; la page y porte son blanc et son filet, à sa forme
+   réelle (portrait, fond PDF A4) : une page blanche sur une boîte blanche semblait toujours paysage. */
+.rb-page-img { display: flex; justify-content: center; contain: inline-size; inline-size: 100%; max-inline-size: var(--rb-thumb); aspect-ratio: 16 / 9; min-block-size: var(--rb-btn-s); box-sizing: border-box; padding: 1px; overflow: hidden; background: var(--rf-gray-50); border-radius: var(--rf-radius-sm); }
+.rb-page-img img { display: block; block-size: 100%; inline-size: auto; max-inline-size: 100%; object-fit: contain; object-position: center; background: var(--rf-white); box-shadow: 0 0 0 1px var(--rf-gray-300); pointer-events: none; -webkit-user-drag: none; }
 /* Onglet Calques (T14) : un panneau par onglet (contents : la liste garde sa place dans la colonne) ; une ligne de 44 px
    au moins par objet, premier plan en haut ; trait fin (icône 1,5), fond violet 100 sur la sélection de la scène, lignes
    fixes (grille, fond) sans geste ; touch-action: none pour que le doigt réordonne au lieu de défiler. */
