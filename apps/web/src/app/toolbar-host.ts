@@ -39,7 +39,7 @@ export interface HostTargets {
   engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
-  toggle(panel: "settings" | "profiles" | "grid" | "image" | "library"): void;
+  toggle(panel: "settings" | "profiles" | "grid" | "image" | "library" | "backgrounds"): void;
   /** C3 (Z12). */
   insertPages(): void;
   /** C12 (PF19) : « Exporter en PDF… » ; absent (hôte partiel) : sans effet (PC9). */
@@ -93,6 +93,7 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   profiles: (t) => t.toggle("profiles"),
   grid: (t) => t.toggle("grid"),
   library: (t) => t.toggle("library"),
+  backgrounds: (t) => t.toggle("backgrounds"),
   "table-row-insert": (t) => t.engine().tableAction("row-insert"),
   "table-col-insert": (t) => t.engine().tableAction("col-insert"),
   "table-row-remove": (t) => t.engine().tableAction("row-remove"),
