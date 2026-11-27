@@ -3,8 +3,8 @@
 Statut : en cours
 Gabarit : chantier (14 tâches, lots A T1-T9 et B T10-T14)
 Objectif : Le panneau d'options de RoomBoard range ses sections en accordéon et donne à Jérôme couleurs avancées et transparentes, pression du stylo, organiser, aligner, transformer, dupliquer, « Glisser une copie » et des options propres à chaque type d'objet (image : rogner, effacer le fond).
-Avancement : 13/14 tâches du plan terminées (T14 en cours) · correctifs T15-T22
-Étage : 3 (fin de lot : correctifs de relecture et d'essai) — depuis 2026-11-27 21:30
+Avancement : 14/14 tâches du plan terminées · correctifs T15-T22 et second tour terminés
+Étage : 4 (clôture : verifier --e2e après fusion de origin/main, PR, fusion) — depuis 2026-11-27 23:00
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -17,7 +17,7 @@ Complète (origin/main cddbde49, verifier.sh --e2e) : OK · cargo 1523 · web 42
 Tailles Wasm avant : principal 1 440 761 o · formats 2 794 527 o
 
 ## Compteurs
-contre-relecture cadrage 1/2 · correctifs de relecture 1/2 · relecture plan 1/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 · correctifs de relecture 2/2 · relecture plan 1/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
 
 ## Tâches
 | id | dépend | état | essais | commit vert | preuve rejouée |
@@ -35,7 +35,7 @@ contre-relecture cadrage 1/2 · correctifs de relecture 1/2 · relecture plan 1/
 | T11 | T10 | terminée | 1/3 | 43f0ad4e | vitest src/engine 980 (dragCopy, poignée Déplacer) |
 | T12 | T10 | terminée | 1/3 | 06c9a8f4 | vitest 16 (point touché, start background) |
 | T13 | T11,T12 | terminée | 1/3 | 5e1bffa5 | vitest src/ui 826 (bascule mixte, Rogner) |
-| T14 | T13 | en cours (essai : défauts trouvés, corrigés par T21-T22) | 1/3 | 64867475 | — |
+| T14 | T13 | terminée | 2/3 (limites de tours, agent neuf) | 051b2d34 | essai complet S1-S7 OK, code 0 ; captures après refaites |
 | T15 | correctif | terminée | 1/3 | 4253fc91 | keyOf transmet code (raccourcis Alt) |
 | T16 | relecture | terminée | 1/3 | 38e175f1 | cargo workspace 1008 ; look.rs sans fonctionnalité zone |
 | T17 | relecture | terminée | 1/3 | df2e3e6d | flèches dans le panneau, Espace, colorAt WebGL2, infobulles Pression |
@@ -43,7 +43,7 @@ contre-relecture cadrage 1/2 · correctifs de relecture 1/2 · relecture plan 1/
 | T19 | relecture | terminée | 1/3 | 9995516e | web 4357 ; damier, .rb-opt-h, garde arrangeKey |
 | T20 | finition (impeccable) | terminée | 1/3 | c84a40c2 | bouton Pipette hors apparence native, icône Pression variable pleine |
 | T21 | essai T14 | terminée | 1/3 | dfcaa205 | Maj+H sur bouton ; pipette tenue après aperçu |
-| T22 | essai T14 | en cours | 1/3 | cd642b15 | look.dragCopy dans la vue tableau/média/3D |
+| T22 | essai T14 | terminée | 1/3 | fc70a983 | look.dragCopy dans la vue tableau/média/3D, contrat 2 cœurs |
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · verifier.sh --e2e OK sans régression · scénarios réussis · captures 2x avant/après · PR fusionnée par merge --no-ff local, push sans --force
@@ -62,8 +62,17 @@ Lancement 18:45 CET · borne 01:15 · repli à 01:05 (pousser, état, premier lo
 - Contre-relecture du cadrage : un seul tour (aucun bloquant au tour 1), pour le temps.
 - Relecture du plan : un tour, lancée en parallèle de la vague 1 (aucun défaut ne touchait T1 et T3 ; B1 corrigé avant T5).
 
+## Clôture
+- Second tour de relecture : 0 bloquant ; 1 majeur (zone du pot dans Glisser une copie) et 2 mineurs corrigés (c6ef330f).
+- origin/main avait avancé (OG12 PR 71, OG25, OG24, OG27) : fusion 423903ab, 31 conflits tranchés (Alt+Maj+flèche : séance de points d'OG12, puis objet relié sur une forme seule, sinon Aligner ; « + » du haut cédé à la poignée Déplacer).
+- verifier.sh --e2e sur 423903ab : tests unitaires verts (cargo 1682, web 4620, cli 290) ; essai c2-image en délai sous charge, rejoué seul : OK ; suite complète relancée.
+- Tailles : Wasm principal 1 440 761 → 1 467 735 o (OG23 seul) → 1 540 581 o avec OG12 ; formats 2 794 527 → 2 795 895 o.
+- Prochaine tâche exacte si interruption : relire ~/.cache/tmp/og23-ref/verifier-e2e-4.log ; si code=0, ouvrir la PR (corps ~/.cache/tmp/og23-ref/pr.md), git fetch, merge --no-ff local dans main, push sans --force.
+
 ## Hors périmètre
-- Édition des points des formes et des flèches, connecteurs (OG12) : section réservée dans l'accordéon.
+- Édition des points et connecteurs : livrés par OG12 (PR 71), intégrés ; sa section « Type de flèche » est dans l'accordéon.
+- Panneau de retouche d'image (C5) en boutons natifs : passe de design à prévoir.
+- Sections médias et 3D ; options du tableau (personnalisation-3-tableau) ; détourage par modèle (chantier à part).
 
 ## Portes
 ouvertes : — · passées : —
