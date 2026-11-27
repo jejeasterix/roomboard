@@ -32,6 +32,38 @@ describeWasm("session (D5, D6, D7, DA4)", () => {
     const shape: Json = await s.exec(JSON.stringify(rect("$1")));
     expect(shape.change.pages).toEqual(added.change.pages);
   });
+  it("SetPageMode, MovePage, DuplicatePage (T7, D15) : une étape par commande ; refus code 1 ; $n après DuplicatePage = éléments, $page:i = copie", async () => {
+    const s = await fresh();
+    // Vue de page du cœur de chaque entrée de state (`{ index, page, elements }`, DA4), avec ses éléments.
+    const pagesOf = async (): Promise<Json[]> =>
+      ((await s.exec('{"op":"state"}')) as Json).state.pages.map((p: Json) => ({ ...p.page, elements: p.elements }));
+    await s.exec(JSON.stringify(rect("$page:0")));
+    await s.exec(JSON.stringify(rect("$page:0")));
+    const [p0] = await pagesOf();
+    await s.exec('{"type":"SetPageMode","page":"$page:0","mode":"portrait"}');
+    const [portrait] = await pagesOf();
+    expect(portrait.mode).toBe("page");
+    expect(portrait.height).toBeCloseTo(3413.33, 2);
+    await s.exec('{"op":"undo"}');
+    expect((await pagesOf())[0].height).toBe(p0.height);
+    const dup: Json = await s.exec('{"type":"DuplicatePage","page":"$page:0"}');
+    const [orig, copy] = await pagesOf();
+    expect([orig.id, copy?.elements.length]).toEqual([p0.id, 2]);
+    // $n : les éléments copiés (page non vide), jamais la page ; la copie se lit par $page:1 (rang d'origine + 1).
+    await s.exec(JSON.stringify({ type: "Delete", ids: [`$${dup.op}.1`] }));
+    await s.exec('{"type":"SetPageMode","page":"$page:1","mode":"infinite"}');
+    const [o2, c2] = await pagesOf();
+    expect([o2.elements.length, c2.elements.length, o2.mode, c2.mode]).toEqual([2, 1, "page", "infinite"]);
+    await s.exec('{"type":"MovePage","page":"$page:1","to":0}');
+    expect((await pagesOf()).map((p) => p.id)).toEqual([c2.id, o2.id]);
+    await s.exec('{"op":"undo"}');
+    expect((await pagesOf()).map((p) => p.id)).toEqual([o2.id, c2.id]);
+    for (const bad of ['{"type":"MovePage","page":"$page:0","to":99}', '{"type":"SetPageMode","page":"$page:0","mode":"a4"}']) {
+      const err: unknown = await s.exec(bad).catch((e: unknown) => e);
+      expect(err, bad).toBeInstanceOf(CliError);
+      expect((err as CliError).exit, bad).toBe(1);
+    }
+  });
   it("refus du cœur : CliError command avec le message du cœur", async () => {
     const s = await fresh();
     await expect(s.exec('{"type":"RemovePage","page":"$page:0"}')).rejects.toMatchObject({ code: "command", message: "la dernière page ne se supprime pas" });

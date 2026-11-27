@@ -1305,7 +1305,10 @@ describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
     const p = first(d);
     expect(d.gridLines(p, { x0: 0, y0: 0, x1: 100, y1: 100 }, 4, 8)).toBeNull();
     setGrid(d, p, gridOf([gridLevel("squares", 40, "#cccccc")], false, true));
-    const r = { x0: -13.3, y0: 1_000_007, x1: 786.7, y1: 1_000_607 };
+    // T7 : loin sous le haut, seule une page Infini a des lignes (grille bornée au cadre en Page) ; x0 = 0, sans borne
+    // à gauche en Infini, garde les mêmes segments.
+    d.apply({ type: "SetPageMode", page: p, mode: "infinite" });
+    const r = { x0: 0, y0: 1_000_007, x1: 786.7, y1: 1_000_607 };
     const l = d.gridLines(p, r, 4, 8);
     expect(l?.above).toBe(true);
     expect(l?.levels.length).toBe(1);
@@ -1428,7 +1431,8 @@ describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
     const d = f.blank();
     const p = first(d);
     const g = gridOf([{ ...gridLevel("squares", 40, "#94a3b8"), lineWidth: 3 }]);
-    const r = { x0: -13.3, y0: 1_000_007, x1: 786.7, y1: 1_000_607 };
+    // T7 : vue dans le cadre de la page paysage (grille bornée au cadre en Page).
+    const r = { x0: -13.3, y0: 7, x1: 786.7, y1: 607 };
     const v = d.version();
     const preview = d.gridLinesOf(p, g, r, 4, 8);
     expect(d.version()).toBe(v);
