@@ -129,6 +129,38 @@ async function scenario(page, url, { captures }) {
   check((await attr("data-selection")) === "1", 'S4 : l\'image sortie est libre : sélectionner le tableau ne la prend plus (data-selection="1")');
   await page.keyboard.press("Escape");
   await fr();
+  await selectAt(tableEdge);
+  const [sx0, sy0, sx1, sy1] = await boundsOf();
+  check(near(sx1 - sx0, 720) && near(sy1 - sy0, 192), `S4 : la colonne revient à 240 et la ligne à 64 (tableau 720 × 192 ; lu ${sx1 - sx0} × ${sy1 - sy0})`);
+  await page.keyboard.press("Escape");
+  await fr();
+
+  // S1 au clavier : l'image (libre, au point `outside`) est glissée Alt tenue au-dessus de la case (1, 1) sans s'y loger,
+  // Alt+Entrée la loge, Alt+Maj+Entrée la sort.
+  await selectAt(outside);
+  await page.keyboard.down("Alt");
+  await touchDrag(outside, cellPt(1, 1));
+  await page.keyboard.up("Alt");
+  await fr();
+  await page.keyboard.press("Alt+Enter");
+  await fr();
+  await page.keyboard.press("Escape");
+  await fr();
+  await selectAt(tableEdge);
+  const [kx0, ky0, kx1, ky1] = await boundsOf();
+  check(near(kx1 - kx0, 896) && near(ky1 - ky0, 444), `S1 : Alt+Entrée loge l'image (tableau 896 × 444 ; lu ${kx1 - kx0} × ${ky1 - ky0})`);
+  await page.keyboard.press("Escape");
+  await fr();
+  await selectAt(screen(c, origin[0] + COL + 8 + 200, origin[1] + ROW + 8 + 150));
+  await page.keyboard.press("Alt+Shift+Enter");
+  await fr();
+  await page.keyboard.press("Escape");
+  await fr();
+  await selectAt(tableEdge);
+  const [lx0, ly0, lx1, ly1] = await boundsOf();
+  check(near(lx1 - lx0, 720) && near(ly1 - ly0, 192), `S1 : Alt+Maj+Entrée sort l'image (tableau 720 × 192 ; lu ${lx1 - lx0} × ${ly1 - ly0})`);
+  await page.keyboard.press("Escape");
+  await fr();
 
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
 }
