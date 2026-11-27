@@ -320,6 +320,7 @@ recherche texte et de la lecture (V).
 - Contexte : Disposition exige une commande d'ordre. `main` n'en a aucune. OG4 en prévoit une (`Restack`, T13, lot 2 d'OG4), qui s'appuie sur du code absent de `main` (`reinsert_kept`, `BadIndex`).
 - Décision : au début de la tâche, `git fetch`. Si OG4 est fusionné, on réutilise ses commandes et ses méthodes du moteur. Sinon on écrit `Command::Restack { ids: Vec<String>, to: u32 }` (même nom, pour faciliter la fusion). Ses règles : bloc des ids d'une même page, ordre relatif gardé, `to` = rang du bas du bloc, ids gardés, une étape, même ordre sans étape. Une page mêlée, un rang hors bornes ou un id inconnu donnent `CommandError::BadOrder` (neuf ; aucun nom d'OG4 supposé), et l'aide locale reste privée à `cmd_restack`. Moteur : `bringToFront`, `sendToBack`, `bringForward`, `sendBackward` ; `orderKey` (Ctrl+↑/↓, Ctrl+Maj+↑/↓).
 - Conséquences : le **conflit est noté au fichier d'état** pour le bloc final. Celui qui fusionne en second garde la commande de l'autre et retire la sienne. Les boutons `layer-front`/`layer-back` qu'OG4 met dans `SelectionRow` doublent Disposition ; on tranche au bloc final.
+- Bloc final (OG14, 2026-11-27) : OG4 a fusionné en premier. Le lot 2 garde la `Restack { ids, to }` d'OG4 et ses erreurs (`MixedPages`, `BadIndex`, `UnknownElement`) ; `order.rs` et `BadOrder` sont retirés. Disposition appelle `reorder`, `bringToFront` et `sendToBack` d'OG4 ; un seul jeu de raccourcis (celui d'OG4) ; un seul tracé d'icône par sens. Raison : une seule implémentation d'ordre, qui tient compte des groupes. Le pont d'OG4 refuse désormais un rang non entier, comme le faisait celui du lot 2. Les boutons d'OG4 restent dans `SelectionRow` (décision 6 : le panneau ne retire rien des rangées).
 
 **DA-3 — `engine/render/sketch.ts` sur roughjs, sans DOM**
 - Contexte : les niveaux Artiste et Caricaturiste, puis les hachures au lot 2, doivent avoir le trait d'Excalidraw dans la scène, les miniatures et le PDF vectoriel.
@@ -411,5 +412,19 @@ comme dans les essais existants.
 
 ## 8. Portes immédiates
 
-Aucune. roughjs et open-color sont sous MIT, sans service externe ni dépense. `tauri-plugin-opener` (lot 2) n'est engagé
-que si Lien part.
+Aucune. roughjs et open-color sont sous MIT, sans service externe ni dépense. Lien n'ajoute aucun plugin : la coque ouvre l'URL en Rust (`roomboard-shell`, crate `open`), règle C16 (O29).
+
+## 9. Choix tranchés seul au bloc final du lot 2 (OG14, 2026-11-27)
+
+Jérôme n'était pas joignable pendant le tour ; chaque choix est réversible.
+- Lien : badge dessiné en pixels d'écran hors de `paintElement`. Raison : il reste net à tout zoom et ne part pas à l'export.
+- Lien : zone de toucher du badge de 44 px au doigt et au stylet, 24 px à la souris. Raison : ne pas gêner la poignée du coin.
+- Lien : ouverture au relâché seulement ; un glisser rend le geste à l'outil Sélection. Raison : aucune URL ouverte par accident.
+- Lien : aucun `https://` ajouté d'office ; une adresse sans schéma est refusée avec un message. Raison : pas d'URL devinée.
+- Lien : `setLink` hors du style courant. Raison : le lien ne se recopie pas sur chaque nouvelle forme.
+- Lien : `ShellPort.openLink` facultatif ; schémas `http`, `https`, `mailto` contrôlés dans l'interface, le cœur et les deux coques. Coque : commande mince `open_link`, ouverture en Rust dans `roomboard-shell` (crate `open`) ; aucun `tauri-plugin-opener`, règle C16 (O29) prouvée par `coque_c16.rs`.
+- Texte : Police et Taille choisies sans texte deviennent le style du prochain texte (comme `currentItemFontFamily` d'Excalidraw) ; style de l'outil Texte séparé de celui du Tableau. Raison : S7.1, sans effet sur les tableaux.
+- Panneau : ses boutons gardent le focus de la saisie (`keepFocus`). Raison : S7.3, aligner sans quitter la saisie.
+- Sélecteur de couleur : ancré à droite du panneau d'options, jamais au-dessus de son haut ; la grille défile si la fenêtre est trop basse. Raison : ne recouvrir ni le panneau ni l'îlot d'outils ; cibles de 44 px gardées.
+- Panneau d'options caché tant qu'un panneau passager (Aide, Grille, Réglages, Profils, Image, Bibliothèque, Fonds) est ouvert. Raison : ils occupent la même place ; aucun recouvrement partiel.
+- Choix de Police : libellé sur deux lignes si besoin, marges de 8 px, texte à 14 px de la charte.
