@@ -129,8 +129,9 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     ).toThrow("Change invalide");
     expect(() => d.apply({ type: "Transform", ids: ["e1", "e2"], matrix: [2, 0, 0, 2, 10, 20] })).toThrow("Change invalide");
     expect(calls).toEqual([
-      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000"],
-      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined],
+      // OG11 : les cinq derniers arguments sont l'aspect (stroke_style, roughness, seed, roundness, opacity), absents ici.
+      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000", undefined, undefined, undefined, undefined, undefined],
+      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined, undefined, undefined, undefined, undefined, undefined],
       ["transform", ["e1", "e2"], new Float64Array([2, 0, 0, 2, 10, 20])],
     ]);
   });
@@ -2207,8 +2208,11 @@ describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
     d.apply({ type: "SetText", page: "p1", id: null, x: 0, y: 0, content: "a", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45, spans });
     d.apply({ type: "SetText", page: "p1", id: null, x: 0, y: 0, content: "a", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 });
     d.apply({ type: "SetTableCell", id: "t1", row: "r1", col: "c1", content: "a", spans });
-    expect(calls.map((a) => a.at(-1))).toEqual([[{ text: "a", attrs: { bold: true } }], undefined, [{ text: "a", attrs: { bold: true } }]]);
-    expect((calls[0]?.at(-1) as { attrs: unknown }[])[0]?.attrs).toStrictEqual({ bold: true });
+    // OG11 : `spans` est le 10e argument de set_text (l'aspect suit) ; le dernier de set_table_cell.
+    const spansArgOf = (a: unknown[], i: number): unknown => (i < 2 ? a[9] : a.at(-1));
+    expect(calls.map(spansArgOf)).toEqual([[{ text: "a", attrs: { bold: true } }], undefined, [{ text: "a", attrs: { bold: true } }]]);
+    expect((calls[0]?.[9] as { attrs: unknown }[])[0]?.attrs).toStrictEqual({ bold: true });
+    expect(calls[0]?.slice(10)).toEqual([undefined, undefined, undefined, undefined, undefined]);
   });
 });
 
