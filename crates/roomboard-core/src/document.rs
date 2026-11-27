@@ -16,10 +16,11 @@ use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 #[cfg(test)]
 use crate::element::ImageView;
 use crate::element::{
-    backdrop_view, finite_positive, look_view, out_f64, out_string, out_transform, read_backdrop,
-    read_group, read_image, read_style, read_unknown, unknown_view, ElementView, FillView,
-    PageLayout, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH,
-    INFINITE_MODE, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
+    backdrop_view, drag_copy_view, finite_positive, look_view, out_f64, out_string, out_transform,
+    read_backdrop, read_cell_link, read_group, read_image, read_style, read_unknown, unknown_view,
+    ElementView, FillView, PageLayout, PageView, ShapeView, StrokeStyle, TextView,
+    DEFAULT_BACKGROUND, FIT_WIDTH, INFINITE_MODE, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND,
+    PORTRAIT_HEIGHT, SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
@@ -43,6 +44,8 @@ pub enum DecodeError {
 /// de points gardent quand même l'entrée : un écart force le recalcul.
 struct CachedOutline {
     width_bits: u32,
+    /// OG23 : pression constante (`variability`) ; un changement de ce champ recalcule le contour.
+    constant: bool,
     points: usize,
     outline: Rc<[f32]>,
 }
@@ -373,6 +376,15 @@ impl Document {
         let found = self.find_element(&txn, id)?;
         let e = &found.element;
         let group = read_group(&txn, e);
+        // personnalisation-3 (D1, D36) : lien publié seulement vers une case existante, jamais sur un tableau (`kind`
+        // brut : un tableau illisible vu en `unknown` ne publie rien non plus) ; la valeur reste dans le document.
+        let cell = read_cell_link(&txn, e).filter(|l| {
+            out_string(e.get(&txn, "kind")).as_deref() != Some(crate::table::TABLE_KIND)
+                && self
+                    .find_element(&txn, &l[0])
+                    .and_then(|f| crate::table::read_raw(&txn, &f.element))
+                    .is_some_and(|raw| raw.ranks((l[1].as_str(), l[2].as_str())).is_some())
+        });
         let view = match out_string(e.get(&txn, "kind")).as_deref() {
             Some("stroke") => Some(ElementView {
                 style: Some(read_style(&txn, e)?),
@@ -440,6 +452,7 @@ impl Document {
             Some(crate::table::TABLE_KIND) => Some(match crate::table::read(&txn, e) {
                 Some((transform, table)) => ElementView {
                     table: Some(table),
+                    look: drag_copy_view(&txn, e),
                     ..ElementView::bare(id, "table", transform)
                 },
                 // T2 : tableau mal formé → cadre inconnu, jamais `None`.
@@ -454,6 +467,7 @@ impl Document {
             Some(crate::media::MEDIA_KIND) => Some(match crate::media::read_media(&txn, e) {
                 Some((transform, media)) => ElementView {
                     media: Some(media),
+                    look: drag_copy_view(&txn, e),
                     ..ElementView::bare(id, "media", transform)
                 },
                 // M7 : média mal formé → cadre inconnu, jamais `None` (repli du tableau, pas de l'image).
@@ -469,6 +483,7 @@ impl Document {
                 Some(match crate::model3d::read_model3d(&txn, e) {
                     Some((transform, model3d)) => ElementView {
                         model3d: Some(model3d),
+                        look: drag_copy_view(&txn, e),
                         ..ElementView::bare(id, "model3d", transform)
                     },
                     // X8 : objet 3D mal formé → cadre inconnu, jamais `None` (repli du média, pas de l'image).
@@ -509,7 +524,7 @@ impl Document {
                 })
             }
         };
-        view.map(|v| ElementView { group, ..v })
+        view.map(|v| ElementView { group, cell, ..v })
     }
 
     pub fn schema(&self) -> Option<f64> {
@@ -601,19 +616,25 @@ impl Document {
         id: &str,
         style: &StrokeStyle,
         pts: &[InkPoint],
+        constant: bool,
     ) -> Rc<[f32]> {
         let width_bits = style.width.to_bits();
         if let Some(c) = self.outlines.borrow().get(id) {
-            if c.width_bits == width_bits && c.points == pts.len() {
+            if c.width_bits == width_bits && c.constant == constant && c.points == pts.len() {
                 return Rc::clone(&c.outline);
             }
         }
         self.outline_misses.set(self.outline_misses.get() + 1);
-        let outline: Rc<[f32]> = ink_outline(pts, &InkStyle { width: style.width }).into();
+        let ink = InkStyle {
+            width: style.width,
+            constant,
+        };
+        let outline: Rc<[f32]> = ink_outline(pts, &ink).into();
         self.outlines.borrow_mut().insert(
             id.to_string(),
             CachedOutline {
                 width_bits,
+                constant,
                 points: pts.len(),
                 outline: Rc::clone(&outline),
             },
@@ -989,6 +1010,7 @@ mod tests {
                 width: 4.0,
             },
             look: Look::default(),
+            cell: None,
         })
         .expect("commit")
         .ids[0]
@@ -1014,19 +1036,25 @@ mod tests {
             width: 12.0,
         };
         let m = d.outline_cache_misses();
-        let o4 = d.cached_outline(&a, &thin, &pts);
+        let o4 = d.cached_outline(&a, &thin, &pts, false);
         assert_eq!(d.outline_cache_misses(), m + 1);
-        let o4_again = d.cached_outline(&a, &thin, &pts);
+        let o4_again = d.cached_outline(&a, &thin, &pts, false);
         assert_eq!(d.outline_cache_misses(), m + 1, "même clé : servi du cache");
         assert_eq!(bits(&o4_again), bits(&o4));
-        let o12 = d.cached_outline(&a, &thick, &pts);
+        let o12 = d.cached_outline(&a, &thick, &pts, false);
         assert_eq!(d.outline_cache_misses(), m + 2, "autre largeur : recalcul");
         assert_eq!(
             bits(&o12),
-            bits(&ink_outline(&pts, &InkStyle { width: 12.0 }))
+            bits(&ink_outline(
+                &pts,
+                &InkStyle {
+                    width: 12.0,
+                    constant: false
+                }
+            ))
         );
         let short = &pts[..pts.len() - 5];
-        let o_short = d.cached_outline(&a, &thick, short);
+        let o_short = d.cached_outline(&a, &thick, short, false);
         assert_eq!(
             d.outline_cache_misses(),
             m + 3,
@@ -1034,7 +1062,13 @@ mod tests {
         );
         assert_eq!(
             bits(&o_short),
-            bits(&ink_outline(short, &InkStyle { width: 12.0 }))
+            bits(&ink_outline(
+                short,
+                &InkStyle {
+                    width: 12.0,
+                    constant: false
+                }
+            ))
         );
         assert_eq!(d.outline_cache_len(), 1, "une entrée par id");
     }
@@ -1460,8 +1494,7 @@ mod tests {
                     page: p.clone(),
                     points: vec![10.0, 10.0, 0.5, 60.0, 60.0, 0.5],
                     style: pen.clone(),
-                    look: Look::default(),
-                },
+                    look: Look::default(), cell: None },
                 "shape" => Command::AddShape {
                     page: p.clone(),
                     shape: ShapeKind::Rect,

@@ -6,12 +6,25 @@ import type { ToolChoice } from "../engine/input/gesture"; // gesture.ts:27
 import { presetsOf, TABLE_FILLS, type Profile } from "../toolbar";
 
 export type OptionKey =
-  | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "strokeStyle" | "roughness" | "roundness"
-  | "font" | "fontSize" | "textAlign" | "arrowType" | "arrowheads" | "opacity" | "layers" | "actions";
+  | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "pressure" | "strokeStyle" | "roughness" | "roundness"
+  | "font" | "fontSize" | "textAlign" | "arrowType" | "arrowheads" | "opacity" | "image" | "layers" | "align" | "transform" | "actions";
 export const OPTION_ORDER: readonly OptionKey[] = [
-  "strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "roundness",
-  "font", "fontSize", "textAlign", "arrowType", "arrowheads", "opacity", "layers", "actions",
+  "strokeColor", "background", "fillStyle", "strokeWidth", "pressure", "strokeStyle", "roughness", "roundness",
+  // OG12 : la place réservée `editPoints` est devenue sa vraie section, « Type de flèche » (`arrowType`), à l'ordre
+  // décidé par OG12 (avant les pointes, comme Excalidraw) ; « Modifier les points » est un bouton d'`actions`.
+  "font", "fontSize", "textAlign", "arrowType", "arrowheads", "opacity", "image",
+  "layers", "align", "transform", "actions",
 ];
+/** OG23 : sections ouvertes au premier affichage (`image` : la section de l'image seule). */
+export const OPEN_BY_DEFAULT: ReadonlySet<OptionKey> = new Set<OptionKey>(["strokeColor", "background", "strokeWidth", "image"]);
+/** Section ouverte : l'état gardé sur l'appareil s'il est booléen, sinon le défaut. */
+export function sectionOpen(key: OptionKey, saved: Readonly<Partial<Record<string, boolean>>>): boolean {
+  const v = Object.hasOwn(saved, key) ? saved[key] : undefined;
+  return typeof v === "boolean" ? v : OPEN_BY_DEFAULT.has(key);
+}
+/** Aligner demande 2 unités, Répartir 3. */
+export const ALIGN_MIN_UNITS = 2;
+export const DISTRIBUTE_MIN_UNITS = 3;
 /** Lot 2 : tailles et polices proposées (Excalidraw : S, M, L, XL ; ici les tailles du texte de la barre). */
 export const TEXT_SIZES: readonly number[] = [24, 36, 48, 72];
 export const FONTS = [
@@ -22,7 +35,7 @@ export const FONTS = [
 
 const FORM: readonly OptionKey[] = ["strokeColor", "strokeWidth", "strokeStyle", "roughness", "opacity"];
 const BY_TOOL: Readonly<Partial<Record<string, readonly OptionKey[]>>> = {
-  pen: ["strokeColor", "strokeWidth", "opacity"],
+  pen: ["strokeColor", "strokeWidth", "pressure", "opacity"],
   rect: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "roundness", "opacity"],
   ellipse: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity"],
   diamond: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity"],
@@ -47,10 +60,12 @@ export function appliesTo(key: OptionKey, e: ElementView): boolean {
   return byElement(e).includes(key);
 }
 /** `background` : fond du style courant, lu quand aucune cible n'est choisie (le remplissage n'a de sens qu'avec un fond). */
-export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _editing: boolean, background: string | null = null): readonly OptionKey[] {
+export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _editing: boolean, background: string | null = null, units = 0): readonly OptionKey[] {
   const on = new Set<OptionKey>(BY_TOOL[tool] ?? []);
   for (const t of targets) for (const k of byElement(t)) on.add(k);
-  if (targets.length > 0) { on.add("layers"); on.add("actions"); }
+  if (targets.length > 0) { on.add("layers"); on.add("transform"); on.add("actions"); }
+  if (targets.length === 1 && targets[0]!.kind === "image") on.add("image");
+  if (units >= ALIGN_MIN_UNITS) on.add("align");
   const filled = targets.length > 0 ? targets.some((t) => t.kind === "shape" && t.shape.fill != null) : background !== null;
   if (!filled) on.delete("fillStyle");
   return OPTION_ORDER.filter((k) => on.has(k));
@@ -85,7 +100,7 @@ const COLOR_NAMES: Readonly<Record<string, string>> = {
 };
 export const colorName = (c: string): string => (Object.hasOwn(COLOR_NAMES, c.toLowerCase()) ? COLOR_NAMES[c.toLowerCase()]! : c);
 export const FALLBACK_STROKES: readonly string[] = ["#000000", "#dc2626", "#1d4ed8", "#15803d", "#facc15"];
-const PICKS = 5; // COLOR_TOP_PICKS_SLOTS (Excalidraw colors.ts:236)
+const PICKS = 4; // OG23 : 4 pastilles rapides, le reste dans la palette
 export function strokePicks(presets: Profile["presets"], tool: ToolChoice): readonly Pick[] {
   const out: string[] = [];
   const add = (c: string | undefined): void => { if (c && !out.includes(c) && out.length < PICKS) out.push(c); };
@@ -97,7 +112,7 @@ export function strokePicks(presets: Profile["presets"], tool: ToolChoice): read
 export function backgroundPicks(): readonly Pick[] {
   return [
     { color: null, label: "Transparent" },
-    ...["jaune", "vert", "bleu", "rose"].map((id): Pick => {
+    ...["jaune", "vert", "bleu"].map((id): Pick => {
       const f = TABLE_FILLS.find((x) => x.id === id);
       return { color: f?.color ?? null, label: f?.label ?? id };
     }),
@@ -107,4 +122,9 @@ const DRAW = new Set(["pen", "rect", "ellipse", "diamond", "line", "arrow", "tex
 export function showsPanel(tool: ToolChoice, selection: number, annotating: boolean): boolean {
   if (annotating) return false;
   return DRAW.has(tool) || selection > 0;
+}
+/** OG23 : « Glisser une copie » pour chaque objet (décision 29) : tous les genres, sauf un genre inconnu du cœur et la
+ *  zone du pot (`fill`), où le cœur n'écrit jamais `dragCopy` (`style.rs` `writes_for`). */
+export function admitsDragCopy(e: ElementView): boolean {
+  return e.kind !== "unknown" && e.kind !== "fill";
 }

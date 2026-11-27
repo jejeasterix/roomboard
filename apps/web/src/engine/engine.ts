@@ -8,12 +8,12 @@ import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/
 import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type EraseMode, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, scrollBounds, scrollTo, zoomAt as zoomCamera, type Camera, type ScrollBounds } from "./camera";
-import { translateMatrix } from "./tools/handles";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
+import type { ArrangeHow } from "../core/arrange";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { arrowMoveKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
+import { arrangeKey, cellKey, nudgeKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isBoxShape, isSegment } from "../core/shapes";
@@ -71,6 +71,8 @@ export interface EngineState {
   /** T18 (H5, déc. 38) : élément dont l'éditeur de lien est ouvert (Ctrl+K ou bouton Lien, un seul élément) ; null
    *  sinon. Facultatif comme fillColor (PC5) : le moteur le publie toujours. */
   readonly linkEditing?: string | null;
+  /** OG23 (T8) : la pipette de scène est armée (le prochain toucher de la scène lit une couleur). Facultatif comme fillColor (PC5). */
+  readonly picking?: boolean;
   /** OG12 T11 (n° 20 à 23) : ligne ou flèche en « Modifier les points » ; null hors édition. Facultatif comme
    *  linkEditing : le moteur le publie toujours. */
   readonly lineEditing?: string | null;
@@ -300,6 +302,21 @@ export interface Engine {
   deleteSelection(): boolean;
   /** OG11 (Ctrl+D) : copie de la sélection décalée de +10/+10, sélectionnée ; une étape ; faux sans sélection. */
   duplicateSelection(): boolean;
+  /** OG23 (T11) : copie `ids` décalée de (dx, dy) (extrait + insertion, une étape, copies sélectionnées) ; `strip` retire
+   *  `dragCopy` des copies ; faux sans copie posée. */
+  duplicate(ids: readonly string[], dx: number, dy: number, strip: boolean): boolean;
+  /** OG23 (T11) : pose ou retire « Glisser une copie » sur la sélection (un SetStyle, une étape), hors style courant ;
+   *  faux sans sélection ou si le cœur refuse. */
+  setDragCopy(on: boolean): boolean;
+  /** OG23 : Aligner, Répartir, Retourner, Tourner la sélection (groupes entiers) ; vrai si le document a changé. */
+  arrange(how: ArrangeHow): boolean;
+  /** OG23 : déplace la sélection de (dx, dy) unités de scène ; faux sans sélection. */
+  nudge(dx: number, dy: number): boolean;
+  /** OG23 (T8) : arme la pipette ; le prochain toucher de la scène ne va à aucun outil, lit la couleur affichée (`#rrggbb`)
+   *  et résout ; null si transparent, annulé (Échap, `cancelPick`) ou remplacé par un second appel. */
+  pickColor(): Promise<string | null>;
+  /** OG23 (T8) : désarme la pipette (résout null) ; sans effet si elle n'est pas armée. */
+  cancelPick(): void;
   /** T18 (déc. 38) : ouvre l'éditeur de lien sur l'unique élément sélectionné (`linkEditing`) ; faux sinon. */
   editLink(): boolean;
   /** T18 : pose (un SetStyle { link }, une étape) ou retire (null) le lien de l'unique élément sélectionné, puis ferme
@@ -498,6 +515,8 @@ export function createEngine(deps: EngineDeps): Engine {
   let error: string | null = null;
   /** T18 : élément dont l'éditeur de lien est ouvert ; retombe à null dès qu'il n'est plus l'unique sélection. */
   let linkEditing: string | null = null;
+  /** OG23 (T8) : résolveur de la pipette armée ; null sinon. */
+  let pickDone: ((c: string | null) => void) | null = null;
   let sceneDirty = true;
   let lastHidden: ReadonlySet<string> = new Set<string>();
   /** Aperçu de grille posé sur le rendu (DAE1). */
@@ -560,6 +579,21 @@ export function createEngine(deps: EngineDeps): Engine {
     const to = sel.length === 0 ? null : stepTarget(doc, pageId, sel, dir);
     return to !== null && restack(selectedBlock(), to);
   }
+  /** OG23 : aligne, répartit, retourne ou tourne la sélection (groupes entiers), une étape. */
+  function arrange(how: ArrangeHow): boolean {
+    const ids = selectedBlock();
+    if (ids.length === 0) return false;
+    const version = doc.version();
+    run({ type: "Arrange", ids, how });
+    return doc.version() !== version;
+  }
+  /** OG23 : déplace la sélection de (dx, dy) unités de scène, quel que soit le zoom ; une `Transform`, une étape. */
+  function nudge(dx: number, dy: number): boolean {
+    if (selectTool.selection().length === 0) return false;
+    const version = doc.version();
+    run({ type: "Transform", ids: selectedBlock(), matrix: [1, 0, 0, 1, dx, dy] });
+    return doc.version() !== version;
+  }
   function bringToFront(): boolean {
     const ids = selectedBlock();
     return ids.length > 0 && restack(ids, doc.elementIds(pageId).length - ids.length);
@@ -597,6 +631,7 @@ export function createEngine(deps: EngineDeps): Engine {
       fillTolerance,
       itemStyle: item,
       linkEditing: linkTarget(),
+      picking: pickDone !== null,
       lineEditing: lineEditor?.id ?? null,
       linePointsSelected: lineEditor?.selectedPoints().length ?? 0,
       bindHint,
@@ -610,6 +645,15 @@ export function createEngine(deps: EngineDeps): Engine {
   function linkTarget(): string | null {
     const sel = selectTool.selection();
     return linkEditing !== null && sel.length === 1 && sel[0] === linkEditing ? linkEditing : null;
+  }
+
+  /** OG23 (T8) : résout la pipette armée (couleur lue ou null) et publie l'état. */
+  function settlePick(c: string | null): void {
+    const done = pickDone;
+    if (done === null) return;
+    pickDone = null;
+    done(c);
+    emit();
   }
 
   /** OG12 T11 : l'éditeur de points tombe dès que sa ligne n'est plus l'unique sélection (supprimée, annulée, page
@@ -857,6 +901,7 @@ export function createEngine(deps: EngineDeps): Engine {
     alt: () => altHeld,
     requestFrame: requestScene,
     stateChanged: () => emit(),
+    duplicate: (ids, dx, dy, strip) => engine.duplicate(ids, dx, dy, strip),
     ctrl: () => ctrlHeld,
     bindingEnabled: () => item.arrowBinding,
     pointerType: () => lastPointer,
@@ -1047,6 +1092,13 @@ export function createEngine(deps: EngineDeps): Engine {
   const sink: GestureSink = {
     begin(pointerId, t, samples, pointerType) {
       lastDeleted = null;
+      // OG23 (T8) : pipette armée, un toucher unique lit la couleur et ne va à aucun outil (ni sélection, ni orbite).
+      if (pickDone !== null) {
+        const s = samples[0];
+        owner.set(pointerId, inertTool());
+        settlePick(s === undefined ? null : (renderer.colorAt?.(s.x, s.y) ?? null));
+        return;
+      }
       lastPointer = pointerType ?? "mouse";
       // T18 (déc. 38) : toucher du badge d'un lien avec l'outil Sélection, hors rognage, pipette et orbite.
       if (t === "select" && orbit === null && (imageEdit === null || imageEdit.mode() === "idle")) {
@@ -1106,13 +1158,17 @@ export function createEngine(deps: EngineDeps): Engine {
       ...(p.startArrowhead !== undefined ? { startArrowhead: p.startArrowhead } : {}),
       ...(p.endArrowhead !== undefined ? { endArrowhead: p.endArrowhead } : {}),
       ...(p.textAlign !== undefined ? { textAlign: p.textAlign === "left" ? null : p.textAlign } : {}),
+      ...(p.variability !== undefined ? { variability: p.variability === "constant" ? "constant" : null } : {}),
     };
   }
 
   /** Fusion du style courant (`mergeItemStyle`, jamais un remplacement) ; `writeSelection` : un SetStyle sur la
    *  sélection, des seuls champs acceptés, une étape. */
   function setItem(p: Partial<ItemStyle>, writeSelection: boolean): void {
-    const next = mergeItemStyle(item, p);
+    // OG23 (déc. 11) : « transparent » n'est jamais gardé au style courant ; il part seulement dans le SetStyle de la sélection.
+    const transparent = p.color === "transparent";
+    const kept: Partial<ItemStyle> = transparent ? Object.fromEntries(Object.entries(p).filter(([k]) => k !== "color")) : p;
+    const next = mergeItemStyle(item, kept);
     const keys = Object.keys(next) as (keyof ItemStyle)[];
     const changed = keys.some((k) => next[k] !== item[k]);
     item = next;
@@ -1122,7 +1178,10 @@ export function createEngine(deps: EngineDeps): Engine {
     const editedId = tool === "text" ? textTool.editing()?.id ?? null : null;
     const ids = sel.length > 0 ? [...sel] : editedId !== null ? [editedId] : [];
     if (writeSelection && ids.length > 0) {
-      const accepted = Object.fromEntries(keys.filter((k) => k in p && p[k] === next[k]).map((k) => [k, p[k]])) as Partial<ItemStyle>;
+      const accepted = {
+        ...(Object.fromEntries(keys.filter((k) => k in kept && kept[k] === next[k]).map((k) => [k, kept[k]])) as Partial<ItemStyle>),
+        ...(transparent ? { color: "transparent" } : {}),
+      };
       // OG12 : `arrowBinding` est un réglage de l'appareil (aucune commande) ; `arrowType` ne touche que les flèches.
       const { arrowType, arrowBinding: _device, ...rest } = accepted;
       const cmds: Command[] = [];
@@ -1186,18 +1245,31 @@ export function createEngine(deps: EngineDeps): Engine {
       return true;
     },
     duplicateSelection() {
-      const sel = selectTool.selection();
-      if (sel.length === 0) return false;
-      // Ni commande du cœur ni presse-papiers : l'extrait de la sélection réinséré à +10/+10 (une étape, copies sélectionnées).
-      const fragment = doc.extract(pageId, sel);
+      return engine.duplicate(selectTool.selection(), 10, 10, false);
+    },
+    duplicate(ids, dx, dy, strip) {
+      if (ids.length === 0) return false;
+      // Ni commande du cœur ni presse-papiers : l'extrait réinséré au décalage (une étape, copies sélectionnées).
+      const fragment = doc.extract(pageId, ids);
       try {
-        const change = engine.insertFragment(fragment, 10, 10);
+        if (strip) {
+          const copies = fragment.elementIds(fragment.pageIds()[0] ?? "");
+          fragment.apply({ type: "SetStyle", ids: copies, patch: { dragCopy: false } });
+        }
+        const change = engine.insertFragment(fragment, dx, dy);
         return change !== null && change.ids.length > 0;
       } finally {
         fragment.free();
       }
     },
+    setDragCopy(on) {
+      const sel = selectTool.selection();
+      if (sel.length === 0) return false;
+      return run({ type: "SetStyle", ids: [...sel], patch: { dragCopy: on } }) !== null;
+    },
     restack,
+    arrange,
+    nudge,
     bringToFront,
     sendToBack,
     reorder,
@@ -1233,6 +1305,10 @@ export function createEngine(deps: EngineDeps): Engine {
     undo: () => history("undo"),
     redo: () => history("redo"),
     key(e) {
+      if (pickDone !== null && e.key === "Escape") {
+        settlePick(null);
+        return true;
+      }
       if (isCtrlKey(e)) {
         ctrlHeld = true;
         return false;
@@ -1249,6 +1325,25 @@ export function createEngine(deps: EngineDeps): Engine {
         spaceHeld = true;
         return true;
       }
+      const ck = cellKey(e);
+      // personnalisation-3 (H12) : la touche passe s'il n'y a rien à loger ou à sortir.
+      if ((ck === "place" || ck === "unplace") && tool === "select" && (imageEdit === null || imageEdit.mode() === "idle") && selectTool.placeInCell?.(ck === "unplace") === true) return true;
+      // personnalisation-3 (T7) : Alt+F en outil Tableau bascule « rétrécir » ; sans cellule active la touche passe.
+      if (ck === "fit" && tool === "table" && tableTool.cell() !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        tableTool.act("fit-toggle");
+        return true;
+      }
+      // personnalisation-3 (T9) : Alt+I en outil Tableau met l'image logée de la case active en fond.
+      if (ck === "cell-image" && tool === "table" && tableTool.cell() !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        tableTool.act("cell-image");
+        return true;
+      }
+      // personnalisation-3 (H12) : Alt+flèches en outil Tableau, case active ; sinon elles passent.
+      const tk = tableKey(e);
+      if (tk !== null && tool === "table" && tableTool.cell() !== null) {
+        tableTool.act(tk);
+        return true;
+      }
       const order = orderKey(e);
       if (order !== null) {
         // Lot 2 : Ctrl+↑ ↓ un rang, Ctrl+Maj+↑ ↓ extrémités ; pris seulement avec une sélection (sinon la touche passe).
@@ -1260,6 +1355,26 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       const edit = editAction(e);
       const action = keyAction(e);
+      const imageBusy = imageEdit !== null && imageEdit.mode() !== "idle";
+      if (!imageBusy && textTool.editing() === null && selectTool.selection().length > 0) {
+        // Fusion OG12 × OG23 : Alt+Maj+flèche est à la fois l'objet relié d'OG12 (`linkedKey`) et Aligner d'OG23
+        // (`arrangeKey`). Le geste contextuel d'OG12 prime dans son contexte : pendant une séance « Modifier les points »
+        // (la touche va plus bas à l'éditeur, jamais à Aligner) et sur un seul rectangle ou une seule ellipse (le
+        // contexte d'`addLinked`). Hors de ces contextes, Aligner (qui demande au moins deux unités).
+        const linked = linkedKey(e);
+        if (linked !== null && lineEditor === null && engine.addLinked(linked)) return true;
+        // OG23 (déc. 24) : Alt+Maj+lettres et Maj+H, V, R ; flèches ; pris seulement avec une sélection (sinon la touche passe).
+        const how = linked !== null && lineEditor !== null ? null : arrangeKey(e);
+        if (how !== null) {
+          arrange(how);
+          return true;
+        }
+        const step = nudgeKey(e);
+        if (step !== null) {
+          nudge(step.dx, step.dy);
+          return true;
+        }
+      }
       if (imageEdit !== null && imageEdit.mode() !== "idle") {
         // C5 (I28) : pendant le rognage ou la pipette, Échap sort du mode, Suppr est pris sans effet, Entrée valide le
         // rognage, Ctrl+Z / Ctrl+Y sortent du mode sans écrire puis annulent ou rétablissent.
@@ -1297,14 +1412,6 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       const dir = linkedKey(e);
       if (dir !== null) return engine.addLinked(dir);
-      // Lot 2a (n° 35) : flèche = 1 px, Maj = 5 px, une Transform par appui ; seulement avec une sélection (sinon la touche
-      // passe : ascenseur du portrait), hors « Modifier les points » et hors rognage ou pipette.
-      const nudge = arrowMoveKey(e);
-      if (nudge !== null && lineEditor === null && (imageEdit === null || imageEdit.mode() === "idle")) {
-        const sel = selectTool.selection();
-        if (sel.length === 0) return false;
-        return run({ type: "Transform", ids: [...sel], matrix: translateMatrix(nudge.dx, nudge.dy) }) !== null;
-      }
       // OG11 (DA-6, déc. 39) : Ctrl+D duplique ; toujours pris (preventDefault), comme Excalidraw : pas de favori du navigateur.
       if (objectKey(e) === "duplicate") {
         engine.duplicateSelection();
@@ -1524,6 +1631,16 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     setItemStyle(p) {
       setItem(p, true);
+    },
+    pickColor() {
+      settlePick(null);
+      return new Promise<string | null>((resolve) => {
+        pickDone = resolve;
+        emit();
+      });
+    },
+    cancelPick() {
+      settlePick(null);
     },
     editLink() {
       const sel = selectTool.selection();

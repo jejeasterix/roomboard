@@ -769,6 +769,19 @@ describe("Canvas2DRenderer — tableau (C10a)", () => {
     return { r, scene, page };
   }
 
+  it("S5 : une case à fond d'image, rendue par le peintre d'export, appelle drawImage", () => {
+    const ASSET = "b".repeat(64);
+    const bmp = { width: 10, height: 10 } as unknown as CanvasImageSource;
+    const images = { bitmap: (a: string) => (a === ASSET ? bmp : null) } as unknown as ImageSource;
+    const el: TableElement = { ...TABLE, table: { ...TABLE.table, cells: [{ row: "r1", col: "c2", text: "", fill: null, shade: null, spans: [], bg: ASSET }] } };
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => (id === el.id ? el : null), outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, exportPainterOptions(images));
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: [el.id] }, IDENTITY, new Set());
+    expect(scene.images.length).toBe(1);
+  });
+
   it("fonds et traits sous la matrice du tableau, puis le texte dans la cellule (découpe, coin intérieur)", () => {
     const { scene } = draw([TABLE]);
     expect(scene.log).toContain("transform 1,0,0,1,10,20");
@@ -1147,6 +1160,27 @@ describe("Canvas2DRenderer — badge de lien (T37)", () => {
     expect(paint(false)).toContain("fill #ffffff");
   });
   it("à l'export (miniatures, PDF) : aucun badge", () => {
+    expect(paint(true)).not.toContain("fill #ffffff");
+  });
+});
+
+describe("Canvas2DRenderer — badge de copie (OG23, T11)", () => {
+  const copyable: ElementView = {
+    id: "c", kind: "shape", transform: [1, 0, 0, 1, 100, 120], style: { color: "#1e40af", width: 4 }, look: { dragCopy: true },
+    shape: { shape: "rect", w: 200, h: 100, fill: null },
+  };
+  const paint = (forExport: boolean): string[] => {
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => (id === "c" ? copyable : null), outline: () => null, bounds: () => ({ x0: 100, y0: 120, x1: 300, y1: 220 }) };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, { forExport });
+    r.resize(400, 300, 1);
+    r.drawScene({ id: "p", elementIds: ["c"] }, IDENTITY, new Set());
+    return scene.log;
+  };
+  it("à l'écran : le badge de copie est peint", () => {
+    expect(paint(false)).toContain("fill #ffffff");
+  });
+  it("badge de copie absent à l'export", () => {
     expect(paint(true)).not.toContain("fill #ffffff");
   });
 });
@@ -1718,6 +1752,28 @@ describe("Canvas2DRenderer — cadre de page (DA4, T9)", () => {
     expect(scene.rects[1]).toEqual([0, 0, 1920, 1080]);
     r.drawLive(partial, far);
     expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
+  });
+});
+
+describe("Canvas2DRenderer.colorAt (OG23, T8)", () => {
+  it("colorAt : #rrggbb, null hors tampon", () => {
+    const scene = new FakeCtx();
+    const asked: number[][] = [];
+    let px = [255, 128, 0, 255];
+    (scene as unknown as { getImageData: unknown }).getImageData = (x: number, y: number, w: number, h: number) => {
+      asked.push([x, y, w, h]);
+      return { data: new Uint8ClampedArray(px) };
+    };
+    const r = new Canvas2DRenderer(asCtx(scene), null, { element: () => null, outline: () => null });
+    r.resize(100, 50, 2);
+    expect(r.colorAt(10.4, 5)).toBe("#ff8000");
+    expect(asked[0]).toEqual([21, 10, 1, 1]);
+    expect(r.colorAt(-1, 5)).toBeNull();
+    expect(r.colorAt(100, 5)).toBeNull();
+    expect(r.colorAt(5, 50)).toBeNull();
+    expect(asked).toHaveLength(1);
+    px = [10, 20, 30, 0];
+    expect(r.colorAt(5, 5)).toBeNull();
   });
 });
 

@@ -354,6 +354,13 @@ export function App(props: AppProps): JSX.Element {
   /** Panneau de l'image (C5, I25, I31) : l'image sélectionnée seule à l'ouverture ; fermé si l'onglet, la page ou la
    *  sélection changent, ou si l'image disparaît ; une écriture ne le ferme pas (au contraire de la grille). */
   const [imageTarget, setImageTarget] = createSignal<string | null>(null);
+  /** OG23 (T13) : départ demandé par la section Image du panneau d'options (rognage, baguette) ; remis à null à la fermeture. */
+  const [imageStart, setImageStart] = createSignal<"crop" | "background" | null>(null);
+  const openImage = (start: "crop" | "background" | null): void => {
+    setImageStart(start);
+    setPanel("image");
+  };
+  createEffect(on(panel, (p) => { if (p !== "image") setImageStart(null); }, { defer: true }));
   createEffect(
     on(panel, (p) => {
       if (p !== "image") return;
@@ -381,7 +388,7 @@ export function App(props: AppProps): JSX.Element {
       const el = b.doc.element(id);
       return el?.kind === "image" ? el.image : null;
     };
-    return <ImagePanel image={image} version={() => state().version} tick={state} edit={edit} close={() => setPanel(null)} />;
+    return <ImagePanel image={image} version={() => state().version} tick={state} edit={edit} {...(imageStart() !== null ? { start: imageStart()! } : {})} close={() => setPanel(null)} />;
   };
 
   // C11a : état de l'annotation et vue de barre venue de `annotate`.
@@ -675,6 +682,7 @@ export function App(props: AppProps): JSX.Element {
             above={above}
             hidden={() => panel() !== null}
             openLink={(url) => props.shell.openLink?.(url)}
+            openImage={openImage}
           />
         )}
         onTopFree={setPopTop}

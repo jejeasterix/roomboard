@@ -8,6 +8,7 @@
  * haut sous le point la révèle (SetTableShade à null, une étape), sélection inchangée ; au-delà, le glisser sélectionne et déplace.
  * C3 (Z2) : un clic prend le groupe extérieur entier, Maj+clic l'ajoute ou le retire entier, le rectangle ne prend un
  * groupe qu'entier (`engine/groups.ts`).
+ * personnalisation-3 (DA3) : glisser vers une case par `cell-drop.ts`, 4 points d'appel.
  */
 import type { Bounds, LinkDir, Matrix, ShapeElement, ElementView } from "../../core/api";
 import { elbowedOf } from "../../core/look";
@@ -16,18 +17,21 @@ import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import { isDoubleTap, type Tap } from "../input/double-tap";
 import type { InputSample } from "../input/sampler";
+import { dragCopyOf } from "../../core/look";
 import { BOUND_DRAG_PX, dragLine, linkHandles, linkedCopy, pickHandle, pickLink, pointHandles, worldPoints, type DraggedLine, type PointHit } from "./line-points";
 import { EMPTY_OVERLAY, type EditOverlay, type ShapePreview } from "../render/overlay";
 import {
   HANDLE_GRAB_PX,
   handlePoint,
   hitHandle,
+  hitMoveHandle,
   isIdentity,
   resizeMatrix,
   transformBounds,
   translateMatrix,
   type HandleId,
 } from "./handles";
+import type { CellDrop } from "./cell-drop";
 import { expandToGroups, keepWholeGroups, viewsOf, type GroupedView } from "../groups";
 import { cellContent, tableAt } from "../table-geom";
 import type { LivePart, SelectionTool, ToolContext } from "./tool";
@@ -37,7 +41,7 @@ export const DRAG_THRESHOLD_PX = 2;
 /** Toucher qui révèle un ombrage (F10, HB-24) : seuil propre, le glisser de 2 px est trop petit au doigt. */
 export const REVEAL_TAP_PX = 8;
 
-type Mode = "move" | "resize" | "band" | "none" | "tap-shade" | "line-end" | "line-mid" | "link";
+type Mode = "move" | "copy" | "resize" | "band" | "none" | "tap-shade" | "line-end" | "line-mid" | "link";
 
 /** Cellule ombrée retenue au `begin` (F10), révélée au `close` si le pointeur n'a pas glissé. */
 interface Reveal {
@@ -112,18 +116,36 @@ function grabbedHandle(frame: Bounds, x: number, y: number, zoom: number): Handl
   return hitHandle(frame, x, y, reachPx / zoom, skip);
 }
 
-export function createSelectTool(ctx: ToolContext): SelectionTool {
+const pointerTypeOf = (s: InputSample): string | undefined => (s as { readonly pointerType?: string }).pointerType;
+
+export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): SelectionTool {
   let selection: string[] = [];
   let drag: Drag | null = null;
   let lastTap: (Tap & { id: string }) | null = null;
   let first: InputSample | null = null;
   const one = (): ElementView | null => (selection.length === 1 ? ctx.doc.element(selection[0]!) : null);
+  // personnalisation-3 (D28) : pendant un glisser, la vue de l'élément seul (OG12 : ligne, nœud) est lue une fois, au
+  // premier aperçu ; aucun element() par image. Le glisser est muté en place : la clé tient jusqu'à sa fin.
+  const dragViews = new WeakMap<Drag, ElementView | null>();
+  const oneOf = (d: Drag | null): ElementView | null => {
+    if (d === null) return one();
+    if (!dragViews.has(d)) dragViews.set(d, one());
+    return dragViews.get(d) ?? null;
+  };
 
   const world = (s: InputSample): [number, number] => screenToWorld(ctx.camera(), s.x, s.y);
+  /** OG23 (T11) : la sélection contient un objet « Glisser une copie ». */
+  const hasDragCopy = (ids: readonly string[]): boolean => ids.some((id) => dragCopyOf(ctx.doc.element(id)?.look));
+  /** Fusion OG12 × OG23 : la poignée « Déplacer » d'un objet `dragCopy` (28 px au-dessus du cadre) recouvre le « + » du
+   *  haut d'OG12 (40 px) ; le geste contextuel prime dans son contexte : avec « Glisser une copie », le « + » du haut
+   *  s'efface (Alt+Maj+↑ le garde), les trois autres restent ; sans la propriété, les quatre « + ». */
+  const nodeLinks = (frame: Bounds, zoom: number) =>
+    hasDragCopy(selection) ? linkHandles(frame, zoom).filter((h) => h.dir !== "up") : linkHandles(frame, zoom);
   const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= (d.bound ? BOUND_DRAG_PX : DRAG_THRESHOLD_PX);
 
   /** Vues de la page montrée (C3, Z2), lues au geste, jamais gardées. */
   const pageViews = (): GroupedView[] => viewsOf(ctx.doc, ctx.doc.elementIds(ctx.page()));
+  const widen = (ids: string[], views: readonly GroupedView[]): string[] => cellDrop?.expand(ids, views) ?? ids;
 
   /**
    * Déplacement du glisser (C9, G7, G8) : aimanté depuis le déplacement brut, à chaque image et au relâché (l'aperçu
@@ -138,7 +160,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
   /** Matrice provisoire du glisser ; identité tant que le seuil n'est pas franchi. */
   const matrixOf = (d: Drag): Matrix => {
     if (!moved(d)) return IDENTITY_MATRIX;
-    if (d.mode === "move") return translateMatrix(...moveDelta(d));
+    if (d.mode === "move" || d.mode === "copy") return translateMatrix(...moveDelta(d));
     if (d.mode === "resize" && d.base && d.handle) {
       const [gx, gy] = handlePoint(d.base, d.handle);
       return resizeMatrix(d.base, d.handle, gx + d.x - d.x0, gy + d.y - d.y0, ctx.shift?.() === true);
@@ -207,17 +229,23 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
           return;
         }
       } else if (isNode(v) && frame) {
-        const dir = pickLink(linkHandles(frame, zoom), x, y, zoom);
+        const dir = pickLink(nodeLinks(frame, zoom), x, y, zoom);
         if (dir) {
           startDrag(pointerId, "link", x, y, { link: dir });
           return;
         }
       }
       // Poignée cherchée avant hitTest, Maj tenue ou non : Maj sur une poignée = proportions (D15, CL4-11).
+      // OG23 (T11) : la poignée « Déplacer » déplace l'original d'un objet `dragCopy`, comme avant la propriété.
+      // T18 : la poignée de taille prime dans sa portée ; la zone « Déplacer » du doigt (22 px) la recouvre sinon.
       // n° 39 : une ligne seule n'a pas de cadre à 8 poignées.
       const h = frame && !isLine(v) ? grabbedHandle(frame, x, y, zoom) : null;
       if (frame && h) {
         startDrag(pointerId, "resize", x, y, { handle: h, base: frame });
+        return;
+      }
+      if (frame && hasDragCopy(selection) && hitMoveHandle(frame, x, y, zoom, pointerTypeOf(s))) {
+        startDrag(pointerId, "move", x, y);
         return;
       }
       const hit = ctx.doc.hitTest(ctx.page(), x, y, SELECT_TOL_PX / zoom);
@@ -228,7 +256,8 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
           startDrag(pointerId, "tap-shade", x, y, { reveal });
           return;
         }
-        const unit = expandToGroups([hit], pageViews()); // C3 : le groupe extérieur entier
+        const views = pageViews();
+        const unit = widen(expandToGroups([hit], views), views); // C3 + D6 : le groupe extérieur entier
         if (shift) {
           selection = selection.includes(hit)
             ? selection.filter((id) => !unit.includes(id))
@@ -238,7 +267,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
         }
         if (!selection.includes(hit)) selection = unit;
         const sel = one();
-        startDrag(pointerId, "move", x, y, { bound: isLine(sel) && !!(sel.shape.start || sel.shape.end), target: hit, touch });
+        startDrag(pointerId, hasDragCopy(selection) ? "copy" : "move", x, y, { bound: isLine(sel) && !!(sel.shape.start || sel.shape.end), target: hit, touch });
         return;
       }
       if (!shift) selection = [];
@@ -253,8 +282,11 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       // F10 : au-delà de 8 px écran, le toucher devient un déplacement depuis le point d'appui.
       if (drag.mode === "tap-shade" && Math.hypot(x - drag.x0, y - drag.y0) * drag.zoom >= REVEAL_TAP_PX) {
         const id = drag.reveal?.id;
-        if (id !== undefined && !selection.includes(id)) selection = expandToGroups([id], pageViews());
-        drag.mode = "move";
+        if (id !== undefined && !selection.includes(id)) {
+          const views = pageViews();
+          selection = widen(expandToGroups([id], views), views);
+        }
+        drag.mode = hasDragCopy(selection) ? "copy" : "move";
       }
     },
     frame() {
@@ -267,7 +299,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       if (how !== "end") return;
       if (!moved(d)) {
         // Un relâché sans mouvement sur une poignée de la ligne sélectionnée compte comme un toucher sur la ligne.
-        const id = d.mode === "move" ? d.target ?? null : d.mode === "line-end" || d.mode === "line-mid" ? selection[0] ?? null : null;
+        const id = d.mode === "move" || d.mode === "copy" ? d.target ?? null : d.mode === "line-end" || d.mode === "line-mid" ? selection[0] ?? null : null;
         const cur: Tap = { t: d.t, x: d.sx, y: d.sy };
         const view = id === null ? null : ctx.doc.element(id);
         if (id !== null && lastTap?.id === id && isDoubleTap(lastTap, cur) && editsPointsOnTap(view)) {
@@ -305,7 +337,14 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       if (d.mode === "none" || selection.length === 0) return;
       const m = matrixOf(d);
       if (isIdentity(m)) return;
-      ctx.run({ type: "Transform", ids: [...selection], matrix: m });
+      if (d.mode === "copy") {
+        const [dx, dy] = moveDelta(d);
+        ctx.duplicate?.([...selection], dx, dy, true);
+        return;
+      }
+      // Fusion OG23 × OG26 : seul le déplacement loge dans une case ; la copie `dragCopy` (OG23) duplique sans lien.
+      const placed = d.mode === "move" ? (cellDrop?.drop(selection, m, d.x, d.y, ctx.alt?.() === true) ?? null) : null;
+      ctx.run(placed ?? { type: "Transform", ids: [...selection], matrix: m });
     },
     live(): LivePart {
       const d = drag;
@@ -315,7 +354,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       if (selection.length === 0) return { strokes: [], erasers: [], hidden: NONE };
       const bounds = ctx.doc.bounds(selection);
       const zoom = ctx.camera().zoom;
-      const v = one();
+      const v = oneOf(d);
       if (isLine(v)) {
         // n° 39 : ligne seule : un point à chaque bout, un milieu ; aucun cadre à 8 poignées.
         if (d && (d.mode === "line-end" || d.mode === "line-mid") && moved(d) && d.hit) {
@@ -332,31 +371,41 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
           const overlay: EditOverlay = { ...EMPTY_OVERLAY, shapes: [preview], points: pointHandles(p, [], zoom, false), bind: next.hint };
           return { strokes: [], erasers: [], hidden: new Set([v.id]), overlay };
         }
-        const m = d && d.mode === "move" ? matrixOf(d) : IDENTITY_MATRIX;
+        // OG23 (T11) : une ligne `dragCopy` glissée laisse l'original peint, seul le fantôme suit (comme les autres genres).
+        const m = d && (d.mode === "move" || d.mode === "copy") ? matrixOf(d) : IDENTITY_MATRIX;
         const dragging = !isIdentity(m);
         const { pts, mids } = endHandles(v);
         const overlay: EditOverlay = {
           ...EMPTY_OVERLAY,
           ghosts: dragging ? [{ id: v.id, matrix: m }] : [],
           ...(dragging ? {} : { points: pointHandles(pts, [], zoom, mids) }),
+          target: dragging && d?.mode === "move" ? (cellDrop?.target(selection, d.x, d.y) ?? null) : null,
         };
-        return { strokes: [], erasers: [], hidden: dragging ? new Set(selection) : NONE, overlay };
+        return { strokes: [], erasers: [], hidden: dragging && d?.mode !== "copy" ? new Set(selection) : NONE, overlay };
       }
-      const m = d && (d.mode === "move" || d.mode === "resize") ? matrixOf(d) : IDENTITY_MATRIX;
+      const m = d && (d.mode === "move" || d.mode === "copy" || d.mode === "resize") ? matrixOf(d) : IDENTITY_MATRIX;
       const dragging = !isIdentity(m);
+      const copying = dragging && d?.mode === "copy";
       const overlay: EditOverlay = {
         ...EMPTY_OVERLAY,
         ghosts: dragging ? selection.map((id) => ({ id, matrix: m })) : [],
         frame: bounds === null ? null : dragging ? transformBounds(m, bounds) : bounds,
         handles: !dragging,
-        ...(isNode(v) && !dragging && bounds ? { links: linkHandles(bounds, zoom) } : {}),
+        move: !dragging && hasDragCopy(selection),
+        target: dragging && d?.mode === "move" ? (cellDrop?.target(selection, d.x, d.y) ?? null) : null,
+        ...(isNode(v) && !dragging && bounds ? { links: nodeLinks(bounds, zoom) } : {}),
       };
-      return { strokes: [], erasers: [], hidden: dragging ? new Set(selection) : NONE, overlay };
+      // Copie : l'original reste peint (rien de masqué), seul le fantôme suit le doigt.
+      return { strokes: [], erasers: [], hidden: dragging && !copying ? new Set(selection) : NONE, overlay };
     },
     active: () => drag !== null,
     selection: () => selection,
     setSelection(ids) {
       selection = [...ids];
+    },
+    placeInCell(out) {
+      const cmd = cellDrop?.place(selection, out) ?? null;
+      return cmd !== null && ctx.run(cmd) !== null;
     },
     prune() {
       const present = new Set(ctx.doc.elementIds(ctx.page()));

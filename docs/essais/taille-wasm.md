@@ -166,7 +166,7 @@ viennent de sa fonctionnalité `simple-text`, qui sert au texte des PDF. `twiggy
 `wasm-opt` tourne dans `scripts/verifier.sh` après `pnpm install --frozen-lockfile`, sur
 `apps/web/src/wasm-formats/roomboard_formats_wasm_bg.wasm`, avant les tests du vrai module et le build de vite.
 La colle JS reste celle de `wasm-bindgen` (mêmes exports) ; `-Oz` lit les fonctionnalités Wasm dans la section
-`target_features`. Durée : environ 1 min 35 s de plus par vérification. Le module principal n'y passe pas.
+`target_features`. Durée : environ 1 min 35 s de plus par vérification. Le module principal n’y passait pas avant OG23 (voir plus bas).
 Les recettes de l'installeur (`docs/essais/coque-windows.md`, `docs/essais/coque-macos.md`) lancent le même
 `wasm-opt` : sans lui, l'installeur livrerait le module non optimisé, que `verifier.sh` ne mesure pas.
 
@@ -186,3 +186,22 @@ chronométré ici ; ses tests et ses essais e2e passent sur le module optimisé.
 `scripts/verifier.sh --e2e` : OK sur la branche, essais de fidélité de C13 compris (`C13 tableaux : OK`) ;
 `module Wasm : 1374398 octets`, `module formats : 2794511 octets`. Marge du module formats : 351 217 o
 (cible : 100 Ko). Plafonds inchangés (1 572 864 o, 3 145 728 o).
+
+## OG23 (module principal passé à `wasm-opt -Oz`, 2026-11-28)
+
+Après la fusion d'OG12 (flèches, liaisons), d'OG26 (tableau, lots A et B) et d'OG23 (Arrange, pression, glisser une
+copie), le module principal sorti de `wasm-bindgen --remove-name-section` pesait **1 598 137 o**, au-dessus du plafond
+H2-13 (1 572 864 o). `main` seul était à 1 571 221 o (marge 1 643 o).
+
+| réglage | module principal | gain |
+|---|---:|---:|
+| départ (profil `s`, `lto`, `codegen-units = 1`, sans section `name`) | 1 598 137 | — |
+| `wasm-opt -Oz` (paquet npm `binaryen` 132.0.0, Apache-2.0), après `wasm-bindgen` | 1 456 551 | 141 586 (−8,9 %) |
+
+Décision prise par l'agent (OG23) : le module principal passe par le même `wasm-opt -Oz` que le module `formats`
+(OE71), dans `scripts/verifier.sh` et dans les recettes de l'installeur (`coque-windows.md`, `coque-macos.md`).
+Plafond inchangé. Marge : 116 313 o.
+
+À revoir : le banc de vitesse du chemin de l'encre (`StrokeBuilder`, contours, gomme) sur le module optimisé n'est pas
+fait. Le banc d'OE71 sur `formats` n'a montré aucune perte. Les essais e2e du stylo et de la gomme passent sur le module
+optimisé. Repli : retirer la ligne de `scripts/verifier.sh` ; il faut alors retirer d'abord 25 273 o de code.

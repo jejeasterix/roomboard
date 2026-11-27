@@ -14,6 +14,7 @@ function fakeEdit(pick: string | null = "#ffffff") {
     id: "i",
     preview: vi.fn(),
     pick: vi.fn(async () => pick),
+    pickPoint: vi.fn(async () => (pick === null ? null : { color: pick, x: 3, y: 4 })),
     startCrop: vi.fn(() => (mode = "crop")),
     finishCrop: vi.fn(() => ((mode = "idle"), true)),
     geometry: vi.fn((_p: ImageParams) => true),
@@ -25,12 +26,12 @@ function fakeEdit(pick: string | null = "#ffffff") {
   } satisfies ImageEdit;
   return edit;
 }
-function setup(initial: ImageData = { asset: A, w: 200, h: 150 }, edit = fakeEdit()) {
+function setup(initial: ImageData = { asset: A, w: 200, h: 150 }, edit = fakeEdit(), start?: "crop" | "background") {
   const [image, setImage] = createSignal<ImageData | null>(initial);
   const [version, setVersion] = createSignal(0);
   const [tick, setTick] = createSignal(0);
   const close = vi.fn();
-  const r = render(() => <ImagePanel image={image} version={version} tick={tick} edit={edit} close={close} />);
+  const r = render(() => <ImagePanel image={image} version={() => (tick(), version())} tick={tick} edit={edit} close={close} start={start} />);
   const q = (sel: string) => r.container.querySelector<HTMLElement>(sel)!;
   const act = (id: string) => fireEvent.click(q(`[data-image-action="${id}"]`));
   const input = (id: string, v: string) => {
@@ -110,7 +111,126 @@ describe("panneau de retouche (I25-I27, I31)", () => {
     unmount();
     expect(edit.close).toHaveBeenCalledTimes(1);
     const d = draftOf({ asset: A, w: 1, h: 1, contrast: -5, transparent: { color: "#000000", tolerance: 3, soft: 4, contiguous: false } });
-    expect(d).toEqual({ brightness: 0, contrast: -5, color: "#000000", tolerance: 3, soft: 4, contiguous: false });
+    expect(d).toEqual({ brightness: 0, contrast: -5, color: "#000000", tolerance: 3, soft: 4, contiguous: false, seed: null, mode: "global" });
     expect(pixelParams({ ...d, color: null })).toEqual({ contrast: -5 });
+  });
+  it("mode Depuis le point touché : la pipette pose couleur et départ, Valider écrit x et y", async () => {
+    const { act, edit, q } = setup();
+    fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "seed" } });
+    act("pick");
+    await vi.waitFor(() => expect(edit.pickPoint).toHaveBeenCalled());
+    await vi.waitFor(() => expect(edit.preview).toHaveBeenLastCalledWith({ transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true, x: 3, y: 4 } }));
+    act("apply");
+    expect(edit.commit).toHaveBeenCalledWith({ transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true, x: 3, y: 4 } });
+    expect(Array.from(q('[data-image-input="mode"]').querySelectorAll("option")).map((o) => (o as HTMLOptionElement).value)).toEqual(["seed", "contiguous", "global"]);
+  });
+  it("start crop ouvre le rognage", () => {
+    const { edit } = setup(undefined, fakeEdit(), "crop");
+    expect(edit.startCrop).toHaveBeenCalledTimes(1);
+  });
+  it("start background arme la pipette", async () => {
+    const { edit, q } = setup(undefined, fakeEdit(), "background");
+    expect((q('[data-image-input="mode"]') as HTMLSelectElement).value).toBe("seed");
+    await vi.waitFor(() => expect(edit.pickPoint).toHaveBeenCalledTimes(1));
+    expect(edit.startCrop).not.toHaveBeenCalled();
+  });
+});
+
+/** Faux moteur à pipette armable : `tap` résout le toucher en cours ; pickPoint sur une pipette armée la désarme (null). */
+function armable() {
+  let resolve: ((r: { color: string; x: number; y: number } | null) => void) | null = null;
+  const edit = {
+    ...fakeEdit(),
+    pickPoint: vi.fn(() => {
+      if (resolve !== null) {
+        const r = resolve;
+        resolve = null;
+        r(null);
+        return Promise.resolve(null);
+      }
+      return new Promise<{ color: string; x: number; y: number } | null>((res) => (resolve = res));
+    }),
+    mode: () => (resolve !== null ? ("pick" as const) : ("idle" as const)),
+  };
+  const tap = async (color: string, x: number, y: number): Promise<void> => {
+    const r = resolve;
+    resolve = null;
+    r?.({ color, x, y });
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+  return { edit, tap, armed: () => resolve !== null };
+}
+
+describe("panneau de retouche : pipette du mode point touché (OG23, T18)", () => {
+  it("point touché : la pipette reste armée, chaque toucher pose le nouveau départ", async () => {
+    const a = armable();
+    const { act, edit, q } = setup(undefined, a.edit as unknown as ReturnType<typeof fakeEdit>);
+    fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "seed" } });
+    act("pick");
+    await a.tap("#111111", 1, 2);
+    expect(a.armed()).toBe(true);
+    await a.tap("#222222", 7, 8);
+    expect(a.armed()).toBe(true);
+    expect(edit.preview).toHaveBeenLastCalledWith({ transparent: { color: "#222222", tolerance: 10, soft: 0, contiguous: true, x: 7, y: 8 } });
+  });
+  it("T21 : toucher, aperçu, nouvel état du moteur à version inchangée, second toucher : mode et pipette tiennent", async () => {
+    const a = armable();
+    const { act, edit, q, setTick } = setup(undefined, a.edit as unknown as ReturnType<typeof fakeEdit>);
+    fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "seed" } });
+    act("pick");
+    await a.tap("#111111", 1, 2);
+    setTick(1); // le moteur publie un état (pickPoint, aperçu) : la version du document n'a pas bougé
+    await Promise.resolve();
+    expect((q('[data-image-input="mode"]') as HTMLSelectElement).value).toBe("seed");
+    expect(a.armed()).toBe(true);
+    await a.tap("#222222", 7, 8);
+    expect(a.armed()).toBe(true);
+    expect(edit.preview).toHaveBeenLastCalledWith({ transparent: { color: "#222222", tolerance: 10, soft: 0, contiguous: true, x: 7, y: 8 } });
+  });
+  it("hors point touché : un toucher désarme la pipette", async () => {
+    const a = armable();
+    const { act, q } = setup(undefined, a.edit as unknown as ReturnType<typeof fakeEdit>);
+    fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "contiguous" } });
+    act("pick");
+    await a.tap("#111111", 1, 2);
+    expect(a.armed()).toBe(false);
+  });
+  it("Valider, Annuler les réglages et changement de mode désarment la pipette", async () => {
+    for (const end of ["apply", "cancel", "mode"]) {
+      const a = armable();
+      const { act, q, unmount } = setup(undefined, a.edit as unknown as ReturnType<typeof fakeEdit>);
+      fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "seed" } });
+      act("pick");
+      await a.tap("#111111", 1, 2);
+      expect(a.armed(), end).toBe(true);
+      if (end === "mode") fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "global" } });
+      else act(end);
+      await Promise.resolve();
+      expect(a.armed(), end).toBe(false);
+      unmount();
+    }
+  });
+  it("le mode vit dans le brouillon : annuler/rétablir le resynchronise", () => {
+    const { q, setVersion, setImage } = setup({ asset: A, w: 200, h: 150, transparent: { color: "#000000", tolerance: 10, soft: 0, contiguous: true, x: 3, y: 4 } });
+    const mode = () => (q('[data-image-input="mode"]') as HTMLSelectElement).value;
+    expect(mode()).toBe("seed");
+    setImage({ asset: A, w: 200, h: 150, transparent: { color: "#000000", tolerance: 10, soft: 0, contiguous: true } });
+    setVersion(1);
+    expect(mode()).toBe("contiguous");
+    setImage({ asset: A, w: 200, h: 150, transparent: { color: "#000000", tolerance: 10, soft: 0, contiguous: false } });
+    setVersion(2);
+    expect(mode()).toBe("global");
+    setImage({ asset: A, w: 200, h: 150, transparent: { color: "#000000", tolerance: 10, soft: 0, contiguous: true, x: 5, y: 6 } });
+    setVersion(3);
+    expect(mode()).toBe("seed");
+  });
+  it("après annulation vers un état sans départ, Valider n'écrit plus x et y", async () => {
+    const { q, setVersion, setImage, act, edit } = setup({ asset: A, w: 200, h: 150, transparent: { color: "#000000", tolerance: 10, soft: 0, contiguous: true, x: 3, y: 4 } });
+    setImage({ asset: A, w: 200, h: 150, transparent: { color: "#000000", tolerance: 10, soft: 0, contiguous: true } });
+    setVersion(1);
+    expect((q('[data-image-input="mode"]') as HTMLSelectElement).value).toBe("contiguous");
+    act("apply");
+    expect(edit.commit).toHaveBeenLastCalledWith({ transparent: { color: "#000000", tolerance: 10, soft: 0, contiguous: true } });
   });
 });

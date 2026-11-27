@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
+use roomboard_core::arrange::ArrangeHow;
 use roomboard_core::asset::AssetRef;
 use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
 use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, EraseMode};
@@ -25,6 +26,7 @@ use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextAttr};
 use roomboard_core::shape::ShapeKind;
 use roomboard_core::style::StylePatch;
 use roomboard_core::table::TableAxis;
+use roomboard_core::table_links::LineSize;
 use wasm_bindgen::prelude::*;
 
 /// Version du cœur, pour vérifier que le module Wasm est chargé.
@@ -63,6 +65,20 @@ fn cmd_err(e: CommandError) -> JsError {
     JsError::new(&js_message(&e))
 }
 
+/// Lien de case venu de JS : les trois champs ou aucun ; un triplet incomplet (JSON de la CLI) est refusé
+/// (`BadTable`), comme par le faux cœur, au lieu de retirer le lien sans erreur.
+fn cell_of(
+    table: Option<String>,
+    row: Option<String>,
+    col: Option<String>,
+) -> Result<Option<[String; 3]>, CommandError> {
+    match (table, row, col) {
+        (Some(t), Some(r), Some(c)) => Ok(Some([t, r, c])),
+        (None, None, None) => Ok(None),
+        _ => Err(CommandError::BadTable),
+    }
+}
+
 /// OG11 : nombre venu de JS reçu en `f64` et vérifié avant conversion. Un paramètre `u8` ou `u32` serait tronqué par
 /// wasm-bindgen sans erreur (257 deviendrait 1, 2^32 + 5 deviendrait 5) : la borne se contrôle ici, jamais après.
 fn small_int(v: Option<f64>, max: f64) -> Result<Option<f64>, CommandError> {
@@ -81,16 +97,17 @@ fn roughness_arg(v: Option<f64>) -> Result<Option<u8>, CommandError> {
 /// Aspect d'une création (OG11) : bornes des nombres vérifiées (tracé entier 0..=2, graine entière 0..=u32::MAX,
 /// opacité finie 0..=100 arrondie), hors bornes `BadStyle` ; le reste est assaini par le cœur (`Look::sanitized`).
 /// `named` (T12) : `fillStyle`, `startArrowhead`, `endArrowhead`, `textAlign`, `link`, dans cet ordre ; un défaut de
-/// pointe ou un lien hors des trois schémas n'écrit rien (`Look::sanitized`).
+/// pointe ou un lien hors des trois schémas n'écrit rien (`Look::sanitized`). OG23 : 6e nom, `variability` (seul
+/// `constant` écrit).
 fn look_of(
     stroke_style: Option<String>,
     roughness: Option<f64>,
     seed: Option<f64>,
     roundness: Option<String>,
     opacity: Option<f64>,
-    named: [Option<String>; 5],
+    named: [Option<String>; 6],
 ) -> Result<Look, CommandError> {
-    let [fill_style, start_arrowhead, end_arrowhead, text_align, link] = named;
+    let [fill_style, start_arrowhead, end_arrowhead, text_align, link, variability] = named;
     let opacity = match opacity {
         None => None,
         Some(o) if o.is_finite() && (0.0..=100.0).contains(&o) => Some(o.round() as u8),
@@ -107,6 +124,8 @@ fn look_of(
         end_arrowhead,
         text_align,
         link,
+        variability,
+        drag_copy: None,
         elbowed: None,
     })
 }
@@ -119,6 +138,12 @@ fn fmt_err(e: FormatError) -> JsError {
 /// reproduit). Sans JsValue, testée en natif.
 fn page_layout(mode: &str) -> Result<PageLayout, String> {
     PageLayout::parse(mode).ok_or_else(|| format!("mode de page inconnu : {mode}"))
+}
+
+/// Disposition `Arrange` lue d'un nom JS (`ArrangeHow::parse`) ; illisible : le message de l'Error JS (que
+/// `fake-core.ts` reproduit). Sans JsValue, testée en natif.
+fn arrange_how(how: &str) -> Result<ArrangeHow, String> {
+    ArrangeHow::parse(how).ok_or_else(|| format!("disposition inconnue : {how}"))
 }
 
 /// `mode` facultatif venu de JS : absent → `None` ; illisible → Error, levée avant la commande.
@@ -223,8 +248,8 @@ fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
 }
 
 /// Réglages d'image reçus de JS (C5, I6) : `crop` vide ou `[x, y, w, h]` ; `color` absente avec `transparent` vide, ou
-/// présente avec `[tolérance, plume, contigu (0 ou 1)]` ; toute autre forme : `BadImageParams`. Les valeurs sont
-/// contrôlées par le cœur.
+/// présente avec `[tolérance, plume, contigu (0 ou 1)]`, ou `[tolérance, plume, contigu, x, y]` avec le départ de la
+/// baguette (OG23, T10, pixels source) ; toute autre forme : `BadImageParams`. Les valeurs sont contrôlées par le cœur.
 #[allow(clippy::too_many_arguments)]
 fn image_params_input(
     crop: &[f64],
@@ -243,12 +268,21 @@ fn image_params_input(
     };
     let transparent = match (color, transparent) {
         (None, []) => None,
-        (Some(color), [tolerance, soft, contiguous]) => Some(TransparentInput {
-            color,
-            tolerance: *tolerance,
-            soft: *soft,
-            contiguous: *contiguous != 0.0,
-        }),
+        (Some(color), [tolerance, soft, contiguous, seed @ ..]) => {
+            let (x, y) = match seed {
+                [] => (None, None),
+                [x, y] => (Some(*x), Some(*y)),
+                _ => return Err(CommandError::BadImageParams),
+            };
+            Some(TransparentInput {
+                color,
+                tolerance: *tolerance,
+                soft: *soft,
+                contiguous: *contiguous != 0.0,
+                x,
+                y,
+            })
+        }
         _ => return Err(CommandError::BadImageParams),
     };
     Ok(ImageParamsInput {
@@ -1192,6 +1226,72 @@ impl Document {
         )
     }
 
+    /// personnalisation-3 (D3) : `table`, `row`, `col` tous présents = case visée, sinon sortie de case ; `size_keys` =
+    /// triplets (tableau, "row" | "col", ligne) bout à bout, `size_values` une taille par triplet.
+    #[allow(clippy::too_many_arguments)]
+    pub fn place_in_cell(
+        &mut self,
+        ids: Vec<String>,
+        matrix: &[f64],
+        table: Option<String>,
+        row: Option<String>,
+        col: Option<String>,
+        size_keys: Vec<String>,
+        size_values: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let cell = cell_of(table, row, col).map_err(cmd_err)?;
+        to_js(
+            &self
+                .place_in_cell_inner(ids, matrix, cell, &size_keys, size_values)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// personnalisation-3 (D4) : ids et tailles de même longueur, sinon `BadTable`.
+    pub fn set_table_line_sizes(
+        &mut self,
+        id: &str,
+        col_ids: Vec<String>,
+        col_widths: &[f64],
+        row_ids: Vec<String>,
+        row_heights: &[f64],
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_line_sizes_inner(id, &col_ids, col_widths, &row_ids, row_heights)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// personnalisation-3 (T7) : `fit` (`"grow"` ou `"shrink"`) et `header`, seulement ce qui est donné.
+    pub fn set_table_options(
+        &mut self,
+        id: &str,
+        fit: Option<String>,
+        header: Option<bool>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_options_inner(id, fit, header)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// personnalisation-3 (T9) : l'image logée `from` devient le fond de la case (`row`, `col`) ; `None` retire le fond.
+    pub fn set_cell_image(
+        &mut self,
+        id: &str,
+        row: &str,
+        col: &str,
+        from: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_cell_image_inner(id, row, col, from)
+                .map_err(cmd_err)?,
+        )
+    }
+
     /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
     #[allow(clippy::too_many_arguments)]
     pub fn import_table(
@@ -1340,7 +1440,8 @@ impl Document {
         to_js(&self.restack_inner(ids, to).map_err(cmd_err)?)
     }
 
-    /// OG11 : les dix derniers arguments sont l'aspect (`look_of`), contrôlé avant tout le reste.
+    /// OG11 : les onze arguments après `width` sont l'aspect (`look_of`, `variability` en dernier, OG23), contrôlé
+    /// avant tout le reste ; personnalisation-3 : les trois derniers, la case qui loge le trait (`cell_of`).
     #[allow(clippy::too_many_arguments)]
     pub fn commit_stroke(
         &mut self,
@@ -1358,13 +1459,25 @@ impl Document {
         end_arrowhead: Option<String>,
         text_align: Option<String>,
         link: Option<String>,
+        variability: Option<String>,
+        cell_table: Option<String>,
+        cell_row: Option<String>,
+        cell_col: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let named = [
+            fill_style,
+            start_arrowhead,
+            end_arrowhead,
+            text_align,
+            link,
+            variability,
+        ];
         let look =
             look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
+        let cell = cell_of(cell_table, cell_row, cell_col).map_err(cmd_err)?;
         to_js(
             &self
-                .commit_stroke_inner(page, points, color, width, look)
+                .commit_stroke_inner(page, points, color, width, look, cell)
                 .map_err(cmd_err)?,
         )
     }
@@ -1409,6 +1522,7 @@ impl Document {
         end_arrowhead: Option<String>,
         text_align: Option<String>,
         link: Option<String>,
+        variability: Option<String>,
         elbowed: Option<bool>,
         points: Option<Vec<f64>>,
         start_id: Option<String>,
@@ -1416,7 +1530,14 @@ impl Document {
         end_id: Option<String>,
         end_fixed: Option<Vec<f64>>,
     ) -> Result<JsValue, JsError> {
-        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let named = [
+            fill_style,
+            start_arrowhead,
+            end_arrowhead,
+            text_align,
+            link,
+            variability,
+        ];
         let mut look =
             look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         look.elbowed = elbowed;
@@ -1502,6 +1623,9 @@ impl Document {
         text_align: Option<String>,
         link_set: bool,
         link: Option<String>,
+        variability_set: bool,
+        variability: Option<String>,
+        drag_copy: Option<bool>,
         elbowed_set: bool,
         elbowed: Option<bool>,
     ) -> Result<JsValue, JsError> {
@@ -1518,6 +1642,8 @@ impl Document {
             end_arrowhead: end_arrowhead_set.then_some(end_arrowhead),
             text_align: text_align_set.then_some(text_align),
             link: link_set.then_some(link),
+            variability: variability_set.then_some(variability),
+            drag_copy,
             elbowed: elbowed_set.then_some(elbowed),
         };
         to_js(&self.set_style_inner(ids, patch).map_err(cmd_err)?)
@@ -1548,8 +1674,16 @@ impl Document {
         end_arrowhead: Option<String>,
         text_align: Option<String>,
         link: Option<String>,
+        variability: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let named = [
+            fill_style,
+            start_arrowhead,
+            end_arrowhead,
+            text_align,
+            link,
+            variability,
+        ];
         let look =
             look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         let spans = spans_arg(spans).map_err(cmd_err)?;
@@ -1568,6 +1702,13 @@ impl Document {
                 )
                 .map_err(cmd_err)?,
         )
+    }
+
+    /// OG23 (DA-2) : aligner, répartir, retourner, tourner `ids` en une étape (`how` : `align-left` … `rotate-ccw`) ;
+    /// `how` inconnu : Error « disposition inconnue : <how> », levée avant la commande (le faux cœur lève la même).
+    pub fn arrange(&mut self, ids: Vec<String>, how: &str) -> Result<JsValue, JsError> {
+        let how = arrange_how(how).map_err(|m| JsError::new(&m))?;
+        to_js(&self.arrange_inner(ids, how).map_err(cmd_err)?)
     }
 
     /// `matrix` : six nombres `a, b, c, d, e, f`, composés à gauche de la matrice de chaque élément.
@@ -2198,6 +2339,98 @@ impl Document {
         })
     }
 
+    /// Matrice qui n'a pas six nombres : `BadMatrix` ; clés qui ne vont pas par trois ou axe inconnu : `BadTable`.
+    pub fn place_in_cell_inner(
+        &mut self,
+        ids: Vec<String>,
+        matrix: &[f64],
+        cell: Option<[String; 3]>,
+        size_keys: &[String],
+        size_values: &[f64],
+    ) -> Result<Change, CommandError> {
+        let matrix: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
+        if size_keys.len() != 3 * size_values.len() {
+            return Err(CommandError::BadTable);
+        }
+        let sizes = size_keys
+            .chunks(3)
+            .zip(size_values)
+            .map(|(k, s)| {
+                let axis = match k[1].as_str() {
+                    "row" => TableAxis::Row,
+                    "col" => TableAxis::Col,
+                    _ => return Err(CommandError::BadTable),
+                };
+                Ok(LineSize {
+                    table: k[0].clone(),
+                    axis,
+                    line: k[2].clone(),
+                    size: *s,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.run(Command::PlaceInCell {
+            ids,
+            matrix,
+            cell,
+            sizes,
+        })
+    }
+
+    pub fn set_table_line_sizes_inner(
+        &mut self,
+        id: &str,
+        col_ids: &[String],
+        col_widths: &[f64],
+        row_ids: &[String],
+        row_heights: &[f64],
+    ) -> Result<Change, CommandError> {
+        if col_ids.len() != col_widths.len() || row_ids.len() != row_heights.len() {
+            return Err(CommandError::BadTable);
+        }
+        self.run(Command::SetTableLineSizes {
+            id: id.to_string(),
+            cols: col_ids
+                .iter()
+                .cloned()
+                .zip(col_widths.iter().copied())
+                .collect(),
+            rows: row_ids
+                .iter()
+                .cloned()
+                .zip(row_heights.iter().copied())
+                .collect(),
+        })
+    }
+
+    pub fn set_table_options_inner(
+        &mut self,
+        id: &str,
+        fit: Option<String>,
+        header: Option<bool>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetTableOptions {
+            id: id.to_string(),
+            fit,
+            header,
+        })
+    }
+
+    pub fn set_cell_image_inner(
+        &mut self,
+        id: &str,
+        row: &str,
+        col: &str,
+        from: Option<String>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetCellImage {
+            id: id.to_string(),
+            row: row.to_string(),
+            col: col.to_string(),
+            from,
+        })
+    }
+
     /// Matrice qui n'a pas six nombres ou fusions qui ne vont pas par quatre : `BadTable` (comme le cœur, PC1).
     #[allow(clippy::too_many_arguments)]
     pub fn import_table_inner(
@@ -2334,6 +2567,14 @@ impl Document {
         })
     }
 
+    pub fn arrange_inner(
+        &mut self,
+        ids: Vec<String>,
+        how: ArrangeHow,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::Arrange { ids, how })
+    }
+
     pub fn restack_inner(&mut self, ids: Vec<String>, to: u32) -> Result<Change, CommandError> {
         self.run(Command::Restack { ids, to })
     }
@@ -2345,6 +2586,7 @@ impl Document {
         color: &str,
         width: f32,
         look: Look,
+        cell: Option<[String; 3]>,
     ) -> Result<Change, CommandError> {
         let style = StrokeStyle {
             color: color.to_string(),
@@ -2355,6 +2597,7 @@ impl Document {
             points: points.to_vec(),
             style,
             look,
+            cell,
         })
     }
 
@@ -2531,8 +2774,9 @@ pub struct StrokeBuilder(CoreBuilder);
 #[wasm_bindgen]
 impl StrokeBuilder {
     #[wasm_bindgen(constructor)]
-    pub fn new(width: f32) -> StrokeBuilder {
-        StrokeBuilder(CoreBuilder::new(InkStyle { width }))
+    /// OG23 : `constant` (`variability: "constant"`) donne l'encre vive à épaisseur constante, comme le contour final.
+    pub fn new(width: f32, constant: bool) -> StrokeBuilder {
+        StrokeBuilder(CoreBuilder::new(InkStyle { width, constant }))
     }
 
     pub fn push(&mut self, points: &[f32]) -> Vec<f32> {
@@ -2557,6 +2801,19 @@ impl StrokeBuilder {
 mod tests {
     use super::*;
     use roomboard_core::rich_text::{SpanAttrs, SpanInput};
+
+    // Constat C2-2 : un lien de case incomplet est refusé, jamais lu comme « aucun lien ».
+    #[test]
+    fn cell_of_refuses_partial_triplet() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(cell_of(None, None, None), Ok(None));
+        assert_eq!(
+            cell_of(s("t"), s("r"), s("c")),
+            Ok(Some(["t".into(), "r".into(), "c".into()]))
+        );
+        assert_eq!(cell_of(s("t"), s("r"), None), Err(CommandError::BadTable));
+        assert_eq!(cell_of(None, None, s("c")), Err(CommandError::BadTable));
+    }
 
     // personnalisation-1b (DA1) : deux pages, une étape, par `apply_background_inner`.
     #[test]
@@ -2585,7 +2842,7 @@ mod tests {
             [500.0, 500.0, 0.5, 100.0, 500.0, 0.5],
             [100.0, 500.0, 0.5, 100.0, 100.0, 0.5],
         ] {
-            d.commit_stroke_inner(&p, &pts, "#000000", 4.0, Look::default())
+            d.commit_stroke_inner(&p, &pts, "#000000", 4.0, Look::default(), None)
                 .expect("trait");
         }
         assert!(d.zone_cells(&p, 2.0) > 160_000);
@@ -2730,7 +2987,7 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let c = d
-            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("commit");
         assert_eq!(c.ids.len(), 1);
         let u = d.undo_inner();
@@ -2742,7 +2999,7 @@ mod tests {
     fn erase_inner_partial_splits() {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("commit");
         let c = d
             .erase_inner(&p, &[300.0, 50.0, 300.0, 150.0], 10.0, false)
@@ -2755,7 +3012,7 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let id = d
-            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("commit")
             .ids[0]
             .clone();
@@ -2781,7 +3038,7 @@ mod tests {
     fn save_then_load_inner_keeps_elements() {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("commit");
         let bytes = d.save_inner("2026-11-16T12:00:00Z", "0.1.0").expect("save");
         let e = Document::load_inner(&bytes).expect("load");
@@ -2791,7 +3048,7 @@ mod tests {
 
     #[test]
     fn stroke_builder_push_and_finish() {
-        let mut b = StrokeBuilder::new(6.0);
+        let mut b = StrokeBuilder::new(6.0, false);
         assert!(!b.push(&hline(10.0)).is_empty());
         assert_eq!(b.point_count(), 41);
         assert!(!b.finish().is_empty());
@@ -3031,7 +3288,7 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let id = d
-            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("trait")
             .ids[0]
             .clone();
@@ -3237,6 +3494,56 @@ mod tests {
             linked_files(&[], &[], &[], &[], &[1.0]),
             Err(CommandError::BadModel3d)
         );
+    }
+
+    // OG23 (T10) : départ de la baguette en 4e et 5e nombres ; toute autre longueur refusée.
+    #[test]
+    fn image_params_input_reads_seed() {
+        let input = |t: &[f64]| {
+            image_params_input(&[], false, false, 0.0, 0.0, 0.0, Some("#ffffff".into()), t)
+                .map(|p| p.transparent.map(|t| (t.contiguous, t.x, t.y)))
+        };
+        assert_eq!(input(&[10.0, 0.0, 1.0]), Ok(Some((true, None, None))));
+        assert_eq!(
+            input(&[10.0, 0.0, 0.0, 4.0, 7.0]),
+            Ok(Some((false, Some(4.0), Some(7.0))))
+        );
+        for bad in [
+            &[10.0, 0.0, 1.0, 4.0][..],
+            &[10.0, 0.0, 1.0, 4.0, 7.0, 1.0],
+            &[10.0, 0.0],
+        ] {
+            assert_eq!(input(bad), Err(CommandError::BadImageParams), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn set_style_drag_copy_through_the_bridge() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_image_inner(&p, png(), [64.0, 48.0], &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+            .expect("image")
+            .ids[0]
+            .clone();
+        let patch = |b: bool| StylePatch {
+            drag_copy: Some(b),
+            ..StylePatch::default()
+        };
+        let c = d
+            .set_style_inner(vec![id.clone()], patch(true))
+            .expect("pose");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let look = |d: &Document| {
+            d.core
+                .element(&id)
+                .and_then(|e| e.look)
+                .and_then(|l| l.drag_copy)
+        };
+        assert_eq!(look(&d), Some(true));
+        d.set_style_inner(vec![id.clone()], patch(false))
+            .expect("retrait");
+        assert_eq!(look(&d), None);
     }
 
     // C5 (I6) : réglages d'image par leur `_inner`.
@@ -3929,6 +4236,71 @@ mod tests {
         assert_eq!(table_of(&d, &id).rows.len(), 1);
     }
 
+    // personnalisation-3 (D3, D4) : `PlaceInCell` et `SetTableLineSizes` par les `*_inner`.
+    #[test]
+    fn place_in_cell_inner_links_and_sizes() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [3, 3], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = table_of(&d, &id);
+        let s = d
+            .add_shape_inner(
+                &p,
+                "rect",
+                [1000.0, 1000.0, 1400.0, 1300.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+                LineInit::default(),
+            )
+            .expect("forme")
+            .ids[0]
+            .clone();
+        let keys = vec![
+            id.clone(),
+            "col".into(),
+            t.cols[1].id.clone(),
+            id.clone(),
+            "row".into(),
+            t.rows[1].id.clone(),
+        ];
+        let cell = [id.clone(), t.rows[1].id.clone(), t.cols[1].id.clone()];
+        d.place_in_cell_inner(
+            vec![s.clone()],
+            &[1.0, 0.0, 0.0, 1.0, -752.0, -928.0],
+            Some(cell.clone()),
+            &keys,
+            &[416.0, 316.0],
+        )
+        .expect("logé");
+        let after = table_of(&d, &id);
+        assert_eq!((after.cols[1].width, after.rows[1].height), (416.0, 316.0));
+        assert_eq!(d.core.element(&s).and_then(|e| e.cell), Some(cell));
+        assert!(d
+            .place_in_cell_inner(vec![s.clone()], &[1.0], None, &[], &[])
+            .is_err());
+        assert!(d
+            .place_in_cell_inner(vec![s], &IDENTITY_6, None, &keys[..3], &[])
+            .is_err());
+        let bad_axis = vec![id.clone(), "diag".into(), t.cols[1].id.clone()];
+        assert!(d
+            .place_in_cell_inner(vec![], &IDENTITY_6, None, &bad_axis, &[300.0])
+            .is_err());
+        assert!(d
+            .set_table_line_sizes_inner(&id, &[t.cols[0].id.clone()], &[], &[], &[])
+            .is_err());
+        d.set_table_line_sizes_inner(&id, &[t.cols[0].id.clone()], &[300.0], &[], &[])
+            .expect("colonne");
+        assert_eq!(table_of(&d, &id).cols[0].width, 300.0);
+    }
+
+    const IDENTITY_6: [f64; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+
     #[test]
     fn import_table_inner_reads_flat_merges() {
         let mut d = Document::blank();
@@ -4316,6 +4688,7 @@ mod tests {
             s("none"),
             s("right"),
             s("https://example.org"),
+            None,
         ];
         let l = look_of(None, None, None, None, None, named).expect("aspect");
         let want = Look {
@@ -4327,7 +4700,14 @@ mod tests {
             ..Look::default()
         };
         assert_eq!(l.sanitized(), want);
-        let named = [None, s("none"), s("arrow"), None, s("javascript:alert(1)")];
+        let named = [
+            None,
+            s("none"),
+            s("arrow"),
+            None,
+            s("javascript:alert(1)"),
+            None,
+        ];
         let l = look_of(None, None, None, None, None, named).expect("aspect");
         assert!(l.is_neutral());
     }
@@ -4400,6 +4780,49 @@ mod tests {
         assert_eq!(d.move_page_inner(&a, 2), Err(CommandError::BadIndex));
     }
 
+    /// OG23 (T1) : `Arrange` par le pont, une étape ; un `undo_inner` rend les deux positions.
+    #[test]
+    fn arrange_through_the_bridge_one_step() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let [a, b] = [100.0, 300.0].map(|x| {
+            d.add_shape_inner(
+                &p,
+                "rect",
+                [x, x / 2.0, x + 50.0, x / 2.0 + 20.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+                LineInit::default(),
+            )
+            .expect("forme")
+            .ids[0]
+                .clone()
+        });
+        let x0 = |d: &Document, id: &String| {
+            d.core.snap_box(std::slice::from_ref(id)).expect("boîte").x0
+        };
+        let v = d.core.version();
+        let ch = d
+            .arrange_inner(vec![a.clone(), b.clone()], ArrangeHow::AlignLeft)
+            .expect("aligner");
+        assert_eq!((ch.pages, ch.ids), (vec![p.clone()], vec![b.clone()]));
+        assert_eq!(d.core.version(), v + 1);
+        assert_eq!((x0(&d, &a), x0(&d, &b)), (100.0, 100.0));
+        d.undo_inner();
+        assert_eq!((x0(&d, &a), x0(&d, &b)), (100.0, 300.0), "une étape");
+    }
+
+    #[test]
+    fn arrange_unknown_how_message() {
+        assert_eq!(
+            arrange_how("spin"),
+            Err("disposition inconnue : spin".to_string())
+        );
+        assert_eq!(arrange_how("flip-h"), Ok(ArrangeHow::FlipH));
+    }
+
     #[test]
     fn restack_through_the_bridge_keeps_ids_in_one_step() {
         let mut d = Document::blank();
@@ -4411,6 +4834,7 @@ mod tests {
                 "#000000",
                 4.0,
                 Look::default(),
+                None,
             )
             .expect("trait")
             .ids[0]
@@ -4440,6 +4864,7 @@ mod tests {
                 "#000000",
                 4.0,
                 Look::default(),
+                None,
             )
             .expect("trait")
             .ids[0]

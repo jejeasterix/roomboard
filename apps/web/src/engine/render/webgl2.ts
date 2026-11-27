@@ -19,10 +19,11 @@ const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
 /**
  * `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb(r, g, b)` et `rgba(r, g, b, a)` (a en nombre ou en %) en composantes
- * 0..1 ; toute autre écriture : null.
+ * 0..1, et `transparent` (OG23, casse ignorée) en [0, 0, 0, 0] ; toute autre écriture, nom compris : null.
  */
 export function tryParseColor(css: string): Rgba | null {
   const s = css.trim();
+  if (s.toLowerCase() === "transparent") return [0, 0, 0, 0];
   const hexMatch = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(s);
   const hex = hexMatch?.[1];
   if (hex !== undefined) {
@@ -274,7 +275,7 @@ export class WebGL2LiveRenderer implements Renderer {
   readonly badColors = new Set<string>();
 
   constructor(
-    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview" | "setImagePreview"> & { readonly pageColor?: string },
+    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview" | "setImagePreview" | "colorAt"> & { readonly pageColor?: string },
     private readonly gl: WebGL2RenderingContext,
   ) {
     this.res = setup(gl);
@@ -313,6 +314,11 @@ export class WebGL2LiveRenderer implements Renderer {
 
   setGridPreview(p: GridPreview | null): void {
     this.scene.setGridPreview(p);
+  }
+
+  /** OG23 (pipette) : la lecture de pixel est celle de la scène Canvas 2D ; sans elle, null. */
+  colorAt(x: number, y: number): string | null {
+    return this.scene.colorAt?.(x, y) ?? null;
   }
 
   /** C5 : l'image se dessine sur la scène Canvas 2D ; WebGL2 ne dessine que l'encre vive. */

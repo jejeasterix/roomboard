@@ -118,6 +118,8 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "menu": [["path", { d: "M4 5h16" }], ["path", { d: "M4 12h16" }], ["path", { d: "M4 19h16" }]],
   "collapse": [["path", { d: "m18 15-6-6-6 6" }]],
   // OG11 (panneau d'options) : Lucide @7981a0798a, ISC (copy-plus, trash-2, sliders-horizontal, chevron-left).
+  // OG23 (T13) : Lucide @7981a0798a, ISC (crop).
+  "crop": [["path", { d: "M6 2v14a2 2 0 0 0 2 2h14" }], ["path", { d: "M18 22V8a2 2 0 0 0-2-2H2" }]],
   "copy-plus": [["path", { d: "M15 12v6" }], ["path", { d: "M12 15h6" }], ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" }], ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" }]],
   "trash-2": [["path", { d: "M10 11v6" }], ["path", { d: "M14 11v6" }], ["path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" }], ["path", { d: "M3 6h18" }], ["path", { d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }]],
   "sliders-horizontal": [["path", { d: "M10 5H3" }], ["path", { d: "M12 19H3" }], ["path", { d: "M14 3v4" }], ["path", { d: "M16 17v4" }], ["path", { d: "M21 12h-9" }], ["path", { d: "M21 19h-5" }], ["path", { d: "M21 5h-7" }], ["path", { d: "M8 10v4" }], ["path", { d: "M8 12H3" }]],
@@ -126,9 +128,17 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "stroke-solid": [["path", { d: "M4 12h16" }]],
   "stroke-dashed": [["path", { d: "M4 12h3" }], ["path", { d: "M10.5 12h3" }], ["path", { d: "M17 12h3" }]],
   "stroke-dotted": [["path", { d: "M4 12h.01" }], ["path", { d: "M8 12h.01" }], ["path", { d: "M12 12h.01" }], ["path", { d: "M16 12h.01" }], ["path", { d: "M20 12h.01" }]],
-  "sloppiness-0": [["path", { d: "M4 16c4-8 12-8 16 0" }]],
-  "sloppiness-1": [["path", { d: "M4 16c3-7 6-9 8-6s5 3 8 6" }]],
-  "sloppiness-2": [["path", { d: "M4 15c2-6 4-7 5-4s2 4 4 1 3-5 4-2 2 4 3 5" }]],
+  // OG23 (T5) : largeur d'un trait (dessinée, grille 24) ; netteté du coin : net, doublé, triplé (dessinée).
+  "width-thin": [["path", { d: "M4 12h16", "stroke-width": "1.5" }]],
+  "width-medium": [["path", { d: "M4 12h16", "stroke-width": "3" }]],
+  "width-thick": [["path", { d: "M4 12h16", "stroke-width": "5" }]],
+  "sloppiness-0": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }]],
+  "sloppiness-1": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }], ["path", { d: "M7.5 18.5V9a1.5 1.5 0 0 1 1.5-1.5h10" }]],
+  "sloppiness-2": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }], ["path", { d: "M7.5 18.5V9a1.5 1.5 0 0 1 1.5-1.5h10" }], ["path", { d: "M10 18V11.5a1 1 0 0 1 1-1h8" }]],
+  // Lucide @7981a0798a, ISC : pipette (OG23, T8).
+  "pipette": [["path", { d: "m12 9-8.414 8.414A2 2 0 0 0 3 18.828v1.344a2 2 0 0 1-.586 1.414A2 2 0 0 1 3.828 21h1.344a2 2 0 0 0 1.414-.586L15 12" }], ["path", { d: "m18 9 .4.4a1 1 0 1 1-3 3l-3.8-3.8a1 1 0 1 1 3-3l.4.4 3.4-3.4a1 1 0 1 1 3 3z" }], ["path", { d: "m2 22 .414-.414" }]],
+  // Lucide @7981a0798a, ISC : palette.
+  "palette": [["path", { d: "M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" }], ["circle", { cx: "13.5", cy: "6.5", r: ".5" }], ["circle", { cx: "17.5", cy: "10.5", r: ".5" }], ["circle", { cx: "6.5", cy: "12.5", r: ".5" }], ["circle", { cx: "8.5", cy: "7.5", r: ".5" }]],
   "corner-sharp": [["path", { d: "M6 18V6h12" }]],
   "corner-round": [["path", { d: "M6 18v-6a6 6 0 0 1 6-6h6" }]],
   // OG11 lot 2 (T15) : Lucide @7981a0798a, ISC (chevron-up, chevron-down, align-left, align-center, align-right).
@@ -146,6 +156,24 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "head-arrow": [["path", { d: "M4 12h16" }], ["path", { d: "m14 6 6 6-6 6" }]],
   "head-triangle": [["path", { d: "M4 12h10" }], ["path", { d: "M14 7v10l6-5z" }], ["path", { d: "M16 10.5v3l2-1.5z" }]],
   "head-triangle-outline": [["path", { d: "M4 12h10" }], ["path", { d: "M14 7v10l6-5z" }]],
+  // OG23 (T7) : Lucide @7981a0798a, ISC, tracés recopiés tels quels (align-start-vertical, align-center-vertical, align-end-vertical,
+  // align-start-horizontal, align-center-horizontal, align-end-horizontal, align-horizontal-space-around, align-vertical-space-around,
+  // rotate-ccw-square, rotate-cw-square, square-axis-dashed-vertical -> flip-horizontal, square-axis-dashed-horizontal -> flip-vertical).
+  "align-start-vertical": [["rect", { width: "9", height: "6", x: "6", y: "14", rx: "2" }], ["rect", { width: "16", height: "6", x: "6", y: "4", rx: "2" }], ["path", { d: "M2 2v20" }]],
+  "align-center-vertical": [["path", { d: "M12 2v20" }], ["path", { d: "M8 10H4a2 2 0 0 1-2-2V6c0-1.1.9-2 2-2h4" }], ["path", { d: "M16 10h4a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-4" }], ["path", { d: "M8 20H7a2 2 0 0 1-2-2v-2c0-1.1.9-2 2-2h1" }], ["path", { d: "M16 14h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1" }]],
+  "align-end-vertical": [["rect", { width: "16", height: "6", x: "2", y: "4", rx: "2" }], ["rect", { width: "9", height: "6", x: "9", y: "14", rx: "2" }], ["path", { d: "M22 22V2" }]],
+  "align-start-horizontal": [["rect", { width: "6", height: "16", x: "4", y: "6", rx: "2" }], ["rect", { width: "6", height: "9", x: "14", y: "6", rx: "2" }], ["path", { d: "M22 2H2" }]],
+  "align-center-horizontal": [["path", { d: "M2 12h20" }], ["path", { d: "M10 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" }], ["path", { d: "M10 8V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v4" }], ["path", { d: "M20 16v1a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-1" }], ["path", { d: "M14 8V7c0-1.1.9-2 2-2h2a2 2 0 0 1 2 2v1" }]],
+  "align-end-horizontal": [["rect", { width: "6", height: "16", x: "4", y: "2", rx: "2" }], ["rect", { width: "6", height: "9", x: "14", y: "9", rx: "2" }], ["path", { d: "M22 22H2" }]],
+  "align-horizontal-space-around": [["rect", { width: "6", height: "10", x: "9", y: "7", rx: "2" }], ["path", { d: "M4 22V2" }], ["path", { d: "M20 22V2" }]],
+  "align-vertical-space-around": [["rect", { width: "10", height: "6", x: "7", y: "9", rx: "2" }], ["path", { d: "M22 20H2" }], ["path", { d: "M22 4H2" }]],
+  "rotate-ccw-square": [["path", { d: "M20 9V7a2 2 0 0 0-2-2h-6" }], ["path", { d: "m15 2-3 3 3 3" }], ["path", { d: "M20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" }]],
+  "rotate-cw-square": [["path", { d: "M12 5H6a2 2 0 0 0-2 2v3" }], ["path", { d: "m9 8 3-3-3-3" }], ["path", { d: "M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" }]],
+  "flip-horizontal": [["path", { d: "M12 14v2" }], ["path", { d: "M12 20v2" }], ["path", { d: "M12 2v2" }], ["path", { d: "M12 8v2" }], ["path", { d: "M16 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3" }], ["path", { d: "M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3" }]],
+  "flip-vertical": [["path", { d: "M10 12H8" }], ["path", { d: "M16 12h-2" }], ["path", { d: "M21 16v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3" }], ["path", { d: "M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3" }], ["path", { d: "M22 12h-2" }], ["path", { d: "M4 12H2" }]],
+  // Dessinées pour RoomBoard (même grille) : pression constante (trait d'épaisseur fixe) et variable (trait qui s'amincit et s'épaissit).
+  "pressure-constant": [["path", { d: "M4 12h16", "stroke-width": "3" }]],
+  "pressure-variable": [["path", { d: "M4 12 19 9.5A2.5 2.5 0 0 1 19 14.5Z", fill: "currentColor", "stroke-width": "1" }]],
   // OG12 : types de flèche (dessinées pour OG12, d'après les icônes d'Excalidraw), pointes neuves (dessinées pour OG12),
   // Lucide spline (ISC) pour « Modifier les points », Lucide circle-minus (ISC) pour « Retirer le point », liaison (dessinée pour OG12).
   "arrow-type-sharp": [["path", { d: "M5 19 19 5" }], ["path", { d: "M10 5h9v9" }]],
@@ -219,6 +247,7 @@ export const ACTION_ICONS: Readonly<Record<ActionId, string>> = Object.freeze({
   "table-split": "table-cells-split",
   "table-shade": "droplet",
   "table-unshade": "droplet-off",
+  "table-header": "rows-2",
 });
 
 const own = (table: Readonly<Record<string, string>>, key: string | undefined): string | undefined =>

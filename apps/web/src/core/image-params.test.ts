@@ -232,3 +232,16 @@ describe("pixel source sous le point (C6b, B5)", () => {
     expect(sourcePixelAt([0, 0, 0, 0, 0, 0], img(), 1, 1, true)).toBeNull();
   });
 });
+
+describe("départ de la baguette (OG23, T10)", () => {
+  const white = { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true };
+  it("transparent x y : normalizeParams contrôle le départ contre w, h ; pixelKey le porte", () => {
+    expect(normalizeParams({ transparent: { ...white, x: 199, y: 99 } }, 200, 100)).toEqual({ transparent: { ...white, x: 199, y: 99 } });
+    for (const seed of [{ x: 200, y: 0 }, { x: 0, y: 100 }, { x: -1, y: 0 }, { x: 0.5, y: 0 }, { x: 3 }, { y: 3 }]) {
+      expect(normalizeParams({ transparent: { ...white, ...seed } }, 200, 100), JSON.stringify(seed)).toBeNull();
+    }
+    const img = { asset: "a", w: 200, h: 100 };
+    expect(pixelKey({ ...img, transparent: { ...white, x: 1, y: 2 } })).not.toBe(pixelKey({ ...img, transparent: white }));
+    expect(pixelKey({ ...img, transparent: { ...white, x: 1, y: 2 } })).not.toBe(pixelKey({ ...img, transparent: { ...white, x: 2, y: 1 } }));
+  });
+});

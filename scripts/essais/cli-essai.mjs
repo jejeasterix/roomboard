@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deepStrictEqual } from "node:assert";
 import { createRequire } from "node:module";
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 import { ROOT, solidPng } from "./commun.mjs";
 import { normalise } from "./cli-normalise.mjs";
 import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
@@ -498,6 +498,77 @@ try {
     verifie("personnalisation-2 : Restack hors bornes refusé (code 1)", refus.code === 1 && refus.brut.includes("rang de page hors bornes"), refus.brut);
     console.log("personnalisation-2 : Restack puis undo");
   }
+  // personnalisation-2-retours (OG23, DA-2, D15) : Arrange align-left puis undo, une étape chacun ; flip-h d'un texte et
+  // d'un rectangle (le texte reste droit) ; how inconnu : code 2 ; SetStyle variability constant relu ; PDF d'un
+  // rectangle à trait transparent : un remplissage, aucun tracé.
+  {
+    const f = join(dir, "retours.roomboard");
+    const lignes = (...o) => `${o.map((x) => JSON.stringify(x)).join("\n")}\n`;
+    const el = (st, id) => st.pages.flatMap((p) => p.elements).find((e) => e.id === id);
+    const rect = (x, y, color = "#000000") => ({ type: "AddShape", page: "$page:0", shape: "rect", x0: x, y0: y, x1: x + 50, y1: y + 50, style: { color, width: 4 }, fill: "#fef08a" });
+    const pts = [];
+    for (let i = 0; i <= 20; i++) pts.push(100 + i * 10, 600, 0.5);
+    const texte = { type: "SetText", page: "$page:0", id: null, x: 400, y: 400, content: "abc", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 };
+    const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], lignes(rect(40, 0), rect(200, 100), rect(120, 200), texte, { type: "CommitStroke", page: "$page:0", points: pts, style: { color: "#1e40af", width: 4 } }));
+    verifie("personnalisation-2-retours : trois rectangles, un texte, un trait posés", neuf.code === 0, neuf.brut);
+    const [a, b, c, t, k] = neuf.lignes.filter((l) => l.change).map((l) => l.change.ids[0]);
+    const s = cli(["run", f, "--save", "--ops", "-"], lignes({ type: "Arrange", ids: [a, b, c], how: "align-left" }, { op: "state" }, { op: "undo" }, { op: "state" }));
+    const x0 = (k2, id) => el(s.lignes[k2].state, id)?.transform?.[4];
+    const alignes = x0(1, a) === 40 && x0(1, b) === 40 && x0(1, c) === 40;
+    const rendus = x0(3, a) === 40 && x0(3, b) === 200 && x0(3, c) === 120;
+    verifie("personnalisation-2-retours : Arrange align-left puis undo, une étape chacun", s.code === 0 && alignes && rendus, s.brut);
+    const flip = cli(["run", f, "--save", "--ops", "-"], lignes({ type: "Arrange", ids: [t, a], how: "flip-h" }, { op: "state" }));
+    const mt = el(flip.lignes[1]?.state ?? { pages: [] }, t)?.transform;
+    const ma = el(flip.lignes[1]?.state ?? { pages: [] }, a)?.transform;
+    verifie("personnalisation-2-retours : flip-h, texte droit et rectangle retourné", flip.code === 0 && mt?.[0] === 1 && mt?.[3] === 1 && ma?.[0] === -1, flip.brut);
+    const spin = cli(["run", f, "--ops", "-"], lignes({ type: "Arrange", ids: [a], how: "spin" }));
+    verifie("personnalisation-2-retours : how inconnu refusé (code 2)", spin.code === 2 && spin.brut.includes("how : une de"), spin.brut);
+    const vari = cli(["run", f, "--ops", "-"], lignes({ type: "SetStyle", ids: [k], patch: { variability: "constant" } }, { op: "state" }));
+    verifie("personnalisation-2-retours : SetStyle variability constant relu", vari.code === 0 && el(vari.lignes[1].state, k)?.look?.variability === "constant", vari.brut);
+    // Flux du PDF (`stream … endstream`), chacun inflaté s'il le peut, sinon brut. krilla écrit l'opérateur seul sur sa
+    // ligne (`h\nS\n`) : on cherche `S` ou `s` entre deux blancs ; témoin : le même rectangle à trait opaque en a un.
+    const fluxDe = (couleur, nom) => {
+      const g = join(dir, `${nom}.roomboard`);
+      const pose = cli(["run", "--new", "--out", g, "--ops", "-"], lignes(rect(100, 100, couleur)));
+      const pdf = join(dir, `${nom}.pdf`);
+      const ex = cli(["export", g, pdf]);
+      const brut = pose.code === 0 && ex.code === 0 ? readFileSync(pdf) : Buffer.alloc(0);
+      const flux = [];
+      for (let i = brut.indexOf("stream"); i >= 0; i = brut.indexOf("stream", i + 6)) {
+        if (brut.subarray(i - 3, i).toString() === "end") continue;
+        const debut = i + 6 + (brut[i + 6] === 0x0d ? 2 : 1);
+        const fin = brut.indexOf("endstream", debut);
+        if (fin < 0) continue;
+        const corps = brut.subarray(debut, fin);
+        try {
+          flux.push(inflateSync(corps).toString("latin1"));
+        } catch {
+          flux.push(corps.toString("latin1"));
+        }
+      }
+      return { ok: brut.length > 0, tout: flux.join("\n"), brut: `${pose.brut} ${ex.brut}` };
+    };
+    const trace = (t) => /(^|\s)[Ss]\s/.test(t);
+    const clair = fluxDe("transparent", "transparent");
+    const temoin = fluxDe("#000000", "opaque");
+    verifie("personnalisation-2-retours : PDF d'un trait transparent, un remplissage, aucun tracé (témoin opaque : un tracé)", clair.ok && temoin.ok && /(^|\s)f\*?\s/.test(clair.tout) && !trace(clair.tout) && trace(temoin.tout), `${clair.brut} ${clair.tout.slice(0, 400)}`);
+    console.log("personnalisation-2-retours : Arrange");
+    // T10 (D15) : SetStyle dragCopy posé relu puis retiré absent ; départ de la baguette relu ; hors de l'image : code 1.
+    const dc = cli(["run", f, "--ops", "-"], lignes({ type: "SetStyle", ids: [a], patch: { dragCopy: true } }, { op: "state" }, { type: "SetStyle", ids: [a], patch: { dragCopy: false } }, { op: "state" }));
+    verifie("personnalisation-2-retours : SetStyle dragCopy posé relu, puis retiré absent", dc.code === 0 && el(dc.lignes[1].state, a)?.look?.dragCopy === true && el(dc.lignes[3].state, a)?.look?.dragCopy === undefined, dc.brut);
+    const pngB = join(dir, "baguette.png");
+    writeFileSync(pngB, solidPng(8, 8, [255, 255, 255]));
+    const gi = join(dir, "baguette.roomboard");
+    const imp = cli(["run", "--new", "--out", gi, "--ops", "-"], lignes({ op: "import", files: [pngB], page: "$page:0", at: [100, 100] }, { op: "state" }));
+    const im = (imp.lignes[1]?.state?.pages ?? []).flatMap((p) => p.elements).find((e) => e.kind === "image");
+    const seed = (x) => ({ type: "SetImageParams", id: im?.id ?? "", params: { transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true, x, y: 0 } }, matrix: im?.transform ?? [1, 0, 0, 1, 0, 0] });
+    const bag = cli(["run", gi, "--ops", "-"], lignes(seed(0), { op: "state" }));
+    const tr = el(bag.lignes[1]?.state ?? { pages: [] }, im?.id)?.image?.transparent;
+    verifie("personnalisation-2-retours : SetImageParams transparent x y relu", imp.code === 0 && bag.code === 0 && tr?.x === 0 && tr?.y === 0, `${imp.brut} ${bag.brut}`);
+    const hors = cli(["run", gi, "--ops", "-"], lignes(seed(9999)));
+    verifie("personnalisation-2-retours : départ hors de l'image refusé (code 1)", hors.code === 1, hors.brut);
+    console.log("personnalisation-2-retours : dragCopy");
+  }
 
   // personnalisation-1a (T7, D15) : SetPageMode, AddPage mode, MovePage, DuplicatePage ; refus code 1.
   const lignesOps = (...o) => `${o.map((x) => JSON.stringify(x)).join("\n")}\n`;
@@ -546,6 +617,75 @@ try {
   const avantC = empreinte(pc);
   const mele = cli(["run", pc, "--save", "--ops", "-"], lignesOps({ type: "Restack", ids: [pile1[0], autre], to: 0 }));
   verifie("1a calques : Restack de deux pages mêlées : code 1, fichier inchangé", mele.code === 1 && empreinte(pc) === avantC, mele.brut);
+  // personnalisation-3 (S16, D25) : loger une forme dans une case, insérer une ligne en tête, enregistrer, relire.
+  const pl = join(dir, "cases-3.roomboard");
+  verifie("S16 : new cases-3.roomboard", cli(["new", pl]).code === 0);
+  const pose = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "AddTable", page: "$page:0", x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 },
+    { type: "AddShape", page: "$page:0", shape: "rect", x0: 1000, y0: 1000, x1: 1100, y1: 1050, style: { color: "#1e40af", width: 4 }, fill: null },
+    { op: "state" },
+  ));
+  const els = pose.lignes[2]?.state?.pages?.[0]?.elements ?? [];
+  const tab = els.find((e) => e.kind === "table");
+  const forme = els.find((e) => e.kind === "shape");
+  verifie("S16 : un tableau et une forme", pose.code === 0 && tab !== undefined && forme !== undefined, pose.brut);
+  const lien = [tab.id, tab.table.rows[1].id, tab.table.cols[1].id];
+  const loge = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "PlaceInCell", ids: [forme.id], matrix: [1, 0, 0, 1, 0, 0], cell: lien, sizes: [] },
+    { op: "state" },
+    { type: "InsertTableLine", id: tab.id, axis: "row", at: 0 },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+    { op: "redo" },
+  ));
+  const yDe = (i) => (loge.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === forme.id)?.transform?.[5];
+  verifie("S16 : PlaceInCell, puis InsertTableLine à la ligne 0 : la forme descend de 64", loge.code === 0 && yDe(3) === yDe(1) + 64, loge.brut);
+  verifie("S16 : undo, une étape : la forme remonte", yDe(5) === yDe(1), loge.brut);
+  const reluS16 = etat(pl).pages[0].elements.find((e) => e.id === forme.id);
+  egal("S16 : réouverture : cell présent", reluS16?.cell, lien);
+  // personnalisation-3 (T7) : SetTableOptions fit shrink, relu par `state`.
+  const opts = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ type: "SetTableOptions", id: tab.id, fit: "shrink" }, { op: "state" }));
+  const reluOpts = (opts.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id);
+  verifie("T7 : SetTableOptions fit shrink, relu par state", opts.code === 0 && reluOpts?.table?.fit === "shrink", opts.brut);
+  // personnalisation-3 (TB2) : en-tête posé par SetTableOptions, relu par `state`.
+  const head = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ type: "SetTableOptions", id: tab.id, header: true }, { op: "state" }));
+  const reluHead = (head.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id);
+  verifie("T-B2 : SetTableOptions header, relu par state", head.code === 0 && reluHead?.table?.header === true, head.brut);
+  // personnalisation-3 (T9) : image logée, SetCellImage, `state` : bg présent ; undo : image revenue.
+  const asset = { id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", name: "photo.png", mime: "image/png", size: 3 };
+  const poseImg = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "AddImage", page: "$page:0", asset, w: 100, h: 100, matrix: [1, 0, 0, 1, 0, 0] },
+    { op: "state" },
+  ));
+  const img = (poseImg.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.kind === "image");
+  verifie("T9 : une image posée", poseImg.code === 0 && img !== undefined, poseImg.brut);
+  const fond = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "PlaceInCell", ids: [img.id], matrix: [1, 0, 0, 1, 0, 0], cell: lien, sizes: [] },
+    { type: "SetCellImage", id: tab.id, row: lien[1], col: lien[2], from: img.id },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+  ));
+  const casesDe = (i) => (fond.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id)?.table?.cells ?? [];
+  const imgDe = (i) => (fond.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === img.id);
+  verifie("T9 : SetCellImage, state : bg présent, image partie", fond.code === 0 && casesDe(2).some((c) => c.bg === asset.id) && imgDe(2) === undefined, fond.brut);
+  verifie("T9 : undo : image revenue, liée, sans fond", casesDe(4).every((c) => c.bg === undefined) && imgDe(4)?.cell?.[2] === lien[2], fond.brut);
+  // personnalisation-3 (D4) : SetTableLineSizes, l'objet logé suit, undo en une étape.
+  const taillesAvant = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ op: "state" }));
+  const yForme = (r, i) => (r.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === forme.id)?.transform?.[5];
+  const ligne0 = tab.table.rows[0].id;
+  const tailles = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "SetTableLineSizes", id: tab.id, cols: [], rows: [[ligne0, 100]] },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+  ));
+  const hauteurDe = (r, i) => (r.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id)?.table?.rows?.find((l) => l.id === ligne0)?.height;
+  const h0 = hauteurDe(taillesAvant, 0);
+  verifie("D4 : SetTableLineSizes change la hauteur de la ligne", tailles.code === 0 && h0 !== 100 && hauteurDe(tailles, 1) === 100, tailles.brut);
+  verifie("D4 : l'objet logé suit la ligne agrandie", yForme(tailles, 1) === yForme(taillesAvant, 0) + (100 - h0), tailles.brut);
+  verifie("D4 : undo, une étape : hauteur et objet reviennent", hauteurDe(tailles, 3) === h0 && yForme(tailles, 3) === yForme(taillesAvant, 0), tailles.brut);
   // OG12 (S5) : deux rectangles, une flèche liée, Transform suivi puis undo en une étape, SetLinePoints refusé, AddLinked.
   {
     const f = join(dir, "fleches.roomboard");

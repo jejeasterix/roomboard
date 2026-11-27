@@ -193,7 +193,12 @@ pub struct ElementView {
     /// Chemin de groupes (C3, Z1), du plus extérieur au plus intérieur ; absent sans groupe lisible.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<Vec<String>>,
-    /// Aspect facultatif (OG11) de `stroke`, `shape`, `text` et `image` ; absent (omis du JSON) quand il est neutre.
+    /// Case qui loge l'objet (personnalisation-3, D1) : `[tableId, rowId, colId]` ; absent sans lien lisible, sans case
+    /// existante, et sur un tableau (D36).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<[String; 3]>,
+    /// Aspect facultatif (OG11) de `stroke`, `shape`, `text` et `image` ; `table`, `media` et `model3d` n'y portent que
+    /// `dragCopy` (OG23) ; absent (omis du JSON) quand il est neutre.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub look: Option<Look>,
 }
@@ -215,6 +220,7 @@ impl ElementView {
             model3d: None,
             fill: None,
             group: None,
+            cell: None,
             look: None,
         }
     }
@@ -352,6 +358,34 @@ pub(crate) fn group_to_any(path: &[String]) -> Any {
     )
 }
 
+/// Lien de case (personnalisation-3, D1) : `[tableId, rowId, colId]`, trois chaînes non vides. Absent ou mal formé =
+/// objet libre ; la valeur reste telle quelle dans le document (U3, jamais réécrite à la lecture).
+pub(crate) fn read_cell_link<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<[String; 3]> {
+    let Some(Out::Any(Any::Array(items))) = e.get(txn, "cell") else {
+        return None;
+    };
+    if items.len() != 3 {
+        return None;
+    }
+    let mut out: [String; 3] = Default::default();
+    for (slot, a) in out.iter_mut().zip(items.iter()) {
+        match a {
+            Any::String(s) if !s.is_empty() => *slot = s.to_string(),
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
+/// Valeur écrite du champ `cell` : `Any::Array` de trois chaînes, remplacé en bloc (U3, jamais `Any::Map`).
+pub(crate) fn cell_link_to_any(link: &[String; 3]) -> Any {
+    Any::Array(
+        link.iter()
+            .map(|s| Any::String(s.as_str().into()))
+            .collect(),
+    )
+}
+
 pub(crate) fn out_transform(o: Option<Out>) -> Option<Transform> {
     match o {
         Some(Out::Any(Any::Array(items))) if items.len() == 6 => {
@@ -415,6 +449,13 @@ pub struct Look {
     /// Lien `http://`, `https://` ou `mailto:` de 2 048 caractères au plus (`valid_link`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
+    /// OG23 : `constant` (épaisseur constante, la pression n'amincit pas) ; la pression variable est le neutre.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variability: Option<String>,
+    /// OG23 (T10) : `true` = glisser l'objet en pose une copie (l'original reste) ; seul `true` est lu et écrit
+    /// (booléen), déplacer est le neutre.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drag_copy: Option<bool>,
     /// OG12 (n° 2) : flèche coudée ; `true` seul s'écrit, jamais `false` (neutre).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub elbowed: Option<bool>,
@@ -442,6 +483,9 @@ pub const END_ARROWHEAD_DEFAULT: &str = "arrow";
 /// Alignements lisibles ; la gauche est le neutre (champ absent).
 pub const TEXT_ALIGNS: [&str; 2] = ["center", "right"];
 
+/// Seule valeur lue de `variability` (OG23) ; absent = pression variable, le neutre.
+pub const VARIABILITY_CONSTANT: &str = "constant";
+
 /// Longueur maximale d'un lien, en caractères (même compte que le faux cœur : points de code).
 pub const LINK_MAX_CHARS: usize = 2048;
 
@@ -464,8 +508,8 @@ fn arrowhead(v: &Option<String>, default: &str) -> Option<String> {
         .filter(|s| ARROWHEADS.contains(&s.as_str()) && s != default)
 }
 
-/// Clés `Y.Map` des dix champs d'aspect.
-pub(crate) const LOOK_KEYS: [&str; 11] = [
+/// Clés `Y.Map` des treize champs d'aspect.
+pub(crate) const LOOK_KEYS: [&str; 13] = [
     "strokeStyle",
     "roughness",
     "seed",
@@ -476,6 +520,8 @@ pub(crate) const LOOK_KEYS: [&str; 11] = [
     "endArrowhead",
     "textAlign",
     "link",
+    "variability",
+    "dragCopy",
     "elbowed",
 ];
 
@@ -507,13 +553,19 @@ impl Look {
                 .clone()
                 .filter(|s| TEXT_ALIGNS.contains(&s.as_str())),
             link: self.link.clone().filter(|s| valid_link(s)),
+            variability: self
+                .variability
+                .clone()
+                .filter(|s| s == VARIABILITY_CONSTANT),
+            drag_copy: self.drag_copy.filter(|b| *b),
             elbowed: self.elbowed.filter(|b| *b),
         }
     }
 }
 
-/// Champs écrits de `l` : seulement les non neutres (DA-5), dans un ordre fixe.
-pub(crate) fn look_fields(l: &Look) -> Vec<(&'static str, In)> {
+/// Champs écrits de `l` : seulement les non neutres (DA-5), dans un ordre fixe ; `variability` seulement pour un trait
+/// (`stroke`), comme `StylePatch`.
+pub(crate) fn look_fields(l: &Look, stroke: bool) -> Vec<(&'static str, In)> {
     let l = l.sanitized();
     let mut v = Vec::new();
     if let Some(s) = &l.stroke_style {
@@ -537,11 +589,18 @@ pub(crate) fn look_fields(l: &Look) -> Vec<(&'static str, In)> {
         ("endArrowhead", &l.end_arrowhead),
         ("textAlign", &l.text_align),
         ("link", &l.link),
+        ("variability", &l.variability),
     ];
     for (key, s) in strings {
+        if key == "variability" && !stroke {
+            continue;
+        }
         if let Some(s) = s {
             v.push((key, In::from(s.as_str())));
         }
+    }
+    if l.drag_copy == Some(true) {
+        v.push(("dragCopy", In::Any(Any::Bool(true))));
     }
     if l.elbowed == Some(true) {
         v.push(("elbowed", In::Any(Any::Bool(true))));
@@ -567,6 +626,9 @@ pub(crate) fn read_look<T: ReadTxn>(txn: &T, e: &MapRef) -> Look {
         end_arrowhead: out_string(e.get(txn, "endArrowhead")),
         text_align: out_string(e.get(txn, "textAlign")),
         link: out_string(e.get(txn, "link")),
+        variability: out_string(e.get(txn, "variability")),
+        drag_copy: matches!(e.get(txn, "dragCopy"), Some(Out::Any(Any::Bool(true))))
+            .then_some(true),
         elbowed: match e.get(txn, "elbowed") {
             Some(Out::Any(Any::Bool(b))) => Some(b),
             _ => None,
@@ -575,9 +637,24 @@ pub(crate) fn read_look<T: ReadTxn>(txn: &T, e: &MapRef) -> Look {
     .sanitized()
 }
 
+/// OG23 : le trait `e` est à pression constante (`variability: "constant"` ; toute autre valeur est lue variable).
+pub(crate) fn constant_ink<T: ReadTxn>(txn: &T, e: &MapRef) -> bool {
+    out_string(e.get(txn, "variability")).is_some_and(|s| s == VARIABILITY_CONSTANT)
+}
+
 /// Vue de l'aspect : `None` quand il est neutre (omis du JSON).
 pub(crate) fn look_view<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<Look> {
     Some(read_look(txn, e)).filter(|l| !l.is_neutral())
+}
+
+/// OG23 (T22) : vue de l'aspect d'un tableau, d'un média ou d'un objet 3D : seul `dragCopy` (décision 29) y est lu, aucun
+/// autre champ d'aspect n'apparaît là où il n'existait pas ; `None` sans bascule.
+pub(crate) fn drag_copy_view<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<Look> {
+    let drag_copy = read_look(txn, e).drag_copy?;
+    Some(Look {
+        drag_copy: Some(drag_copy),
+        ..Look::default()
+    })
 }
 
 pub(crate) fn finite_positive(v: f64) -> bool {

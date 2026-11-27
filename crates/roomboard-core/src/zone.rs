@@ -11,7 +11,7 @@ use yrs::{Array, Map, MapRef, Out, ReadTxn};
 
 use crate::commands::{read_shape, read_stroke};
 use crate::document::Document;
-use crate::element::{out_string, out_transform};
+use crate::element::{constant_ink, out_string, out_transform};
 use crate::fill_element::read_fill;
 use crate::query::{world_outline, Bounds};
 use crate::shape::{shape_polygon, shape_ring, ShapeGeom, ShapeKind};
@@ -869,7 +869,7 @@ impl Document {
     fn wall_of<T: ReadTxn>(&self, txn: &T, e: &MapRef) -> Option<Wall> {
         if let Some((t, style, pts)) = read_stroke(txn, e) {
             let id = out_string(e.get(txn, "id")).unwrap_or_default();
-            let outline = self.cached_outline(&id, &style, &pts);
+            let outline = self.cached_outline(&id, &style, &pts, constant_ink(txn, e));
             return Wall::new(split_rings(&world_outline(&t, &outline)), false);
         }
         if let Some(s) = read_shape(txn, e) {
@@ -1289,6 +1289,7 @@ mod tests {
             points,
             style: pen(),
             look: Look::default(),
+            cell: None,
         })
         .expect("trait")
         .ids[0]
@@ -1570,6 +1571,7 @@ mod tests {
                 points,
                 style: pen(),
                 look: Look::default(),
+                cell: None,
             })
             .expect("côté");
         };

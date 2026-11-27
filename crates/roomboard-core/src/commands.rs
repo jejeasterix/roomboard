@@ -13,13 +13,15 @@ use crate::copy::reinsert_kept;
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::read_look;
 use crate::element::{
-    apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, look_fields,
-    out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group, read_style,
-    style_fields, transform_to_any, Look, PageLayout, RawBackdrop, StrokeStyle, Transform,
-    FIT_WIDTH, IDENTITY, INFINITE_MODE, LOOK_KEYS, PAGE_HEIGHT, PORTRAIT_HEIGHT,
+    apply_transform, cell_link_to_any, compose, constant_ink, finite_positive, fits_f32,
+    group_to_any, invert, look_fields, out_bytes, out_f64, out_string, out_transform,
+    read_backdrop, read_group, read_style, style_fields, transform_to_any, Look, PageLayout,
+    RawBackdrop, StrokeStyle, Transform, FIT_WIDTH, IDENTITY, INFINITE_MODE, LOOK_KEYS,
+    PAGE_HEIGHT, PORTRAIT_HEIGHT,
 };
 use crate::grid::{self, GridInput};
-use crate::ink::erase::erase;
+use crate::ink::erase::erase_with;
+use crate::ink::outline::InkStyle;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
 use crate::linear::{self, BindInput, LineInit, MAX_INNER_POINTS};
 use crate::query::path_hits_stroke;
@@ -68,6 +70,8 @@ pub enum Command {
         style: StrokeStyle,
         /// OG11 : aspect écrit dans la même transaction ; neutre = aucune clé (DA-5).
         look: Look,
+        /// T8 (D10) : case du tableau à laquelle le trait appartient, écrite dans la même transaction.
+        cell: Option<[String; 3]>,
     },
     Erase {
         page: String,
@@ -95,6 +99,12 @@ pub enum Command {
     Transform {
         ids: Vec<String>,
         matrix: Transform,
+    },
+    /// OG23 (DA-2) : aligner, répartir, retourner, tourner les `ids` (une même page) en une étape ; groupes touchés en
+    /// partie étendus ; texte, tableau, média, objet 3D gardent leur matrice (seule leur place suit, H5).
+    Arrange {
+        ids: Vec<String>,
+        how: crate::arrange::ArrangeHow,
     },
     SetText {
         page: String,
@@ -243,6 +253,36 @@ pub enum Command {
         merges: Vec<[u32; 4]>,
         color: String,
         size: f64,
+    },
+    /// personnalisation-3 (D3) : tailles, suivi des autres objets liés, `matrix` composée sur `ids`, `cell` posé (`Some`)
+    /// ou retiré (`None`) ; refus `BadTable` si `ids` contient un tableau ou si la case visée est ombrée (D35, D36) ; une
+    /// étape.
+    PlaceInCell {
+        ids: Vec<String>,
+        matrix: Transform,
+        cell: Option<[String; 3]>,
+        sizes: Vec<crate::table_links::LineSize>,
+    },
+    /// personnalisation-3 (D4) : tailles par id de ligne et de colonne, objets liés suivis ; une étape.
+    SetTableLineSizes {
+        id: String,
+        cols: Vec<(String, f64)>,
+        rows: Vec<(String, f64)>,
+    },
+    /// personnalisation-3 (T7) : `fit` `"shrink"` écrit, `"grow"` retire ; `header` `true` écrit, `false` retire ; autre
+    /// `fit` : `BadTable` ; rien ne change : aucune étape.
+    SetTableOptions {
+        id: String,
+        fit: Option<String>,
+        header: Option<bool>,
+    },
+    /// personnalisation-3 (T9) : `Some(image)` : l'image logée dans la case (`row`, `col`) devient son fond (`bg`) et
+    /// disparaît de la page ; non logée là : `BadTable` ; `None` : fond retiré. Une étape.
+    SetCellImage {
+        id: String,
+        row: String,
+        col: String,
+        from: Option<String>,
     },
     /// Pot (C6a, D12, DA1) : contour (`color`), intérieur (`fill`) ou fond de la page (`background`) ; `None` = « Aucune »
     /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38). C6b : image
@@ -652,13 +692,13 @@ fn min_singular(t: &Transform) -> f64 {
 fn erase_stroke(
     t: &Transform,
     pts: &[InkPoint],
-    width: f32,
+    style: &InkStyle,
     path: &[f32],
     radius: f32,
 ) -> Option<Vec<Vec<InkPoint>>> {
     if let Some(s) = similarity_scale(t) {
         let local_path = world_to_local_path(t, path)?;
-        return erase(pts, width, &local_path, (f64::from(radius) / s) as f32);
+        return erase_with(pts, style, &local_path, (f64::from(radius) / s) as f32);
     }
     let inv = invert(t)?;
     let map = |m: &Transform, p: &InkPoint| {
@@ -670,8 +710,11 @@ fn erase_stroke(
         }
     };
     let world: Vec<InkPoint> = pts.iter().map(|p| map(t, p)).collect();
-    let world_width = (f64::from(width) * min_singular(t)) as f32;
-    let pieces = erase(&world, world_width, path, radius)?;
+    let world_style = InkStyle {
+        width: (f64::from(style.width) * min_singular(t)) as f32,
+        constant: style.constant,
+    };
+    let pieces = erase_with(&world, &world_style, path, radius)?;
     Some(
         pieces
             .into_iter()
@@ -746,7 +789,7 @@ fn stroke_prelim(
         ("points", In::Any(Any::Buffer(encode(points).into()))),
     ]);
     // OG11 (DA-5) : seulement les champs d'aspect non neutres, jamais un jeu fixe.
-    for (k, v) in look_fields(look) {
+    for (k, v) in look_fields(look, true) {
         prelim.insert(k.into(), v);
     }
     prelim
@@ -760,6 +803,8 @@ struct Cut {
     style: StrokeStyle,
     pieces: Vec<Vec<InkPoint>>,
     group: Option<Any>,
+    /// personnalisation-3 (T5) : lien de case du trait coupé, valeur brute recopiée telle quelle sur chaque morceau.
+    cell: Option<Any>,
     /// OG11 (G12) : clés d'aspect du trait coupé, valeurs brutes recopiées telles quelles sur chaque morceau.
     look: Vec<(&'static str, Any)>,
 }
@@ -789,7 +834,11 @@ struct Target {
 
 impl Document {
     /// Éléments trouvés pour des ids dédoublonnés (ordre des ids) ; ids inconnus ignorés.
-    fn find_unique<T: ReadTxn>(&self, txn: &T, ids: &[String]) -> Vec<(String, FoundElement)> {
+    pub(crate) fn find_unique<T: ReadTxn>(
+        &self,
+        txn: &T,
+        ids: &[String],
+    ) -> Vec<(String, FoundElement)> {
         let unique: BTreeSet<&String> = ids.iter().collect();
         unique
             .into_iter()
@@ -816,7 +865,8 @@ impl Document {
                 points,
                 style,
                 look,
-            } => self.cmd_commit_stroke(&page, &points, &style, &look),
+                cell,
+            } => self.cmd_commit_stroke(&page, &points, &style, &look, cell.as_ref()),
             Command::Erase {
                 page,
                 path,
@@ -851,6 +901,7 @@ impl Document {
                 end,
             } => self.cmd_set_line_points(&id, &points, start.as_ref(), end.as_ref()),
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
+            Command::Arrange { ids, how } => self.cmd_arrange(&ids, how),
             Command::AddLinked { id, dir } => self.cmd_add_linked(&id, dir),
             Command::ShapeToPolygon { id } => self.cmd_shape_to_polygon(&id),
             Command::SetText {
@@ -979,6 +1030,21 @@ impl Document {
                 (to.0.as_str(), to.1.as_str()),
                 shade.as_deref(),
             ),
+            Command::PlaceInCell {
+                ids,
+                matrix,
+                cell,
+                sizes,
+            } => self.cmd_place_in_cell(&ids, &matrix, cell.as_ref(), &sizes),
+            Command::SetTableLineSizes { id, cols, rows } => {
+                self.cmd_set_table_line_sizes(&id, &cols, &rows)
+            }
+            Command::SetTableOptions { id, fit, header } => {
+                self.cmd_set_table_options(&id, fit.as_deref(), header)
+            }
+            Command::SetCellImage { id, row, col, from } => {
+                self.cmd_set_cell_image(&id, &row, &col, from.as_deref())
+            }
             Command::ImportTable {
                 page,
                 matrix,
@@ -1189,7 +1255,7 @@ impl Document {
         if let Some(f) = fill {
             fields.push(("fill", In::from(f)));
         }
-        fields.extend(look_fields(&look));
+        fields.extend(look_fields(&look, false));
         let inner: Vec<f64> = world[1..last]
             .iter()
             .flat_map(|p| [p.0 - world[0].0, p.1 - world[0].1])
@@ -1369,15 +1435,21 @@ impl Document {
         if !valid_matrix(m) {
             return Err(CommandError::BadMatrix);
         }
-        let targets: Vec<(MapRef, Transform, String, String)> = {
+        let (targets, unlink) = {
             let txn = self.read();
-            self.find_unique(&txn, ids)
+            let mut targets: Vec<(MapRef, Transform, String, String)> = self
+                .find_unique(&txn, ids)
                 .into_iter()
                 .filter_map(|(id, f)| {
                     let t = out_transform(f.element.get(&txn, "transform"))?;
                     Some((f.element, t, f.page_id, id))
                 })
-                .collect()
+                .collect();
+            // D6 : un tableau emporte ses objets liés ; un objet lié déplacé sans lui quitte sa case si son centre en
+            // sort, dans cette transaction (jamais par une seconde commande).
+            self.with_linked(&txn, &mut targets);
+            let unlink = self.leaving_cells(&txn, &targets, m);
+            (targets, unlink)
         };
         if targets.is_empty() || *m == IDENTITY {
             return Ok(self.unchanged());
@@ -1391,14 +1463,20 @@ impl Document {
         // OG12 (n° 7, 8, S1) : suivi et rupture des liaisons dans la même transaction, jamais après : une étape.
         let followed = {
             let mut txn = self.transact_local();
-            for ((e, _, _, _), c) in targets.iter().zip(&composed) {
+            for ((e, _, _, id), c) in targets.iter().zip(&composed) {
                 e.insert(&mut txn, "transform", transform_to_any(c));
+                if unlink.contains(id) {
+                    e.remove(&mut txn, "cell");
+                }
             }
             let moved: Vec<String> = targets.iter().map(|t| t.3.clone()).collect();
             crate::linear::follow(self, &mut txn, &moved, Some(m))
         };
         let pages = sorted_unique(targets.iter().map(|t| t.2.clone()));
+        // Ids triés des cibles élargies (sans objet lié : ceux de `find_unique`, déjà triés, G9), puis les lignes suivies
+        // (OG12) qui n'y sont pas encore.
         let mut ids: Vec<String> = targets.into_iter().map(|t| t.3).collect();
+        ids.sort();
         for f in followed {
             if !ids.contains(&f) {
                 ids.push(f);
@@ -1502,7 +1580,7 @@ impl Document {
             ("boxHeight", In::Any(Any::from(t.box_height))),
             ("content", In::from(TextPrelim::new(t.content))),
         ];
-        fields.extend(look_fields(t.look));
+        fields.extend(look_fields(t.look, false));
         {
             let mut txn = self.transact_local();
             let el = elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
@@ -1841,6 +1919,7 @@ impl Document {
         flat: &[f32],
         style: &StrokeStyle,
         look: &Look,
+        cell: Option<&[String; 3]>,
     ) -> Result<Change, CommandError> {
         if flat.len() < 3 || !flat.len().is_multiple_of(3) || flat.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadPoints);
@@ -1849,14 +1928,18 @@ impl Document {
             return Err(CommandError::BadWidth);
         }
         let elements = self.page_elements_or_err(page)?;
+        if let Some(l) = cell {
+            self.check_cell_target(page, l)?;
+        }
         let (local, (ox, oy)) = to_local(&dedup(&from_flat(flat)));
         let id = yrs::uuid_v4().to_string();
         {
             let mut txn = self.transact_local();
-            elements.push_back(
-                &mut txn,
-                stroke_prelim(&id, &[1.0, 0.0, 0.0, 1.0, ox, oy], style, &local, look),
-            );
+            let mut prelim = stroke_prelim(&id, &[1.0, 0.0, 0.0, 1.0, ox, oy], style, &local, look);
+            if let Some(l) = cell {
+                prelim.insert("cell".into(), In::Any(cell_link_to_any(l)));
+            }
+            elements.push_back(&mut txn, prelim);
         }
         Ok(self.done(Change {
             pages: vec![page.to_string()],
@@ -1893,10 +1976,14 @@ impl Document {
                 let id = out_string(e.get(&txn, "id")).unwrap_or_default();
                 // Chemin et rayon en unités monde (T63) : la conversion vers le repère du trait est faite par
                 // `erase_stroke` et `path_hits_stroke`, jamais en appliquant le rayon tel quel en local.
+                let ink = InkStyle {
+                    width: style.width,
+                    constant: constant_ink(&txn, &e),
+                };
                 let pieces = match mode {
-                    EraseMode::Partial => erase_stroke(&transform, &pts, style.width, path, radius),
+                    EraseMode::Partial => erase_stroke(&transform, &pts, &ink, path, radius),
                     EraseMode::Object => {
-                        let poly = self.cached_outline(&id, &style, &pts);
+                        let poly = self.cached_outline(&id, &style, &pts, ink.constant);
                         path_hits_stroke(&transform, &poly, path, radius).then(Vec::new)
                     }
                 };
@@ -1908,6 +1995,10 @@ impl Document {
                         style,
                         pieces,
                         group: match e.get(&txn, "group") {
+                            Some(Out::Any(a)) => Some(a),
+                            _ => None,
+                        },
+                        cell: match e.get(&txn, "cell") {
                             Some(Out::Any(a)) => Some(a),
                             _ => None,
                         },
@@ -1945,6 +2036,10 @@ impl Document {
                     // Z1 : un morceau reste dans le groupe du trait coupé (valeur recopiée telle quelle).
                     if let Some(g) = &cut.group {
                         prelim.insert("group".into(), In::Any(g.clone()));
+                    }
+                    // personnalisation-3 : un morceau reste dans la case du trait coupé.
+                    if let Some(c) = &cut.cell {
+                        prelim.insert("cell".into(), In::Any(c.clone()));
                     }
                     elements.insert(&mut txn, cut.index + k as u32, prelim);
                     change.ids.push(id);
@@ -2199,6 +2294,7 @@ pub(crate) mod tests {
             points: pts,
             style: pen(),
             look: Look::default(),
+            cell: None,
         })
         .expect("commit")
         .ids[0]
@@ -2293,6 +2389,7 @@ pub(crate) mod tests {
             points,
             style: pen(),
             look: Look::default(),
+            cell: None,
         };
         assert_eq!(d.apply(bad(vec![1.0, 2.0])), Err(CommandError::BadPoints));
         assert_eq!(
@@ -2327,6 +2424,7 @@ pub(crate) mod tests {
                     width,
                 },
                 look: Look::default(),
+                cell: None,
             });
             assert_eq!(r, Err(CommandError::BadWidth), "épaisseur {width}");
         }
@@ -2342,6 +2440,7 @@ pub(crate) mod tests {
             points: hline(1.0),
             style: pen(),
             look: Look::default(),
+            cell: None,
         });
         assert_eq!(r, Err(CommandError::UnknownPage("nope".into())));
     }
@@ -2868,6 +2967,7 @@ pub(crate) mod tests {
                 points: hline(1.0),
                 style: pen(),
                 look: Look::default(),
+                cell: None
             })
             .is_err());
         assert!(d
@@ -2876,6 +2976,7 @@ pub(crate) mod tests {
                 points: vec![1.0],
                 style: pen(),
                 look: Look::default(),
+                cell: None
             })
             .is_err());
         let bad_path = Command::Erase {
@@ -3019,6 +3120,7 @@ pub(crate) mod tests {
                 points: hline(1.0),
                 style: pen(),
                 look: Look::default(),
+                cell: None,
             })
             .expect("commit");
         assert_eq!(c1.version, 1);
@@ -5058,6 +5160,52 @@ pub(crate) mod tests {
         for id in &ch.ids {
             assert_eq!(group_of(&d, id), Some(gb.clone()), "morceau {id}");
         }
+    }
+
+    // T5 : un morceau de gomme reste dans la case du trait coupé.
+    #[test]
+    fn partial_erase_keeps_cell() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let s = commit(&mut d, &p, hline(200.0));
+        let t = d
+            .apply(Command::AddTable {
+                page: p.clone(),
+                x: 0.0,
+                y: 0.0,
+                cols: 1,
+                rows: 1,
+                col_width: 2000.0,
+                row_height: 400.0,
+                color: "#000000".into(),
+                size: 36.0,
+            })
+            .expect("t")
+            .ids[0]
+            .clone();
+        let v = d.element(&t).and_then(|v| v.table).expect("vue");
+        let l = [t.clone(), v.rows[0].id.clone(), v.cols[0].id.clone()];
+        d.apply(Command::PlaceInCell {
+            ids: vec![s.clone()],
+            matrix: crate::element::IDENTITY,
+            cell: Some(l.clone()),
+            sizes: vec![],
+        })
+        .expect("logé");
+        let c = d
+            .apply(Command::Erase {
+                page: p.clone(),
+                path: vec![300.0, 180.0, 300.0, 220.0],
+                radius: 8.0,
+                mode: EraseMode::Partial,
+            })
+            .expect("gomme");
+        assert_eq!(c.removed, vec![s]);
+        assert!(c.ids.len() >= 2);
+        assert!(c
+            .ids
+            .iter()
+            .all(|id| d.element(id).and_then(|v| v.cell) == Some(l.clone())));
     }
 
     /// Correction de cadrage : un groupe partiel est étendu au groupe extérieur entier de chaque id touché.

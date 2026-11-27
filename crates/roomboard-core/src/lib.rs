@@ -1,4 +1,5 @@
 //! Cœur de RoomBoard : modèle du document, sans dépendance au navigateur.
+pub mod arrange;
 pub mod asset;
 pub mod capabilities;
 pub mod commands;
@@ -21,5 +22,6 @@ pub mod rich_text;
 pub mod shape;
 pub mod style;
 pub mod table;
+pub mod table_links;
 #[cfg(feature = "zone")]
 pub mod zone;

@@ -9,7 +9,7 @@ import { endArrowheadOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, 
 import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, Model3dData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
 import { arrowWings, catmullRom, flattenPath, isFillable, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
-import type { Camera } from "../camera";
+import { worldToScreen, type Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, pageFrame, visibleGridRect, visiblePageRect, type PageRect } from "../page";
 import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
@@ -19,7 +19,8 @@ import type { ModelFrames } from "./model-frames";
 import { GridLinesCache } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
-import { linkBadgeBox, paintLinkBadge } from "./link-badge";
+import { copyBadgeBox, linkBadgeBox, paintCopyBadge, paintLinkBadge, paintMoveHandle } from "./link-badge";
+import { moveHandlePoint } from "../tools/handles";
 import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { setLiveOpacity } from "./renderer";
 import { cornerRadius, dashOf, hatched, headWings, seedOf, sketchShape, strokeWith, wingDashOf, type SketchMemo, type SketchPlan } from "./sketch";
@@ -487,6 +488,16 @@ export class Canvas2DRenderer implements Renderer {
     this.gridCache.clear();
   }
 
+  colorAt(x: number, y: number): string | null {
+    const px = Math.round(x * this.sx);
+    const py = Math.round(y * this.sy);
+    const { width, height } = this.scene.canvas;
+    if (!(px >= 0 && py >= 0 && px < width && py < height)) return null;
+    const d = this.scene.getImageData(px, py, 1, 1).data;
+    if ((d[3] ?? 0) === 0) return null;
+    return `#${[d[0], d[1], d[2]].map((v) => (v ?? 0).toString(16).padStart(2, "0")).join("")}`;
+  }
+
   drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay: EditOverlay = EMPTY_OVERLAY): void {
     const ctx = this.scene;
     this.images?.beginScene?.(); // `data-pixels` ne compte que les images de cette scène (I33)
@@ -517,17 +528,21 @@ export class Canvas2DRenderer implements Renderer {
     const grid = this.gridOf(page.id, camera);
     if (grid && !grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
     const linked: string[] = [];
+    const copyable: string[] = [];
     for (const id of page.elementIds) {
       if (hidden.has(id)) continue;
       const el = this.source.element(id);
       if (!el) continue;
       this.paintElement(ctx, this.withImagePreview(el), null);
       if (el.look?.link !== undefined) linked.push(id);
+      if (el.look?.dragCopy === true) copyable.push(id);
     }
     this.paintOverlayContent(ctx, overlay);
     if (grid && grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
     this.paintOverlayChrome(ctx, overlay, camera.zoom);
     this.paintLinkBadges(ctx, linked, camera);
+    this.paintCopyBadges(ctx, copyable, camera);
+    this.paintMoveHandle(ctx, overlay, camera);
     this.images?.endScene?.();
   }
 
@@ -541,6 +556,30 @@ export class Canvas2DRenderer implements Renderer {
       const b = bounds.call(this.source, [id]);
       if (b !== null) paintLinkBadge(ctx, linkBadgeBox(b, camera, this.dpr), SELECTION_COLOR);
     }
+    ctx.restore();
+  }
+
+  /** OG23 (T11) : badge « copie » des objets `dragCopy`, au coin haut gauche, après les badges de lien ; jamais à l'export. */
+  private paintCopyBadges(ctx: CanvasRenderingContext2D, ids: readonly string[], camera: Camera): void {
+    const bounds = this.source.bounds;
+    if (this.forExport || ids.length === 0 || bounds === undefined) return;
+    ctx.save();
+    ctx.setTransform(this.sx, 0, 0, this.sy, 0, 0);
+    for (const id of ids) {
+      const b = bounds.call(this.source, [id]);
+      if (b !== null) paintCopyBadge(ctx, copyBadgeBox(b, camera, this.dpr), SELECTION_COLOR);
+    }
+    ctx.restore();
+  }
+
+  /** OG23 (T11) : poignée « Déplacer » au-dessus du cadre de la sélection (rond de 24 px, icône Lucide `move`). */
+  private paintMoveHandle(ctx: CanvasRenderingContext2D, o: EditOverlay, camera: Camera): void {
+    if (this.forExport || o.move !== true || !o.frame || !o.handles) return;
+    const [wx, wy] = moveHandlePoint(o.frame, camera.zoom);
+    const [sx, sy] = worldToScreen(camera, wx, wy);
+    ctx.save();
+    ctx.setTransform(this.sx, 0, 0, this.sy, 0, 0);
+    paintMoveHandle(ctx, sx, sy, SELECTION_COLOR);
     ctx.restore();
   }
 
@@ -633,7 +672,7 @@ export class Canvas2DRenderer implements Renderer {
     } else if (el.kind === "model3d") {
       paintModel3d(ctx, el.model3d, this.models?.frame(el.id) ?? null, this.images, this.assetName?.(el.model3d.asset) ?? null);
     } else if (el.kind === "table") {
-      paintTableGrid(ctx, el.table);
+      paintTableGrid(ctx, el.table, this.images ?? null);
       const boxes = cellTextBoxes(el.table);
       const lines = this.cellLinesOf(ctx, el.id, el.table, boxes);
       boxes.forEach((b, i) => {
@@ -741,6 +780,16 @@ export class Canvas2DRenderer implements Renderer {
       ctx.stroke();
       ctx.restore();
     }
+    if (o.target) {
+      // personnalisation-3 (D32) : case visée, cadre plein de 2 px écran, couleur d'accent.
+      ctx.save();
+      ctx.strokeStyle = SELECTION_COLOR;
+      ctx.lineWidth = 2 * px;
+      ctx.setLineDash([]);
+      box(o.target);
+      ctx.stroke();
+      ctx.restore();
+    }
     if (o.frame) {
       ctx.save();
       ctx.strokeStyle = SELECTION_COLOR;
@@ -751,6 +800,21 @@ export class Canvas2DRenderer implements Renderer {
       if (o.handles) {
         ctx.setLineDash([]);
         paintHandles(ctx, o.frame, px);
+      }
+      ctx.restore();
+    }
+    if (o.grips && o.grips.length > 0) {
+      // personnalisation-3 (D13) : disque blanc de 16 px écran cerclé d'accent (la cible tactile, 44 px, est dans l'outil).
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.fillStyle = HANDLE_FILL;
+      ctx.strokeStyle = SELECTION_COLOR;
+      ctx.lineWidth = 1.5 * px;
+      for (const g of o.grips) {
+        ctx.beginPath();
+        ctx.arc(g.x, g.y, 8 * px, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.stroke();
       }
       ctx.restore();
     }

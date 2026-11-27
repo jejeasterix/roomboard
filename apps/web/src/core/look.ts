@@ -21,6 +21,10 @@ export interface Look {
   readonly textAlign?: "center" | "right";
   /** `http://`, `https://` ou `mailto:` (`validLink`). */
   readonly link?: string;
+  /** OG23 : pression constante d'un trait ; absent = variable, le neutre (jamais écrit). */
+  readonly variability?: "constant";
+  /** OG23 (T10) : glisser pose une copie, l'original reste ; absent = déplacer, le neutre (seul `true` est écrit). */
+  readonly dragCopy?: true;
   /** OG12 (n° 2) : flèche coudée ; `true` seul, jamais `false`. */
   readonly elbowed?: true;
 }
@@ -39,6 +43,10 @@ export interface LookPatch {
   readonly endArrowhead?: Arrowhead | null;
   readonly textAlign?: "center" | "right" | null;
   readonly link?: string | null;
+  /** OG23 : écrit sur les traits seuls ; null retire (pression variable). */
+  readonly variability?: "constant" | null;
+  /** OG23 (T10) : `true` pose « Glisser une copie », `false` le retire ; traits, formes, textes, images. */
+  readonly dragCopy?: boolean;
   readonly elbowed?: boolean | null;
 }
 /** Traits non pleins (le plein est le neutre : absent de `Look`). */
@@ -49,6 +57,9 @@ export const ARROWHEADS: readonly string[] = ["none", "arrow", "triangle", "tria
 export const START_ARROWHEAD_DEFAULT: Arrowhead = "none";
 export const END_ARROWHEAD_DEFAULT: Arrowhead = "arrow";
 export const TEXT_ALIGNS: readonly string[] = ["center", "right"];
+/** OG23 : pression d'un trait ; seule `constant` est écrite (`VARIABILITY_CONSTANT` du cœur). */
+export type Variability = "variable" | "constant";
+export const VARIABILITY_CONSTANT = "constant";
 export const LINK_MAX_CHARS = 2048;
 /** Interdits de `valid_link` : blancs Unicode de Rust (`White_Space`, sans U+FEFF que `\s` de JS ajoute), `"`, `<`, `>`, `\`, catégorie Cc. */
 const LINK_FORBIDDEN = /[\u0009-\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000"<>\\\p{Cc}]/u;
@@ -94,6 +105,8 @@ export function toLook(v: unknown): Look | undefined {
   if (align !== undefined) out.textAlign = align as "center" | "right";
   const link = v["link"];
   if (typeof link === "string" && validLink(link)) out.link = link;
+  if (v["variability"] === VARIABILITY_CONSTANT) out.variability = VARIABILITY_CONSTANT;
+  if (v["dragCopy"] === true) out.dragCopy = true;
   if (v["elbowed"] === true) out.elbowed = true;
   return Object.keys(out).length === 0 ? undefined : out;
 }
@@ -108,10 +121,13 @@ export const endArrowheadOf = (l: Look | undefined): Arrowhead => l?.endArrowhea
 /** OG12 : flèche coudée ? */
 export const elbowedOf = (l: Look | undefined): boolean => l?.elbowed === true;
 export const textAlignOf = (l: Look | undefined): TextAlign => l?.textAlign ?? "left";
+export const variabilityOf = (l: Look | undefined): Variability => l?.variability ?? "variable";
+/** OG23 (T10) : glisser l'objet pose une copie. */
+export const dragCopyOf = (l: Look | undefined): boolean => l?.dragCopy === true;
 
 /** undefined si neutre. */
 export function lookFrom(
-  s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number; fillStyle?: FillKind; startArrowhead?: Arrowhead; endArrowhead?: Arrowhead; textAlign?: TextAlign; elbowed?: boolean },
+  s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number; fillStyle?: FillKind; startArrowhead?: Arrowhead; endArrowhead?: Arrowhead; textAlign?: TextAlign; variability?: Variability; elbowed?: boolean },
   seed: number | null,
 ): Look | undefined {
   const out: { -readonly [K in keyof Look]: Look[K] } = {};
@@ -127,6 +143,7 @@ export function lookFrom(
   if (s.startArrowhead !== undefined && s.startArrowhead !== START_ARROWHEAD_DEFAULT) out.startArrowhead = s.startArrowhead;
   if (s.endArrowhead !== undefined && s.endArrowhead !== END_ARROWHEAD_DEFAULT) out.endArrowhead = s.endArrowhead;
   if (s.textAlign !== undefined && s.textAlign !== "left") out.textAlign = s.textAlign;
+  if (s.variability === VARIABILITY_CONSTANT) out.variability = VARIABILITY_CONSTANT;
   if (s.elbowed === true) out.elbowed = true;
   return Object.keys(out).length === 0 ? undefined : out;
 }

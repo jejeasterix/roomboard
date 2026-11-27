@@ -25,6 +25,8 @@ export interface ShapePreview {
   readonly polygon?: true;
 }
 
+/** personnalisation-3 (D13, D18) : poignée de l'outil Tableau, point monde ; 44 px de cible, disque de 16 px dessiné. */
+export interface OverlayGrip { readonly x: number; readonly y: number; readonly kind: "col" | "row" }
 /** OG12 : poignée de point (« point ») ou de milieu de segment (« mid »), en monde. */
 export interface PointHandle { readonly x: number; readonly y: number; readonly kind: "point" | "mid"; readonly selected: boolean }
 /** OG12 : cible d'accroche éclairée et ses quatre ancres monde. */
@@ -41,6 +43,12 @@ export interface EditOverlay {
   readonly handles: boolean;
   /** Rectangle de sélection en cours (monde), ou null. */
   readonly band: Bounds | null;
+  /** OG23 (T11) : poignée « Déplacer » au-dessus du cadre (sélection contenant un objet `dragCopy`). */
+  readonly move?: boolean;
+  /** personnalisation-3 : cadre de la case visée (monde), ou null. */
+  readonly target?: Bounds | null;
+  /** personnalisation-3 (D13) : poignées de taille de la case active. */
+  readonly grips?: readonly OverlayGrip[];
   readonly points?: readonly PointHandle[];
   readonly bind?: BindHint | null;
   readonly links?: readonly LinkHandle[];
@@ -61,6 +69,9 @@ export function mergeOverlays(parts: readonly (EditOverlay | undefined)[]): Edit
     frame: present.find((p) => p.frame !== null)?.frame ?? null,
     handles: present.some((p) => p.handles),
     band: present.find((p) => p.band !== null)?.band ?? null,
+    move: present.some((p) => p.move === true),
+    target: present.find((p) => (p.target ?? null) !== null)?.target ?? null,
+    grips: present.flatMap((p) => p.grips ?? []),
     ...(pts.length > 0 ? { points: pts } : {}),
     ...(bind ? { bind } : {}),
     ...(links.length > 0 ? { links } : {}),
@@ -71,5 +82,5 @@ export function mergeOverlays(parts: readonly (EditOverlay | undefined)[]): Edit
 export const overlayKey = (o: EditOverlay): string => JSON.stringify(o);
 
 export const isEmptyOverlay = (o: EditOverlay): boolean =>
-  o.ghosts.length === 0 && o.shapes.length === 0 && o.frame === null && o.band === null &&
+  o.ghosts.length === 0 && o.shapes.length === 0 && o.frame === null && o.band === null && (o.target ?? null) === null && (o.grips ?? []).length === 0 &&
   (o.points?.length ?? 0) === 0 && !o.bind && (o.links?.length ?? 0) === 0;

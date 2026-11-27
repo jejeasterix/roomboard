@@ -7,7 +7,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type Accessor, type JSX } from "solid-js";
 import type { Command, ElementView, TextAttrsPatch } from "../core/api";
 import {
-  endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf,
+  dragCopyOf, endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, variabilityOf,
   elbowedOf, type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
 } from "../core/look";
 import { isBoxShape, isSegment } from "../core/shapes";
@@ -19,12 +19,14 @@ import { observeBox } from "./Island";
 import { objectKey, type KeyLike } from "../engine/input/keys";
 import { ColorPicker } from "./ColorPicker";
 import { LinkPopover } from "./LinkPopover";
+import { buttonShortcut } from "./shortcuts";
+import type { ArrangeHow } from "../core/arrange";
 import { Icon, IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { createTip } from "./tooltip";
 import { BUTTON_PX, optionsWidth, placeLinkAvoiding, placeOptions, topRowBottom, type Box, type Rect } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import {
-  FONTS, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
+  DISTRIBUTE_MIN_UNITS, FONTS, admitsDragCopy, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionOpen, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
 } from "./tool-options";
 
 export interface OptionsPanelProps {
@@ -46,6 +48,8 @@ export interface OptionsPanelProps {
   readonly hidden?: Accessor<boolean>;
   /** T39 : ouverture sûre d'un lien (`ShellPort.openLink`), pour « Ouvrir le lien » de l'éditeur de lien. */
   readonly openLink?: (url: string) => void;
+  /** OG23 (T13) : ouvre le panneau de l'image ; `start` arme le rognage ou la baguette, `null` : ouverture simple. */
+  readonly openImage?: (start: "crop" | "background" | null) => void;
 }
 
 const LABEL: Readonly<Record<OptionKey, string>> = {
@@ -53,6 +57,7 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   background: "Arrière-plan",
   fillStyle: "Remplissage",
   strokeWidth: "Largeur du contour",
+  pressure: "Pression",
   strokeStyle: "Style du trait",
   roughness: "Style de tracé",
   roundness: "Angles",
@@ -62,7 +67,10 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   arrowType: "Type de flèche",
   arrowheads: "Pointes",
   opacity: "Transparence",
+  image: "Image",
   layers: "Disposition",
+  align: "Aligner",
+  transform: "Transformer",
   actions: "Actions",
 };
 const STROKES: readonly RadioOption<StrokeKind>[] = [
@@ -71,9 +79,9 @@ const STROKES: readonly RadioOption<StrokeKind>[] = [
   { value: "dotted", label: "Pointillés", icon: "stroke-dotted" },
 ];
 const ROUGH: readonly RadioOption<"0" | "1" | "2">[] = [
-  { value: "0", label: "Architecte", icon: "sloppiness-0" },
-  { value: "1", label: "Artiste", icon: "sloppiness-1" },
-  { value: "2", label: "Caricaturiste", icon: "sloppiness-2" },
+  { value: "0", label: "Net", icon: "sloppiness-0" },
+  { value: "1", label: "À main levée", icon: "sloppiness-1" },
+  { value: "2", label: "Très à main levée", icon: "sloppiness-2" },
 ];
 const CORNERS: readonly RadioOption<"sharp" | "round">[] = [
   { value: "sharp", label: "Droits", icon: "corner-sharp" },
@@ -103,6 +111,35 @@ const ARROW_TYPES: readonly RadioOption<ArrowType>[] = [
   { value: "round", label: "Courbe", icon: "arrow-type-round" },
   { value: "elbow", label: "Coudée", icon: "arrow-type-elbow" },
 ];
+const PRESSURE: readonly RadioOption<"constant" | "variable">[] = [
+  { value: "constant", label: "Constante", icon: "pressure-constant", tip: "Épaisseur constante" },
+  { value: "variable", label: "Variable", icon: "pressure-variable", tip: "Épaisseur selon la pression du stylet" },
+];
+interface ArrangeButton { readonly value: ArrangeHow; readonly label: string; readonly icon: string }
+const ALIGN_H: readonly ArrangeButton[] = [
+  { value: "align-left", label: "Aligner à gauche", icon: "align-start-vertical" },
+  { value: "align-center", label: "Centrer horizontalement", icon: "align-center-vertical" },
+  { value: "align-right", label: "Aligner à droite", icon: "align-end-vertical" },
+  { value: "distribute-h", label: "Répartir horizontalement", icon: "align-horizontal-space-around" },
+];
+const ALIGN_V: readonly ArrangeButton[] = [
+  { value: "align-top", label: "Aligner en haut", icon: "align-start-horizontal" },
+  { value: "align-middle", label: "Centrer verticalement", icon: "align-center-horizontal" },
+  { value: "align-bottom", label: "Aligner en bas", icon: "align-end-horizontal" },
+  { value: "distribute-v", label: "Répartir verticalement", icon: "align-vertical-space-around" },
+];
+const TRANSFORMS: readonly ArrangeButton[] = [
+  { value: "flip-h", label: "Retourner horizontalement", icon: "flip-horizontal" },
+  { value: "flip-v", label: "Retourner verticalement", icon: "flip-vertical" },
+  { value: "rotate-ccw", label: "Tourner de 90° à gauche", icon: "rotate-ccw-square" },
+  { value: "rotate-cw", label: "Tourner de 90° à droite", icon: "rotate-cw-square" },
+];
+interface ImageAction { readonly value: string; readonly label: string; readonly icon: string; readonly start: "crop" | "background" | null }
+const IMAGE_ACTIONS: readonly ImageAction[] = [
+  { value: "panel-crop", label: "Rogner", icon: "crop", start: "crop" },
+  { value: "panel-background", label: "Effacer le fond", icon: "eraser", start: "background" },
+  { value: "panel-retouch", label: "Retouches…", icon: "sliders-horizontal", start: null },
+];
 const FONT_OPTIONS: readonly RadioOption<string>[] = FONTS.map((f) => ({ value: f.value, label: f.label }));
 const SIZE_OPTIONS: readonly RadioOption<string>[] = TEXT_SIZES.map((n) => ({ value: String(n), label: String(n) }));
 const LAYERS = [
@@ -112,7 +149,14 @@ const LAYERS = [
   { value: "backward", label: "Reculer", icon: "chevron-down", act: (e: Engine) => e.reorder("down") },
   { value: "back", label: "Arrière-plan", icon: "send-to-back", act: (e: Engine) => e.sendToBack() },
 ] as const;
-const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({ value: w.value, label: w.label }));
+const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({
+  value: w.value, label: w.label, icon: w.value === "2" ? "width-thin" : w.value === "4" ? "width-medium" : "width-thick",
+}));
+/** Sections à segments : valeur (chaîne) et mot du résumé gris de l'en-tête. */
+const SUMMARY: Readonly<Partial<Record<OptionKey, readonly RadioOption<string>[]>>> = {
+  strokeWidth: WIDTH_OPTIONS, pressure: PRESSURE, strokeStyle: STROKES, roughness: ROUGH, roundness: CORNERS, fillStyle: FILLS,
+  font: FONT_OPTIONS, fontSize: SIZE_OPTIONS, textAlign: ALIGNS,
+};
 
 /** T18 : taille de l'éditeur de lien (largeur bornée à la zone ; hauteur avec la ligne d'erreur). */
 const LINK_POP_W = 360;
@@ -140,7 +184,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const off = (k: OptionKey): boolean => disabledIn(k, editing());
   const keys = createMemo((): readonly OptionKey[] =>
     props.hidden?.() !== true && showsPanel(props.state().tool, props.state().selection.length, props.annotating())
-      ? sectionsFor(props.state().tool, targets(), editing(), (props.state().itemStyle ?? DEFAULT_ITEM_STYLE).background)
+      ? sectionsFor(props.state().tool, targets(), editing(), (props.state().itemStyle ?? DEFAULT_ITEM_STYLE).background, props.state().selectionUnits ?? 0)
       : []);
   const saved = (): boolean => props.settings.island(props.profileId(), "options").collapsed === true;
   // Signal local (les réglages d'appareil ne notifient pas), relu du réglage à chaque profil.
@@ -150,6 +194,28 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     const next = !collapsed();
     props.settings.setIsland(props.profileId(), "options", { at: null, collapsed: next });
     setCollapsed(next);
+  };
+  // OG23 : accordéon. Signal local (les réglages d'appareil ne notifient pas), état gardé par section.
+  const [openSections, setOpenSections] = createSignal<Readonly<Partial<Record<string, boolean>>>>(props.settings.optionSections());
+  const isOpen = (k: OptionKey): boolean => sectionOpen(k, openSections());
+  const toggleSection = (k: OptionKey): void => {
+    const next = !isOpen(k);
+    props.settings.setOptionSection(k, next);
+    setOpenSections({ ...openSections(), [k]: next });
+  };
+  // En-tête de section : Entrée bascule au keydown, Espace au keyup (comme un bouton natif). Le keydown est arrêté ici :
+  // sinon la fenêtre le prend pour le panoramique (`isPanKey`) et l'annule (`preventDefault`), et rien ne bascule.
+  const headKeyDown = (e: KeyboardEvent, k: OptionKey): void => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === "Enter" && !e.repeat) toggleSection(k);
+  };
+  const headKeyUp = (e: KeyboardEvent, k: OptionKey): void => {
+    if (e.key !== " " || e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault(); // pas de `click` natif en plus
+    toggleSection(k);
   };
   const cur = (): ItemStyle => props.state().itemStyle ?? DEFAULT_ITEM_STYLE;
   const write = (patch: Partial<ItemStyle>): void => props.engine().setItemStyle(patch);
@@ -163,6 +229,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     strokeColor: (e) => ("style" in e ? e.style.color : undefined),
     background: (e) => (e.kind === "shape" ? e.shape.fill ?? null : undefined),
     strokeWidth: (e) => ("style" in e ? e.style.width : undefined),
+    pressure: (e) => variabilityOf(e.look),
     strokeStyle: (e) => strokeKindOf(e.look),
     roughness: (e) => roughnessOf(e.look),
     roundness: (e) => roundnessOf(e.look),
@@ -179,6 +246,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     strokeColor: (s) => s.color,
     background: (s) => s.background,
     strokeWidth: (s) => s.width,
+    pressure: (s) => s.variability,
     strokeStyle: (s) => s.strokeStyle,
     roughness: (s) => s.roughness,
     roundness: (s) => s.roundness,
@@ -273,7 +341,14 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     if (hit !== "stroke-picker" && hit !== "fill-picker") return;
     if (!keys().includes(hit === "stroke-picker" ? "strokeColor" : "background")) return;
     e.preventDefault();
-    openPicker(hit === "stroke-picker" ? "strokeColor" : "background");
+    const key: ColorKey = hit === "stroke-picker" ? "strokeColor" : "background";
+    // Section repliée : l'ouvrir d'abord, le sélecteur s'ancre ensuite sur son bouton.
+    if (!isOpen(key)) {
+      toggleSection(key);
+      queueMicrotask(() => openPicker(key));
+      return;
+    }
+    openPicker(key);
   };
   onMount(() => {
     window.addEventListener("keydown", onObjectKey);
@@ -302,7 +377,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
           onMouseDown={keep}
           onClick={() => (picker()?.key === k ? setPicker(null) : openPicker(k))}
         >
-          <Icon name="plus" />
+          <Icon name="palette" />
         </button>
         <TipBubble tip={tip} label="Autres couleurs" anchor={() => anchors[k]!} />
       </>
@@ -311,10 +386,41 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const colors = (k: ColorKey, picks: Accessor<readonly Pick[]>, make: (c: string | null) => Partial<ItemStyle>): JSX.Element => (
     <div class="rb-pick-row"><For each={picks()}>{(p) => swatch(k, p, () => write(make(p.color)))}</For>{moreColors(k)}</div>
   );
-  const chooseFull = (c: string): void => {
+  /** Trait transparent : seulement pour des rectangles et des ellipses (déc. 11). */
+  const strokeTransparentAllowed = (): boolean =>
+    targets().length > 0 && targets().every((t) => t.kind === "shape" && (t.shape.shape === "rect" || t.shape.shape === "ellipse"));
+  /** OG23 (T8) : pipette de scène. Clé et cibles sont figées à l'armement : `chooseFull` lit `picker()` au choix, or la
+   *  lecture arrive après un toucher, quand sélecteur et sélection peuvent avoir changé. Résout null : l'écriture est faite ici. */
+  let armed: { key: ColorKey; ids: readonly string[]; anchor: HTMLElement } | null = null;
+  const pickFromScene = async (): Promise<string | null> => {
+    const p = picker();
+    if (p === null) return null;
+    const mine = { key: p.key, ids: props.state().selection, anchor: p.anchor };
+    armed = mine;
+    const c = await props.engine().pickColor();
+    if (armed !== mine) return null; // désarmée entre-temps (sélecteur fermé)
+    armed = null;
+    if (c === null) return null;
+    // La sélection a changé pendant l'armement : rien n'est écrit sur d'autres cibles.
+    if (props.state().selection.length !== mine.ids.length || props.state().selection.some((id, i) => id !== mine.ids[i])) return null;
+    write(mine.key === "strokeColor" ? { color: c } : { background: c });
+    setPicker(null);
+    mine.anchor.focus();
+    return null;
+  };
+  // Sélecteur fermé (Autres couleurs, repli du panneau…) pendant l'armement : la pipette est désarmée.
+  // Ou ouvert sur une autre section (Fond après Trait) : la couleur lue n'ira pas à la section armée.
+  createEffect(() => {
+    const p = picker();
+    if (armed !== null && (p === null || p.key !== armed.key || p.anchor !== armed.anchor)) {
+      armed = null;
+      props.engine().cancelPick?.();
+    }
+  });
+  const chooseFull = (c: string | null): void => {
     const p = picker();
     if (p === null) return;
-    write(p.key === "strokeColor" ? { color: c } : { background: c });
+    write(p.key === "strokeColor" ? { color: c ?? "transparent" } : { background: c });
     setPicker(null);
     p.anchor.focus();
   };
@@ -333,6 +439,44 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     const v = value("opacity");
     return typeof v === "number" ? v : null;
   };
+  /** OG23 : « Glisser une copie », `aria-pressed` vrai, faux ou `mixed` ; mixte : un clic pose partout. Grisée sans cible admise. */
+  const dragCopyToggle = (): JSX.Element => {
+    const tip = createTip();
+    let button: HTMLButtonElement | undefined;
+    const eligible = (): readonly ElementView[] => targets().filter(admitsDragCopy);
+    const all = (): boolean => eligible().length > 0 && eligible().every((e) => dragCopyOf(e.look));
+    const some = (): boolean => eligible().some((e) => dragCopyOf(e.look));
+    return (
+      <>
+        <button
+          ref={button}
+          type="button"
+          class="rb-opt-toggle"
+          data-option-value="drag-copy"
+          data-mixed={some() && !all() ? "" : undefined}
+          aria-pressed={all() ? "true" : some() ? "mixed" : "false"}
+          aria-label="Glisser une copie"
+          disabled={eligible().length === 0}
+          {...tipPointerHandlers(tip)}
+          onPointerDown={(e) => { keep(e); tip.down(e.pointerType); }}
+          onMouseDown={keep}
+          onClick={() => void props.engine().setDragCopy(!all())}
+        >
+          <Icon name="copy" />
+          <span class="rb-opt-wide-label">Glisser une copie</span>
+        </button>
+        <TipBubble tip={tip} label="Glisser une copie : le glissement laisse l'original et déplace une copie" anchor={() => button!} />
+      </>
+    );
+  };
+  /** Une rangée de boutons `Engine.arrange` : cible 44 px (`rb-opt-btn`), raccourci dans l'infobulle et `aria-keyshortcuts` ; Répartir demande 3 unités. */
+  const arrangeRow = (row: readonly ArrangeButton[]): JSX.Element => (
+    <For each={row.filter((b) => !b.value.startsWith("distribute") || (props.state().selectionUnits ?? 0) >= DISTRIBUTE_MIN_UNITS)}>
+      {(b) => (
+        <IconButton keepFocus icon={b.icon} label={b.label} shortcut={buttonShortcut(b.value)} attrs={{ "data-option-value": b.value, class: "rb-opt-btn" }} onPress={() => void props.engine().arrange(b.value)} />
+      )}
+    </For>
+  );
   const bodies: Readonly<Record<OptionKey, () => JSX.Element>> = {
     strokeColor: () => colors("strokeColor", strokeChoices, (c) => ({ color: c ?? "#000000" })),
     background: () => colors("background", backgroundPicks, (c) => ({ background: c })),
@@ -407,6 +551,28 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         <output>{opacityValue() !== null ? `${opacityValue()} %` : "Mixte"}</output>
       </label>
     ),
+    pressure: () => (
+      <RadioChoices keepFocus name="pressure" label={LABEL.pressure} look="segment" options={PRESSURE} valueAttr="data-option-value"
+        value={(value("pressure") as "constant" | "variable" | null) ?? null} choose={(v) => write({ variability: v })} />
+    ),
+    align: () => (
+      <>
+        <For each={[ALIGN_H, ALIGN_V]}>{(row) => <div class="rb-pick-row">{arrangeRow(row)}</div>}</For>
+      </>
+    ),
+    transform: () => <div class="rb-pick-row">{arrangeRow(TRANSFORMS)}</div>,
+    image: () => (
+      <div class="rb-opt-stack">
+        <For each={IMAGE_ACTIONS}>
+          {(a) => (
+            <IconButton keepFocus icon={null} label={a.label} attrs={{ "data-image-action": a.value, class: "rb-opt-btn rb-opt-wide" }} onPress={() => props.openImage?.(a.start)}>
+              <Icon name={a.icon} />
+              <span class="rb-opt-wide-label" aria-hidden="true">{a.label}</span>
+            </IconButton>
+          )}
+        </For>
+      </div>
+    ),
     actions: () => (
       <>
       <Show when={showEditPoints() || showRemovePoint()}>
@@ -421,6 +587,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         </div>
       </Show>
       <div class="rb-pick-row">
+        {dragCopyToggle()}
         <Show when={props.state().selection.length === 1}>
           <IconButton keepFocus icon="link" label="Lien (Ctrl+K)" attrs={{ "data-option-value": "link", class: "rb-opt-btn" }} onPress={() => void props.engine().editLink()} />
         </Show>
@@ -440,6 +607,15 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     props.engine().runAll(cmds);
   };
   const body = (k: OptionKey): JSX.Element => bodies[k]();
+  /** Résumé gris de l'en-tête : « Mixte » ou le mot de la valeur commune ; aucun hors sections à segments. */
+  const summary = (k: OptionKey): string | null => {
+    const opts = SUMMARY[k];
+    if (opts === undefined) return null;
+    if (mixed(k)) return "Mixte";
+    const v = value(k);
+    const key = typeof v === "number" || typeof v === "string" ? String(v) : null;
+    return opts.find((o) => o.value === key)?.label ?? null;
+  };
   /** T18 (déc. 38) : éditeur de lien sous l'élément (au-dessus faute de place), bord droit sur celui de la boîte. */
   const linkPos = (): JSX.CSSProperties => {
     const a = area();
@@ -485,9 +661,27 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         <Show when={!collapsed()}>
           <For each={keys()}>
             {(k) => (
-              <section class="rb-options-sec" data-option={k} data-mixed={mixed(k) ? "" : undefined} data-disabled={off(k) ? "" : undefined}>
-                <h3>{LABEL[k]}</h3>
-                {body(k)}
+              <section class="rb-options-sec" data-option={k} data-open={isOpen(k) ? "" : undefined} data-mixed={mixed(k) ? "" : undefined} data-disabled={off(k) ? "" : undefined}>
+                <h3 class="rb-opt-h">
+                <button
+                  type="button"
+                  class="rb-opt-head"
+                  data-option-head={k}
+                  aria-expanded={isOpen(k)}
+                  aria-controls={`opt-body-${k}`}
+                  disabled={off(k)}
+                  onPointerDown={keep}
+                  onMouseDown={keep}
+                  onClick={() => toggleSection(k)}
+                  onKeyDown={(e) => headKeyDown(e, k)}
+                  onKeyUp={(e) => headKeyUp(e, k)}
+                >
+                  <span class="rb-opt-title">{LABEL[k]}</span>
+                  <Show when={summary(k)}>{(t) => <span class="rb-opt-sum">· {t()}</span>}</Show>
+                  <Icon name="chevron-down" />
+                </button>
+                </h3>
+                <div id={`opt-body-${k}`} class="rb-opt-body" hidden={!isOpen(k)}>{body(k)}</div>
               </section>
             )}
           </For>
@@ -496,8 +690,10 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
           {(p) => (
             <div ref={pop} class="rb-color-pop" style={{ left: `${p.x}px`, top: `${popTop(p.y, p.minTop)}px`, ...(winH() > 0 ? { "max-block-size": `${winH() - p.minTop - 8}px` } : {}) }}>
               <ColorPicker
+                transparent={p.key === "background" || strokeTransparentAllowed()}
                 value={typeof value(p.key) === "string" && value(p.key) !== "transparent" ? (value(p.key) as string) : null}
                 choose={chooseFull}
+                pick={pickFromScene}
                 close={() => setPicker(null)}
                 anchor={p.anchor}
               />

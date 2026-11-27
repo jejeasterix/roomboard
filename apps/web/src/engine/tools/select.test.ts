@@ -4,12 +4,21 @@ import { fakeCore } from "../../core/fake-core";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
 import { createSelectTool } from "./select";
+import { moveHandlePoint } from "./handles";
 import type { SelectionTool, ToolContext } from "./tool";
 
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
 
-function setup(zoom = 1) {
-  const doc = fakeCore.blank();
+function setup(zoom = 1, flagged: ReadonlySet<string> = new Set<string>()) {
+  const base = fakeCore.blank();
+  // `flagged` : ids dont la vue porte `dragCopy` (injecté ici sans passer par SetStyle).
+  const doc = new Proxy(base, {
+    get(t, k) {
+      if (k === "element") return (id: string) => { const e = t.element(id); return e !== null && flagged.has(id) ? { ...e, look: { ...e.look, dragCopy: true } } : e; };
+      const v = Reflect.get(t, k) as unknown;
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    },
+  });
   const page = doc.pageIds()[0] ?? "";
   let shift = false;
   let alt = false;
@@ -28,6 +37,17 @@ function setup(zoom = 1) {
     },
     shift: () => shift,
     alt: () => alt,
+    duplicate: (ids, dx, dy, strip) => {
+      const fragment = doc.extract(page, ids);
+      try {
+        if (strip) fragment.apply({ type: "SetStyle", ids: fragment.elementIds(fragment.pageIds()[0] ?? ""), patch: { dragCopy: false } });
+        const change = doc.insertFragment(fragment, page, dx, dy);
+        runs.push({ type: "SetStyle", ids: change.ids, patch: {} });
+        return change.ids.length > 0;
+      } finally {
+        fragment.free();
+      }
+    },
   };
   const tool = createSelectTool(ctx);
   const rect = (x0: number, y0: number, x1: number, y1: number): string =>
@@ -418,6 +438,110 @@ describe("outil Sélection : groupes (Z2)", () => {
     gesture(tool, [[90, 90], [610, 210]]);
     expect(tool.selection()).toEqual([a, b, c]);
   });
+
+  it("sans cellDrop : un objet lâché sur un tableau est posé par-dessus (Transform)", () => {
+    const { doc, tool, runs, rect } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 });
+    rect(1000, 1000, 1100, 1100);
+    gesture(tool, [[1050, 1050], [360, 96]]);
+    expect(runs.at(-1)?.type).toBe("Transform");
+  });
+});
+
+describe("outil Sélection : Glisser une copie (OG23, T11)", () => {
+  const copyRect = () => {
+    const t = setup();
+    const a = t.rect(100, 100, 200, 200);
+    t.doc.apply({ type: "SetStyle", ids: [a], patch: { dragCopy: true } });
+    return { ...t, a };
+  };
+
+  it("dragCopy : l'original reste, une copie", () => {
+    const { doc, tool, a } = copyRect();
+    const page = doc.pageIds()[0] ?? "";
+    tool.begin(1, [at(150, 150)]);
+    tool.extend(1, [at(350, 150)], []);
+    expect(tool.live().hidden.size).toBe(0);
+    expect(tool.live().overlay?.ghosts.length).toBe(1);
+    tool.close(1, "end");
+    expect(doc.elementIds(page)).toHaveLength(2);
+    expect(doc.element(a)?.transform?.[4]).toBe(100);
+    const copy = doc.elementIds(page).find((id) => id !== a) ?? "";
+    expect(doc.element(copy)?.transform?.[4]).toBe(300);
+    expect(doc.element(copy)?.look?.dragCopy).toBeUndefined();
+  });
+
+  it("dragCopy : un clic ne copie rien", () => {
+    const { doc, tool, runs } = copyRect();
+    gesture(tool, [[150, 150], [151, 150]]);
+    expect(runs).toEqual([]);
+    expect(doc.elementIds(doc.pageIds()[0] ?? "")).toHaveLength(1);
+  });
+
+  it("poignée Déplacer : l'original bouge", () => {
+    const { doc, tool, runs, a } = copyRect();
+    gesture(tool, [[150, 150]]);
+    expect(tool.selection()).toEqual([a]);
+    const frame = doc.bounds([a]);
+    expect(frame).not.toBeNull();
+    const [hx, hy] = moveHandlePoint(frame!, 1);
+    runs.length = 0;
+    gesture(tool, [[hx, hy], [hx + 100, hy]]);
+    expect(runs.map((r) => r.type)).toEqual(["Transform"]);
+    expect(doc.elementIds(doc.pageIds()[0] ?? "")).toHaveLength(1);
+    expect(doc.element(a)?.transform?.[4]).toBe(200);
+    expect(doc.element(a)?.look?.dragCopy).toBe(true);
+  });
+
+  it("poignée haute de taille prioritaire sur la poignée Déplacer au doigt (T18)", () => {
+    const { doc, tool, runs, a } = copyRect();
+    gesture(tool, [[200, 200]]);
+    const frame = doc.bounds([a])!;
+    const cx = (frame.x0 + frame.x1) / 2;
+    runs.length = 0;
+    // 8 px au-dessus du bord haut : dans la portée de la poignée n (12) et dans la zone Déplacer (6 à 50)
+    gesture(tool, [[cx, frame.y0 - 8], [cx, frame.y0 - 28]]);
+    const t = runs.find((r) => r.type === "Transform") as { matrix: number[] } | undefined;
+    expect(t).toBeDefined();
+    expect(t!.matrix[0]).toBe(1);
+    expect(t!.matrix[3]).not.toBe(1);
+  });
+
+  it("poignée Déplacer : saisie hors de la portée de la poignée n (au-dessus de 12 px)", () => {
+    const { doc, tool, runs, a } = copyRect();
+    gesture(tool, [[200, 200]]);
+    const frame = doc.bounds([a])!;
+    const cx = (frame.x0 + frame.x1) / 2;
+    runs.length = 0;
+    gesture(tool, [[cx, frame.y0 - 30], [cx + 40, frame.y0 - 30]]);
+    const t = runs.find((r) => r.type === "Transform") as { matrix: number[] } | undefined;
+    expect(t?.matrix).toEqual([1, 0, 0, 1, 40, 0]);
+  });
+});
+
+describe("outil Sélection : Glisser une copie pour tout genre d'objet (OG23, T18)", () => {
+  const A1 = { id: "a".repeat(64), mime: "image/png", size: 1 };
+  const kinds: [string, (d: ReturnType<typeof setup>["doc"]) => string][] = [
+    ["tableau", (d) => d.apply({ type: "AddTable", page: d.pageIds()[0] ?? "", x: 100, y: 100, cols: 2, rows: 2, colWidth: 100, rowHeight: 50, color: "#000000", size: 16 }).ids[0] ?? ""],
+    ["média", (d) => d.apply({ type: "AddMedia", page: d.pageIds()[0] ?? "", asset: A1 as never, linked: null, mediaType: "video", w: 200, h: 100, duration: 1, poster: null, matrix: [1, 0, 0, 1, 100, 100] }).ids[0] ?? ""],
+    ["objet 3D", (d) => d.apply({ type: "AddModel3d", page: d.pageIds()[0] ?? "", asset: A1 as never, format: "glb", files: [], w: 200, h: 100, yaw: 0, pitch: 0, snapshot: null, matrix: [1, 0, 0, 1, 100, 100] } as never).ids[0] ?? ""],
+  ];
+  for (const [name, add] of kinds) {
+    it(`${name} : glisser fait une copie, l'original reste`, () => {
+      const flagged = new Set<string>();
+      const t = setup(1, flagged);
+      const id = add(t.doc);
+      expect(id).not.toBe("");
+      flagged.add(id);
+      const b = t.doc.bounds([id])!;
+      const [px, py] = [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
+      const before = t.doc.element(id)?.transform?.[4];
+      gesture(t.tool, [[px, py], [px + 150, py]]);
+      expect(t.doc.elementIds(t.doc.pageIds()[0] ?? "")).toHaveLength(2);
+      expect(t.doc.element(id)?.transform?.[4]).toBe(before);
+    });
+  }
 });
 
 const HIT_A = { id: "A", fixed: [1, 0.3] as const, onOutline: true, anchors: [[50, 0], [100, 25], [50, 50], [0, 25]] as const };
@@ -519,6 +643,16 @@ describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () =>
     tool.close(1, "end");
     expect(runs).toEqual([{ type: "AddLinked", id: a, dir: "right" }]);
     expect(tool.selection()).toEqual([getCopie()]);
+  });
+
+  it("fusion OG12 × OG23 : objet « Glisser une copie » : pas de « + » du haut (poignée Déplacer), les trois autres restent", () => {
+    const { doc, tool, add } = setupLines();
+    const a = add("rect", 0, 0, 100, 50);
+    doc.apply({ type: "SetStyle", ids: [a], patch: { dragCopy: true } });
+    tool.setSelection([a]);
+    const o = tool.live().overlay;
+    expect(o?.move).toBe(true);
+    expect(o?.links?.map((l) => l.dir)).toEqual(["right", "down", "left"]);
   });
 
   it("deux objets sélectionnés : pas de « + »", () => {

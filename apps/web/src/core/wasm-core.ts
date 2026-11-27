@@ -2,6 +2,7 @@
 // une dérive de forme entre Rust et TS lève une erreur au lieu de passer sous un `as`, sauf un `kind` d'une version
 // plus récente, rendu comme cadre inconnu (voir la branche `default`).
 import type {
+  CellLink,
   AssetInfo,
   LinkedAsset,
   AssetRef,
@@ -127,6 +128,9 @@ const toU32 = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 0xff
 export function toTable(v: unknown): TableData {
   if (!isRecord(v)) throw new Error(ELEMENT);
   const { color, size, cols, rows, cells, merges } = v;
+  // personnalisation-3 (T7) : `fit` ("shrink" seulement) et `header` (vrai seulement), absents sinon.
+  const fit = v["fit"] === "shrink" ? { fit: "shrink" as const } : {};
+  const header = v["header"] === true ? { header: true } : {};
   if (
     typeof color !== "string" || typeof size !== "number" || !Array.isArray(cols) || !Array.isArray(rows) || !Array.isArray(cells) ||
     !Array.isArray(merges)
@@ -139,6 +143,8 @@ export function toTable(v: unknown): TableData {
   };
   const extent = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && x >= 1;
   return {
+    ...fit,
+    ...header,
     color,
     size,
     cols: cols.map((c: unknown) => {
@@ -155,9 +161,10 @@ export function toTable(v: unknown): TableData {
     }),
     cells: cells.map((c: unknown) => {
       if (!isRecord(c)) throw new Error(ELEMENT);
-      const { row, col, text, fill, shade, spans } = c;
+      const { row, col, text, fill, shade, spans, bg } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
-      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text) };
+      const asset = optString(bg);
+      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text), ...(asset === null ? {} : { bg: asset }) };
     }),
     merges: merges.map((m: unknown) => {
       if (!isRecord(m)) throw new Error(ELEMENT);
@@ -171,11 +178,12 @@ export function toTable(v: unknown): TableData {
 /** OG11 : nombre passé au pont en `f64`. Absent ou null : `None` ; autre chose qu'un nombre : NaN, refusé par le pont
  *  (wasm-bindgen appliquerait `ToNumber`, « 45 » deviendrait 45, là où la fausse liaison refuse). */
 const num = (v: unknown): number | undefined => (v === undefined || v === null ? undefined : typeof v === "number" ? v : Number.NaN);
-/** Les dix arguments d'aspect de `look_of`, dans l'ordre du pont : cinq du lot 1, puis `fillStyle`, pointes, `textAlign`, `link`. */
+/** Les onze arguments d'aspect de `look_of`, dans l'ordre du pont : cinq du lot 1, puis `fillStyle`, pointes, `textAlign`,
+ *  `link`, puis `variability` (OG23). */
 type LookArgs = [string | undefined, number | undefined, number | undefined, string | undefined, number | undefined,
-  string | undefined, string | undefined, string | undefined, string | undefined, string | undefined];
+  string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string | undefined];
 const lookArgs = (l: Look | undefined): LookArgs => [l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity),
-  l?.fillStyle, l?.startArrowhead, l?.endArrowhead, l?.textAlign, l?.link];
+  l?.fillStyle, l?.startArrowhead, l?.endArrowhead, l?.textAlign, l?.link, l?.variability];
 
 /** Rang en `u32` côté pont (wasm-bindgen tronquerait sans erreur : 0,5 → 0, 2³² + 1 → 1) : non entier ou hors u32
  *  refusé ici, avec le message de `BadIndex`, comme le faux cœur (`MovePage`, `Restack`). */
@@ -193,9 +201,19 @@ export function toElementView(v: unknown): ElementView | null {
   // C3 (Z1) : chemin de groupes, chaînes non vide ; absent (Option::None → undefined) laissé absent.
   const group = v["group"];
   if (group !== undefined && group !== null && (!isStrings(group) || group.length === 0)) throw new Error(ELEMENT);
+  // personnalisation-3 (D1) : lien de case, trois chaînes ; absent laissé absent.
+  const cell = v["cell"];
+  if (cell !== undefined && cell !== null && !(isStrings(cell) && cell.length === 3)) throw new Error(ELEMENT);
+  const link: CellLink | null = isStrings(cell) && cell.length === 3 ? [cell[0] ?? "", cell[1] ?? "", cell[2] ?? ""] : null;
   // OG11 : aspect lu défensivement (`toLook`), omis s'il est neutre.
   const look = toLook(v["look"]);
-  const base = { id, transform: toMatrix(v["transform"]), ...(isStrings(group) ? { group } : {}), ...(look ? { look } : {}) };
+  const base = {
+    id,
+    transform: toMatrix(v["transform"]),
+    ...(isStrings(group) ? { group } : {}),
+    ...(look ? { look } : {}),
+    ...(link ? { cell: link } : {}),
+  };
   switch (kind) {
     case "stroke":
       return { ...base, kind, style: toStyle(v["style"]) };
@@ -479,7 +497,8 @@ function wellTyped(p: ImageParams): boolean {
     num(r["brightness"]) &&
     num(r["contrast"]) &&
     (t === undefined ||
-      (isRecord(t) && typeof t["color"] === "string" && typeof t["tolerance"] === "number" && typeof t["soft"] === "number" && typeof t["contiguous"] === "boolean"))
+      (isRecord(t) && typeof t["color"] === "string" && typeof t["tolerance"] === "number" && typeof t["soft"] === "number" && typeof t["contiguous"] === "boolean" &&
+        num(t["x"]) && num(t["y"])))
   );
 }
 
@@ -500,7 +519,14 @@ export function imageParamsArgs(p: ImageParams): [Float64Array, boolean, boolean
     p.brightness ?? 0,
     p.contrast ?? 0,
     t?.color,
-    new Float64Array(t === undefined ? [] : [t.tolerance, t.soft, t.contiguous ? 1 : 0]),
+    // OG23 (T10) : départ en 4e et 5e nombres ; un seul des deux part en NaN, que le cœur refuse (les deux ou aucun).
+    new Float64Array(
+      t === undefined
+        ? []
+        : t.x === undefined && t.y === undefined
+          ? [t.tolerance, t.soft, t.contiguous ? 1 : 0]
+          : [t.tolerance, t.soft, t.contiguous ? 1 : 0, t.x ?? Number.NaN, t.y ?? Number.NaN],
+    ),
   ];
 }
 
@@ -530,7 +556,9 @@ export function toImageParams(i: Record<string, unknown>): ImageParams {
     if (!isRecord(t)) throw new Error(ELEMENT);
     const { color, tolerance, soft, contiguous } = t;
     if (typeof color !== "string" || typeof tolerance !== "number" || typeof soft !== "number" || typeof contiguous !== "boolean") throw new Error(ELEMENT);
-    out["transparent"] = { color, tolerance, soft, contiguous };
+    const { x, y } = t;
+    if ((x !== undefined && typeof x !== "number") || (y !== undefined && typeof y !== "number")) throw new Error(ELEMENT);
+    out["transparent"] = { color, tolerance, soft, contiguous, ...(x !== undefined ? { x } : {}), ...(y !== undefined ? { y } : {}) };
   }
   return out as ImageParams;
 }
@@ -569,9 +597,11 @@ class WasmCoreDocument implements CoreDocument {
       case "DuplicatePage": return toChange(this.d.duplicate_page(cmd.page));
       case "Restack":
         return toChange(this.d.restack([...cmd.ids], checkedRank(cmd.to)));
+      // OG23 : `how` inconnu refusé par le pont (« disposition inconnue : <how> »), avant la commande.
+      case "Arrange": return toChange(this.d.arrange([...cmd.ids], cmd.how));
       case "CommitStroke": {
         const l = cmd.look;
-        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, ...lookArgs(l)));
+        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, ...lookArgs(l), cmd.cell?.[0], cmd.cell?.[1], cmd.cell?.[2]));
       }
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
@@ -599,12 +629,20 @@ class WasmCoreDocument implements CoreDocument {
       case "SetStyle": {
         // OG11 : `"x" in p` dit si le champ est touché ; null ou absent dans un champ touché le retire (Option::None).
         const p = cmd.patch;
+        // OG23 (T10) : `dragCopy` non booléen part en tracé 3, que le pont refuse par « style invalide » avant toute
+        // lecture, comme `validStyle` du faux cœur.
+        const drag: unknown = p.dragCopy;
+        const badDrag = drag !== undefined && typeof drag !== "boolean";
         return toChange(this.d.set_style(
           [...cmd.ids], p.color ?? undefined, num(p.width), "fill" in p, p.fill ?? undefined, "strokeStyle" in p, p.strokeStyle ?? undefined,
-          num(p.roughness), "roundness" in p, p.roundness ?? undefined, num(p.opacity),
+          badDrag ? 3 : num(p.roughness), "roundness" in p, p.roundness ?? undefined, num(p.opacity),
           // T12 : paires `*_set`, valeur du lot 2.
           "fillStyle" in p, p.fillStyle ?? undefined, "startArrowhead" in p, p.startArrowhead ?? undefined,
           "endArrowhead" in p, p.endArrowhead ?? undefined, "textAlign" in p, p.textAlign ?? undefined, "link" in p, p.link ?? undefined,
+          // OG23 : paire `variability_set`, valeur.
+          "variability" in p, p.variability ?? undefined,
+          // OG23 (T10) : `true` pose, `false` retire, absent laisse.
+          typeof drag === "boolean" ? drag : undefined,
           "elbowed" in p, p.elbowed ?? undefined,
         ));
       }
@@ -693,6 +731,32 @@ class WasmCoreDocument implements CoreDocument {
         return toChange(this.d.split_table_cell(cmd.id, cmd.row, cmd.col));
       case "SetTableShade":
         return toChange(this.d.set_table_shade(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col, cmd.shade ?? undefined));
+      case "PlaceInCell":
+        return toChange(
+          this.d.place_in_cell(
+            [...cmd.ids],
+            new Float64Array(cmd.matrix),
+            cmd.cell?.[0],
+            cmd.cell?.[1],
+            cmd.cell?.[2],
+            cmd.sizes.flatMap(([t, a, l]) => [t, a, l]),
+            new Float64Array(cmd.sizes.map((s) => s[3])),
+          ),
+        );
+      case "SetTableLineSizes":
+        return toChange(
+          this.d.set_table_line_sizes(
+            cmd.id,
+            cmd.cols.map((c) => c[0]),
+            new Float64Array(cmd.cols.map((c) => c[1])),
+            cmd.rows.map((r) => r[0]),
+            new Float64Array(cmd.rows.map((r) => r[1])),
+          ),
+        );
+      case "SetTableOptions":
+        return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header));
+      case "SetCellImage":
+        return toChange(this.d.set_cell_image(cmd.id, cmd.row, cmd.col, cmd.from ?? undefined));
       case "ImportTable":
         return toChange(
           this.d.import_table(
@@ -779,8 +843,8 @@ class WasmCoreDocument implements CoreDocument {
     return takeParts(this.d.save_grid_parts(now, appVersion, name));
   }
 
-  newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
-    const b = new this.mod.StrokeBuilder(style.width);
+  newStrokeBuilder(style: StrokeStyle, constant = false): StrokeBuilderApi {
+    const b = new this.mod.StrokeBuilder(style.width, constant);
     return {
       push: (p: Float32Array, ahead?: Float32Array) => (ahead && ahead.length > 0 ? b.push_ahead(p, ahead) : b.push(p)),
       finish: () => b.finish(),

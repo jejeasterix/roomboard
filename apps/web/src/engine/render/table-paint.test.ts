@@ -2,8 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { TableData } from "../../core/api";
 import { plainSpans } from "../../core/rich-text";
-import { TABLE_LINE_WIDTH, TABLE_PADDING, TABLE_SHADE_HATCH, TABLE_SHADE_HATCH_WIDTH } from "../table-geom";
+import { TABLE_HEADER_FILL, TABLE_LINE_WIDTH, TABLE_PADDING, TABLE_SHADE_HATCH, TABLE_SHADE_HATCH_WIDTH } from "../table-geom";
 import { asCtx, FakeCtx } from "./fake-ctx";
+import type { ImageSource } from "./image-cache";
 import { cellTextBoxes, paintTableGrid } from "./table-paint";
 
 const T: TableData = {
@@ -110,5 +111,77 @@ describe("table-paint — cellules par segments (C7b, R17)", () => {
   it("cellTextBoxes porte les segments de la cellule", () => {
     const rich: TableData = { ...T, cells: [{ row: "r2", col: "c1", text: "Le chat", fill: null, shade: null, spans: [plainSpans("Le ")[0]!, { text: "chat", attrs: { bold: true } }] }] };
     expect(cellTextBoxes(rich)[0]?.spans).toEqual([{ text: "Le ", attrs: {} }, { text: "chat", attrs: { bold: true } }]);
+  });
+});
+
+describe("S5 : image de fond de case (personnalisation-3, T9)", () => {
+  const ASSET = "a".repeat(64);
+  const one = (bg: string | undefined, width = 240, height = 64): TableData => ({
+    color: "#000000", size: 36, cols: [{ id: "c0", width }], rows: [{ id: "r0", height }],
+    cells: [{ row: "r0", col: "c0", text: "", fill: null, shade: null, spans: [], ...(bg === undefined ? {} : { bg }) }], merges: [],
+  });
+  const source = (w: number, h: number): ImageSource => {
+    const bmp = { width: w, height: h } as unknown as CanvasImageSource;
+    return { bitmap: (id: string) => (id === ASSET ? bmp : null) } as unknown as ImageSource;
+  };
+
+  it("S5 PDF : le peintre d'export dessine le fond de case (drawImage découpé à la case)", () => {
+    const fake = new FakeCtx();
+    paintTableGrid(asCtx(fake), one(ASSET, 240, 64), source(10, 10));
+    expect(fake.images).toHaveLength(1);
+    expect(fake.log).toContain("clip");
+  });
+
+  it("S5 : « couvrir », centré : image carrée 10 x 10 dans 240 x 64 -> 240 x 240 décalée de -88, sous la grille", () => {
+    const fake = new FakeCtx();
+    paintTableGrid(asCtx(fake), one(ASSET, 240, 64), source(10, 10));
+    expect(fake.images[0]).toMatchObject({ x: 0, y: -88, w: 240, h: 240 });
+    expect(fake.log.indexOf("drawImage 0,-88,240,240")).toBeLessThan(fake.log.findIndex((l) => l.startsWith("stroke ")));
+  });
+
+  it("S5 : image pas encore chargée, ou aucune source : rien dessiné", () => {
+    const a = new FakeCtx();
+    paintTableGrid(asCtx(a), one(ASSET), { bitmap: () => null } as unknown as ImageSource);
+    const b = new FakeCtx();
+    paintTableGrid(asCtx(b), one(ASSET));
+    expect(a.images).toEqual([]);
+    expect(b.images).toEqual([]);
+  });
+
+  it("S5 : une case sans fond ne dessine aucune image", () => {
+    const fake = new FakeCtx();
+    paintTableGrid(asCtx(fake), one(undefined), source(10, 10));
+    expect(fake.images).toEqual([]);
+  });
+});
+
+const HEAD = (header: boolean): TableData => ({
+  color: "#000000",
+  size: 36,
+  cols: [{ id: "a", width: 240 }, { id: "b", width: 240 }],
+  rows: [{ id: "r0", height: 64 }, { id: "r1", height: 64 }],
+  cells: [
+    { row: "r0", col: "a", text: "Nom", fill: null, shade: null, spans: plainSpans("Nom") },
+    { row: "r1", col: "a", text: "Léa", fill: null, shade: null, spans: plainSpans("Léa") },
+  ],
+  merges: [],
+  ...(header ? { header: true } : {}),
+});
+
+describe("S10 en-tête (D17)", () => {
+  it("S10 : ligne 0 peinte au fond d'en-tête avant les traits ; sans en-tête : aucun fond", () => {
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), HEAD(true));
+    expect(ctx.rects[0]).toEqual([0, 0, 480, 64]);
+    expect(ctx.log).toContain(`fillRect ${TABLE_HEADER_FILL}`);
+    const none = new FakeCtx();
+    paintTableGrid(asCtx(none), HEAD(false));
+    expect(none.log).not.toContain(`fillRect ${TABLE_HEADER_FILL}`);
+  });
+  it("S10 : texte de la ligne 0 en gras quand header ; ligne 1 inchangée", () => {
+    const b = cellTextBoxes(HEAD(true));
+    expect(b.find((x) => x.row === "r0")?.spans).toEqual([{ text: "Nom", attrs: { bold: true } }]);
+    expect(b.find((x) => x.row === "r1")?.spans).toEqual(plainSpans("Léa"));
+    expect(cellTextBoxes(HEAD(false)).find((x) => x.row === "r0")?.spans).toEqual(plainSpans("Nom"));
   });
 });

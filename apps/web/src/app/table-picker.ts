@@ -37,8 +37,8 @@ export const pickerAria = (cols: number, rows: number): string =>
 /** Champ de la boîte : entier de 1 à 64 (illisible : 1). */
 export const clampLines = (v: number): number => (Number.isFinite(v) ? Math.min(TABLE_MAX_LINES, Math.max(1, Math.round(v))) : 1);
 
-/** Touches que le moteur prend sans Ctrl ni Méta (`editAction`, `isPanKey`, engine/input/keys.ts) : gardées par la grille. */
-export const ENGINE_KEYS: ReadonlySet<string> = new Set(["Backspace", "Delete", "Escape", " "]);
+/** Touches que le moteur prend sans Ctrl ni Méta (`editAction`, `isPanKey`, `nudgeKey`, engine/input/keys.ts) : gardées par la grille et les menus. */
+export const ENGINE_KEYS: ReadonlySet<string> = new Set(["Backspace", "Delete", "Escape", " ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]);
 const ARROWS: Readonly<Record<string, readonly [number, number]>> = {
   ArrowRight: [1, 0],
   ArrowLeft: [-1, 0],

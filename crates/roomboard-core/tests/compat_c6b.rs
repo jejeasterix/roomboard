@@ -59,6 +59,8 @@ fn c5_document() -> Document {
                 tolerance: 10.0,
                 soft: 0.0,
                 contiguous: true,
+                x: None,
+                y: None,
             }),
             ..ImageParamsInput::default()
         },

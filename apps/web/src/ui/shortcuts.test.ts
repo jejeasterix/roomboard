@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, arrowMoveKey, toolKey, editAction, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, arrangeKey, cellKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -11,18 +11,32 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   front: ["order", "front"], forward: ["order", "up"], backward: ["order", "down"], back: ["order", "back"],
   copy: ["native", "c"], cut: ["native", "x"], paste: ["native", "v"], pan: ["pan", " "], bold: ["rich", "b"],
   "stroke-picker": ["object", "stroke-picker"], "fill-picker": ["object", "fill-picker"], link: ["object", "link"],
+  "flip-h": ["arrange", "flip-h"], "flip-v": ["arrange", "flip-v"], "rotate-cw": ["arrange", "rotate-cw"], "rotate-ccw": ["arrange", "rotate-ccw"],
+  "align-left": ["arrange", "align-left"], "align-right": ["arrange", "align-right"], "align-top": ["arrange", "align-top"], "align-bottom": ["arrange", "align-bottom"],
+  "align-center": ["arrange", "align-center"], "align-middle": ["arrange", "align-middle"], "distribute-h": ["arrange", "distribute-h"], "distribute-v": ["arrange", "distribute-v"],
+  nudge: ["nudge", "-1,0"], pipette: ["picker", "i"],
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
   "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
   "palm-eraser": ["app", "palm-eraser"],
-  nudge: ["nudge", "1"], "nudge-big": ["nudge", "5"],
   ...Object.fromEntries(["select", "rect", "diamond", "ellipse", "arrow", "line", "pen", "text", "eraser", "hand"].flatMap((t) => [[`tool-${t}`, ["tool", t]], ...(t === "hand" ? [] : [[`tool-${t}-num`, ["tool", t]]])])),
+  "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
+  "table-header": ["table", "header-toggle"], "table-col-wider": ["table", "col-wider"], "table-col-narrower": ["table", "col-narrower"], "table-row-taller": ["table", "row-taller"], "table-row-shorter": ["table", "row-shorter"],
 };
-const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "Entrée": "Enter" };
+const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight", "Entrée": "Enter" };
+const ARROWS: Readonly<Record<string, string>> = { "→": "ArrowRight", "←": "ArrowLeft", "↑": "ArrowUp", "↓": "ArrowDown" };
+/** Raccourci de l'outil Tableau (Alt ou Ctrl, Maj, lettre par `code`, flèche) lu comme un `KeyLike`. */
+const pressTable = (keys: string): KeyLike => {
+  const parts = keys.split(", ")[0]!.split("+");
+  const k = parts.at(-1)!;
+  const arrow = ARROWS[k];
+  return { key: arrow ?? k.toLowerCase(), code: arrow ?? `Key${k.toUpperCase()}`, ctrlKey: parts.includes("Ctrl"), metaKey: false, shiftKey: parts.includes("Maj"), altKey: parts.includes("Alt"), isComposing: false, target: null };
+};
 const press = (keys: string): KeyLike => {
   const parts = keys.split("+");
   const k = parts.at(-1)!;
   const key = Object.hasOwn(NAMED, k) ? NAMED[k]! : k.toLowerCase();
-  return { key, ctrlKey: parts.includes("Ctrl"), metaKey: false, shiftKey: parts.includes("Maj"), altKey: false, isComposing: false, target: null };
+  const code = k.length === 1 && /[a-z]/i.test(k) ? `Key${k.toUpperCase()}` : key;
+  return { key, code, ctrlKey: parts.includes("Ctrl"), metaKey: false, shiftKey: parts.includes("Maj"), altKey: parts.includes("Alt"), isComposing: false, target: null };
 };
 
 describe("shortcuts", () => {
@@ -38,15 +52,23 @@ describe("shortcuts", () => {
       else if (by === "order") expect(orderKey(e), s.id).toBe(value);
       else if (by === "edit") expect(editAction(e), s.id).toBe(value);
       else if (by === "help") expect(isHelpKey({ ...press("?"), key: "?" }), s.id).toBe(true);
+      else if (by === "arrange") expect(arrangeKey(e), s.id).toBe(value);
+      else if (by === "nudge") { const n = nudgeKey(e); expect(`${n?.dx},${n?.dy}`, s.id).toBe(value); }
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
+      else if (by === "cell") expect(cellKey({ ...press("Enter"), code: s.keys.endsWith("Entrée") ? "Enter" : `Key${s.keys.slice(-1)}`, altKey: true, shiftKey: s.keys.includes("Maj") }), s.id).toBe(value);
+      else if (by === "table") expect(tableKey(pressTable(s.keys)), s.id).toBe(value);
       else if (by === "lineEdit") expect(lineEditKey(e), s.id).toBe(true);
       else if (by === "linked") expect(linkedKey({ ...press("→"), key: "ArrowRight", altKey: true, shiftKey: true }), s.id).toBe(value);
       else if (by === "ctrlHeld") expect(isCtrlKey({ key: "Control" }), s.id).toBe(true);
       else if (by === "tool") expect(toolKey(e), s.id).toBe(value);
-      else if (by === "nudge") expect(arrowMoveKey({ ...press("→"), key: "ArrowRight", shiftKey: s.keys.startsWith("Maj") })?.dx, s.id).toBe(Number(value));
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
-      else {
+      else if (by === "picker") {
+        // Pipette (sélecteur ouvert) : « I » sans modificateur, lue par e.key ; aucun autre reconnaisseur ne la prend.
+        expect(e.key, s.id).toBe(value);
+        expect(e.ctrlKey || e.altKey || e.metaKey, s.id).toBe(false);
+        expect(keyAction(e) ?? objectKey(e) ?? fileCommandOf(e) ?? editAction(e) ?? arrangeKey(e), s.id).toBeNull();
+      } else {
         // Copier, couper, coller (événements natifs) et Ctrl+B (rich-edit) : aucun reconnaisseur ne les vole.
         expect(e.key, s.id).toBe(value);
         expect(e.ctrlKey, s.id).toBe(true);
@@ -88,6 +110,7 @@ describe("shortcuts", () => {
     expect(ariaShortcut("link", false)).toBe("Control+K");
     expect(ariaShortcut("help", false)).toBe("?");
     expect(ariaShortcut("stroke-picker", false)).toBe("S");
+    expect(ariaShortcut("align-left", false)).toBe("Alt+Shift+ArrowLeft");
   });
   it("fusion lot 2 + OG19 : aucune touche ne sert deux actions de la table", () => {
     const keys = SHORTCUTS.map((s) => s.keys);
@@ -125,9 +148,3 @@ describe("lettres des outils", () => {
   });
 });
 
-describe("flèches du clavier", () => {
-  it("l'Aide liste le déplacement de la sélection", () => {
-    expect(shortcutText("nudge", false)).toBe("↑ ↓ ← →");
-    expect(shortcutText("nudge-big", false)).toBe("Maj+↑ ↓ ← →");
-  });
-});

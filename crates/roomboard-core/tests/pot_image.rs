@@ -72,6 +72,8 @@ fn retouched() -> (Document, String, String) {
                 tolerance: 10.0,
                 soft: 0.0,
                 contiguous: true,
+                x: None,
+                y: None,
             }),
             ..ImageParamsInput::default()
         },
@@ -234,6 +236,7 @@ fn same_asset_is_no_step_and_refusals_keep_core_order() {
             points: vec![0.0, 0.0, 0.5, 50.0, 0.0, 0.5],
             style: pen(),
             look: Look::default(),
+            cell: None,
         })
         .expect("trait")
         .ids[0]

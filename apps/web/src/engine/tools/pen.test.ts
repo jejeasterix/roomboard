@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Command, StrokeBuilderApi, StrokeStyle } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
+import type { ItemStyle } from "../item-style";
 import type { Camera } from "../camera";
 import type { InputSample } from "../input/sampler";
 import { createPenTool } from "./pen";
@@ -9,15 +10,16 @@ import type { ToolContext } from "./tool";
 const s = (x: number, y: number, pressure = 0.5): InputSample => ({ x, y, pressure, tiltX: 0, tiltY: 0, t: 0 });
 const PEN: StrokeStyle = { color: "#000000", width: 4 };
 
-function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse = false) {
+function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse: boolean | "cell" = false) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
-  const builders = { created: 0, pushes: 0, freed: 0, aheads: [] as number[][] };
+  const builders = { created: 0, pushes: 0, freed: 0, aheads: [] as number[][], constants: [] as Array<boolean | undefined> };
   const original = doc.newStrokeBuilder.bind(doc);
-  doc.newStrokeBuilder = (st: StrokeStyle): StrokeBuilderApi => {
+  doc.newStrokeBuilder = (st: StrokeStyle, constant?: boolean): StrokeBuilderApi => {
     builders.created++;
-    const b = original(st);
+    builders.constants.push(constant);
+    const b = original(st, constant);
     return {
       push: (p, ahead) => {
         builders.pushes++;
@@ -31,18 +33,18 @@ function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse = false) {
       },
     };
   };
-  let style = PEN;
+  let style: StrokeStyle & Partial<Pick<ItemStyle, "opacity" | "variability">> = PEN;
   const ctx: ToolContext = {
     doc,
     page: () => page,
     camera: () => cam,
     run: (c) => {
       runs.push(c);
-      return refuse ? null : doc.apply(c);
+      return refuse === true || (refuse === "cell" && c.type === "CommitStroke" && c.cell !== undefined) ? null : doc.apply(c);
     },
   };
   const tool = createPenTool(ctx, () => style);
-  return { doc, page, runs, builders, tool, setStyle: (st: StrokeStyle) => { style = st; } };
+  return { doc, page, runs, builders, tool, setStyle: (st: StrokeStyle & Partial<Pick<ItemStyle, "variability">>) => { style = st; } };
 }
 
 function commitOf(runs: Command[]): Extract<Command, { type: "CommitStroke" }> {
@@ -209,5 +211,59 @@ describe("outil Stylo : transparence (OG11 T9b)", () => {
       tool.close(1, "end");
       expect(commitOf(runs).look).toEqual(look);
     }
+  });
+
+  it("Constante : CommitStroke porte variability et le builder est constant", () => {
+    const { runs, builders, tool, setStyle } = setup();
+    setStyle({ ...PEN, variability: "constant" });
+    tool.begin(1, [s(10, 10)]);
+    tool.extend(1, [s(20, 10)], []);
+    tool.close(1, "end");
+    expect(builders.constants).toEqual([true]);
+    expect(commitOf(runs).look?.variability).toBe("constant");
+  });
+
+  it("Variable : builder non constant, aucun variability écrit", () => {
+    const { runs, builders, tool } = setup();
+    tool.begin(1, [s(10, 10)]);
+    tool.extend(1, [s(20, 10)], []);
+    tool.close(1, "end");
+    expect(builders.constants).toEqual([false]);
+    expect(commitOf(runs).look?.variability).toBeUndefined();
+  });
+});
+
+describe("outil Stylo : trait lié à sa case (T8)", () => {
+  const drag = (t: ReturnType<typeof setup>["tool"], x1: number, y1: number): void => {
+    t.begin(1, [s(20, 90)]);
+    t.extend(1, [s(100, 100), s(x1, y1)], []);
+    t.close(1, "end");
+  };
+  it("D10 : un trait écrit dans la case (1, 0) porte `cell` ; un trait sur deux cases n'en porte pas", () => {
+    const { doc, page, runs, tool } = setup();
+    const id = doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const v = doc.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    drag(tool, 180, 95);
+    const first = runs.at(-1);
+    expect(first?.type === "CommitStroke" ? first.cell : "autre").toEqual([id, v.table.rows[1]?.id, v.table.cols[0]?.id]);
+    drag(tool, 300, 95);
+    const second = runs.at(-1);
+    expect(second?.type === "CommitStroke" && "cell" in second).toBe(false);
+  });
+  it("D10 : si le cœur refuse le lien de case, le trait est commité sans lien (jamais perdu)", () => {
+    const { doc, page, runs, tool } = setup({ zoom: 1, tx: 0, ty: 0 }, "cell");
+    doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 });
+    drag(tool, 180, 95);
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toHaveProperty("cell");
+    expect(runs[1]?.type).toBe("CommitStroke");
+    expect(runs[1]).not.toHaveProperty("cell");
+    expect(doc.elementIdsOfKind(page, "stroke")).toHaveLength(1);
+  });
+  it("D10 : hors de tout tableau, la commande reste sans `cell`", () => {
+    const { runs, tool } = setup();
+    drag(tool, 180, 95);
+    expect(runs.at(-1)).not.toHaveProperty("cell");
   });
 });

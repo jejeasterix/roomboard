@@ -56,7 +56,7 @@ const PDF_EXPORT = "export .pdf : refusé, aucun décodeur d'image dans la CLI (
 const each = (exts: readonly string[], e: FormatEntry): Array<readonly [string, FormatEntry]> => exts.map((x) => [x, e] as const);
 
 const ROWS: ReadonlyArray<readonly [string, FormatEntry]> = [
-  [".roomboard", entry(1, 1, "roomboard", "mode de page `mode` facultatif (`infinite`), hauteur portrait 3413,33 ; ordre des objets = ordre d'`elements` (`Restack`)", "options d'aspect (strokeStyle, roughness, roundness, opacity, fillStyle, startArrowhead, endArrowhead, textAlign, link)")],
+  [".roomboard", entry(1, 1, "roomboard", "mode de page `mode` facultatif (`infinite`), hauteur portrait 3413,33 ; ordre des objets = ordre d'`elements` (`Restack`) ; disposition par `Arrange`", "options d'aspect (strokeStyle, roughness, roundness, opacity, fillStyle, startArrowhead, endArrowhead, textAlign, link, variability, dragCopy) ; départ de la baguette `transparent.x/y` (pixels source)")],
   [".rbitem", branched(2, 1, "rbitem", { read: true, write: true }, "insertion par `import` ; `--grid`")],
   [".rbpack", branched(2, 2, "rbpack", { read: true, write: true }, "par `library import` / `library export`")],
   [".pdf", branched(3, 3, "pdf", { read: true, write: true }, "fond `pdf-page`, PDF d'origine gardé en asset", "export : pages d'origine recopiées, annotation vectorielle ; sans repli en image (code 1)", "couleurs nommées et texte mesurés comme H25, H26", "image GIF, WebP, BMP, ICO, SVG, AVIF, HEIC : export refusé, krilla ne prend que PNG et JPEG et aucun décodeur d'image dans la CLI (code 1, D69)")],
