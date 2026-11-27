@@ -24,13 +24,18 @@ choix est tranché ici, avec sa raison.
   fond compris), plus le seul segment choisi. Décision du canal sur l'évidence (Jérôme : « En mode portrait la page doit
   remplir l'écran et un ascenseur permet de monté / descendre »). Réversible : rétablir le test `height > width` de la
   page dans `engine.ts` (`scrollState`).
-- **D2 — Seule une vue encore ajustée se réajuste.** Une vue que l'utilisateur a défilée ou zoomée garde sa caméra ;
-  seul l'ascenseur relit ses bornes (sa position change donc d'autant). Raison : ne jamais déplacer ce que la main a placé.
-  Les pages quittées encore ajustées suivent aussi : elles se montrent sous le nouveau haut.
-- **D3 — Détection par `MutationObserver`.** Attributs d'un îlot ou d'un groupe de coin (`left`, `top`, `data-compact`,
-  repli…), arrivée ou départ d'un îlot ; un appel par image au plus. L'intérieur d'un îlot (boutons) ne réveille rien.
-  Écarté : un `ResizeObserver` par îlot (une taille d'îlot change par un attribut de l'îlot, déjà suivi ; la fenêtre,
-  elle, est suivie par le `ResizeObserver` de la scène).
+- **D2 — Seule une vue encore ajustée suit, et seulement de l'écart du haut.** Une page Page dont la vue est encore à
+  son dernier ajustement descend ou monte du seul écart du haut (`ty`) ; zoom et décalage horizontal gardés, contenu non
+  relu (un redimensionnement de fenêtre ne réajuste toujours pas, HL3-6). Une vue défilée ou zoomée par la main garde
+  sa caméra ; seul l'ascenseur relit ses bornes. Infini : rien (l'ajustement y suit le contenu, aucun ascenseur). Les
+  pages quittées encore ajustées suivent aussi. Raison : ne jamais déplacer ce que la main a placé (relecture : un
+  réajustement complet recadrait l'Infini et défaisait HL3-6).
+- **D3 — Détection par `MutationObserver`, seulement quand la session est montrée.** Attributs de mouvement d'un îlot
+  de barre (`[data-island]`) ou d'un groupe de coin (`style`, `class`, `hidden`, `data-anchor`, `data-wrap`,
+  `data-compact`, `data-collapsed`), arrivée ou départ d'un îlot ; un appel par image au plus ; arrêté quand l'onglet
+  est caché ou fermé, rattrapé à `activate`. Seuls les îlots de barre réservent le haut (`BAR_ISLAND`) : le popover de
+  lien, habillé en îlot, ne fait plus sauter la page. Écarté : publier le haut depuis `IslandLayer` (`Island.tsx`,
+  mesures par `ResizeObserver`) — plus juste, mais touche la couche d'îlots que d'autres ouvriers modifient (reste noté).
 - **D4 — Menu sous macOS : `Meta`.** La ligne du menu annonçait `Control+N` sous macOS alors qu'elle affiche `⌘N` ; elle
   annonce maintenant `Meta+N`, comme la barre. Les touches nommées (flèches, Suppr, Échap) suivent la table `ARIA`.
 - **D5 — Miniature : boîte gardée, page à sa forme.** La boîte 16:9 reste (même hauteur pour toute page, T20), en gris
@@ -46,7 +51,8 @@ la poignée (16 px, Maj 64 px) et Début pour le recentrer (L2-10). L'ascenseur 
 
 ## Hypothèses à revoir
 
-- Un îlot qui change de hauteur sans changer un attribut à lui (contenu qui passe sur deux lignes) ne déclenche pas le
-  recalage ; il se fait au prochain changement d'attribut, de taille de la scène ou au prochain défilement.
+- Un îlot qui change de hauteur sans changer un attribut à lui (taille des boutons `data-size` posée sur `.rb-bar`,
+  onglets sur deux lignes) ne déclenche pas le recalage ; il se fait au prochain mouvement d'îlot ou au prochain
+  ajustement. Remède : publier `fitTop` depuis `IslandLayer` (reste faible).
 - La miniature d'une page plus large que 16:9 (PDF très large) reste contenue (`object-fit: contain`) ; son filet suit
   alors la boîte de l'image, pas la page.
