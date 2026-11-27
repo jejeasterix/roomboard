@@ -4,7 +4,7 @@
  * scène avec l'îlot des onglets et `#etat` (L2-5, L2-14) ; la scène (`main.rb-stages`) n'occupe que sa case. Panneaux
  * passagers (réglages, grille, image, bibliothèque, profils) au-dessus des îlots.
  */
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js";
+import { createComputed, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
 import { PDF_PAGE_KIND, type GridView, type ImageData, type PageLayout } from "../core/api";
@@ -184,7 +184,46 @@ export function App(props: AppProps): JSX.Element {
   };
   const helpDoc = props.stages.ownerDocument;
   helpDoc.addEventListener("keydown", helpKey);
-  onCleanup(() => helpDoc.removeEventListener("keydown", helpKey));
+  // T39 : Échap ferme l'Aide même si le focus n'est pas dans le panneau, et s'arrête là (la page ne désélectionne pas en plus).
+  const helpEscape = (e: KeyboardEvent): void => {
+    if (e.key !== "Escape" || panel() !== "help" || e.isComposing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setPanel(null);
+  };
+  helpDoc.addEventListener("keydown", helpEscape, true);
+  onCleanup(() => {
+    helpDoc.removeEventListener("keydown", helpKey);
+    helpDoc.removeEventListener("keydown", helpEscape, true);
+  });
+  // T39 : l'élément qui a ouvert l'Aide (le bouton ☰ pour une ligne du menu ; rien pour « ? ») la retrouve à la fermeture ;
+  // sans lui, la scène : le focus ne tombe jamais sur le corps de la page. `createComputed` : avant que le panneau ne prenne le focus.
+  let helpOpener: HTMLElement | null = null;
+  createComputed(
+    on(
+      panel,
+      (p, prev) => {
+        if (p !== "help" || prev === "help") return;
+        const a = helpDoc.activeElement;
+        const menu = a instanceof HTMLElement ? a.closest('[data-toolbar="menu"]') : null;
+        helpOpener = menu !== null ? menu.querySelector<HTMLElement>("[data-menu-toggle]") : a instanceof HTMLElement && a !== helpDoc.body ? a : null;
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      panel,
+      (p, prev) => {
+        if (prev !== "help" || p !== null) return;
+        const back = helpOpener !== null && helpOpener.isConnected ? helpOpener : props.stages;
+        helpOpener = null;
+        if (!back.hasAttribute("tabindex") && back === props.stages) back.tabIndex = -1;
+        back.focus();
+      },
+      { defer: true },
+    ),
+  );
   const stopClipboard = ws.onClipboard(() => bump());
   onCleanup(() => {
     stopClipboard();
@@ -623,6 +662,7 @@ export function App(props: AppProps): JSX.Element {
             sideStart={sideStart}
             above={above}
             hidden={() => panel() !== null}
+            openLink={(url) => props.shell.openLink?.(url)}
           />
         )}
         onTopFree={setPopTop}

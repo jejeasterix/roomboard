@@ -43,6 +43,8 @@ export interface OptionsPanelProps {
   readonly above?: Accessor<readonly Rect[]>;
   /** T33, T34 : vrai quand un panneau passager (Aide, Grille, Réglages, Profils, Image, Bibliothèque, Fonds) est ouvert : le panneau d'options se retire plutôt que de dépasser. */
   readonly hidden?: Accessor<boolean>;
+  /** T39 : ouverture sûre d'un lien (`ShellPort.openLink`), pour « Ouvrir le lien » de l'éditeur de lien. */
+  readonly openLink?: (url: string) => void;
 }
 
 const LABEL: Readonly<Record<OptionKey, string>> = {
@@ -455,7 +457,8 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       {(id) => (
         <LinkPopover
           value={props.element(id)?.look?.link ?? null}
-          submit={(url) => void props.engine().setLink(url)}
+          submit={(url) => props.engine().setLink(url)}
+          {...(props.openLink === undefined ? {} : { openLink: props.openLink })}
           close={() => props.engine().closeLink()}
           style={linkPos()}
         />

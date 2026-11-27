@@ -123,6 +123,9 @@ export type NoticeKind = "info" | "error";
 /** Avis à l'utilisateur ; `kind` absent : erreur. */
 export type Notify = (message: string, kind?: NoticeKind) => Promise<void>;
 
+/** T39 : message quand un lien d'élément n'a pas pu s'ouvrir (fenêtre bloquée, commande de la coque en échec). */
+export const LINK_OPEN_FAILED = "Le lien n'a pas pu s'ouvrir.";
+
 /** Ce que la fenêtre offre autour des fichiers : question, message, fermeture gardée, titre. */
 export interface ShellPort {
   confirm(message: string): Promise<boolean>;
