@@ -11,16 +11,27 @@ const PEN = { color: "#1e40af", width: 4 };
 
 const HIT_A = { id: "A", fixed: [1, 0.3] as const, onOutline: true, anchors: [[50, 0], [100, 25], [50, 50], [0, 25]] as const };
 const HIT_B = { id: "B", fixed: [0, 0.5] as const, onOutline: true, anchors: [[450, 0], [500, 25], [450, 50], [400, 25]] as const };
+/** Ids des vrais rectangles A et B posés par `setup()` : le faux cœur, comme `checked_binding`, refuse une liaison vers un
+ *  objet absent. */
+let idA = "";
+let idB = "";
 
 function setup(zoom = 1) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
+  // Cibles réelles des liaisons simulées, aux places que décrivent les ancres de HIT_A et HIT_B.
+  const box = (x0: number): string =>
+    doc.apply({ type: "AddShape", page, shape: "rect", x0, y0: 0, x1: x0 + 100, y1: 50, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+  idA = box(0);
+  idB = box(400);
+  const hitA = { ...HIT_A, id: idA };
+  const hitB = { ...HIT_B, id: idB };
   let shift = false;
   let alt = false;
   let ctrl = false;
   let binding = true;
   let pointer = "mouse";
-  const bindTarget = vi.spyOn(doc, "bindTarget").mockImplementation((_p, x) => (x < 150 ? HIT_A : x > 350 ? HIT_B : null));
+  const bindTarget = vi.spyOn(doc, "bindTarget").mockImplementation((_p, x) => (x < 150 ? hitA : x > 350 ? hitB : null));
   const runs: Command[] = [];
   const ctx: ToolContext = {
     doc,
@@ -37,7 +48,7 @@ function setup(zoom = 1) {
     pointerType: () => pointer,
   };
   return {
-    doc, page, ctx, runs, bindTarget,
+    doc, page, ctx, runs, bindTarget, a: idA, b: idB,
     setShift: (v: boolean) => { shift = v; }, setAlt: (v: boolean) => { alt = v; },
     setCtrl: (v: boolean) => { ctrl = v; }, setBinding: (v: boolean) => { binding = v; }, setPointer: (v: string) => { pointer = v; },
   };
@@ -67,7 +78,7 @@ describe("outil Formes (D13, D38)", () => {
     expect(runs).toEqual([]);
     tool.close(1, "end");
     expect(runs).toEqual([{ type: "AddShape", page, shape: "rect", x0: 300, y0: 200, x1: 100, y1: 50, style: PEN, fill: null }]);
-    expect(doc.elementIds(page)).toHaveLength(1);
+    expect(doc.elementIds(page)).toHaveLength(2 + 1); // les deux cibles A et B, puis la forme
     expect(tool.active()).toBe(false);
     expect(tool.live().overlay).toBeUndefined();
   });
@@ -269,7 +280,7 @@ describe("OG12 : liaison à la création (n° 17 à 19)", () => {
     const { ctx, runs } = setup();
     const t = createShapeTool(ctx, "arrow", () => PEN);
     drag(t, [102, 20], [402, 25]);
-    expect(runs[0]).toMatchObject({ type: "AddShape", shape: "arrow", start: { id: "A", fx: 1, fy: 0.5 }, end: { id: "B", fx: 0, fy: 0.5 } });
+    expect(runs[0]).toMatchObject({ type: "AddShape", shape: "arrow", start: { id: idA, fx: 1, fy: 0.5 }, end: { id: idB, fx: 0, fy: 0.5 } });
   });
   it("Ctrl tenu inverse la liaison ; réglage coupé : libre ; coupé + Ctrl : liée", () => {
     const k = setup();
@@ -283,7 +294,7 @@ describe("OG12 : liaison à la création (n° 17 à 19)", () => {
     expect(k.runs[1]).not.toHaveProperty("end");
     k.setCtrl(true);
     drag(createShapeTool(k.ctx, "arrow", () => PEN), [102, 20], [402, 25]);
-    expect(k.runs[2]).toMatchObject({ end: { id: "B" } });
+    expect(k.runs[2]).toMatchObject({ end: { id: idB } });
   });
   it("au doigt : tolérance 30 px écran", () => {
     const k = setup(2);
@@ -296,12 +307,12 @@ describe("OG12 : liaison à la création (n° 17 à 19)", () => {
     const t = createShapeTool(k.ctx, "arrow", () => PEN);
     t.begin(1, [at(200, 200)]);
     t.extend(1, [at(402, 25)], []);
-    expect(t.live().overlay?.bind).toEqual({ id: "B", anchors: HIT_B.anchors });
+    expect(t.live().overlay?.bind).toEqual({ id: idB, anchors: HIT_B.anchors });
   });
   it("ligne : liée aux deux bouts, Angles du style courant ; flèche coudée : elbowed", () => {
     const k = setup();
     drag(createShapeTool(k.ctx, "line", () => ({ ...DEFAULT_ITEM_STYLE, roundness: "round" })), [102, 20], [402, 25]);
-    expect(k.runs[0]).toMatchObject({ shape: "line", start: { id: "A" }, end: { id: "B" }, look: { roundness: "round" } });
+    expect(k.runs[0]).toMatchObject({ shape: "line", start: { id: idA }, end: { id: idB }, look: { roundness: "round" } });
     drag(createShapeTool(k.ctx, "arrow", () => ({ ...DEFAULT_ITEM_STYLE, arrowType: "elbow" })), [200, 200], [300, 300]);
     expect(k.runs[1]).toMatchObject({ shape: "arrow", look: { elbowed: true } });
   });
@@ -309,6 +320,6 @@ describe("OG12 : liaison à la création (n° 17 à 19)", () => {
     const k = setup();
     const t = createShapeTool(k.ctx, "arrow", () => PEN);
     t.hover?.(410, 25);
-    expect(t.live().overlay?.bind?.id).toBe("B");
+    expect(t.live().overlay?.bind?.id).toBe(idB);
   });
 });
