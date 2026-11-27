@@ -290,6 +290,16 @@ function objectOf(
     }
     case "shape": {
       const g = lineGeomOf(el.shape, el.look);
+      const flatStroke = (pts: ReadonlyArray<readonly [number, number]>): BoardObject => ({ kind: "stroke", m, color: el.style.color, width: el.style.width, points: pts.flatMap(([x, y]) => [x, y, 0.5]) });
+      // OG12 lot 2a : le losange et la ligne fermée s'écrivent en polyligne fermée (dernier point = premier).
+      if (el.shape.shape === "diamond") {
+        const { w, h } = el.shape;
+        return flatStroke([[w / 2, 0], [w, h / 2], [w / 2, h], [0, h / 2], [w / 2, 0]]);
+      }
+      if (g.closed === true) {
+        const ring = linePath(el.shape.w, el.shape.h, g.inner);
+        return flatStroke([...ring, ring[0]!]);
+      }
       // Une courbe à deux points est droite : seuls les points intérieurs font une polyligne.
       if (isSegment(el.shape.shape) && g.inner.length > 0) {
         const flat = flattenPath(linePath(el.shape.w, el.shape.h, g.inner), g.curve);
