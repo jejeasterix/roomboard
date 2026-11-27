@@ -9,7 +9,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, VIEWPORT, coqueCsp, dropFile, frames, gitSha, item, loadPlaywright, serve, solidPng, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, solidPng, stageBox, stageMouse } from "./commun.mjs";
 
 const LABEL = "personnalisation-3 tableau";
 const FIXED = new Date("2026-11-27T08:00:00.000Z");
@@ -268,6 +268,50 @@ async function scenario(page, url, { captures }) {
   const [, s3_sy2] = await boundsOf();
   check(near(s3_sy2 - s3_sy1, s3_ty1 - s3_ty0) && s3_ty1 - s3_ty0 > 1, `S3 : le tableau déplacé emporte le trait (tableau ${s3_ty1 - s3_ty0}, trait ${s3_sy2 - s3_sy1})`);
   await capture("trace-dans-case");
+  await page.keyboard.press("Escape");
+  await fr();
+
+  // S5 : l'image logée de la case (1, 1) du second tableau (photo2, 64 × 48) devient le fond de la case : appui long au doigt,
+  // « Mettre en fond » ; Ctrl+Z la rend libre exactement comme avant ; puis Alt+I au clavier.
+  const fondBox = [...screen(c, origin[0] + COL + 100, origin[1] + DY + ROW + 10), ...screen(c, origin[0] + 2 * COL - 10, origin[1] + DY + 2 * ROW - 10)];
+  const brown = { rgb: [90, 60, 30], tol: 12 };
+  const activeCell2 = async () => {
+    await page.click(item("table"));
+    await fr();
+    await mouse.click(...cellPt2(1, 1));
+    await page.keyboard.press("Escape");
+    await fr();
+  };
+  const imageBounds = async () => {
+    await page.click(item("select"));
+    await fr();
+    await selectAt(screen(c, origin[0] + COL + 8 + 32, origin[1] + DY + ROW + 8 + 24));
+    const b = await boundsOf();
+    await page.keyboard.press("Escape");
+    await fr();
+    return b.join(",");
+  };
+  const s5_bounds0 = await imageBounds();
+  await activeCell2();
+  check((await attr("data-table-linked")) === "1" && (await inkIn(page, fondBox, brown)) === 0, 'S5 : avant : une image logée (data-table-linked="1"), aucun pixel de fond dans la case');
+  await longPress(cellPt2(1, 1));
+  await page.waitForSelector('.rb-cell-menu:not([hidden]) button:has-text("Mettre en fond")', { timeout: 5000 });
+  await capture("menu-case-image");
+  await page.click('.rb-cell-menu button:has-text("Mettre en fond")');
+  await fr();
+  const s5_ink = await inkIn(page, fondBox, brown);
+  check((await attr("data-table-linked")) === "0" && s5_ink > 1000, `S5 : l'image devient le fond de la case (plus d'objet logé ; ${s5_ink} pixels de sa couleur dans la case)`);
+  await capture("image-fond");
+  await page.keyboard.press("Control+z");
+  await fr();
+  await activeCell2();
+  check((await attr("data-table-linked")) === "1" && (await inkIn(page, fondBox, brown)) === 0 && (await imageBounds()) === s5_bounds0, `S5 : Ctrl+Z : l'image revient libre de fond, liée, à sa place (${s5_bounds0})`);
+  await activeCell2();
+  await page.keyboard.press("Alt+i");
+  await fr();
+  check((await attr("data-table-linked")) === "0" && (await inkIn(page, fondBox, brown)) > 1000, "S5 : Alt+I sur la case active met aussi l'image en fond");
+  await page.keyboard.press("Control+z");
+  await fr();
   await page.keyboard.press("Escape");
   await fr();
 
