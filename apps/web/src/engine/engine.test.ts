@@ -4,7 +4,7 @@ import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, fitWidth, worldToScreen, type Camera } from "./camera";
-import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
+import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, scrollShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "./item-style";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
@@ -520,7 +520,7 @@ describe("createEngine", () => {
     expect(engine.state().page).not.toBe(p1);
   });
 
-  it("setPageMode portrait : fitPage montre tout le cadre", () => {
+  it("setPageMode portrait : fitPage en largeur, haut de page en haut (OG24)", () => {
     const { engine } = setup();
     engine.resize(1000, 800, 1);
     expect(engine.state().pageLayout).toBe("landscape");
@@ -528,8 +528,83 @@ describe("createEngine", () => {
     expect(engine.state().pageLayout).toBe("portrait");
     engine.fitPage();
     const cam = engine.camera();
-    // cadre portrait entier visible : hauteur du cadre (1920 × 16 / 9) × zoom ≤ hauteur de la vue
-    expect(cam.zoom * ((1920 * 16) / 9)).toBeLessThanOrEqual(800 + 1e-6);
+    // OG24 (H4 renversée par Jérôme) : la page remplit la largeur ; son bas sort de la vue, l'ascenseur y mène
+    expect(cam).toEqual(fitWidth(1000, 800, 1920, 0.95, 16));
+    expect(cam.zoom * ((1920 * 16) / 9)).toBeGreaterThan(800);
+  });
+
+  describe("ascenseur du portrait (OG24)", () => {
+    const portrait = () => {
+      const s = setup({ fitTop: () => 100 });
+      s.engine.resize(1000, 800, 1);
+      s.engine.setPageMode("portrait");
+      return s;
+    };
+    const pageBottom = (c: Camera): number => c.ty + ((1920 * 16) / 9) * c.zoom;
+    it("ajustée : haut de page, une part de la page visible", () => {
+      const { engine } = portrait();
+      const s = engine.pageScroll()!;
+      expect(s.at).toBe(0);
+      expect(s.visible).toBeGreaterThan(0.2);
+      expect(s.visible).toBeLessThan(0.5);
+    });
+    it("paysage et infini : aucun ascenseur", () => {
+      const { engine } = setup();
+      engine.resize(1000, 800, 1);
+      expect(engine.pageScroll()).toBeNull();
+      expect(engine.scrollPageBy(100)).toBe(false);
+      engine.setPageMode("infinite");
+      expect(engine.pageScroll()).toBeNull();
+    });
+    it("scrollPageTo(1) : bas de page à 16 px du bas ; scrollPageTo(0) : haut de page sous les îlots", () => {
+      const { engine } = portrait();
+      expect(engine.scrollPageTo(1)).toBe(true);
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.pageScroll()!.at).toBeCloseTo(1, 6);
+      engine.scrollPageTo(0);
+      expect(engine.camera().ty).toBeCloseTo(100, 6);
+    });
+    it("scrollPageBy borné à la page ; zoom et décalage horizontal gardés", () => {
+      const { engine } = portrait();
+      const before = engine.camera();
+      engine.scrollPageBy(1e6);
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.camera()).toMatchObject({ zoom: before.zoom, tx: before.tx });
+      engine.scrollPageBy(-1e6);
+      expect(engine.camera().ty).toBeCloseTo(100, 6);
+      expect(engine.scrollPageBy(-10)).toBe(false);
+    });
+    it("molette en portrait : défilement vertical borné, horizontal libre ; Ctrl+molette zoome", () => {
+      const { engine } = portrait();
+      const before = engine.camera();
+      engine.wheel({ x: 0, y: 0, deltaX: 0, deltaY: -500, ctrlKey: false });
+      expect(engine.camera()).toEqual(before);
+      engine.wheel({ x: 0, y: 0, deltaX: 30, deltaY: 1e6, ctrlKey: false });
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.camera().tx).toBeCloseTo(before.tx - 30, 6);
+      engine.wheel({ x: 500, y: 400, deltaX: 0, deltaY: -100, ctrlKey: true });
+      expect(engine.camera().zoom).toBeGreaterThan(before.zoom);
+    });
+    it("scrollShortcut : flèches, Maj+flèches, Début, Fin ; rien hors portrait ni dans un champ", () => {
+      const { engine } = portrait();
+      const k = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...o });
+      expect(scrollShortcut(k("ArrowUp"), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown"), engine)).toBe(true);
+      const line = 100 - engine.camera().ty;
+      expect(line).toBeGreaterThan(40);
+      expect(scrollShortcut(k("ArrowDown", { shiftKey: true }), engine)).toBe(true);
+      expect(100 - engine.camera().ty).toBeGreaterThan(line * 4);
+      expect(scrollShortcut(k("End"), engine)).toBe(true);
+      expect(engine.pageScroll()!.at).toBeCloseTo(1, 6);
+      expect(scrollShortcut(k("Home"), engine)).toBe(true);
+      expect(engine.pageScroll()!.at).toBe(0);
+      expect(scrollShortcut(k("ArrowDown", { target: { tagName: "TEXTAREA" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { ctrlKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("PageDown"), engine)).toBe(false);
+      expect(engine.pageScroll()!.at).toBe(0);
+      engine.setPageMode("landscape");
+      expect(scrollShortcut(k("ArrowDown"), engine)).toBe(false);
+    });
   });
 
   it("pageMode / pageLayout dans l'état", () => {
@@ -1352,7 +1427,7 @@ describe("moteur — pot (C6a)", () => {
     expect(fit).toHaveBeenCalledTimes(1);
   });
 
-  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : cadre entier (décision 10, T18)", () => {
+  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : largeur aussi (décision 10, T18 ; OG24)", () => {
     const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
     const mk = (doc: typeof pdf) => createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) } });
     const view = pdf.page(pdf.pageIds()[0]!)!;

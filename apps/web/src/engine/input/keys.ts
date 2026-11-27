@@ -76,6 +76,20 @@ export function orderKey(e: KeyLike): OrderKey | null {
   return null;
 }
 
+export type ScrollKey = "up" | "down" | "screen-up" | "screen-down" | "top" | "bottom";
+
+/** OG24 (ascenseur du portrait) : ↑ ↓ d'un cran, Maj+↑ ↓ d'un écran (PageUp/PageDown changent de page, DA9), Début et Fin ;
+ *  sans Ctrl, Cmd ni Alt (Ctrl+↑ ↓ : ordre des objets), hors champ, hors IME. */
+export function scrollKey(e: KeyLike): ScrollKey | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return null;
+  if (e.key === "ArrowUp") return e.shiftKey ? "screen-up" : "up";
+  if (e.key === "ArrowDown") return e.shiftKey ? "screen-down" : "down";
+  if (e.shiftKey) return null;
+  if (e.key === "Home") return "top";
+  if (e.key === "End") return "bottom";
+  return null;
+}
+
 export type PageKey = "prev" | "next" | "add" | "duplicate" | "sidebar-pages" | "sidebar-layers";
 
 /** Raccourcis de page (DA9) : PageUp/PageDown, Ctrl+M (Ctrl aussi sous macOS), Ctrl/Cmd+Maj+D/P/L ; hors champ, hors IME, Alt Gr refusé. */

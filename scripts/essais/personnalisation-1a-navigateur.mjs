@@ -271,8 +271,9 @@ async function s1(browser, base, tmp) {
   await page.click(item("fit-page"));
   await settle(page);
   const p = await frameBox(page);
-  const ratio = p.h / p.w;
-  check(Math.abs(ratio - 1.78) < 0.05 && p.y > 0 && p.y + p.h < p.canvasH, `Portrait : cadre entier visible, hauteur ≈ 1,78 × largeur (${ratio.toFixed(3)})`);
+  // OG24 (H4 renversée par Jérôme) : la page portrait remplit la largeur, son bas sort de la vue, l'ascenseur y mène.
+  check(Math.abs(p.w - p.canvasW * 0.95) < 4 && p.y > 0 && p.y + p.h >= p.canvasH, `Portrait : la page remplit la largeur (${p.w} sur ${p.canvasW} px), son bas sort de la vue`);
+  check(await page.isVisible('[data-scrollbar="page"]'), "Portrait : ascenseur visible");
   // Ctrl+Z : retour paysage en une étape.
   await page.keyboard.press("Control+z");
   await waitAttr(page, "data-page-mode", "landscape");

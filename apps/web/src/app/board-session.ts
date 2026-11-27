@@ -11,6 +11,7 @@ import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
 import { GAP } from "../ui/island-place";
+import { createPageScrollbar } from "./page-scrollbar";
 import { createEngine, type Engine, type EngineState } from "../engine/engine";
 import type { ItemStyle } from "../engine/item-style";
 import { createMiddlePan } from "../engine/input/middle-pan";
@@ -344,21 +345,22 @@ async function buildBoardSession(
   editor.element.removeAttribute("id");
   undo.push(() => editor.element.remove());
   undo.push(() => choice.release());
+  // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
+  // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien. OG24 : l'ascenseur part de là.
+  const fitTop = (): number =>
+    topBelowIslands(
+      stage.getBoundingClientRect(),
+      [...stage.ownerDocument.querySelectorAll(".rb-island:not([data-options])")].map((e) => {
+        const r = e.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, side: e.matches('[data-anchor^="side-"]') };
+      }),
+      GAP,
+    );
   const engine = createEngine({
     doc,
     ...(shared.pageMode === undefined ? {} : { pageMode: shared.pageMode }),
     renderer: choice.renderer,
-    // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
-    // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien.
-    fitTop: () =>
-      topBelowIslands(
-        stage.getBoundingClientRect(),
-        [...stage.ownerDocument.querySelectorAll(".rb-island:not([data-options])")].map((e) => {
-          const r = e.getBoundingClientRect();
-          return { top: r.top, bottom: r.bottom, side: e.matches('[data-anchor^="side-"]') };
-        }),
-        GAP,
-      ),
+    fitTop,
     images,
     frames: {
       requestFrame: (cb) => requestAnimationFrame(cb),
@@ -461,8 +463,12 @@ async function buildBoardSession(
 
   // Taille CSS de la case (le rendu Canvas 2D la retient, page infinie) et devicePixelRatio suivis : l'encre reste sous
   // la pointe. Jamais la taille de la fenêtre.
+  // OG24 : l'ascenseur d'une page portrait suit la caméra, la page montrée, son mode et la taille de la vue.
+  const scrollbar = createPageScrollbar(stage, engine, fitTop);
+  undo.push(() => scrollbar.element.remove());
   const fit = (): void => {
     engine.resize(stage.clientWidth, stage.clientHeight, window.devicePixelRatio || 1);
+    scrollbar.update();
   };
   const resizes = new ResizeObserver(() => fit());
   undo.push(() => resizes.disconnect());
@@ -738,6 +744,7 @@ async function buildBoardSession(
     stage.dataset["zoneMs"] = tags.zoneMs;
     stage.dataset["zoneCells"] = tags.zoneCells;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
+    scrollbar.update();
   };
   mark(engine.state());
   const offState = engine.onState(mark);
@@ -750,6 +757,7 @@ async function buildBoardSession(
   // La zone de texte suit le zoom (T90) ; la caméra est publiée pour les essais (S5b).
   const onCamera = (c: Camera): void => {
     editor.follow(c);
+    scrollbar.update();
     stage.dataset["camera"] = cameraTag(c);
   };
   stage.dataset["camera"] = cameraTag(engine.camera());
