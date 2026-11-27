@@ -65,7 +65,7 @@ Colonne « lot » : 1 ou 2. Sans précision, la décision vaut pour le lot 1.
 | 35 | Aide (lot 2) | L'entrée et la touche `?` (hors champ) ouvrent le panneau passager « Aide — raccourcis » (`[data-panel="aide"]`), qui liste `SHORTCUTS` par groupe. Échap le ferme. | Excalidraw (`DefaultItems.tsx:205`) | oui |
 | 36 | Effacer la page (lot 2) | `Delete` de tous les objets de la page montrée (une étape), après `shell.confirm` (« Effacer tout le contenu de la page ? Ctrl+Z le rétablit. »). Fond, grille et mode de page restent. Grisé sur une page vide. | Excalidraw « Effacer le canvas » ; `engine.ts:627` | oui |
 | 37 | Icônes | Lucide (ISC) dans `ui/icons.ts`, avec la mention, trait 1,5, `viewBox` calée (charte § Icônes). Lot 1 : `copy-plus`, `trash-2`, `sliders-horizontal`, `chevron-left`, `chevron-right`. Icônes dessinées dans le même style : trait plein, trait en tirets, trait en pointillés, trois niveaux de tracé, angle droit, angle arrondi, transparent (pastille barrée). Lot 2 : `link`, `arrow-up-to-line`, `arrow-down-to-line`, `chevron-up`, `chevron-down`, `palette`, `circle-help`, `align-left`, `align-center`, `align-right`, plus trois remplissages et quatre pointes dessinés. Contrôle `scripts/tests/controle-icones.test.sh` et netteté § 10. | charte ; `design-cadrage.md:207-228` | oui |
-| 38 | Lien (lot 2) | Champ `link` (http, https, mailto ; 2 048 caractères au plus). Ctrl+K ou bouton Lien sur un seul élément : un champ dans un popover, Entrée valide (une étape), vide retire. Un badge en haut à droite ; le toucher avec l'outil Sélection ouvre par `ShellPort.openLink` : `window.open(url, "_blank", "noopener")` en web, `tauri-plugin-opener` dans la coque (H5). | Excalidraw `actionLink.tsx:40-62` | oui |
+| 38 | Lien (lot 2) | Champ `link` (http, https, mailto ; 2 048 caractères au plus). Ctrl+K ou bouton Lien sur un seul élément : un champ dans un popover, Entrée valide (une étape), vide retire. Un badge en haut à droite ; le toucher avec l'outil Sélection ouvre par `ShellPort.openLink` : `window.open(url, "_blank", "noopener")` en web, commande `open_link` de la coque (Rust, `roomboard-shell`, crate `open` ; règle C16, voir §9) (H5). | Excalidraw `actionLink.tsx:40-62` | oui |
 | 39 | Raccourcis : liste et collisions | Liste en DA-6. Collisions vérifiées avec `keys.ts:25-35`, `controller.ts:74-83` et § 2 bis d'OG4 (Ctrl+M, Ctrl+Maj+D/P/L, PageUp/PageDown, Ctrl+↑/↓) : Ctrl+D (lot 1), puis Ctrl+Maj+E, Ctrl+K, S, G et `?` (lot 2) sont libres. Ctrl+D (favori du navigateur) est pris par `preventDefault`, comme chez Excalidraw. S, G et `?` ne valent que hors champ, sans modificateur et hors composition. | code lu ; cadrage OG4 | oui |
 | 40 | Constats d'architecture | `toolbar-host.ts:45` (préréglages lus à la main au lieu de `presetsOf`) : **à fermer** au passage, la tâche du moteur réécrit `setTool`. `toolbar.ts:634` (`ACTION_REQUIRES`) : ne pas l'aggraver ; les actions neuves n'exigent aucune capacité. `rb.css:203` : les styles neufs passent par `--rb-btn-*`. `annotation-page.ts:35` (`viewOf`) : `itemStyle` ajouté avec son test. | `docs/architecture-constats.md:14,39,42,54` | oui |
 
@@ -142,7 +142,7 @@ recherche texte et de la lecture (V).
 | `ui/SelectionRow.tsx` | non | reste dans la barre ; OG4 T14 y ajoute deux boutons d'ordre (DA-2) | V |
 | `ui/FormatRow.tsx` | non | garde son rôle | V |
 | `ui/MenuBar.tsx:47-58` `Row` | oui | `[data-shortcut]` à droite ; Tab ferme | V |
-| `ui/RadioChoices.tsx:31`, `ui/IconButton.tsx:102`, `ui/tooltip.ts` | non (réutilisés) | segments, boutons, infobulles | V |
+| `ui/RadioChoices.tsx:31`, `ui/IconButton.tsx:102`, `ui/tooltip.ts` | oui (OG14 : `keepFocus`, `disabled`) | segments, boutons, infobulles ; le panneau garde le focus de la saisie | V |
 | `ui/Island.tsx:36` `observeBox`, `ui/island-place.ts:31-84` | oui | place du panneau, à droite de `side-start` (OG4 change ce fichier) | V |
 | `ui/icons.ts:14,97,112` | oui | icônes de la décision 37 | V |
 | `ui/rb.css` | oui | `.rb-options` et ses sections, avec les jetons | V |
@@ -170,7 +170,7 @@ recherche texte et de la lecture (V).
 | `apps/cli/src/formats.ts:59` `.roomboard` | oui | note des options d'aspect | V |
 | `apps/cli/src/ops.test.ts`, `session.test.ts` | oui | `SetStyle` lu, refus | S |
 | `scripts/essais/cli-essai.mjs` | oui | bloc `personnalisation-2` | V |
-| `apps/desktop/src-tauri/Cargo.toml:12-13`, `capabilities/` | lot 2 | `tauri-plugin-opener` pour Lien (H5) | V |
+| `apps/desktop/src-tauri/src/main.rs` (`open_link`), `capabilities/default.json` (description), `crates/roomboard-shell/src/links.rs`, `apps/web/src/platform/{files,shell-web,host-tauri,mount}.ts` (`ShellPort.openLink`) | lot 2 | ouverture sûre du lien, sans plugin (H5, C16) | V (OG14) |
 
 ### 3.7 Tests et essais (une entrée non touchée est un test à garder vert)
 
@@ -178,14 +178,15 @@ recherche texte et de la lecture (V).
 |---|---|---|---|
 | `ui/Toolbar.test.tsx`, `ui/App.test.tsx` (assertions `data-selection-action`) | non | rangée Sélection inchangée : à garder verts | V |
 | `ui/SelectionRow.test.tsx`, `FormatRow.test.tsx`, `MenuBar.test.tsx` | oui (`MenuBar`) | raccourcis affichés, Tab ; les deux autres restent verts | V |
-| `ui/rb-css.test.ts` | non | à garder vert (littéraux figés) | V |
+| `ui/rb-css.test.ts` | oui (OG14 : 2 tests de marges de segment) | à garder vert (littéraux figés) | V |
 | `engine/tools/shape.test.ts:54` | non | `look` omis s'il est neutre : vert sans retouche | V |
 | `engine/render/canvas2d.test.ts`, `webgl2.test.ts` | oui | tirets, alpha, angles, pointes, roughjs déterministe | V |
 | `scripts/essais/c1-profils-navigateur.mjs:118,128,172`, `design-l3-navigateur.mjs:220` | non | comptent `data-preset` dans la barre : gardés | V |
 | `scripts/essais/c3-groupes-navigateur.mjs:100-153`, `c5-image-navigateur.mjs:114,143` | non | rangée Sélection inchangée dans la barre | V |
 | `scripts/essais/c6a`, `c6b`, `c8` (`data-preset`, `data-fill-none`) | non | rangée du pot inchangée | V |
 | `scripts/essais/c7b-texte-riche`, `c10a-tableau` (`data-format`) | non | `FormatRow` inchangée | V |
-| `scripts/essais/design-l2-navigateur.mjs`, `commun.mjs` (`data-menu-toggle`, `menuitem`) | non | menu : mêmes attributs, lignes en plus | V |
+| `scripts/essais/design-l2-navigateur.mjs`, `commun.mjs` (`data-menu-toggle`, `menuitem`) | oui (OG14 : `MENU_ROWS` reçoit `help`, `page-clear`) | menu : mêmes attributs, lignes en plus | V |
+| `app/text-editor.ts`, `engine/render/renderer.ts` | oui (OG14) | la zone de saisie montre la police choisie ; le rendu dessine le badge de lien | V |
 | `scripts/essais/c3-groupes:86-180`, `c15-3d:286`, `c13-tableaux:301`, `design-l1:43` (gestes à x 60-220) | **à vérifier** | le panneau déplié à gauche (x 16-276) couvre ces gestes avec un outil de dessin actif (voir effets de bord) | V |
 | `scripts/tests/controle-icones.test.sh`, `controle-licences.test.sh`, `nettete.test.mjs` | oui | icônes neuves, roughjs, open-color | V |
 | `scripts/essais/personnalisation-2-navigateur.mjs` | oui (neuf) | S1 à S5 (lot 1), S6 à S8 (lot 2) | — |
@@ -284,8 +285,8 @@ recherche texte et de la lecture (V).
   À revoir après un essai sur iPad.
 - **H4** (lot 2) Polices : Normale, Georgia, Courier New (présentes sous Windows, macOS et iOS ; repli `serif` et
   `monospace` ailleurs). Pas de police manuscrite livrée en fichier.
-- **H5** (lot 2) Lien ouvert par `tauri-plugin-opener` (MIT ou Apache-2.0), limité à http, https et mailto. C'est une
-  capacité neuve de la coque et un build Tauri ; si le temps manque, il est écrit au bloc final.
+- **H5** (lot 2) Lien ouvert par la coque, limité à http, https et mailto. Tranché au bloc final (OG14) : pas de
+  `tauri-plugin-opener` (règle C16), commande mince `open_link` et ouverture en Rust dans `roomboard-shell`.
 - **H6** (lot 2) « Effacer la page » vide la page montrée seulement, après confirmation.
 - **H7** Un choix fait sur une sélection devient aussi le style des prochains objets, comme chez Excalidraw (décision 23).
 - **H16** Le style courant survit au redémarrage (décision 23) : un enseignant retrouve les tirets de la veille. Excalidraw
@@ -428,3 +429,10 @@ Jérôme n'était pas joignable pendant le tour ; chaque choix est réversible.
 - Sélecteur de couleur : ancré à droite du panneau d'options, jamais au-dessus de son haut ; la grille défile si la fenêtre est trop basse. Raison : ne recouvrir ni le panneau ni l'îlot d'outils ; cibles de 44 px gardées.
 - Panneau d'options caché tant qu'un panneau passager (Aide, Grille, Réglages, Profils, Image, Bibliothèque, Fonds) est ouvert. Raison : ils occupent la même place ; aucun recouvrement partiel.
 - Choix de Police : libellé sur deux lignes si besoin, marges de 8 px, texte à 14 px de la charte.
+- Bouton « + » au lieu de `palette` (déc. 37) pour ouvrir le sélecteur. Raison : geste d'Excalidraw (« plus de couleurs ») et icône plus lisible à 44 px.
+- Grille du sélecteur 15 × 5 : open-color d'Excalidraw complété d'une rangée neutre, d'indigo et de lime, sans couleur en double. Raison : cinq nuances par teinte, une seule case enfoncée.
+- Champ hexadécimal : il ne valide qu'à Entrée ; perdre le focus remet la couleur courante, sans rien choisir ni fermer (comme `ColorInput.tsx` d'Excalidraw).
+- Police ou Taille sur plusieurs textes : une seule étape d'annulation (`Engine.runAll`, regroupement côté moteur ; le cœur compte une étape par commande, et `version()` monte aussi à l'annulation, `document.rs:906`).
+- Lien : bouton « Ouvrir le lien » dans l'éditeur quand un lien existe, pour ouvrir au clavier (Ctrl+K, Tab, Entrée).
+- Lien : caractères refusés en plus du schéma (blancs, guillemet, `<`, `>`, `\`, contrôles) dans le cœur, l'interface et la coque. Raison : la chaîne part telle quelle à `ShellExecuteExW`.
+- Outil Formes : une ligne ne reçoit plus les pointes du style courant (décision 17, « Flèche seulement »).
