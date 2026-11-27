@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDeviceSettings, FRAME_KEY, ITEM_STYLE_KEY, NO_ISLAND, islandKey, SIDEBAR_KEY } from "./device-settings";
+import { createDeviceSettings, FRAME_KEY, ITEM_STYLE_KEY, NO_ISLAND, islandKey, PALM_ERASER_KEY, SIDEBAR_KEY } from "./device-settings";
 import { DEFAULT_ITEM_STYLE } from "./engine/item-style";
 import type { KeyValue } from "./profile-store";
 
@@ -191,5 +191,44 @@ describe("device-settings : barre latérale (personnalisation-1a T2)", () => {
     expect(s.sidebar()).toEqual({ tab: "pages", thumb: "m" });
     expect(() => s.setSidebar({ tab: "calques", thumb: "s" })).not.toThrow();
     expect(s.sidebar()).toEqual({ tab: "calques", thumb: "s" });
+  });
+});
+
+describe("gomme automatique à la paume (OG25, déc. 25)", () => {
+  it("OG25 gomme à la paume : clé roomboard.gomme.paume ; absente : active", () => {
+    expect(PALM_ERASER_KEY).toBe("roomboard.gomme.paume");
+    expect(createDeviceSettings(memoryKv()).palmEraser()).toBe(true);
+  });
+  it("OG25 gomme à la paume : couper écrit « non », rallumer retire la clé ; relu par une nouvelle instance (rechargement) ; onChange prévenu", () => {
+    const kv = memoryKv();
+    const s = createDeviceSettings(kv);
+    const cb = vi.fn();
+    s.onChange(cb);
+    expect(s.setPalmEraser(false)).toBe(true);
+    expect(kv.map.get(PALM_ERASER_KEY)).toBe("non");
+    expect(s.palmEraser()).toBe(false);
+    expect(createDeviceSettings(kv).palmEraser()).toBe(false);
+    expect(s.setPalmEraser(true)).toBe(true);
+    expect(kv.map.has(PALM_ERASER_KEY)).toBe(false);
+    expect(createDeviceSettings(kv).palmEraser()).toBe(true);
+    expect(cb).toHaveBeenCalledTimes(2);
+  });
+  it("OG25 gomme à la paume : valeur inconnue : active ; sans stockage ou stockage qui lève : mémoire seule, faux, rien ne lève", () => {
+    expect(createDeviceSettings(memoryKv({ [PALM_ERASER_KEY]: "oui" })).palmEraser()).toBe(true);
+    const mem = createDeviceSettings(null);
+    expect(mem.setPalmEraser(false)).toBe(false);
+    expect(mem.palmEraser()).toBe(false);
+    const bad = createDeviceSettings(throwing);
+    expect(bad.palmEraser()).toBe(true);
+    expect(() => bad.setPalmEraser(false)).not.toThrow();
+    expect(bad.palmEraser()).toBe(false);
+    expect(bad.setPalmEraser(true)).toBe(false);
+  });
+  it("OG25 gomme à la paume : indépendante du cadre de l'annotation", () => {
+    const kv = memoryKv();
+    const s = createDeviceSettings(kv);
+    s.setPalmEraser(false);
+    expect(s.frame()).toBe(true);
+    expect(kv.map.has(FRAME_KEY)).toBe(false);
   });
 });
