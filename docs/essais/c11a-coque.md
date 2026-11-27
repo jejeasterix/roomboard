@@ -64,6 +64,7 @@ Cocher chaque ligne ; noter l'écart en une phrase.
 - [ ] Après « Envoyer au tableau » : le bandeau « Envoyé au tableau : page N » en bas à droite de la scène, aucune boîte système ; il part seul après 4 s.
 - [ ] Figer le bureau : le fond figé ne montre pas le cadre violet (pas de double liseré).
 - [ ] C11b-1 de `c11b-coque.md` (ligne design L4) : aucun liseré violet dans l'image envoyée.
+- [ ] personnalisation 1b : « Fonds » › « Mes fonds » › « Cette page », puis déposer une image depuis l'explorateur sur la fenêtre des fonds ouverte : deux cartes, et la page n'a reçu aucune image ; fermer RoomBoard, le rouvrir : les deux cartes sont là et leurs fichiers sont dans `Documents/RoomBoard/Fonds` ; appliquer une photo du pack : elle s'affiche hors ligne (WebP servi par la coque, H2-1) ; Ctrl+Maj+F (Cmd+Maj+F sous macOS) ouvre et ferme la fenêtre (H2-3).
 - Note : sur un écran de 900 px de haut, la bande du profil « Simple » en annotation passe à deux colonnes (H12 / D3 du plan) ; le noter, ce n'est pas un défaut.
 
 ## Point de durcissement connu

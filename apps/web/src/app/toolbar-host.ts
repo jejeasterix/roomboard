@@ -39,7 +39,7 @@ export interface HostTargets {
   engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "nextOrAdd" | "duplicatePage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat" | "bringToFront" | "sendToBack">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
-  toggle(panel: "settings" | "profiles" | "grid" | "image" | "library"): void;
+  toggle(panel: "settings" | "profiles" | "grid" | "image" | "library" | "backgrounds"): void;
   /** T8 : barre latérale (onglet Pages ou Calques) ; branché par T10, absent : sans effet. */
   toggleSidebar?(tab: "pages" | "calques"): void;
   /** C3 (Z12). */
@@ -100,6 +100,7 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   profiles: (t) => t.toggle("profiles"),
   grid: (t) => t.toggle("grid"),
   library: (t) => t.toggle("library"),
+  backgrounds: (t) => t.toggle("backgrounds"),
   "table-row-insert": (t) => t.engine().tableAction("row-insert"),
   "table-col-insert": (t) => t.engine().tableAction("col-insert"),
   "table-row-remove": (t) => t.engine().tableAction("row-remove"),

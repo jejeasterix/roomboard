@@ -441,7 +441,9 @@ mod tests {
             allow,
             vec![
                 "$DOCUMENT/RoomBoard/Ressources",
-                "$DOCUMENT/RoomBoard/Ressources/**"
+                "$DOCUMENT/RoomBoard/Ressources/**",
+                "$DOCUMENT/RoomBoard/Fonds",
+                "$DOCUMENT/RoomBoard/Fonds/**"
             ]
         );
     }

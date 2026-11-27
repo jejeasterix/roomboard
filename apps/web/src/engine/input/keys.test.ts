@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
+import { appShortcut, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -164,5 +164,23 @@ describe("orderKey (ordre des objets, lot 2)", () => {
     expect(orderKey(k("ArrowUp", { ctrlKey: true, target: { tagName: "INPUT" } }))).toBeNull();
     expect(orderKey(k("ArrowUp", { ctrlKey: true, target: { isContentEditable: true } }))).toBeNull();
     expect(orderKey(k("ArrowLeft", { ctrlKey: true }))).toBeNull();
+  });
+});
+
+describe("appShortcut (personnalisation-1b, Q28)", () => {
+  it("Ctrl+Maj+F et Cmd+Maj+F → backgrounds, touche rendue en majuscule ou non", () => {
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true }))).toBe("backgrounds");
+    expect(appShortcut(k("f", { metaKey: true, shiftKey: true }))).toBe("backgrounds");
+  });
+  it("sans Maj, avec Alt, en composition, dans un champ, autre touche, sans Ctrl ni Cmd : null", () => {
+    expect(appShortcut(k("f", { ctrlKey: true }))).toBeNull();
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true, altKey: true }))).toBeNull();
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true, isComposing: true }))).toBeNull();
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+    expect(appShortcut(k("G", { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(appShortcut(k("F", { shiftKey: true }))).toBeNull();
+  });
+  it("Ctrl+Maj+F n'est pas une touche du moteur (annuler, grouper)", () => {
+    expect(keyAction(k("F", { ctrlKey: true, shiftKey: true }))).toBeNull();
   });
 });

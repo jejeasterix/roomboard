@@ -1217,6 +1217,43 @@ class FakeDocument implements CoreDocument {
           return { pages: [cmd.page], ids: [], removed: [] };
         });
       }
+      case "ApplyBackground": {
+        // Ordre du cœur (page_look.rs) : couleur, fond, grille, pages ; seules les pages qui changent ; page PDF : fond gardé.
+        if (!validColor(cmd.color)) throw new Error(MESSAGES.badFill);
+        const b = cmd.backdrop ?? null;
+        if (b !== null) {
+          if (!validAsset(b.asset)) throw new Error(MESSAGES.badAsset);
+          if (!positive(b.w) || !positive(b.h) || b.fit !== "width") throw new Error(MESSAGES.badImage);
+        }
+        const g = cmd.grid ?? null;
+        if (g !== null && !validGrid(g)) throw new Error(MESSAGES.badGrid);
+        if (cmd.pages.length === 0) throw new Error("page inconnue : ");
+        const seen = new Set<string>();
+        for (const id of cmd.pages) {
+          if (seen.has(id)) throw new Error(`page inconnue : ${id}`);
+          seen.add(id);
+          this.pageOf(id);
+        }
+        const next: RawRecord | null = b === null ? null : { asset: b.asset.id, kind: "image", w: b.w, h: b.h, fit: "width" };
+        const isPdf = (p: FakePage): boolean => p.backdrop?.["kind"] === "pdf-page";
+        const changed = cmd.pages.filter((id) => {
+          const p = this.pageOf(id);
+          return p.background !== cmd.color || !sameGrid(gridView(p.grid), g) || (!isPdf(p) && !sameBackdrop(p.backdrop, next));
+        });
+        if (changed.length === 0) return this.unchanged();
+        const writesImage = b !== null && changed.some((id) => !isPdf(this.pageOf(id)));
+        return this.step((s) => {
+          for (const id of changed) {
+            const p = s.pages.find((q) => q.id === id);
+            if (p === undefined) continue;
+            p.background = cmd.color;
+            p.grid = g === null ? null : gridRecord(g);
+            if (!isPdf(p)) p.backdrop = next;
+          }
+          if (writesImage && b !== null) putMeta(s.assets, b.asset);
+          return { pages: changed, ids: [], removed: [] };
+        });
+      }
       case "AddTable": {
         // Ordre du cœur : arguments (BadTable), puis page ; x, y et les totaux bornés en f32 (`fits_f32`).
         const ok =
