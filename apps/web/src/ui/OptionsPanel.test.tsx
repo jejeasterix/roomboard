@@ -270,3 +270,38 @@ describe("OptionsPanel : état vivant (T20)", () => {
     expect(calls).toHaveLength(2);
   });
 });
+
+describe("OptionsPanel : sélecteur de couleur complet (T16)", () => {
+  it("le bouton « Autres couleurs » ouvre le sélecteur du Trait, un choix écrit la couleur et rend le focus", () => {
+    const { container, calls } = mount({ tool: "rect", selection: [] });
+    const btn = container.querySelector<HTMLButtonElement>('[data-more-colors="strokeColor"]')!;
+    fireEvent.click(btn);
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull();
+    fireEvent.click(container.querySelectorAll<HTMLElement>("[data-color-picker] [role=gridcell]")[7]!);
+    expect(calls.at(-1)).toEqual({ color: "#ced4da" });
+    expect(container.querySelector("[data-color-picker]")).toBeNull();
+    expect(document.activeElement).toBe(btn);
+  });
+  it("S ouvre le trait, G le fond ; hors panneau, rien", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    fireEvent.keyDown(window, { key: "s" });
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull();
+    fireEvent.keyDown(container.querySelector("[data-color-picker] [role=gridcell]")!, { key: "Escape" });
+    expect(container.querySelector("[data-color-picker]")).toBeNull();
+    fireEvent.keyDown(window, { key: "g" });
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull();
+    fireEvent.click(container.querySelectorAll<HTMLElement>("[data-color-picker] [role=gridcell]")[0]!);
+    expect(container.querySelector("[data-color-picker]")).toBeNull();
+  });
+  it("G choisit l'arrière-plan", () => {
+    const { container, calls } = mount({ tool: "rect", selection: [] });
+    fireEvent.keyDown(window, { key: "g" });
+    fireEvent.click(container.querySelectorAll<HTMLElement>("[data-color-picker] [role=gridcell]")[2]!);
+    expect(calls.at(-1)).toEqual({ background: "#868e96" });
+  });
+  it("S sans section Trait (outil sélection vide) : rien", () => {
+    const { container } = mount({ tool: "select", selection: [] });
+    fireEvent.keyDown(window, { key: "s" });
+    expect(container.querySelector("[data-color-picker]")).toBeNull();
+  });
+});

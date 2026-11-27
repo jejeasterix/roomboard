@@ -307,7 +307,10 @@ MIT en tête de chaque fichier :
   `packages/element/src/shape.ts`), rectangle arrondi en chemin (`shape.ts`), rayon adaptatif des angles
   (`packages/element/src/utils.ts`) ;
 - `apps/web/src/ui/tool-options.ts` (T6) : valeur commune ou mixte d'un réglage sur la sélection, adaptée de
-  `getFormValue` (`packages/excalidraw/actions/actionProperties.tsx`).
+  `getFormValue` (`packages/excalidraw/actions/actionProperties.tsx`) ;
+- `apps/web/src/ui/ColorPicker.tsx`, `apps/web/src/ui/open-color.ts` (T16) : sélecteur de couleur
+  (`packages/excalidraw/components/ColorPicker/`) et palette (`packages/common/src/colors.ts`) ; les teintes viennent
+  d'open-color (https://github.com/yeun/open-color, MIT, Copyright (c) 2016 heeyeun) et `bronze` de Radix Colors (MIT).
 
 Texte : MIT (https://opensource.org/licenses/MIT), identique à celui de roughjs ci-dessus, titulaire « Excalidraw ».
 
