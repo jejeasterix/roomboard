@@ -348,3 +348,48 @@ describe("outil Texte : transparence (OG11 T9b)", () => {
     expect(runs[0]).toMatchObject({ type: "SetText", look: { opacity: 40 } });
   });
 });
+
+describe("outil Texte : alignement (T28)", () => {
+  const build = (st: { textAlign?: "center" | "right" | "left" }) => {
+    const { ctx, runs } = ((): { ctx: ToolContext; runs: Command[] } => {
+      const doc = fakeCore.blank();
+      const page = doc.pageIds()[0] ?? "";
+      const runs: Command[] = [];
+      return { runs, ctx: { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } } };
+    })();
+    const host = new FakeHost();
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36, ...st }), narrow);
+    return { host, tool, runs };
+  };
+  it("texte neuf : alignement", () => {
+    const b = build({ textAlign: "center" });
+    b.tool.begin(1, [at(100, 200)]);
+    b.tool.close(1, "end");
+    b.host.text = "Bonjour";
+    b.tool.requestCommit();
+    expect(b.runs[0]).toMatchObject({ type: "SetText", look: { textAlign: "center" } });
+  });
+  it("texte neuf : le gauche n'écrit rien", () => {
+    const b = build({ textAlign: "left" });
+    b.tool.begin(1, [at(100, 200)]);
+    b.tool.close(1, "end");
+    b.host.text = "Bonjour";
+    b.tool.requestCommit();
+    expect(b.runs[0]).not.toHaveProperty("look");
+  });
+  it("saisie en cours : l'alignement choisi dans le panneau s'applique", () => {
+    let align: "left" | "right" = "left";
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const runs: Command[] = [];
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } };
+    const host = new FakeHost();
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36, textAlign: align }), narrow);
+    tool.begin(1, [at(100, 200)]);
+    tool.close(1, "end");
+    host.text = "Bonjour";
+    align = "right";
+    tool.requestCommit();
+    expect(runs[0]).toMatchObject({ look: { textAlign: "right" } });
+  });
+});
