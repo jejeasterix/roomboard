@@ -510,3 +510,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-help-group ul { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--rf-gray-300); }
 .rb-help-group li { display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 36px; border-bottom: 1px solid var(--rf-gray-300); }
 .rb-help-group kbd { font: inherit; font-size: 0.875em; color: var(--rf-text-muted-aa); white-space: nowrap; }
+/* OG23 (T7) : Aligner et Transformer, rangées de boutons Engine.arrange ; cible de 44 px au moins, quelle que soit la taille du profil. */
+.rb-options [data-option="align"] .rb-opt-btn, .rb-options [data-option="transform"] .rb-opt-btn { min-inline-size: 44px; min-block-size: 44px; }
+.rb-options [data-option="align"] .rb-opt-body, .rb-options [data-option="align"] .rb-opt-body > * { gap: 4px; }
+.rb-options [data-option="pressure"] .rb-radio { min-inline-size: 44px; min-block-size: 44px; }
