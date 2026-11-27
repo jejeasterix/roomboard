@@ -170,11 +170,12 @@ export function toTable(v: unknown): TableData {
 /** OG11 : nombre passé au pont en `f64`. Absent ou null : `None` ; autre chose qu'un nombre : NaN, refusé par le pont
  *  (wasm-bindgen appliquerait `ToNumber`, « 45 » deviendrait 45, là où la fausse liaison refuse). */
 const num = (v: unknown): number | undefined => (v === undefined || v === null ? undefined : typeof v === "number" ? v : Number.NaN);
-/** Les dix arguments d'aspect de `look_of`, dans l'ordre du pont : cinq du lot 1, puis `fillStyle`, pointes, `textAlign`, `link`. */
+/** Les onze arguments d'aspect de `look_of`, dans l'ordre du pont : cinq du lot 1, puis `fillStyle`, pointes, `textAlign`,
+ *  `link`, puis `variability` (OG23). */
 type LookArgs = [string | undefined, number | undefined, number | undefined, string | undefined, number | undefined,
-  string | undefined, string | undefined, string | undefined, string | undefined, string | undefined];
+  string | undefined, string | undefined, string | undefined, string | undefined, string | undefined, string | undefined];
 const lookArgs = (l: Look | undefined): LookArgs => [l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity),
-  l?.fillStyle, l?.startArrowhead, l?.endArrowhead, l?.textAlign, l?.link];
+  l?.fillStyle, l?.startArrowhead, l?.endArrowhead, l?.textAlign, l?.link, l?.variability];
 
 /** Rang en `u32` côté pont (wasm-bindgen tronquerait sans erreur : 0,5 → 0, 2³² + 1 → 1) : non entier ou hors u32
  *  refusé ici, avec le message de `BadIndex`, comme le faux cœur (`MovePage`, `Restack`). */
@@ -540,6 +541,8 @@ class WasmCoreDocument implements CoreDocument {
       case "DuplicatePage": return toChange(this.d.duplicate_page(cmd.page));
       case "Restack":
         return toChange(this.d.restack([...cmd.ids], checkedRank(cmd.to)));
+      // OG23 : `how` inconnu refusé par le pont (« disposition inconnue : <how> »), avant la commande.
+      case "Arrange": return toChange(this.d.arrange([...cmd.ids], cmd.how));
       case "CommitStroke": {
         const l = cmd.look;
         return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, ...lookArgs(l)));
@@ -573,6 +576,8 @@ class WasmCoreDocument implements CoreDocument {
           // T12 : paires `*_set`, valeur du lot 2.
           "fillStyle" in p, p.fillStyle ?? undefined, "startArrowhead" in p, p.startArrowhead ?? undefined,
           "endArrowhead" in p, p.endArrowhead ?? undefined, "textAlign" in p, p.textAlign ?? undefined, "link" in p, p.link ?? undefined,
+          // OG23 : paire `variability_set`, valeur.
+          "variability" in p, p.variability ?? undefined,
         ));
       }
       case "Transform":
@@ -746,8 +751,8 @@ class WasmCoreDocument implements CoreDocument {
     return takeParts(this.d.save_grid_parts(now, appVersion, name));
   }
 
-  newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
-    const b = new this.mod.StrokeBuilder(style.width);
+  newStrokeBuilder(style: StrokeStyle, constant = false): StrokeBuilderApi {
+    const b = new this.mod.StrokeBuilder(style.width, constant);
     return {
       push: (p: Float32Array, ahead?: Float32Array) => (ahead && ahead.length > 0 ? b.push_ahead(p, ahead) : b.push(p)),
       finish: () => b.finish(),

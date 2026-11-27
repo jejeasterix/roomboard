@@ -21,6 +21,8 @@ export interface Look {
   readonly textAlign?: "center" | "right";
   /** `http://`, `https://` ou `mailto:` (`validLink`). */
   readonly link?: string;
+  /** OG23 : pression constante d'un trait ; absent = variable, le neutre (jamais écrit). */
+  readonly variability?: "constant";
 }
 export interface LookPatch {
   readonly color?: string;
@@ -37,6 +39,8 @@ export interface LookPatch {
   readonly endArrowhead?: Arrowhead | null;
   readonly textAlign?: "center" | "right" | null;
   readonly link?: string | null;
+  /** OG23 : écrit sur les traits seuls ; null retire (pression variable). */
+  readonly variability?: "constant" | null;
 }
 /** Traits non pleins (le plein est le neutre : absent de `Look`). */
 export const STROKE_STYLES: readonly string[] = ["dashed", "dotted"];
@@ -46,6 +50,9 @@ export const ARROWHEADS: readonly string[] = ["none", "arrow", "triangle", "tria
 export const START_ARROWHEAD_DEFAULT: Arrowhead = "none";
 export const END_ARROWHEAD_DEFAULT: Arrowhead = "arrow";
 export const TEXT_ALIGNS: readonly string[] = ["center", "right"];
+/** OG23 : pression d'un trait ; seule `constant` est écrite (`VARIABILITY_CONSTANT` du cœur). */
+export type Variability = "variable" | "constant";
+export const VARIABILITY_CONSTANT = "constant";
 export const LINK_MAX_CHARS = 2048;
 /** Interdits de `valid_link` : blancs Unicode de Rust (`White_Space`, sans U+FEFF que `\s` de JS ajoute), `"`, `<`, `>`, `\`, catégorie Cc. */
 const LINK_FORBIDDEN = /[\u0009-\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000"<>\\\p{Cc}]/u;
@@ -91,6 +98,7 @@ export function toLook(v: unknown): Look | undefined {
   if (align !== undefined) out.textAlign = align as "center" | "right";
   const link = v["link"];
   if (typeof link === "string" && validLink(link)) out.link = link;
+  if (v["variability"] === VARIABILITY_CONSTANT) out.variability = VARIABILITY_CONSTANT;
   return Object.keys(out).length === 0 ? undefined : out;
 }
 export const strokeKindOf = (l: Look | undefined): StrokeKind => l?.strokeStyle ?? "solid";
@@ -102,10 +110,11 @@ export const fillStyleOf = (l: Look | undefined): FillKind => l?.fillStyle ?? "s
 export const startArrowheadOf = (l: Look | undefined): Arrowhead => l?.startArrowhead ?? START_ARROWHEAD_DEFAULT;
 export const endArrowheadOf = (l: Look | undefined): Arrowhead => l?.endArrowhead ?? END_ARROWHEAD_DEFAULT;
 export const textAlignOf = (l: Look | undefined): TextAlign => l?.textAlign ?? "left";
+export const variabilityOf = (l: Look | undefined): Variability => l?.variability ?? "variable";
 
 /** undefined si neutre. */
 export function lookFrom(
-  s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number; fillStyle?: FillKind; startArrowhead?: Arrowhead; endArrowhead?: Arrowhead; textAlign?: TextAlign },
+  s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number; fillStyle?: FillKind; startArrowhead?: Arrowhead; endArrowhead?: Arrowhead; textAlign?: TextAlign; variability?: Variability },
   seed: number | null,
 ): Look | undefined {
   const out: { -readonly [K in keyof Look]: Look[K] } = {};
@@ -121,6 +130,7 @@ export function lookFrom(
   if (s.startArrowhead !== undefined && s.startArrowhead !== START_ARROWHEAD_DEFAULT) out.startArrowhead = s.startArrowhead;
   if (s.endArrowhead !== undefined && s.endArrowhead !== END_ARROWHEAD_DEFAULT) out.endArrowhead = s.endArrowhead;
   if (s.textAlign !== undefined && s.textAlign !== "left") out.textAlign = s.textAlign;
+  if (s.variability === VARIABILITY_CONSTANT) out.variability = VARIABILITY_CONSTANT;
   return Object.keys(out).length === 0 ? undefined : out;
 }
 
