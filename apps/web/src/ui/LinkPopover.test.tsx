@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTauriShell } from "../platform/host-tauri";
+import { createTauriShell, openLink, type TauriIpc } from "../platform/host-tauri";
 import { createWebShell, type WebShellWindow } from "../platform/shell-web";
 import { LinkPopover } from "./LinkPopover";
 
@@ -121,7 +121,12 @@ describe("ShellPort.openLink (T18, déc. 38)", () => {
     shell.openLink?.("mailto:a@example.org");
     expect(open.mock.calls).toEqual([["https://example.org", "_blank", "noopener"], ["mailto:a@example.org", "_blank", "noopener"]]);
   });
-  it("coque : tauri-plugin-opener pour http, https, mailto seulement", () => {
+  it("coque : commande open_link de roomboard-shell, jamais plugin:opener", async () => {
+    const invoke = vi.fn(() => Promise.resolve());
+    await openLink({ invoke, listen: () => Promise.resolve(() => undefined) } as unknown as TauriIpc, "https://example.org");
+    expect(invoke.mock.calls).toEqual([["open_link", { url: "https://example.org" }]]);
+  });
+  it("coque : http, https, mailto seulement, avant la commande", () => {
     const openUrl = vi.fn((_url: string) => Promise.resolve());
     const shell = createTauriShell({} as never, {} as never, () => false, openUrl);
     shell.openLink?.("javascript:alert(1)");

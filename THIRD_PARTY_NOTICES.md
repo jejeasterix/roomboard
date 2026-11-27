@@ -679,9 +679,3 @@ Les fichiers d'icône de `apps/desktop/src-tauri/icons/`, leurs sources `docs/de
 `gen.mjs`) et les planches `docs/essais/design-l5-icone-*.png` reprennent l'hexagone et la flèche de l'icône RoomFlow (`roomflow-app-icon.svg`), marque de l'auteur
 (jejeasterix). Ils sont la marque de l'auteur et restent hors de la licence PolyForm Shield 1.0.0 du code (`LICENSE`) : leur
 présence dans ce dépôt n'accorde aucun droit sur la marque. Aucune dépendance n'est ajoutée.
-
-## tauri-plugin-opener (Apache-2.0 OR MIT), personnalisation 2 (T18)
-
-Crate `tauri-plugin-opener` 2.7.3 (https://github.com/tauri-apps/plugins-workspace), Copyright (c) Tauri Programme within
-The Commons Conservancy, licence `Apache-2.0 OR MIT` ; RoomBoard l'utilise sous la licence MIT. Seule commande permise par
-la capacité de la fenêtre principale : `open_url` (`opener:allow-open-url`), portée `http://*`, `https://*`, `mailto:*`.

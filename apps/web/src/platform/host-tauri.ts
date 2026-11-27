@@ -116,6 +116,9 @@ export async function launchFiles(ipc: TauriIpc): Promise<DroppedFile[]> {
 }
 export const onQuitRequested = (ipc: TauriIpc, cb: () => void): Promise<() => void> => ipc.listen(QUIT_EVENT, () => cb());
 /** C14 : accorde le fichier média choisi, rend son empreinte SHA-256 ; la coque ajoute le chemin à la portée du protocole d'assets. */
+/** T35 : lien d'élément ouvert par la coque ; schéma contrôlé dans `roomboard_shell::links`, ouverture par la crate `open`. */
+export const openLink = (ipc: TauriIpc, url: string): Promise<void> => ipc.invoke<void>("open_link", { url });
+
 export const linkMedia = (ipc: TauriIpc, path: string): Promise<string> => ipc.invoke<string>("link_media", { path });
 /** C14 : revérifie un média lié à l'ouverture (taille) et le ré-accorde ; false : introuvable. */
 export const relinkMedia = (ipc: TauriIpc, path: string, size: number): Promise<boolean> => ipc.invoke<boolean>("relink_media", { path, size });
@@ -244,7 +247,7 @@ export function createTauriHost(
 /** `window.confirm` de la page, lu au dernier moment (absent hors navigateur). */
 const pageConfirm = (message: string): boolean => globalThis.confirm(message);
 
-/** `openUrl` (T18) : commande `open_url` de tauri-plugin-opener, portée http, https, mailto (capabilities/default.json). */
+/** `openUrl` (T18, T35) : commande `open_link` de la coque (`openLink`), schéma recontrôlé en Rust (`roomboard_shell::links`). */
 export function createTauriShell(
   dialog: TauriDialog,
   win: TauriWindow,
