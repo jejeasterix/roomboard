@@ -17,6 +17,7 @@ const SOURCES = join(ROOT, "apps", "web", "backgrounds", "SOURCES.json");
 const OUT = join(ROOT, "apps", "web", "public", "backgrounds");
 const CATALOG = join(ROOT, "apps", "web", "src", "backgrounds", "photos.ts");
 const [W, H, TW, TH] = [2560, 1440, 480, 270];
+const [W2, H2] = [1920, 1080];
 const [MAX, TMAX] = [400 * 1024, 25 * 1024];
 const EXCLUDED = /unsplash|pixabay|pexels/i;
 
@@ -36,8 +37,8 @@ function encode(src, dst, w, h, max, qualities) {
 }
 
 /** Couleur moyenne de la dernière rangée (H2-4), en #rrggbb. */
-function edgeColor(file) {
-  const rgb = execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", file, "-vf", `format=rgb24,crop=${W}:1:0:${H - 1},scale=1:1:flags=area`, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]);
+function edgeColor(file, w, h) {
+  const rgb = execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", file, "-vf", `format=rgb24,crop=${w}:1:0:${h - 1},scale=1:1:flags=area`, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]);
   return `#${[...rgb.subarray(0, 3)].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
@@ -70,18 +71,30 @@ for (const p of sources.photos) {
   const photo = join(OUT, "photos", `${p.id}.webp`);
   const thumb = join(OUT, "thumbs", `${p.id}.webp`);
   let q;
-  try {
-    q = encode(raw, photo, W, H, MAX, [82, 76, 70, 64, 58, 52, 46, 40]);
-    encode(raw, thumb, TW, TH, TMAX, [75, 68, 60, 52, 44, 36, 28]);
-  } catch (e) {
-    // Trop détaillée pour tenir sous le plafond à qualité acceptable (q40) : écartée du pack et de SOURCES.json.
+  let size;
+  // 2560 × 1440 d'abord ; si l'image ne tient pas sous le plafond à q40, 1920 × 1080 ; écartée en dernier recours.
+  for (const [w, h] of [[W, H], [W2, H2]]) {
+    try {
+      q = encode(raw, photo, w, h, MAX, [82, 76, 70, 64, 58, 52, 46, 40]);
+      size = [w, h];
+      break;
+    } catch {}
+  }
+  if (!size) {
     for (const f of [photo, thumb]) rmSync(f, { force: true });
-    console.log(`écartée — ${p.id} (${e.message.split(" : ")[1]})`);
+    console.log(`écartée — ${p.id} (plus de ${MAX} octets en ${W2} × ${H2} à q40)`);
+    continue;
+  }
+  try {
+    encode(raw, thumb, TW, TH, TMAX, [75, 68, 60, 52, 44, 36, 28, 20, 12, 6]);
+  } catch {
+    for (const f of [photo, thumb]) rmSync(f, { force: true });
+    console.log(`écartée — ${p.id} (miniature : plus de ${TMAX} octets même à q6)`);
     continue;
   }
   kept.push(p);
-  p.retouche = `recadrage 16:9 centré, ${W} × ${H}, WebP q${q}, métadonnées retirées ; miniature ${TW} × ${TH}`;
-  entries.push({ id: p.id, section: "images", theme: p.theme, label: p.label, keywords: p.keywords, kind: "photo", color: edgeColor(photo), grid: null, photo: { file: `photos/${p.id}.webp`, thumb: `thumbs/${p.id}.webp`, w: W, h: H } });
+  p.retouche = `recadrage 16:9 centré, ${size[0]} × ${size[1]}, WebP q${q}, métadonnées retirées ; miniature ${TW} × ${TH}`;
+  entries.push({ id: p.id, section: "images", theme: p.theme, label: p.label, keywords: p.keywords, kind: "photo", color: edgeColor(photo, size[0], size[1]), grid: null, photo: { file: `photos/${p.id}.webp`, thumb: `thumbs/${p.id}.webp`, w: size[0], h: size[1] } });
   console.log(`ok — ${p.id} (qualité ${q}, ${statSync(photo).size} o)`);
 }
 writeFileSync(

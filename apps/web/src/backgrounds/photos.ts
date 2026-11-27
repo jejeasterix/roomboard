@@ -172,6 +172,55 @@ export const PHOTOS: readonly PackBackground[] = Object.freeze([
     }
   },
   {
+    "id": "foret-fougeres-vertes",
+    "section": "images",
+    "theme": "nature",
+    "label": "Sous-bois de fougères",
+    "keywords": [
+      "forêt",
+      "fougère",
+      "feuille",
+      "vert",
+      "arbre",
+      "sous-bois",
+      "nature"
+    ],
+    "kind": "photo",
+    "color": "#3b612d",
+    "grid": null,
+    "photo": {
+      "file": "photos/foret-fougeres-vertes.webp",
+      "thumb": "thumbs/foret-fougeres-vertes.webp",
+      "w": 1920,
+      "h": 1080
+    }
+  },
+  {
+    "id": "foret-rayons-soleil",
+    "section": "images",
+    "theme": "nature",
+    "label": "Rayons de soleil dans la forêt",
+    "keywords": [
+      "forêt",
+      "soleil",
+      "rayon",
+      "arbre",
+      "sentier",
+      "doré",
+      "vert",
+      "automne"
+    ],
+    "kind": "photo",
+    "color": "#371f0c",
+    "grid": null,
+    "photo": {
+      "file": "photos/foret-rayons-soleil.webp",
+      "thumb": "thumbs/foret-rayons-soleil.webp",
+      "w": 1920,
+      "h": 1080
+    }
+  },
+  {
     "id": "cascade-roche-foret",
     "section": "images",
     "theme": "nature",
@@ -246,6 +295,54 @@ export const PHOTOS: readonly PackBackground[] = Object.freeze([
     }
   },
   {
+    "id": "lac-montagne-herbe-neige",
+    "section": "images",
+    "theme": "nature",
+    "label": "Lac de montagne et dernières neiges",
+    "keywords": [
+      "lac",
+      "montagne",
+      "neige",
+      "herbe",
+      "vert",
+      "bleu",
+      "paysage"
+    ],
+    "kind": "photo",
+    "color": "#77724d",
+    "grid": null,
+    "photo": {
+      "file": "photos/lac-montagne-herbe-neige.webp",
+      "thumb": "thumbs/lac-montagne-herbe-neige.webp",
+      "w": 1920,
+      "h": 1080
+    }
+  },
+  {
+    "id": "automne-montagne-coloree",
+    "section": "images",
+    "theme": "saisons",
+    "label": "Montagne aux couleurs d'automne",
+    "keywords": [
+      "automne",
+      "montagne",
+      "forêt",
+      "orange",
+      "vert",
+      "ciel",
+      "bleu"
+    ],
+    "kind": "photo",
+    "color": "#403321",
+    "grid": null,
+    "photo": {
+      "file": "photos/automne-montagne-coloree.webp",
+      "thumb": "thumbs/automne-montagne-coloree.webp",
+      "w": 1920,
+      "h": 1080
+    }
+  },
+  {
     "id": "hiver-montagne-neige-rose",
     "section": "images",
     "theme": "saisons",
@@ -291,6 +388,30 @@ export const PHOTOS: readonly PackBackground[] = Object.freeze([
       "thumb": "thumbs/hiver-givre-herbes-brume.webp",
       "w": 2560,
       "h": 1440
+    }
+  },
+  {
+    "id": "printemps-champ-tulipes",
+    "section": "images",
+    "theme": "saisons",
+    "label": "Champ de tulipes",
+    "keywords": [
+      "printemps",
+      "tulipe",
+      "fleur",
+      "rouge",
+      "jaune",
+      "rose",
+      "couleur"
+    ],
+    "kind": "photo",
+    "color": "#563b1c",
+    "grid": null,
+    "photo": {
+      "file": "photos/printemps-champ-tulipes.webp",
+      "thumb": "thumbs/printemps-champ-tulipes.webp",
+      "w": 1920,
+      "h": 1080
     }
   },
   {
@@ -440,6 +561,31 @@ export const PHOTOS: readonly PackBackground[] = Object.freeze([
     }
   },
   {
+    "id": "espace-voie-lactee-montagne",
+    "section": "images",
+    "theme": "abstrait",
+    "label": "Voie lactée au-dessus des montagnes",
+    "keywords": [
+      "espace",
+      "étoile",
+      "voie lactée",
+      "nuit",
+      "galaxie",
+      "ciel",
+      "violet",
+      "montagne"
+    ],
+    "kind": "photo",
+    "color": "#0d0c12",
+    "grid": null,
+    "photo": {
+      "file": "photos/espace-voie-lactee-montagne.webp",
+      "thumb": "thumbs/espace-voie-lactee-montagne.webp",
+      "w": 1920,
+      "h": 1080
+    }
+  },
+  {
     "id": "aurore-boreale-verte",
     "section": "images",
     "theme": "abstrait",
@@ -515,6 +661,54 @@ export const PHOTOS: readonly PackBackground[] = Object.freeze([
     }
   },
   {
+    "id": "foret-epiceas-troncs",
+    "section": "images",
+    "theme": "nature",
+    "label": "Forêt d'épicéas",
+    "keywords": [
+      "forêt",
+      "épicéa",
+      "tronc",
+      "arbre",
+      "vert",
+      "brun",
+      "mousse"
+    ],
+    "kind": "photo",
+    "color": "#868542",
+    "grid": null,
+    "photo": {
+      "file": "photos/foret-epiceas-troncs.webp",
+      "thumb": "thumbs/foret-epiceas-troncs.webp",
+      "w": 1920,
+      "h": 1080
+    }
+  },
+  {
+    "id": "automne-sol-feuilles-mortes",
+    "section": "images",
+    "theme": "saisons",
+    "label": "Tapis de feuilles d'automne",
+    "keywords": [
+      "automne",
+      "feuille",
+      "sol",
+      "orange",
+      "rouge",
+      "arbre",
+      "tronc"
+    ],
+    "kind": "photo",
+    "color": "#ab7042",
+    "grid": null,
+    "photo": {
+      "file": "photos/automne-sol-feuilles-mortes.webp",
+      "thumb": "thumbs/automne-sol-feuilles-mortes.webp",
+      "w": 1920,
+      "h": 1080
+    }
+  },
+  {
     "id": "espace-voie-lactee-lac",
     "section": "images",
     "theme": "abstrait",
@@ -587,6 +781,30 @@ export const PHOTOS: readonly PackBackground[] = Object.freeze([
       "thumb": "thumbs/mer-falaise-granite.webp",
       "w": 2560,
       "h": 1440
+    }
+  },
+  {
+    "id": "hiver-bois-enneige",
+    "section": "images",
+    "theme": "saisons",
+    "label": "Sous-bois enneigé",
+    "keywords": [
+      "hiver",
+      "neige",
+      "arbre",
+      "bois",
+      "blanc",
+      "froid",
+      "forêt"
+    ],
+    "kind": "photo",
+    "color": "#babac1",
+    "grid": null,
+    "photo": {
+      "file": "photos/hiver-bois-enneige.webp",
+      "thumb": "thumbs/hiver-bois-enneige.webp",
+      "w": 1920,
+      "h": 1080
     }
   },
   {
@@ -755,6 +973,30 @@ export const PHOTOS: readonly PackBackground[] = Object.freeze([
       "thumb": "thumbs/tissu-doux-beige.webp",
       "w": 2560,
       "h": 1440
+    }
+  },
+  {
+    "id": "mur-enduit-gris",
+    "section": "images",
+    "theme": "matieres",
+    "label": "Mur gris",
+    "keywords": [
+      "mur",
+      "enduit",
+      "plâtre",
+      "gris",
+      "texture",
+      "matière",
+      "neutre"
+    ],
+    "kind": "photo",
+    "color": "#86816f",
+    "grid": null,
+    "photo": {
+      "file": "photos/mur-enduit-gris.webp",
+      "thumb": "thumbs/mur-enduit-gris.webp",
+      "w": 1920,
+      "h": 1080
     }
   },
   {

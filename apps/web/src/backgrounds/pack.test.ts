@@ -39,7 +39,8 @@ describe("personnalisation-1b : pack de photos livré (Q11, Q13, Q14, Q33)", () 
   it("photos.ts : une entrée par photo de SOURCES.json, dans l'ordre, fichiers présents", () => {
     expect(PHOTOS.map((p) => p.id)).toEqual(SOURCES.photos.map((p) => p.id));
     for (const p of PHOTOS) {
-      expect(p.photo, p.id).toEqual({ file: `photos/${p.id}.webp`, thumb: `thumbs/${p.id}.webp`, w: 2560, h: 1440 });
+      expect(p.photo, p.id).toEqual({ file: `photos/${p.id}.webp`, thumb: `thumbs/${p.id}.webp`, w: p.photo!.w, h: p.photo!.h });
+      expect([`${p.photo!.w}x${p.photo!.h}`], p.id).toEqual([expect.stringMatching(/^(2560x1440|1920x1080)$/)]);
       expect(existsSync(new URL(p.photo!.file, PUBLIC)), p.id).toBe(true);
       expect(existsSync(new URL(p.photo!.thumb, PUBLIC)), p.id).toBe(true);
     }
@@ -47,12 +48,12 @@ describe("personnalisation-1b : pack de photos livré (Q11, Q13, Q14, Q33)", () 
     expect(all("thumbs")).toEqual(PHOTOS.map((p) => `${p.id}.webp`).sort());
   });
 
-  it("WebP : photos 2560 × 1440 ≤ 400 Ko, miniatures 480 × 270 ≤ 25 Ko", () => {
+  it("WebP : photos 2560 × 1440 ou 1920 × 1080 ≤ 400 Ko, miniatures 480 × 270 ≤ 25 Ko", () => {
     for (const p of PHOTOS) {
       const big = bytes(p.photo!.file);
       const small = bytes(p.photo!.thumb);
       expect([ascii(big, 0, 4), ascii(big, 8, 4)], p.id).toEqual(["RIFF", "WEBP"]);
-      expect(webpSize(big), p.id).toEqual({ w: 2560, h: 1440 });
+      expect(webpSize(big), p.id).toEqual({ w: p.photo!.w, h: p.photo!.h });
       expect(webpSize(small), p.id).toEqual({ w: 480, h: 270 });
       expect(big.length, p.id).toBeLessThanOrEqual(400 * 1024);
       expect(small.length, p.id).toBeLessThanOrEqual(25 * 1024);
@@ -92,6 +93,6 @@ describe("personnalisation-1b : pack de photos livré (Q11, Q13, Q14, Q33)", () 
   });
 
   it("SOURCES.json : retouche écrite par le producteur (qualité WebP)", () => {
-    for (const p of SOURCES.photos) expect(p.retouche, p.id).toMatch(/^recadrage 16:9 centré, 2560 × 1440, WebP q\d+, métadonnées retirées ; miniature 480 × 270$/);
+    for (const p of SOURCES.photos) expect(p.retouche, p.id).toMatch(/^recadrage 16:9 centré, (2560 × 1440|1920 × 1080), WebP q\d+, métadonnées retirées ; miniature 480 × 270$/);
   });
 });
