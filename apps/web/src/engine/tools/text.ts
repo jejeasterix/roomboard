@@ -5,7 +5,7 @@
  * `compositionend` (porte partagée, `commit-gate.ts`) ; rien n'est écrit pendant la composition. Clic pendant l'édition : valide seulement.
  */
 import type { Matrix, TextSpan } from "../../core/api";
-import { lookFrom, type Look } from "../../core/look";
+import { opacityLook, type Look } from "../../core/look";
 import { plainSpans, sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { screenToWorld, type Camera } from "../camera";
@@ -115,7 +115,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
       newLook = undefined;
     } else {
       const st = style();
-      newLook = lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: st.opacity ?? 100 }, null);
+      newLook = opacityLook(st.opacity ?? 100);
       session = { page, id: null, matrix: [1, 0, 0, 1, x, y], boxWidth: DEFAULT_TEXT_BOX_WIDTH, color: st.color, size: st.size, initial: "", spans: plainSpans("") };
       live = NO_LIVE;
     }

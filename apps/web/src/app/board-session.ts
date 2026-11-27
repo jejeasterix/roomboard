@@ -11,7 +11,7 @@ import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
 import { GAP } from "../ui/island-place";
-import { createEngine, DEFAULT_PEN_STYLE, type Engine, type EngineState } from "../engine/engine";
+import { createEngine, type Engine, type EngineState } from "../engine/engine";
 import type { ItemStyle } from "../engine/item-style";
 import { createMiddlePan } from "../engine/input/middle-pan";
 import { type PredictionSource, withPrediction } from "../engine/input/predict";
@@ -86,6 +86,31 @@ export interface SessionShared {
   readonly itemStyle?: () => ItemStyle | null;
   /** OG11 : chaque changement du style courant, pour le garder sur l'appareil. */
   readonly onItemStyle?: (s: ItemStyle) => void;
+  /** OG11 : changements du style courant venus d'un autre onglet ; chaque session les applique à son moteur sans écrire la sélection. */
+  readonly subscribeItemStyle?: (cb: (s: ItemStyle) => void) => () => void;
+}
+
+/** OG11 : un seul style courant pour tous les onglets (source : l'appareil). `read` n'est appelé que tant que rien n'est connu. */
+export function createSharedItemStyle(
+  read: () => ItemStyle | null,
+  write: (s: ItemStyle) => void,
+): Pick<SessionShared, "itemStyle" | "onItemStyle" | "subscribeItemStyle"> {
+  let current: ItemStyle | null = null;
+  const listeners = new Set<(s: ItemStyle) => void>();
+  return {
+    itemStyle: () => (current ??= read()),
+    onItemStyle(s) {
+      current = s;
+      write(s);
+      for (const cb of [...listeners]) cb(s);
+    },
+    subscribeItemStyle(cb) {
+      listeners.add(cb);
+      return () => {
+        listeners.delete(cb);
+      };
+    },
+  };
 }
 
 /** Réglages de lecture d'un média du document. */
@@ -351,6 +376,7 @@ async function buildBoardSession(
   });
   // OG11 (déc. 23) : le style courant est gardé sur l'appareil à chaque changement.
   if (shared.onItemStyle) undo.push(engine.onItemStyle(shared.onItemStyle));
+  if (shared.subscribeItemStyle) undo.push(shared.subscribeItemStyle((s) => engine.adoptItemStyle(s)));
 
   activeTool = () => engine.tool();
   undo.push(() => engine.dispose());
@@ -407,7 +433,16 @@ async function buildBoardSession(
     area: choice.interaction,
     surface: stage,
     // Le routeur est l'unique décideur : la traînée ne suit que les gestes qu'il a classés « ink » (aucune règle recopiée).
-    styleFor: trailStyleFor(router.roleOf, DEFAULT_PEN_STYLE, () => engine.camera().zoom),
+    styleFor: trailStyleFor(
+      router.roleOf,
+      {
+        get color() {
+          return engine.itemStyle().color;
+        },
+        get width() {
+          return engine.itemStyle().width;
+        },
+      }, () => engine.camera().zoom),
   });
   undo.push(() => trail.dispose());
   const effective = (): EffectiveEchelons => ({

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook } from "./look";
+import { lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
 
 describe("look", () => {
   it("toLook : absent ou vide → undefined", () => {
@@ -20,5 +20,12 @@ describe("look", () => {
   it("lookFrom : neutre → undefined ; graine seulement avec roughness", () => {
     expect(lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100 }, 9)).toBeUndefined();
     expect(lookFrom({ strokeStyle: "solid", roughness: 1, roundness: "sharp", opacity: 100 }, 9)).toEqual({ roughness: 1, seed: 9 });
+  });
+});
+
+describe("opacityLook", () => {
+  it("opacityLook : 100 neutre, sinon l'opacité seule", () => {
+    expect(opacityLook(100)).toBeUndefined();
+    expect(opacityLook(40)).toEqual({ opacity: 40 });
   });
 });

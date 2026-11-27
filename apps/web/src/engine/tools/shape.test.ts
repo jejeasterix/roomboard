@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Command, ShapeKind } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import type { InputSample } from "../input/sampler";
+import { DEFAULT_ITEM_STYLE } from "../item-style";
 import { constrainEnd, createShapeTool } from "./shape";
 import type { ToolContext } from "./tool";
 
@@ -195,5 +196,23 @@ describe("outil Formes — magnétisme (C9, S4)", () => {
     tool.close(1, "end");
     expect(spy).toHaveBeenCalledTimes(9);
     expect(runs).toEqual([{ type: "AddShape", page, shape: "rect", x0: 0, y0: 0, x1: 120, y1: 80, style: PEN, fill: null }]);
+  });
+});
+
+describe("outil Formes : arrondi (OG11 T9b)", () => {
+  const round = { ...DEFAULT_ITEM_STYLE, ...PEN, roundness: "round" as const };
+  const drawn = (kind: ShapeKind): Extract<Command, { type: "AddShape" }> => {
+    const { ctx, runs } = setup();
+    const tool = createShapeTool(ctx, kind, () => round);
+    tool.begin(1, [at(10, 10)]);
+    tool.extend(1, [at(110, 80)], []);
+    tool.close(1, "end");
+    const c = runs[0];
+    if (c?.type !== "AddShape") throw new Error("AddShape attendue");
+    return c;
+  };
+  it("roundness : seul le rectangle porte l'arrondi", () => {
+    expect(drawn("rect").look).toEqual({ roundness: "round" });
+    for (const k of ["ellipse", "line", "arrow"] as const) expect(drawn(k).look).toBeUndefined();
   });
 });
