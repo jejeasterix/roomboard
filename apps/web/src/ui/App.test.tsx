@@ -1442,3 +1442,22 @@ describe("App — design-l2 : îlots (L2-5, L2-6, L2-8, L2-13, L2-14, L2-19)", (
     expect(container.querySelector('.rb-slot [data-toolbar="annotation"]')).not.toBeNull();
   });
 });
+
+describe("App — panneau d'options sous un panneau passager (T34)", () => {
+  it("Grille ouverte : le panneau d'options est retiré ; fermée : il revient", () => {
+    const { container } = renderApp();
+    const GRID = 'button[data-item="grid"]';
+    expect(container.querySelector("[data-options]")).not.toBeNull();
+    click(container.querySelector(GRID));
+    expect(container.querySelector("#grille")).not.toBeNull();
+    expect(container.querySelector("[data-options]")).toBeNull();
+    click(container.querySelector(GRID));
+    expect(container.querySelector("[data-options]")).not.toBeNull();
+  });
+  it("Réglages ouverts : le panneau d'options est retiré", () => {
+    const { container } = renderApp();
+    click(container.querySelector('button[data-item="settings"]'));
+    expect(container.querySelector(".rb-popover")).not.toBeNull();
+    expect(container.querySelector("[data-options]")).toBeNull();
+  });
+});

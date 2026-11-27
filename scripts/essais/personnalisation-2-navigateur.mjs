@@ -971,6 +971,18 @@ async function nettete2(browser, base) {
   await page.keyboard.press("Escape");
   await page.locator("[data-link-popover]").waitFor({ state: "hidden", timeout: 15000 });
   await waitAttr(page, "data-selection", "1");
+  // T34 : un panneau passager ouvert (Grille, Réglages) retire le panneau d'options : aucun recouvrement.
+  for (const id of ["grid", "settings"]) {
+    check((await rectOf(page, OPT)) !== null, `panneau d'options visible avant « ${id} »`);
+    await clickItem(page, id);
+    await frames(page);
+    const pop = await rectOf(page, ".rb-popover");
+    const under = await rectOf(page, OPT);
+    check(pop !== null && !overlap(pop, under), `panneau « ${id} » : le panneau d'options ne dépasse pas autour (${JSON.stringify(under)} / ${JSON.stringify(pop)})`);
+    await clickItem(page, id);
+    await frames(page);
+    check((await rectOf(page, OPT)) !== null, `panneau d'options revenu après la fermeture de « ${id} »`);
+  }
   // Grille du sélecteur : cases sur la grille de pixels, pastilles sans frange (cases non focalisées).
   await page.click(`${OPT} [data-more-colors="strokeColor"]`);
   await page.locator("[data-color-picker]").waitFor({ state: "visible", timeout: 15000 });
