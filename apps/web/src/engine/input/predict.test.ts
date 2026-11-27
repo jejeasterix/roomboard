@@ -162,6 +162,15 @@ describe("withPrediction (échelon 2 derrière le réglage)", () => {
     expect(log).toEqual(["begin 2 eraser 1", "close 2 cancel"]);
     expect(calls[0]?.samples).toBe(more);
   });
+
+  it("OG25 : resize relayé tel quel au puits ; puits sans resize : rien ne lève", () => {
+    const calls: string[] = [];
+    const inner: GestureSink = { begin: () => {}, extend: () => {}, close: () => {}, resize: (id, r) => void calls.push(`resize ${id} ${r}`) };
+    withPrediction(inner, () => "none").resize?.(-1, 70);
+    expect(calls).toEqual(["resize -1 70"]);
+    const bare = withPrediction({ begin: () => {}, extend: () => {}, close: () => {} }, () => "none");
+    expect(() => bare.resize?.(-1, 70)).not.toThrow();
+  });
 });
 
 describe("OF73 : la pointe ne gigote plus", () => {

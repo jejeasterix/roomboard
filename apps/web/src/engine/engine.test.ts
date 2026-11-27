@@ -198,6 +198,19 @@ describe("createEngine", () => {
     expect(frames.pending()).toBe(1);
   });
 
+  it("OG25 : sink.resize va à l'outil du geste ; geste inconnu : rien", () => {
+    const log: string[] = [];
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", log, ctx),
+      eraser: (ctx) => ({ ...fakeTool("eraser", log, ctx), resize: (id: number, r: number) => void log.push(`eraser.resize ${id} ${r}`) }),
+    };
+    const engine = createEngine({ doc: fakeCore.blank(), renderer: new FakeRenderer(), frames: new Frames(), tools });
+    engine.sink.begin(-1, "eraser", [sample]);
+    engine.sink.resize?.(-1, 70);
+    engine.sink.resize?.(5, 70);
+    expect(log).toEqual(["eraser.begin -1", "eraser.resize -1 70"]);
+  });
+
   it("une image : frame des outils, scène si sale, couche vive, onLiveDrawn", () => {
     const { engine, renderer, frames, log } = setup();
     const drawn: number[] = [];
@@ -1811,6 +1824,17 @@ describe("moteur — C5 (retouche d'image)", () => {
     engine.report("retouches de l'image non affichées : x");
     expect([engine.state().error, doc.version()]).toEqual(["retouches de l'image non affichées : x", v]);
   });
+
+  it("OG25 gesturesToTools : vrai retouche au repos, faux pendant le rognage, vrai après", () => {
+    const { engine, id } = c5();
+    expect(engine.gesturesToTools()).toBe(true);
+    const edit = engine.editImage(id)!;
+    expect(engine.gesturesToTools()).toBe(true);
+    edit.startCrop();
+    expect(engine.gesturesToTools()).toBe(false);
+    edit.finishCrop(false);
+    expect(engine.gesturesToTools()).toBe(true);
+  });
 });
 
 describe("moteur : séance d'orbite (C15, X23)", () => {
@@ -1942,6 +1966,15 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     expect(closed).toHaveBeenCalledTimes(1);
     engine.dispose();
     expect(closed).toHaveBeenCalledTimes(2);
+  });
+
+  it("OG25 gesturesToTools : faux tant qu'une orbite est ouverte", () => {
+    const { engine, open } = c15();
+    expect(engine.gesturesToTools()).toBe(true);
+    const o = open();
+    expect(engine.gesturesToTools()).toBe(false);
+    o?.close();
+    expect(engine.gesturesToTools()).toBe(true);
   });
 });
 
