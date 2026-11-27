@@ -388,3 +388,305 @@ fn curved_arrow_hit_follows_the_curve() {
     let b = d.bounds(&[id]).expect("bornes");
     assert!(b.y0 < -78.0, "bornes suivent la courbe : {b:?}");
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// T4 : suivi, rupture, copie, `bind_target`, route coudée, `AddLinked`.
+
+fn mv(d: &mut Document, ids: &[&String], dx: f64, dy: f64) {
+    d.apply(Command::Transform {
+        ids: ids.iter().map(|s| (*s).clone()).collect(),
+        matrix: [1.0, 0.0, 0.0, 1.0, dx, dy],
+    })
+    .expect("déplacer");
+}
+fn linked_arrow(d: &mut Document) -> (String, String, String) {
+    let a = rect(d, 0.0, 0.0);
+    let b = rect(d, 400.0, 0.0);
+    let line = LineInit {
+        points: vec![],
+        start: bind(&a, 1.0, 0.5),
+        end: bind(&b, 0.0, 0.5),
+    };
+    let f = shape(d, ShapeKind::Arrow, [100.0, 25.0, 400.0, 25.0], line).expect("flèche");
+    (a, b, f)
+}
+fn orthogonal(w: &[(f64, f64)]) -> bool {
+    w.windows(2)
+        .all(|s| (s[0].0 - s[1].0).abs() < 1e-9 || (s[0].1 - s[1].1).abs() < 1e-9)
+}
+
+/// S1, effet de bord 2 : B déplacé de 200 : la fin suit à 7 du contour ; annuler une fois rend B et la flèche.
+/// Discrimine le patron interdit (suivi dans une seconde transaction ou commande) : la `Change` du `Transform` cite la
+/// flèche, et une seule annulation rend aussi B (sous le mauvais patron, elle ne défait que le suivi : B resterait
+/// déplacé).
+#[test]
+fn moving_target_moves_bound_end_in_one_step() {
+    let mut d = Document::blank();
+    let (_a, b, f) = linked_arrow(&mut d);
+    let before = view(&d, &f);
+    let b_before = view(&d, &b);
+    let ch = d
+        .apply(Command::Transform {
+            ids: vec![b.clone()],
+            matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 200.0],
+        })
+        .expect("déplacer");
+    assert_eq!(ch.ids, vec![b.clone(), f.clone()], "déplacés puis suivis");
+    let w = world(&d, &f);
+    assert!(near(w[1], (393.0, 225.0)), "fin suivie : {:?}", w[1]);
+    assert!(near(w[0], (107.0, 25.0)), "départ inchangé");
+    assert!(d.undo());
+    assert_eq!(view(&d, &f), before);
+    assert_eq!(view(&d, &b), b_before, "une seule annulation rend aussi B");
+}
+
+/// Effet de bord 3, n° 8 : flèche seule : rompue aux deux bouts ; flèche + A : fin rompue, départ gardé ; flèche + A + B :
+/// tout gardé.
+#[test]
+fn moving_arrow_alone_unbinds_end_by_end() {
+    let mut d = Document::blank();
+    let (a, b, f) = linked_arrow(&mut d);
+    mv(&mut d, &[&f, &a], 0.0, 50.0);
+    let v = view(&d, &f);
+    assert_eq!(v["shape"]["start"]["id"], a.as_str());
+    assert!(v["shape"].get("end").is_none());
+    d.undo();
+    mv(&mut d, &[&f, &a, &b], 30.0, 0.0);
+    let v = view(&d, &f);
+    assert!(v["shape"].get("start").is_some() && v["shape"].get("end").is_some());
+    d.undo();
+    mv(&mut d, &[&f], 0.0, 80.0);
+    let v = view(&d, &f);
+    assert!(v["shape"].get("start").is_none() && v["shape"].get("end").is_none());
+}
+
+/// Review Focus 2, n° 9 : cible supprimée : lue libre, forme gardée, rien d'écrit sur la flèche ; annuler : liée.
+#[test]
+fn deleted_target_reads_free_and_undo_restores() {
+    let mut d = Document::blank();
+    let (_a, b, f) = linked_arrow(&mut d);
+    let w0 = world(&d, &f);
+    d.apply(Command::Delete {
+        ids: vec![b.clone()],
+    })
+    .expect("supprimer");
+    let v = view(&d, &f);
+    assert!(v["shape"].get("end").is_none());
+    assert_eq!(world(&d, &f), w0);
+    d.undo();
+    assert_eq!(view(&d, &f)["shape"]["end"]["id"], b.as_str());
+}
+
+/// S4, effet de bord 6, n° 10 : copie avec ses deux cibles liée aux copies ; copie seule libre.
+#[test]
+fn duplicate_with_targets_rebinds_to_copies_alone_frees() {
+    let mut d = Document::blank();
+    let (a, b, f) = linked_arrow(&mut d);
+    let p = page(&d);
+    let frag = d
+        .extract(&p, &[a.clone(), b.clone(), f.clone()])
+        .expect("extrait");
+    let ch = d.insert_fragment(&frag, &p, 10.0, 10.0).expect("coller");
+    let [ca, cb, cf] = [&ch.ids[0], &ch.ids[1], &ch.ids[2]];
+    let v = view(&d, cf);
+    assert_eq!(v["shape"]["start"]["id"], ca.as_str());
+    assert_eq!(v["shape"]["end"]["id"], cb.as_str());
+    let alone = d.extract(&p, &[f.clone()]).expect("extrait seul");
+    let ch = d
+        .insert_fragment(&alone, &p, 10.0, 10.0)
+        .expect("coller seul");
+    let v = view(&d, &ch.ids[0]);
+    assert!(v["shape"].get("start").is_none() && v["shape"].get("end").is_none());
+}
+
+/// Carte d'impact 3.1 : la duplication de page renvoie les liaisons vers les copies de la page.
+#[test]
+fn duplicate_page_rebinds_bindings() {
+    let mut d = Document::blank();
+    let (_a, _b, _f) = linked_arrow(&mut d);
+    let p = page(&d);
+    d.apply(Command::DuplicatePage { page: p })
+        .expect("dupliquer la page");
+    let q = d.page_ids()[1].clone();
+    let ids = d.element_ids(&q);
+    let v = view(&d, &ids[2]);
+    assert_eq!(v["shape"]["start"]["id"], ids[0].as_str());
+    assert_eq!(v["shape"]["end"]["id"], ids[1].as_str());
+}
+
+/// n° 7 : SetText qui élargit un texte lié recale l'extrémité dans la même étape (deux annulations défont l'élargissement
+/// puis la ligne : sous le mauvais patron, la ligne resterait après la seconde).
+#[test]
+fn text_box_change_moves_bound_end() {
+    let mut d = Document::blank();
+    let p = page(&d);
+    let text = |d: &mut Document, id: Option<String>, w: f64| {
+        d.apply(Command::SetText {
+            page: p.clone(),
+            id,
+            x: 0.0,
+            y: 0.0,
+            content: "nœud".into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: w,
+            box_height: 50.0,
+            spans: None,
+            look: Look::default(),
+        })
+        .expect("texte")
+    };
+    let t = text(&mut d, None, 100.0).ids[0].clone();
+    let line = LineInit {
+        points: vec![],
+        start: None,
+        end: bind(&t, 1.0, 0.5),
+    };
+    let f = shape(&mut d, ShapeKind::Line, [300.0, 25.0, 100.0, 25.0], line).expect("ligne");
+    assert!(
+        near(world(&d, &f)[1], (105.0, 25.0)),
+        "écart 5 + 0 pour un texte"
+    );
+    text(&mut d, Some(t.clone()), 200.0);
+    assert!(near(world(&d, &f)[1], (205.0, 25.0)));
+    assert!(d.undo());
+    assert!(near(world(&d, &f)[1], (105.0, 25.0)));
+    assert!(d.undo());
+    assert_eq!(d.element_ids(&p), vec![t.clone()], "la ligne défaite à la seconde");
+}
+
+/// n° 17 : le plus petit objet qui contient le point passe devant ; près du contour : projeté ; ancres monde.
+#[test]
+fn bind_target_prefers_smaller_containing_and_projects_outline() {
+    let mut d = Document::blank();
+    let big = shape(
+        &mut d,
+        ShapeKind::Rect,
+        [0.0, 0.0, 400.0, 400.0],
+        LineInit::default(),
+    )
+    .expect("grand");
+    let small = rect(&mut d, 100.0, 100.0); // (100,100)-(200,150)
+    let p = page(&d);
+    let h = d.bind_target(&p, 150.0, 120.0, 15.0).expect("cible");
+    assert_eq!(h.id, small);
+    assert!(!h.on_outline);
+    let h = d.bind_target(&p, 395.0, 300.0, 15.0).expect("bord");
+    assert_eq!(h.id, big);
+    assert!(
+        h.on_outline && (h.fixed[0] - 1.0).abs() < 1e-9 && (h.fixed[1] - 0.75).abs() < 1e-9
+    );
+    assert_eq!(h.anchors[1], [400.0, 200.0]);
+    assert!(d.bind_target(&p, 900.0, 900.0, 15.0).is_none());
+    let l = shape(
+        &mut d,
+        ShapeKind::Line,
+        [600.0, 600.0, 700.0, 600.0],
+        LineInit::default(),
+    )
+    .expect("ligne");
+    assert!(
+        d.bind_target(&p, 650.0, 600.0, 15.0)
+            .is_none_or(|h| h.id != l),
+        "une ligne n'est pas accrochable"
+    );
+    let json = serde_json::to_value(d.bind_target(&p, 395.0, 300.0, 15.0).unwrap()).unwrap();
+    assert_eq!(json["onOutline"], true, "JSON camelCase");
+}
+
+/// S3, S5 : AddLinked à droite : copie à 100, flèche coudée liée aux deux, une étape ; place prise : glisse.
+#[test]
+fn add_linked_places_copy_and_elbow_arrow_in_one_step() {
+    use roomboard_core::linear::LinkDir;
+    let mut d = Document::blank();
+    let a = rect(&mut d, 0.0, 0.0);
+    let n0 = d.element_ids(&page(&d)).len();
+    let ch = d
+        .apply(Command::AddLinked {
+            id: a.clone(),
+            dir: LinkDir::Right,
+        })
+        .expect("relié");
+    let (c, f) = (ch.ids[0].clone(), ch.ids[1].clone());
+    assert_eq!(d.element_ids(&page(&d)).len(), n0 + 2);
+    assert_eq!(view(&d, &c)["transform"][4], 200.0, "100 de large + 100");
+    let v = view(&d, &f);
+    assert_eq!(v["look"]["elbowed"], true);
+    assert_eq!(v["shape"]["start"]["id"], a.as_str());
+    assert_eq!(v["shape"]["end"]["id"], c.as_str());
+    let w = world(&d, &f);
+    assert!(orthogonal(&w), "orthogonale : {w:?}");
+    let again = d
+        .apply(Command::AddLinked {
+            id: a.clone(),
+            dir: LinkDir::Right,
+        })
+        .expect("encore");
+    let y = view(&d, &again.ids[0])["transform"][5].as_f64().unwrap();
+    assert!(y >= 150.0, "glissée sous la première copie : {y}");
+    assert!(d.undo());
+    assert_eq!(d.element_ids(&page(&d)).len(), n0 + 2, "une étape");
+    let l = shape(
+        &mut d,
+        ShapeKind::Line,
+        [0.0, 500.0, 10.0, 500.0],
+        LineInit::default(),
+    )
+    .expect("ligne");
+    assert_eq!(
+        d.apply(Command::AddLinked {
+            id: l,
+            dir: LinkDir::Up
+        }),
+        Err(CommandError::BadShape)
+    );
+    assert_eq!(
+        d.apply(Command::AddLinked {
+            id: "absent".into(),
+            dir: LinkDir::Up
+        }),
+        Err(CommandError::UnknownElement("absent".into()))
+    );
+    assert_eq!(LinkDir::parse("down"), Some(LinkDir::Down));
+    assert_eq!(LinkDir::parse("nord"), None);
+}
+
+/// S3 : glisser le premier nœud reroute la coudée.
+#[test]
+fn moving_node_reroutes_elbow_arrow() {
+    use roomboard_core::linear::LinkDir;
+    let mut d = Document::blank();
+    let a = rect(&mut d, 0.0, 0.0);
+    let ch = d
+        .apply(Command::AddLinked {
+            id: a.clone(),
+            dir: LinkDir::Right,
+        })
+        .expect("relié");
+    mv(&mut d, &[&a], 0.0, 300.0);
+    let w = world(&d, &ch.ids[1]);
+    assert!(near(w[0], (107.0, 325.0)), "départ suivi : {:?}", w[0]);
+    assert!(orthogonal(&w), "{w:?}");
+}
+
+/// n° 12 c : passer à coudée reroute dans la même étape.
+#[test]
+fn set_style_elbowed_reroutes() {
+    let mut d = Document::blank();
+    let (_a, b, f) = linked_arrow(&mut d);
+    mv(&mut d, &[&b], 0.0, 200.0);
+    let before = view(&d, &f);
+    d.apply(Command::SetStyle {
+        ids: vec![f.clone()],
+        patch: StylePatch {
+            elbowed: Some(Some(true)),
+            ..StylePatch::default()
+        },
+    })
+    .expect("coudée");
+    let w = world(&d, &f);
+    assert!(w.len() >= 4, "route à angles droits : {w:?}");
+    assert!(orthogonal(&w), "{w:?}");
+    assert!(d.undo());
+    assert_eq!(view(&d, &f), before, "une étape");
+}
