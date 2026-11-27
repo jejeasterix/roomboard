@@ -18,6 +18,7 @@ use yrs::{
 use crate::commands::{Change, CommandError};
 use crate::document::{collect_out, insert_page, Document};
 use crate::element::{out_string, out_transform, transform_to_any, SCHEMA};
+use crate::linear::End;
 
 /// Table ancien → neuf des ids de groupe, commune à toute une insertion (Z4).
 pub(crate) type IdMap = HashMap<String, String>;
@@ -56,8 +57,62 @@ fn elements_of<T: ReadTxn>(txn: &T, page: &MapRef) -> Vec<MapRef> {
     }
 }
 
-/// Recopie `from` (lus dans `src`) en haut de `into`, dans l'ordre : id neuf, groupes renumérotés par `ids`, translation.
-/// Rend les ids neufs.
+/// Recopies de `from` (lus dans `src`), sans écrire : id neuf, groupes renumérotés par `ids`, translation ; OG12 (n° 10) :
+/// `startBound` / `endBound` renvoyés vers la copie de leur cible quand elle est copiée aussi, retirés avec leur `*Fixed`
+/// sinon (`fixDuplicatedBindingsAfterDuplication` d'Excalidraw). Rend (id neuf, prélim), dans l'ordre. Moitié lecture de
+/// `copy_elements`, appelée seule par `AddLinked` avant sa transaction unique.
+pub(crate) fn copy_prelims<T: ReadTxn>(
+    src: &T,
+    from: &[MapRef],
+    ids: &mut IdMap,
+    dx: f64,
+    dy: f64,
+) -> Vec<(String, MapPrelim)> {
+    let mut fresh: HashMap<String, String> = HashMap::new();
+    let mut own: Vec<String> = Vec::with_capacity(from.len());
+    for e in from {
+        let id = yrs::uuid_v4().to_string();
+        if let Some(old) = out_string(e.get(src, "id")) {
+            fresh.entry(old).or_insert_with(|| id.clone());
+        }
+        own.push(id);
+    }
+    from.iter()
+        .zip(own)
+        .map(|(e, id)| {
+            let mut prelim = e.as_prelim(src);
+            prelim.insert("id".into(), In::from(id.as_str()));
+            if let Some(g) = prelim.get("group").and_then(|g| renumber(g, ids)) {
+                prelim.insert("group".into(), g);
+            }
+            // Transformation illisible : gardée telle quelle.
+            if dx != 0.0 || dy != 0.0 {
+                if let Some(mut t) = out_transform(e.get(src, "transform")) {
+                    t[4] += dx;
+                    t[5] += dy;
+                    prelim.insert("transform".into(), In::Any(transform_to_any(&t)));
+                }
+            }
+            for end in [End::Start, End::End] {
+                let Some(old) = out_string(e.get(src, end.bound_key())) else {
+                    continue;
+                };
+                match fresh.get(&old) {
+                    Some(n) => {
+                        prelim.insert(end.bound_key().into(), In::from(n.as_str()));
+                    }
+                    None => {
+                        prelim.remove(end.bound_key());
+                        prelim.remove(end.fixed_key());
+                    }
+                }
+            }
+            (id, prelim)
+        })
+        .collect()
+}
+
+/// Recopie `from` (lus dans `src`) en haut de `into`, dans l'ordre, par `copy_prelims` ; rend les ids neufs.
 pub(crate) fn copy_elements<T: ReadTxn>(
     src: &T,
     from: &[MapRef],
@@ -68,21 +123,7 @@ pub(crate) fn copy_elements<T: ReadTxn>(
     dy: f64,
 ) -> Vec<String> {
     let mut out = Vec::with_capacity(from.len());
-    for e in from {
-        let mut prelim = e.as_prelim(src);
-        let id = yrs::uuid_v4().to_string();
-        prelim.insert("id".into(), In::from(id.as_str()));
-        if let Some(g) = prelim.get("group").and_then(|g| renumber(g, ids)) {
-            prelim.insert("group".into(), g);
-        }
-        // Transformation illisible : gardée telle quelle.
-        if dx != 0.0 || dy != 0.0 {
-            if let Some(mut t) = out_transform(e.get(src, "transform")) {
-                t[4] += dx;
-                t[5] += dy;
-                prelim.insert("transform".into(), In::Any(transform_to_any(&t)));
-            }
-        }
+    for (id, prelim) in copy_prelims(src, from, ids, dx, dy) {
         let n = into.len(dst);
         into.insert(dst, n, prelim);
         out.push(id);

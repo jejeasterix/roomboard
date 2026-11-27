@@ -552,7 +552,11 @@ fn text_box_change_moves_bound_end() {
     assert!(d.undo());
     assert!(near(world(&d, &f)[1], (105.0, 25.0)));
     assert!(d.undo());
-    assert_eq!(d.element_ids(&p), vec![t.clone()], "la ligne défaite à la seconde");
+    assert_eq!(
+        d.element_ids(&p),
+        vec![t.clone()],
+        "la ligne défaite à la seconde"
+    );
 }
 
 /// n° 17 : le plus petit objet qui contient le point passe devant ; près du contour : projeté ; ancres monde.
@@ -573,9 +577,7 @@ fn bind_target_prefers_smaller_containing_and_projects_outline() {
     assert!(!h.on_outline);
     let h = d.bind_target(&p, 395.0, 300.0, 15.0).expect("bord");
     assert_eq!(h.id, big);
-    assert!(
-        h.on_outline && (h.fixed[0] - 1.0).abs() < 1e-9 && (h.fixed[1] - 0.75).abs() < 1e-9
-    );
+    assert!(h.on_outline && (h.fixed[0] - 1.0).abs() < 1e-9 && (h.fixed[1] - 0.75).abs() < 1e-9);
     assert_eq!(h.anchors[1], [400.0, 200.0]);
     assert!(d.bind_target(&p, 900.0, 900.0, 15.0).is_none());
     let l = shape(

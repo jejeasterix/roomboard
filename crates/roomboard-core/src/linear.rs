@@ -2,15 +2,20 @@
 //! extrémité liée, écritures d'une ligne. T4 y ajoute le suivi, la route coudée et `AddLinked`.
 //! Courbe adaptée de `curveCatmullRomCubicApproxPoints` (packages/math/src/curve.ts) et écart de `getBindingGap`
 //! (packages/element/src/binding.ts) d'Excalidraw (https://github.com/excalidraw/excalidraw), Copyright (c) 2020
-//! Excalidraw, licence MIT (THIRD_PARTY_NOTICES.md).
-use yrs::{Any, In, Map, MapRef, Out, ReadTxn};
+//! Excalidraw, licence MIT (THIRD_PARTY_NOTICES.md). Route simple adaptée de `getSimpleRoute`
+//! (packages/element/src/elbowArrow.ts) et objet relié de `addNewNodes` / `createBindingArrow`
+//! (packages/element/src/flowchart.ts) d'Excalidraw, même licence.
+use std::collections::HashSet;
 
-use crate::commands::{read_shape, read_text, CommandError, ShapeFields};
+use yrs::{Any, Array, In, Map, MapRef, Out, ReadTxn, TransactionMut};
+
+use crate::commands::{read_shape, read_text, Change, CommandError, ShapeFields};
 use crate::document::Document;
 use crate::element::{
     any_f64, apply_transform, finite_positive, fits_f32, invert, out_string, out_transform,
     read_image, transform_to_any, Transform,
 };
+use crate::fill::set_or_remove;
 use crate::media::{read_media, MEDIA_KIND};
 use crate::model3d::{read_model3d, MODEL3D_KIND};
 use crate::shape::ShapeKind;
@@ -81,7 +86,6 @@ pub fn path_of(w: f64, h: f64, inner: &[f64]) -> Vec<(f64, f64)> {
     out
 }
 
-#[allow(dead_code)] // lu par T4
 pub(crate) fn path(s: &ShapeFields) -> Vec<(f64, f64)> {
     path_of(s.w, s.h, &s.points)
 }
@@ -340,9 +344,494 @@ impl Document {
     }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// T4 : route coudée (n° 11, DA-3).
+
+/// Marge de sortie d'une flèche coudée (`BASE_PADDING` d'Excalidraw).
+pub const ELBOW_PADDING: f64 = 40.0;
+
+/// Bout d'une coudée : point monde et normale sortante (axe dominant), `None` pour un bout libre.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ElbowEnd {
+    pub p: (f64, f64),
+    pub normal: Option<(f64, f64)>,
+}
+
+fn toward(from: (f64, f64), to: (f64, f64)) -> (f64, f64) {
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    if dx.abs() >= dy.abs() {
+        (if dx < 0.0 { -1.0 } else { 1.0 }, 0.0)
+    } else {
+        (0.0, if dy < 0.0 { -1.0 } else { 1.0 })
+    }
+}
+
+/// Route simple (n° 11, DA-3) : sortie perpendiculaire au côté lié (vers l'autre bout si libre), en Z quand les deux
+/// sorties se font face sur le même axe, sinon sortie à 40, un coude, entrée à 40 ; au plus 5 segments, sans A*.
+pub fn elbow_route(a: ElbowEnd, b: ElbowEnd) -> Vec<(f64, f64)> {
+    let da = a.normal.unwrap_or_else(|| toward(a.p, b.p));
+    let db = b.normal.unwrap_or_else(|| toward(b.p, a.p));
+    let horiz = |d: (f64, f64)| d.0 != 0.0;
+    let mut pts = vec![a.p];
+    if horiz(da) && horiz(db) && da.0 * (b.p.0 - a.p.0) > 0.0 && db.0 * (a.p.0 - b.p.0) > 0.0 {
+        let mx = (a.p.0 + b.p.0) / 2.0;
+        pts.extend([(mx, a.p.1), (mx, b.p.1)]);
+    } else if !horiz(da)
+        && !horiz(db)
+        && da.1 * (b.p.1 - a.p.1) > 0.0
+        && db.1 * (a.p.1 - b.p.1) > 0.0
+    {
+        let my = (a.p.1 + b.p.1) / 2.0;
+        pts.extend([(a.p.0, my), (b.p.0, my)]);
+    } else {
+        let ea = (a.p.0 + da.0 * ELBOW_PADDING, a.p.1 + da.1 * ELBOW_PADDING);
+        let eb = (b.p.0 + db.0 * ELBOW_PADDING, b.p.1 + db.1 * ELBOW_PADDING);
+        let c = if horiz(da) {
+            (ea.0, eb.1)
+        } else {
+            (eb.0, ea.1)
+        };
+        pts.extend([ea, c, eb]);
+    }
+    pts.push(b.p);
+    simplify(pts)
+}
+
+/// Points confondus et points alignés sur un même axe retirés (les bouts restent).
+fn simplify(pts: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+    let mut out: Vec<(f64, f64)> = Vec::with_capacity(pts.len());
+    for p in pts {
+        if out
+            .last()
+            .is_some_and(|q| (q.0 - p.0).abs() < 1e-9 && (q.1 - p.1).abs() < 1e-9)
+        {
+            continue;
+        }
+        if out.len() >= 2 {
+            let (a, b) = (out[out.len() - 2], out[out.len() - 1]);
+            let same_x = (a.0 - b.0).abs() < 1e-9 && (b.0 - p.0).abs() < 1e-9;
+            let same_y = (a.1 - b.1).abs() < 1e-9 && (b.1 - p.1).abs() < 1e-9;
+            if same_x || same_y {
+                out.pop();
+            }
+        }
+        out.push(p);
+    }
+    out
+}
+
+/// Normale monde sortante du côté le plus proche du rapport `fixed` (haut, droite, bas, gauche), ramenée à l'axe dominant.
+pub(crate) fn side_normal(b: &BindBox, fixed: [f64; 2]) -> (f64, f64) {
+    let d = [fixed[1], 1.0 - fixed[0], 1.0 - fixed[1], fixed[0]];
+    let k = (0..4).min_by(|i, j| d[*i].total_cmp(&d[*j])).unwrap_or(0);
+    let local = [(0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)][k];
+    let (x, y) = (
+        b.t[0] * local.0 + b.t[2] * local.1,
+        b.t[1] * local.0 + b.t[3] * local.1,
+    );
+    toward((0.0, 0.0), (x, y))
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// T4 : suivi et rupture (n° 7, 8), reroutage (n° 12 c).
+
+/// Points monde d'une ligne lue, sa matrice et ses champs.
+fn world_of(t: &Transform, s: &ShapeFields) -> Vec<(f64, f64)> {
+    path(s)
+        .into_iter()
+        .map(|(x, y)| apply_transform(t, x, y))
+        .collect()
+}
+
+/// Bout coudé : ancre et normale du côté lié, ou point libre (bout libre, ou cible absente du document : n° 9).
+fn elbow_end<T: ReadTxn>(
+    doc: &Document,
+    txn: &T,
+    b: Option<&BindInput>,
+    p: (f64, f64),
+) -> ElbowEnd {
+    let target = b.and_then(|b| {
+        doc.find_element(txn, &b.id)
+            .and_then(|f| bind_box(txn, &f.element))
+            .map(|bx| (b, bx))
+    });
+    match target {
+        Some((b, bx)) => ElbowEnd {
+            p: anchor(&bx, [b.fx, b.fy]),
+            normal: Some(side_normal(&bx, [b.fx, b.fy])),
+        },
+        None => ElbowEnd { p, normal: None },
+    }
+}
+
+/// Géométrie recalculée d'une ligne (n° 7, 11) : bouts liés recalés sur leur ancre (cible présente), coudée reroutée.
+fn settle<T: ReadTxn>(
+    doc: &Document,
+    txn: &T,
+    s: &ShapeFields,
+    mut world: Vec<(f64, f64)>,
+    start: Option<&BindInput>,
+    end: Option<&BindInput>,
+) -> Vec<(f64, f64)> {
+    let last = world.len() - 1;
+    let a = elbow_end(doc, txn, start, world[0]);
+    let b = elbow_end(doc, txn, end, world[last]);
+    if s.elbowed {
+        return elbow_route(a, b);
+    }
+    world[0] = a.p;
+    world[last] = b.p;
+    world
+}
+
+/// Route d'une coudée pour `SetLinePoints` (n° 12 b) : `settle` sur les points demandés.
+pub(crate) fn settle_route<T: ReadTxn>(
+    doc: &Document,
+    txn: &T,
+    s: &ShapeFields,
+    world: Vec<(f64, f64)>,
+    start: Option<&BindInput>,
+    end: Option<&BindInput>,
+) -> Vec<(f64, f64)> {
+    settle(doc, txn, s, world, start, end)
+}
+
+/// Applique les écritures d'une ligne (seules celles qui changent) ; rend vrai si une clé a changé.
+fn write_line(
+    txn: &mut TransactionMut,
+    e: &MapRef,
+    t: &Transform,
+    world: &[(f64, f64)],
+    start: Option<&BindInput>,
+    end: Option<&BindInput>,
+) -> bool {
+    let Ok(writes) = line_writes(t, world, start, end) else {
+        return false;
+    };
+    let mut any = false;
+    for (k, v) in writes {
+        any |= set_or_remove(e, txn, k, v);
+    }
+    any
+}
+
+/// Suivi et rupture (n° 7, 8), dans la transaction de la commande qui a bougé `moved` (une étape, S1) ; `m` : matrice du
+/// `Transform` (`None` : boîte d'un texte changée). Rend les ids réécrits (Change). Aucun `boundElements` (DA-2) : on
+/// parcourt les éléments de toutes les pages.
+pub(crate) fn follow(
+    doc: &Document,
+    txn: &mut TransactionMut,
+    moved: &[String],
+    m: Option<&Transform>,
+) -> Vec<String> {
+    let moved: HashSet<&str> = moved.iter().map(String::as_str).collect();
+    let mut work: Vec<(MapRef, String, Transform, ShapeFields)> = Vec::new();
+    for page in doc.pages_ref().iter(&*txn) {
+        let Out::YMap(pm) = page else { continue };
+        let Some(Out::YArray(els)) = pm.get(&*txn, "elements") else {
+            continue;
+        };
+        for o in els.iter(&*txn) {
+            let Out::YMap(e) = o else { continue };
+            let Some(s) = read_shape(&*txn, &e)
+                .filter(|s| s.kind.is_segment() && (s.start.is_some() || s.end.is_some()))
+            else {
+                continue;
+            };
+            let (Some(id), Some(t)) = (
+                out_string(e.get(&*txn, "id")),
+                out_transform(e.get(&*txn, "transform")),
+            ) else {
+                continue;
+            };
+            work.push((e, id, t, s));
+        }
+    }
+    let mut out = Vec::new();
+    for (e, id, t, s) in work {
+        let in_moved =
+            |b: &Option<BindInput>| b.as_ref().is_some_and(|b| moved.contains(b.id.as_str()));
+        let (sm, em) = (in_moved(&s.start), in_moved(&s.end));
+        let self_moved = moved.contains(id.as_str());
+        let (start, end) = if self_moved {
+            // Rupture : chaque liaison dont la cible ne bouge pas avec la ligne est retirée.
+            (s.start.clone().filter(|_| sm), s.end.clone().filter(|_| em))
+        } else if sm || em {
+            (s.start.clone(), s.end.clone())
+        } else {
+            continue;
+        };
+        let mut world = world_of(&t, &s);
+        if let (false, true, true, Some(m)) = (self_moved, sm, em, m) {
+            // Deux bouts liés à des cibles qui bougent ensemble : les points intérieurs suivent en bloc.
+            let last = world.len() - 1;
+            for p in &mut world[1..last] {
+                *p = apply_transform(m, p.0, p.1);
+            }
+        }
+        let world = settle(doc, &*txn, &s, world, start.as_ref(), end.as_ref());
+        if write_line(txn, &e, &t, &world, start.as_ref(), end.as_ref()) {
+            out.push(id);
+        }
+    }
+    out
+}
+
+/// Reroutage d'une flèche qui vient de passer coudée (n° 12 c), dans la transaction de `SetStyle`.
+pub(crate) fn reroute(doc: &Document, txn: &mut TransactionMut, e: &MapRef) {
+    let (Some(s), Some(t)) = (
+        read_shape(&*txn, e),
+        out_transform(e.get(&*txn, "transform")),
+    ) else {
+        return;
+    };
+    let world = settle(
+        doc,
+        &*txn,
+        &s,
+        world_of(&t, &s),
+        s.start.as_ref(),
+        s.end.as_ref(),
+    );
+    write_line(txn, e, &t, &world, s.start.as_ref(), s.end.as_ref());
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// T4 : objet relié (n° 27, DA-4).
+
+/// Écart entre un nœud et son objet relié (`VERTICAL_OFFSET` / `HORIZONTAL_OFFSET` d'Excalidraw).
+pub const LINK_GAP: f64 = 100.0;
+/// Glissements au plus quand la place est prise.
+const LINK_TRIES: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkDir {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl LinkDir {
+    pub fn parse(s: &str) -> Option<LinkDir> {
+        Some(match s {
+            "up" => LinkDir::Up,
+            "down" => LinkDir::Down,
+            "left" => LinkDir::Left,
+            "right" => LinkDir::Right,
+            _ => return None,
+        })
+    }
+    fn unit(self) -> (f64, f64) {
+        match self {
+            LinkDir::Up => (0.0, -1.0),
+            LinkDir::Down => (0.0, 1.0),
+            LinkDir::Left => (-1.0, 0.0),
+            LinkDir::Right => (1.0, 0.0),
+        }
+    }
+    /// Milieu du côté de la source qui regarde la direction ; le côté opposé de la copie est `(1 - fx, 1 - fy)`.
+    fn ratio(self) -> [f64; 2] {
+        match self {
+            LinkDir::Up => [0.5, 0.0],
+            LinkDir::Down => [0.5, 1.0],
+            LinkDir::Left => [0.0, 0.5],
+            LinkDir::Right => [1.0, 0.5],
+        }
+    }
+}
+
+/// Boîte monde alignée d'une boîte d'accroche.
+fn world_box(b: &BindBox) -> (f64, f64, f64, f64) {
+    let c =
+        [(0.0, 0.0), (b.w, 0.0), (b.w, b.h), (0.0, b.h)].map(|(x, y)| apply_transform(&b.t, x, y));
+    let xs = c.map(|p| p.0);
+    let ys = c.map(|p| p.1);
+    let min = |v: [f64; 4]| v.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = |v: [f64; 4]| v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    (min(xs), min(ys), max(xs), max(ys))
+}
+
+impl Document {
+    /// `AddLinked` (n° 27, DA-4) : plan sous une lecture fermée (copie par `copy_prelims`, jamais `insert_fragment`, qui
+    /// ouvrirait sa propre transaction), puis une seule `transact_local` : une étape.
+    pub(crate) fn cmd_add_linked(
+        &mut self,
+        id: &str,
+        dir: LinkDir,
+    ) -> Result<Change, CommandError> {
+        let (page, into, copy_id, copy, arrow) = {
+            let txn = self.read();
+            let found = self
+                .find_element(&txn, id)
+                .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
+            let s = read_shape(&txn, &found.element)
+                .filter(|s| matches!(s.kind, ShapeKind::Rect | ShapeKind::Ellipse))
+                .ok_or(CommandError::BadShape)?;
+            let src = bind_box(&txn, &found.element).ok_or(CommandError::BadShape)?;
+            let into = self
+                .page_elements(&txn, &found.page_id)
+                .ok_or_else(|| CommandError::UnknownPage(found.page_id.clone()))?;
+            let others: Vec<(f64, f64, f64, f64)> = into
+                .iter(&txn)
+                .filter_map(|o| match o {
+                    Out::YMap(e) => Some(e),
+                    _ => None,
+                })
+                .filter_map(|e| bind_box(&txn, &e))
+                .filter(|b| b.id != id)
+                .map(|b| world_box(&b))
+                .collect();
+            let (x0, y0, x1, y1) = world_box(&src);
+            let (sw, sh) = (x1 - x0, y1 - y0);
+            let (ux, uy) = dir.unit();
+            let (mut dx, mut dy) = (ux * (sw + LINK_GAP), uy * (sh + LINK_GAP));
+            let hits = |dx: f64, dy: f64| {
+                others
+                    .iter()
+                    .any(|o| x0 + dx < o.2 && x1 + dx > o.0 && y0 + dy < o.3 && y1 + dy > o.1)
+            };
+            for _ in 0..LINK_TRIES {
+                if !hits(dx, dy) {
+                    break;
+                }
+                if ux != 0.0 {
+                    dy += sh + LINK_GAP;
+                } else {
+                    dx += sw + LINK_GAP;
+                }
+            }
+            let mut prelims = crate::copy::copy_prelims(
+                &txn,
+                std::slice::from_ref(&found.element),
+                &mut Default::default(),
+                dx,
+                dy,
+            );
+            let (copy_id, mut copy) = prelims.remove(0);
+            copy.remove("group");
+            let dst = BindBox {
+                id: copy_id.clone(),
+                t: [
+                    src.t[0],
+                    src.t[1],
+                    src.t[2],
+                    src.t[3],
+                    src.t[4] + dx,
+                    src.t[5] + dy,
+                ],
+                ..src.clone()
+            };
+            let [fx, fy] = dir.ratio();
+            let start = BindInput {
+                id: id.to_string(),
+                fx,
+                fy,
+            };
+            let end = BindInput {
+                id: copy_id.clone(),
+                fx: 1.0 - fx,
+                fy: 1.0 - fy,
+            };
+            let route = elbow_route(
+                ElbowEnd {
+                    p: anchor(&src, [fx, fy]),
+                    normal: Some((ux, uy)),
+                },
+                ElbowEnd {
+                    p: anchor(&dst, [end.fx, end.fy]),
+                    normal: Some((-ux, -uy)),
+                },
+            );
+            let arrow = linked_arrow_fields(&route, &s.style, &start, &end)?;
+            (found.page_id, into, copy_id, copy, arrow)
+        };
+        let arrow_id = arrow.0.clone();
+        {
+            let mut txn = self.transact_local();
+            let n = into.len(&txn);
+            into.insert(&mut txn, n, copy);
+            into.push_back(&mut txn, arrow.1);
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: vec![copy_id, arrow_id],
+            ..Default::default()
+        }))
+    }
+}
+
+/// Champs de la flèche coudée d'`AddLinked` : comme `cmd_add_shape`, `elbowed: true`, couleur et épaisseur de la source,
+/// pointe de fin neutre (`arrow`, non écrite), liaisons et points de la route.
+fn linked_arrow_fields(
+    route: &[(f64, f64)],
+    style: &crate::element::StrokeStyle,
+    start: &BindInput,
+    end: &BindInput,
+) -> Result<(String, yrs::MapPrelim), CommandError> {
+    let id = yrs::uuid_v4().to_string();
+    let mut fields: Vec<(&str, In)> = vec![
+        ("id", In::from(id.as_str())),
+        ("kind", In::from("shape")),
+        ("shape", In::from("arrow")),
+        ("color", In::from(style.color.as_str())),
+        ("width", In::Any(Any::from(f64::from(style.width)))),
+    ];
+    for (k, v) in line_writes(&crate::element::IDENTITY, route, Some(start), Some(end))? {
+        if let Some(v) = v {
+            fields.push((k, v));
+        }
+    }
+    fields.push(("elbowed", In::Any(Any::Bool(true))));
+    Ok((id, fields.into_iter().collect()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn elbow_route_is_orthogonal_and_short() {
+        let r = elbow_route(
+            ElbowEnd {
+                p: (107.0, 25.0),
+                normal: Some((1.0, 0.0)),
+            },
+            ElbowEnd {
+                p: (393.0, 225.0),
+                normal: Some((-1.0, 0.0)),
+            },
+        );
+        assert_eq!(
+            r,
+            vec![(107.0, 25.0), (250.0, 25.0), (250.0, 225.0), (393.0, 225.0)]
+        );
+        let r = elbow_route(
+            ElbowEnd {
+                p: (0.0, 0.0),
+                normal: Some((1.0, 0.0)),
+            },
+            ElbowEnd {
+                p: (-200.0, 300.0),
+                normal: Some((0.0, -1.0)),
+            },
+        );
+        assert!(
+            r.len() <= 6 && r.windows(2).all(|s| s[0].0 == s[1].0 || s[0].1 == s[1].1),
+            "{r:?}"
+        );
+        let free = elbow_route(
+            ElbowEnd {
+                p: (0.0, 0.0),
+                normal: None,
+            },
+            ElbowEnd {
+                p: (100.0, 0.0),
+                normal: None,
+            },
+        );
+        assert_eq!(free, vec![(0.0, 0.0), (100.0, 0.0)]);
+    }
     use crate::commands::Command;
     use crate::element::{Look, StrokeStyle};
 

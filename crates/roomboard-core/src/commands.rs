@@ -266,6 +266,12 @@ pub enum Command {
         start: Option<BindInput>,
         end: Option<BindInput>,
     },
+    /// OG12 (n° 27, DA-4) : copie d'un rectangle ou d'une ellipse et flèche coudée liée aux deux, une étape ; `ids` :
+    /// [copie, flèche] ; id inconnu : `UnknownElement` ; ni rectangle ni ellipse : `BadShape`.
+    AddLinked {
+        id: String,
+        dir: crate::linear::LinkDir,
+    },
     /// Média (C14, M5) : élément, métadonnée du média (avec `linked` s'il est lié) et du poster ; une transaction, une
     /// étape.
     AddMedia {
@@ -829,6 +835,7 @@ impl Document {
                 end,
             } => self.cmd_set_line_points(&id, &points, start.as_ref(), end.as_ref()),
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
+            Command::AddLinked { id, dir } => self.cmd_add_linked(&id, dir),
             Command::SetText {
                 page,
                 id,
@@ -1197,7 +1204,7 @@ impl Document {
             let found = self
                 .find_element(&txn, id)
                 .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
-            let _s = read_shape(&txn, &found.element)
+            let s = read_shape(&txn, &found.element)
                 .filter(|s| s.kind.is_segment())
                 .ok_or(CommandError::BadShape)?;
             let t = out_transform(found.element.get(&txn, "transform"))
@@ -1217,7 +1224,17 @@ impl Document {
             if let Some((bi, bx)) = &b {
                 world[last] = linear::anchor(bx, [bi.fx, bi.fy]);
             }
-            // T4 : une flèche coudée (`_s.elbowed`) est reroutée ici, entre `world[0]` et `world[last]`.
+            // T4 : une flèche coudée est reroutée entre `world[0]` et `world[last]` (n° 11).
+            if s.elbowed {
+                world = linear::settle_route(
+                    self,
+                    &txn,
+                    &s,
+                    world,
+                    a.as_ref().map(|x| &x.0),
+                    b.as_ref().map(|x| &x.0),
+                );
+            }
             let writes = linear::line_writes(
                 &t,
                 &world,
@@ -1271,14 +1288,22 @@ impl Document {
         if !composed.iter().all(valid_matrix) {
             return Err(CommandError::BadMatrix);
         }
-        {
+        // OG12 (n° 7, 8, S1) : suivi et rupture des liaisons dans la même transaction, jamais après : une étape.
+        let followed = {
             let mut txn = self.transact_local();
             for ((e, _, _, _), c) in targets.iter().zip(&composed) {
                 e.insert(&mut txn, "transform", transform_to_any(c));
             }
-        }
+            let moved: Vec<String> = targets.iter().map(|t| t.3.clone()).collect();
+            crate::linear::follow(self, &mut txn, &moved, Some(m))
+        };
         let pages = sorted_unique(targets.iter().map(|t| t.2.clone()));
-        let ids = targets.into_iter().map(|t| t.3).collect();
+        let mut ids: Vec<String> = targets.into_iter().map(|t| t.3).collect();
+        for f in followed {
+            if !ids.contains(&f) {
+                ids.push(f);
+            }
+        }
         Ok(self.done(Change {
             pages,
             ids,
@@ -1348,6 +1373,8 @@ impl Document {
             e.insert(&mut txn, "size", In::Any(Any::from(f64::from(t.size))));
             e.insert(&mut txn, "boxWidth", In::Any(Any::from(t.box_width)));
             e.insert(&mut txn, "boxHeight", In::Any(Any::from(t.box_height)));
+            // OG12 (n° 7) : boîte du texte changée, ses lignes liées suivent dans la même étape.
+            crate::linear::follow(self, &mut txn, &[id.to_string()], None);
         }
         Ok(self.done(Change {
             pages: vec![found.page_id],
@@ -2002,6 +2029,8 @@ impl Document {
                 found
                     .element
                     .insert(&mut txn, "boxHeight", In::Any(Any::from(h)));
+                // OG12 (n° 7) : hauteur changée, les lignes liées suivent dans la même étape.
+                crate::linear::follow(self, &mut txn, &[id.to_string()], None);
             }
         }
         Ok(self.done(Change {
