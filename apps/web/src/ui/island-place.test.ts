@@ -192,6 +192,17 @@ describe("island-place : panneau d'options (OG11, T10)", () => {
     }
     expect(placeOptions(MID, null, tops).x).toBe(EDGE);
   });
+  it("îlot d'outils descendu qui surplombe le panneau (barre latérale dépliée) : panneau sous lui, aucun recouvrement ; hors de ses abscisses : inchangé", () => {
+    const tops = topRowBottom(BUTTON_PX.m);
+    const side = { x: 16, y: 80, w: 280, h: 600 };
+    const tools = { x: 170, y: 80, w: 940, h: 56 };
+    const w = optionsWidth(BUTTON_PX.m);
+    const p = placeOptions(MID, side, tops, [tools], w);
+    expect(p).toEqual({ x: 304, y: 80 + 56 + GAP });
+    const hit = p.x < tools.x + tools.w && tools.x < p.x + w && p.y < tools.y + tools.h;
+    expect(hit).toBe(false);
+    expect(placeOptions(MID, null, tops, [{ x: 400, y: 16, w: 300, h: 56 }], w)).toEqual({ x: 16, y: tops + GAP });
+  });
   it("sous la rangée du haut : haut du panneau >= bas de l'îlot ☰ + GAP, en S, M, L", () => {
     for (const size of ["s", "m", "l"] as const) {
       const btn = BUTTON_PX[size];

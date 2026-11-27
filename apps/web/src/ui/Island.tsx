@@ -354,7 +354,7 @@ export interface IslandLayerProps {
   readonly watch?: Accessor<unknown>;
   /** T22 : îlot posé dans la zone du calque (panneau d'options) : mêmes bornes que les îlots. OG11 × OG4 : reçoit le
    *  rectangle de l'îlot latéral de début (`side-start`, barre latérale ou outils, déplié ou replié) pour se poser à sa droite. */
-  readonly extra?: (sideStart: Accessor<Rect | null>) => JSX.Element;
+  readonly extra?: (sideStart: Accessor<Rect | null>, above: Accessor<readonly Rect[]>) => JSX.Element;
   /** T16 (design-l4) : haut libre des panneaux passagers, px de la case : 16 px sous la rangée des coins et sous l'îlot
    *  d'outils qu'elle place (sur la rangée ou descendu sur la voie suivante ; déplacé : non compté). */
   onTopFree?(y: number): void;
@@ -387,6 +387,11 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     let best: Rect | null = null;
     for (const r of Object.values(sidePlaced())) if (r.w > 0 && r.h > 0 && (best === null || r.x + r.w > best.x + best.w)) best = r;
     return best;
+  });
+  /** Îlot d'outils posé et non déplacé : le panneau d'options passe dessous s'il le surplombe (comme la voie latérale). */
+  const toolsAbove = createMemo((): readonly Rect[] => {
+    const t = tools();
+    return t === null || t.moved ? [] : [{ x: t.x, y: t.y, w: t.w, h: t.h }];
   });
   const placeSide = (id: string, p: Placed | null): void => {
     setSidePlaced((m) => {
@@ -481,7 +486,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   };
   return (
     <div ref={layer} class="rb-islands">
-      {props.extra?.(sideStart)}
+      {props.extra?.(sideStart, toolsAbove)}
       <div ref={topStart} class="rb-corner" data-corner="top-start">
         <div ref={menu} class="rb-corner-menu">
           {islands(starts)}

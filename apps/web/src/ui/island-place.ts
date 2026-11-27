@@ -164,10 +164,19 @@ export function topRowBottom(btn: number): number {
 
 /** OG11 : coin haut-gauche du panneau d'options, sous la rangée du haut (`tops` = son bas, `topRowBottom`), à droite de
  *  l'îlot latéral de début quand il existe (`sideStart` : rectangle posé de la barre latérale d'OG4, dépliée ou repliée ;
- *  `x` absent : 0, bord gauche de la zone), jamais par-dessus ; sans îlot : contre le bord. y borné dans la zone. */
-export function placeOptions(area: Box, sideStart: (Box & { readonly x?: number }) | null, tops: number): Point {
+ *  `x` absent : 0, bord gauche de la zone), jamais par-dessus ; sans îlot : contre le bord. `above` : îlots qui le
+ *  surplombent (îlot d'outils descendu, non déplacé), le panneau passe dessous. y borné dans la zone. */
+export function placeOptions(
+  area: Box,
+  sideStart: (Box & { readonly x?: number }) | null,
+  tops: number,
+  above: readonly Rect[] = [],
+  width = 0,
+): Point {
   const x = sideStart !== null && sideStart.w > 0 ? Math.max(EDGE, Math.ceil((sideStart.x ?? 0) + sideStart.w + GAP)) : EDGE;
-  return { x, y: Math.min(tops + GAP, Math.max(EDGE, area.h - EDGE)) };
+  // Comme la voie latérale (`belowAbove`) : sous l'îlot d'outils descendu qui croise les abscisses du panneau (`width`).
+  const y = belowAbove(x, width, tops + GAP, above);
+  return { x, y: Math.min(y, Math.max(EDGE, area.h - EDGE)) };
 }
 
 /** L2-16 : panneau des profils ouvert, voie de l'îlot d'outils dans la place à sa gauche, sous la rangée du haut ;

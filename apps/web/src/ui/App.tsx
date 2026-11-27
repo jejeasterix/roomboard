@@ -563,7 +563,7 @@ export function App(props: AppProps): JSX.Element {
         size={size}
         sheetOpen={() => panel() === "editor"}
         watch={islandWatch}
-        extra={(sideStart) => (
+        extra={(sideStart, above) => (
           <OptionsPanel
             engine={() => board().engine}
             state={state}
@@ -574,6 +574,7 @@ export function App(props: AppProps): JSX.Element {
             settings={optionSettings}
             annotating={annotating}
             sideStart={sideStart}
+            above={above}
           />
         )}
         onTopFree={setPopTop}

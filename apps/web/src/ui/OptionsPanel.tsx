@@ -33,6 +33,8 @@ export interface OptionsPanelProps {
   /** null tant qu'OG4 n'a pas de barre latérale. */
   /** Rectangle posé de l'îlot latéral de début (barre latérale d'OG4), px de la zone ; null : aucun. */
   readonly sideStart: Accessor<Rect | null>;
+  /** Îlots qui surplombent le panneau (îlot d'outils descendu) ; absent : aucun. */
+  readonly above?: Accessor<readonly Rect[]>;
 }
 
 const LABEL: Readonly<Record<OptionKey, string>> = {
@@ -122,7 +124,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     if (host) onCleanup(observeBox(host, setArea, Math.floor));
   });
   const pos = (): { x: number; y: number } =>
-    placeOptions(area().h > 0 ? area() : { w: 0, h: Number.MAX_SAFE_INTEGER }, props.sideStart(), topRowBottom(btn()));
+    placeOptions(area().h > 0 ? area() : { w: 0, h: Number.MAX_SAFE_INTEGER }, props.sideStart(), topRowBottom(btn()), props.above?.() ?? [], optionsWidth(btn()));
 
   const swatch = (k: "strokeColor" | "background", pick: Pick, apply: () => void): JSX.Element => {
     const id = pick.color ?? "transparent";
