@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use roomboard_core::commands::{Command, CommandError, EraseMode};
 use roomboard_core::document::Document;
-use roomboard_core::element::{Look, StrokeStyle};
+use roomboard_core::element::{apply_transform, Look, StrokeStyle};
 use roomboard_core::format::load;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput};
 use roomboard_core::shape::ShapeKind;
@@ -1266,4 +1266,172 @@ fn lot2_written_at_creation() {
     )[0]
     .clone();
     assert_eq!(look_of(&d, &t).text_align.as_deref(), Some("center"));
+}
+
+// --- OG23 (T1) : pression constante, champ `variability` (seul `"constant"` lu ; absent = variable, jamais écrit). ---
+
+fn constant() -> Look {
+    Look {
+        variability: Some("constant".into()),
+        ..Look::default()
+    }
+}
+
+fn thick() -> StrokeStyle {
+    StrokeStyle {
+        color: "#000000".into(),
+        width: 16.0,
+    }
+}
+
+/// Trait de x = `x0` à `x0 + 200` (pas 10) sur y = 100 ; pression donnée par point.
+fn stroke_with(d: &mut Document, x0: f32, pressure: impl Fn(f32) -> f32, look: Look) -> String {
+    let page = first_page(d);
+    let points: Vec<f32> = (0..=20)
+        .flat_map(|i| [x0 + i as f32 * 10.0, 100.0, pressure(i as f32 / 20.0)])
+        .collect();
+    d.apply(Command::CommitStroke {
+        page,
+        points,
+        style: thick(),
+        look,
+    })
+    .expect("trait")
+    .ids[0]
+        .clone()
+}
+
+/// Sommets monde finis du contour d'un trait.
+fn world_outline(d: &Document, id: &str) -> Vec<(f64, f64)> {
+    let t = d.element(id).expect("vue").transform;
+    let poly = d.outline(id).expect("contour");
+    poly.chunks(2)
+        .filter(|c| c.len() == 2 && c[0].is_finite() && c[1].is_finite())
+        .map(|c| apply_transform(&t, f64::from(c[0]), f64::from(c[1])))
+        .collect()
+}
+
+/// Demi-hauteur du contour autour de l'abscisse monde `x` (sommets à 8 unités au plus).
+fn half_height_at(d: &Document, id: &str, x: f64) -> f64 {
+    let ys: Vec<f64> = world_outline(d, id)
+        .into_iter()
+        .filter(|(wx, _)| (wx - x).abs() <= 8.0)
+        .map(|(_, wy)| wy)
+        .collect();
+    assert!(!ys.is_empty(), "sommets près de x = {x}");
+    let lo = ys.iter().copied().fold(f64::MAX, f64::min);
+    let hi = ys.iter().copied().fold(f64::MIN, f64::max);
+    (hi - lo) / 2.0
+}
+
+/// Discrimine le patron écarté (la pression lue malgré `variability`) : même rampe de pression, contour d'épaisseur
+/// constante avec le champ, variable sans.
+#[test]
+fn constant_outline_keeps_height() {
+    let mut d = blank();
+    let ramp = |t: f32| 0.1 + 0.9 * t;
+    let c = stroke_with(&mut d, 0.0, ramp, constant());
+    let (h1, h2) = (half_height_at(&d, &c, 50.0), half_height_at(&d, &c, 150.0));
+    assert!(
+        (h1 - h2).abs() / h1.max(h2) < 0.05,
+        "constant : {h1} contre {h2}"
+    );
+    let v = stroke_with(&mut d, 0.0, ramp, Look::default());
+    let (g1, g2) = (half_height_at(&d, &v, 50.0), half_height_at(&d, &v, 150.0));
+    assert!(
+        (g1 - g2).abs() / g1.min(g2) > 0.30,
+        "variable : {g1} contre {g2}"
+    );
+}
+
+#[test]
+fn set_style_variability_stroke_only() {
+    let mut d = blank();
+    let r = add_rect(&mut d, Look::default());
+    let s = add_stroke(&mut d, Look::default());
+    let on = StylePatch {
+        variability: Some(Some("constant".into())),
+        ..Default::default()
+    };
+    let c = set_style(&mut d, &[&r, &s], on).expect("style");
+    assert_eq!(c.ids, vec![s.clone()], "rectangle ignoré");
+    assert_eq!(look_of(&d, &s).variability.as_deref(), Some("constant"));
+    assert_eq!(raw_field(&d, &s, "variability").as_deref(), Some("constant"));
+    assert!(!raw_keys(&d, &r).contains(&"variability".to_string()));
+    let off = StylePatch {
+        variability: Some(None),
+        ..Default::default()
+    };
+    let c = set_style(&mut d, &[&s], off).expect("retrait");
+    assert_eq!(c.ids, vec![s.clone()]);
+    assert_eq!(look_of(&d, &s).variability, None);
+    assert!(!raw_keys(&d, &s).contains(&"variability".to_string()));
+    let v = d.version();
+    let wavy = StylePatch {
+        variability: Some(Some("wavy".into())),
+        ..Default::default()
+    };
+    assert_eq!(set_style(&mut d, &[&s], wavy), Err(CommandError::BadStyle));
+    assert_eq!(d.version(), v);
+}
+
+/// Discrimine le patron écarté (gomme au rayon variable sur un contour constant) : à pression 0,1, les morceaux gardent
+/// `variability` et le trou entre leurs contours a la largeur de la gomme (2 × rayon) à 1 unité près.
+#[test]
+fn erase_partial_constant_keeps_variability_and_radius() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let id = stroke_with(&mut d, 100.0, |_| 0.1, constant());
+    let radius = 6.0_f32;
+    let c = d
+        .apply(Command::Erase {
+            page,
+            path: vec![200.0, 60.0, 200.0, 140.0],
+            radius,
+            mode: EraseMode::Partial,
+        })
+        .expect("gomme");
+    assert_eq!(c.removed, vec![id]);
+    assert!(c.ids.len() >= 2, "deux morceaux");
+    let (mut left, mut right) = (f64::MIN, f64::MAX);
+    for p in &c.ids {
+        assert_eq!(look_of(&d, p).variability.as_deref(), Some("constant"));
+        let xs: Vec<f64> = world_outline(&d, p).into_iter().map(|(x, _)| x).collect();
+        let (lo, hi) = (
+            xs.iter().copied().fold(f64::MAX, f64::min),
+            xs.iter().copied().fold(f64::MIN, f64::max),
+        );
+        if hi < 200.0 {
+            left = left.max(hi);
+        } else if lo > 200.0 {
+            right = right.min(lo);
+        }
+    }
+    let hole = right - left;
+    assert!(
+        (hole - 2.0 * f64::from(radius)).abs() <= 1.0,
+        "trou {hole} pour une gomme de {}",
+        2.0 * radius
+    );
+}
+
+#[test]
+fn old_stroke_has_no_variability_key() {
+    let mut d = blank();
+    let s = add_stroke(&mut d, Look::default());
+    assert!(!raw_keys(&d, &s).contains(&"variability".to_string()));
+    assert_eq!(look_of(&d, &s).variability, None);
+    let w = add_stroke(
+        &mut d,
+        Look {
+            variability: Some("wavy".into()),
+            ..Look::default()
+        },
+    );
+    assert!(
+        !raw_keys(&d, &w).contains(&"variability".to_string()),
+        "hors domaine : jamais écrit"
+    );
+    let k = add_stroke(&mut d, constant());
+    assert_eq!(raw_field(&d, &k, "variability").as_deref(), Some("constant"));
 }
