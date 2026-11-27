@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, clashes, dropFile, frames, gitSha, clickItem, inkIn, islandBoxes, item, loadPlaywright, noOverlap, overlapping, serve, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, clashes, dropFile, frames, gitSha, clickItem, inkIn, islandBoxes, item, loadPlaywright, noOverlap, overlapping, serve, stageBox, stageMouse, foldOptions } from "./commun.mjs";
 
 const LABEL = "S5b";
 const LATER = "format pris en charge dans une prochaine version";
@@ -92,6 +92,7 @@ async function scenario(page, url, { captures, tmp }) {
 
   // 1. Page prête, profil par défaut (design-l2, L2-25, contrôle inversé par L2) : la scène occupe toute la fenêtre ; les
   //    îlots flottent au-dessus d'elle, entiers dans la fenêtre et sans chevauchement.
+  await foldOptions(page);
   await page.goto(url);
   await ready();
   check((await attr("data-tool")) === "pen", '#stage[data-tool="pen"] : outil Stylo au départ');
