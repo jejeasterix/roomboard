@@ -1,10 +1,10 @@
 # État — personnalisation-1b
 
-Statut : clos — fusion en cours
+Statut : clos
 Gabarit : chantier
 Objectif : Une fenêtre « Fonds » ouverte depuis la barre principale applique à la page un fond choisi dans un pack livré ou dans « Mes fonds », avec une recherche locale en français.
 Avancement : 14/14 tâches terminées
-Étage : 4 — depuis 2026-11-27 11:50
+Étage : 4 — depuis 2026-11-27 11:50 (fusionné dans main)
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-1b   Branche : feat/personnalisation-1b   Base : origin/main @ 45484db
 Branche principale locale au lancement : 45484db
@@ -12,6 +12,7 @@ Cadrage : docs/plans/personnalisation-1b-cadrage.md   Plan(s) : docs/plans/perso
 Brief : ~/.cache/tmp/og5-brief/demande.md (hors dépôt)
 
 ## Vérification finale
+`verifier.sh --e2e` sur 0d04ab1 (origin/main 5d3fd92, 1a, intégré) : `verifier.sh : e2e OK`, `verifier.sh : OK` · web 3894 · CLI 280 · cargo 1433 · Wasm 1 410 638 / 2 794 527 o
 `verifier.sh --e2e` sur adfcd1f : `verifier.sh : e2e OK`, `verifier.sh : OK` · web 3750 · CLI 276 · cargo 1375 · Wasm 1 386 456 / 2 794 527 o · aléas VM rejoués : design L2, C8, C10b (filechooser)
 
 ## Référence
