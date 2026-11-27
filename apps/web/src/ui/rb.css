@@ -451,3 +451,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-opacity { display: flex; align-items: center; gap: 8px; }
 .rb-options input[type="range"] { flex: 1 1 auto; min-inline-size: 0; block-size: 44px; accent-color: var(--rf-violet-600); }
 .rb-opacity output { flex: none; min-inline-size: 3.5em; font-size: 14px; color: var(--rf-gray-800); }
+/* OG25 (déc. 24) : anneau de la gomme automatique, trait violet de 1,5 px doublé d'un filet blanc de 1 px, sans
+   remplissage ; jamais une cible ; position et taille écrites par `app/eraser-ring.ts`. */
+.rb-eraser-ring { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 1.5px solid var(--rf-violet-600); border-radius: 50%; box-shadow: 0 0 0 1px #fff; background: none; pointer-events: none; z-index: 2; }
+.rb-eraser-ring[hidden] { display: none; }

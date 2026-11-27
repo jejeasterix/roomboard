@@ -9,6 +9,10 @@ import type { KeyValue } from "./profile-store";
 export const FRAME_KEY = "roomboard.annotation.cadre";
 const FRAME_HIDDEN = "non";
 
+/** OG25 (déc. 25) : gomme automatique à la paume ; « non » quand elle est coupée ; absente (ou toute autre valeur) : active. */
+export const PALM_ERASER_KEY = "roomboard.gomme.paume";
+const PALM_ERASER_OFF = "non";
+
 /** OG11 (déc. 23) : style courant commun aux outils (`ItemStyle`), JSON ; illisible : style par défaut (null). */
 export const ITEM_STYLE_KEY = "roomboard.style-courant";
 
@@ -87,6 +91,10 @@ export interface DeviceSettings {
   frame(): boolean;
   /** Vrai si le choix est gardé sur l'appareil ; faux : mémoire seule (aucun stockage, ou stockage qui refuse). */
   setFrame(on: boolean): boolean;
+  /** OG25 (déc. 25) : gomme automatique à la paume active. */
+  palmEraser(): boolean;
+  /** Vrai si le choix est gardé sur l'appareil ; faux : mémoire seule. Prévient `onChange` (comme `setFrame`). */
+  setPalmEraser(on: boolean): boolean;
   /** design-l2 (L2-7) : position et repli de l'îlot `barId` du profil `profileId` ; illisible : NO_ISLAND. */
   island(profileId: string, barId: string): IslandState;
   /** Vrai si gardé sur l'appareil ; faux : mémoire seule. Ne déclenche pas `onChange`. */
@@ -110,8 +118,17 @@ function readFrame(kv: KeyValue | null): boolean {
   }
 }
 
+function readPalmEraser(kv: KeyValue | null): boolean {
+  try {
+    return kv?.getItem(PALM_ERASER_KEY) !== PALM_ERASER_OFF;
+  } catch {
+    return true;
+  }
+}
+
 export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
   let frame = readFrame(kv);
+  let palmEraser = readPalmEraser(kv);
   const listeners = new Set<() => void>();
   const islands = new Map<string, IslandState>();
   /** Style courant écrit dans cette séance (gardé même si le stockage refuse) ; undefined : lire le stockage. */
@@ -126,6 +143,22 @@ export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
         try {
           if (on) kv.removeItem(FRAME_KEY);
           else kv.setItem(FRAME_KEY, FRAME_HIDDEN);
+          kept = true;
+        } catch {
+          kept = false;
+        }
+      }
+      for (const cb of [...listeners]) cb();
+      return kept;
+    },
+    palmEraser: () => palmEraser,
+    setPalmEraser(on) {
+      palmEraser = on;
+      let kept = false;
+      if (kv !== null) {
+        try {
+          if (on) kv.removeItem(PALM_ERASER_KEY);
+          else kv.setItem(PALM_ERASER_KEY, PALM_ERASER_OFF);
           kept = true;
         } catch {
           kept = false;
