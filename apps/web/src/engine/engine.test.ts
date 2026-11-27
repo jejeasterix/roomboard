@@ -76,6 +76,13 @@ class FakeRenderer implements Renderer {
   setImagePreview(p: ImagePreview | null): void {
     this.imagePreviews.push(p);
   }
+  /** OG23 (T8) : couleur rendue à chaque lecture de la pipette, et points demandés. */
+  color: string | null = "#abcdef";
+  readonly asked: [number, number][] = [];
+  colorAt(x: number, y: number): string | null {
+    this.asked.push([x, y]);
+    return this.color;
+  }
 }
 
 const PEN: StrokeStyle = { color: "#000000", width: 4 };
@@ -2653,5 +2660,36 @@ describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () =
     engine.runAll(fmt({ font: "Georgia" }).slice(0, 1));
     engine.undo();
     expect(fontOf(ids[0] ?? "")).toBeUndefined();
+  });
+});
+
+describe("OG23 T8 : pipette de scène", () => {
+  it("pickColor : un toucher, Échap annule", async () => {
+    const { engine, renderer, log } = setup();
+    const p = engine.pickColor();
+    expect(engine.state().picking).toBe(true);
+    engine.sink.begin(1, "pen", [{ ...sample, x: 7, y: 9 }]);
+    engine.sink.close(1, "end");
+    expect(await p).toBe("#abcdef");
+    expect(renderer.asked).toEqual([[7, 9]]);
+    expect(log).toEqual([]); // le toucher lu n'atteint aucun outil
+    expect(engine.state().picking).toBe(false);
+    // le toucher suivant redevient un geste ordinaire
+    engine.sink.begin(2, "pen", [sample]);
+    engine.sink.close(2, "end");
+    expect(log).toContain("pen.begin 2");
+    // Échap annule
+    const q = engine.pickColor();
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect(await q).toBeNull();
+    expect(engine.state().picking).toBe(false);
+    // un second appel résout le premier à null
+    const a = engine.pickColor();
+    const b = engine.pickColor();
+    expect(await a).toBeNull();
+    expect(engine.state().picking).toBe(true);
+    renderer.color = null;
+    engine.sink.begin(3, "pen", [sample]);
+    expect(await b).toBeNull();
   });
 });

@@ -129,3 +129,53 @@ describe("ColorPicker transparent (OG23, T5)", () => {
     expect(m.container.querySelectorAll(".rb-color-cell")).toHaveLength(75);
   });
 });
+
+describe("ColorPicker : pipette (OG23, T8)", () => {
+  function withPick(pick: () => Promise<string | null>) {
+    const anchor = document.createElement("button");
+    document.body.appendChild(anchor);
+    const choose = vi.fn();
+    const close = vi.fn();
+    const r = render(() => <ColorPicker value={null} choose={choose} close={close} anchor={anchor} pick={pick} />);
+    return { ...r, anchor, choose, close };
+  }
+  it("pipette : bouton absent sans pick", () => {
+    const m = mount();
+    expect(m.container.querySelector("[data-color-pipette]")).toBeNull();
+  });
+  it("pipette : le toucher extérieur ne ferme pas", async () => {
+    let resolve: (c: string | null) => void = () => {};
+    const pick = vi.fn(() => new Promise<string | null>((r) => { resolve = r; }));
+    const m = withPick(pick);
+    const outside = document.createElement("div");
+    document.body.appendChild(outside);
+    fireEvent.click(m.container.querySelector("[data-color-pipette]")!);
+    expect(pick).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(outside);
+    expect(m.close).not.toHaveBeenCalled();
+    resolve("#123456");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(m.choose).toHaveBeenCalledWith("#123456");
+    // lue : le sélecteur redevient fermable par un toucher extérieur
+    fireEvent.pointerDown(outside);
+    expect(m.close).toHaveBeenCalledTimes(1);
+  });
+  it("pipette : lecture nulle ou annulée, rien n'est choisi", async () => {
+    const m = withPick(() => Promise.resolve(null));
+    fireEvent.click(m.container.querySelector("[data-color-pipette]")!);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(m.choose).not.toHaveBeenCalled();
+  });
+  it("I arme la pipette (hors champ hexadécimal)", () => {
+    const pick = vi.fn(() => new Promise<string | null>(() => {}));
+    const m = withPick(pick);
+    fireEvent.keyDown(m.container.querySelector("[data-color-hex]")!, { key: "i" });
+    expect(pick).not.toHaveBeenCalled();
+    fireEvent.keyDown(m.container.querySelector("[role=gridcell]")!, { key: "i" });
+    expect(pick).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(m.container.querySelector("[role=gridcell]")!, { key: "i", ctrlKey: true });
+    expect(pick).toHaveBeenCalledTimes(1);
+  });
+});

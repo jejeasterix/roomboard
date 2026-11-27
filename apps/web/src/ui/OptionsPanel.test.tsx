@@ -19,6 +19,7 @@ function rectEl(id: string, color: string): ElementView {
 interface Opts { units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
+  const picks: ((c: string | null) => void)[] = [];
   const engine = {
     setItemStyle: vi.fn((p: Partial<ItemStyle>) => { calls.push(p); }),
     duplicateSelection: vi.fn(() => true),
@@ -29,6 +30,7 @@ function mount(o: Opts) {
     sendToBack: vi.fn(() => true),
     reorder: vi.fn(() => true),
     arrange: vi.fn(() => true),
+    pickColor: vi.fn(() => new Promise<string | null>((r) => { picks.push(r); })),
   };
   const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, selectionUnits: o.units ?? o.selection.length, textFormat: o.editing ? {} : null } as unknown as EngineState;
   const settings = createDeviceSettings(null);
@@ -46,7 +48,7 @@ function mount(o: Opts) {
       sideStart={() => null}
     />
   ));
-  return { ...r, calls, engine, settings };
+  return { ...r, calls, engine, settings, picks };
 }
 
 describe("OptionsPanel (OG11, T10)", () => {
@@ -559,5 +561,35 @@ describe("OptionsPanel (OG23, T7) : Pression, Aligner, Transformer", () => {
     const { container } = mount({ tool: "select", selection: rects(2) });
     const order = [...container.querySelectorAll("[data-option]")].map((e) => e.getAttribute("data-option"));
     expect(order.slice(-4)).toEqual(["layers", "align", "transform", "actions"]);
+  });
+});
+
+describe("OptionsPanel : pipette (OG23, T8)", () => {
+  const flush = async (): Promise<void> => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
+  it("pipette : écrit la section retenue puis ferme", async () => {
+    const { container, calls, picks, engine } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(container.querySelector('[data-more-colors="background"]')!);
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull();
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    expect(engine.pickColor).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull(); // reste ouvert pendant l'armement
+    picks[0]!("#336699");
+    await flush();
+    expect(calls.at(-1)).toEqual({ background: "#336699" });
+    expect(container.querySelector("[data-color-picker]")).toBeNull();
+  });
+  it("pipette : la clé est figée à l'armement (Trait), lecture nulle n'écrit rien", async () => {
+    const { container, calls, picks } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    picks[0]!("#102030");
+    await flush();
+    expect(calls.at(-1)).toEqual({ color: "#102030" });
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    const n = calls.length;
+    picks[1]!(null);
+    await flush();
+    expect(calls).toHaveLength(n);
   });
 });
