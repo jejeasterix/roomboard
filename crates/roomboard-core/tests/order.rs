@@ -61,7 +61,12 @@ fn restack_same_order_no_step() {
     let mut d = Document::blank();
     let a = add(&mut d);
     add(&mut d);
-    let c = d.apply(Command::Restack { ids: vec![a], to: 0 }).unwrap();
+    let c = d
+        .apply(Command::Restack {
+            ids: vec![a],
+            to: 0,
+        })
+        .unwrap();
     assert!(c.ids.is_empty());
 }
 
@@ -70,7 +75,10 @@ fn restack_out_of_range_refused() {
     let mut d = Document::blank();
     let a = add(&mut d);
     assert_eq!(
-        d.apply(Command::Restack { ids: vec![a], to: 5 }),
+        d.apply(Command::Restack {
+            ids: vec![a],
+            to: 5
+        }),
         Err(CommandError::BadOrder)
     );
 }
@@ -120,10 +128,7 @@ fn restack_block_is_one_step() {
             to: 2,
         })
         .unwrap();
-    assert_eq!(
-        order(&d),
-        vec![b.clone(), e.clone(), a.clone(), c.clone()]
-    );
+    assert_eq!(order(&d), vec![b.clone(), e.clone(), a.clone(), c.clone()]);
     assert_eq!(change.ids, vec![a.clone(), c.clone()]);
     assert!(change.removed.is_empty());
     assert!(d.undo());
