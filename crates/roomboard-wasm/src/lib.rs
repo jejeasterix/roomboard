@@ -3808,7 +3808,11 @@ mod tests {
         assert_eq!(d.page_ids(), vec![b.clone(), a.clone()]);
         d.undo_inner();
         assert_eq!(d.page_ids(), vec![a.clone(), b.clone()]);
-        assert!(d.move_page_inner(&a, 0).expect("même rang").pages.is_empty());
+        assert!(d
+            .move_page_inner(&a, 0)
+            .expect("même rang")
+            .pages
+            .is_empty());
         assert_eq!(d.move_page_inner(&a, 2), Err(CommandError::BadIndex));
     }
 

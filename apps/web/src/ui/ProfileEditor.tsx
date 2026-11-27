@@ -328,7 +328,7 @@ function BarBlock(props: {
           value={anchorValue()}
           choose={(a) => props.edit((p) => setAnchor(p, props.bar.id, a === ROLE_ANCHOR ? null : a))}
         />
-        <label class="rb-check" style={{ display: "flex", "align-items": "center", gap: "8px", "min-block-size": "44px" }}>
+        <label class="rb-check" style={{ display: "flex", "align-items": "center", gap: "var(--rf-space-sm)", "min-block-size": "var(--rb-btn-s)" }}>
           <input type="checkbox" data-edit="collapsed" checked={props.bar.collapsed} onChange={(e) => props.edit((p) => setCollapsed(p, props.bar.id, e.currentTarget.checked))} />
           <span>Repliée au démarrage</span>
         </label>
