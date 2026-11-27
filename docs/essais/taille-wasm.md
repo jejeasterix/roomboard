@@ -203,5 +203,80 @@ Décision prise par l'agent (OG23) : le module principal passe par le même `was
 Plafond inchangé. Marge : 116 313 o.
 
 À revoir : le banc de vitesse du chemin de l'encre (`StrokeBuilder`, contours, gomme) sur le module optimisé n'est pas
-fait. Le banc d'OE71 sur `formats` n'a montré aucune perte. Les essais e2e du stylo et de la gomme passent sur le module
+fait (fait depuis par OG28, section suivante : aucune perte). Le banc d'OE71 sur `formats` n'a montré aucune perte. Les essais e2e du stylo et de la gomme passent sur le module
 optimisé. Repli : retirer la ligne de `scripts/verifier.sh` ; il faut alors retirer d'abord 25 273 o de code.
+
+## OG28 (banc de `-Oz` sur le module principal, pistes de marge, 2026-11-28)
+
+OG28 devait poser `wasm-opt -Oz` sur le module principal. OG23 l'a fusionné avant lui (section au-dessus), sans banc de
+vitesse. OG28 apporte ce banc et mesure les réglages qui gagneraient plus. `scripts/verifier.sh` et les recettes de
+l'installeur ne changent pas. Plafonds inchangés (1 572 864 o, 3 145 728 o).
+
+Mesure : `cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release`, puis
+`wasm-bindgen --target web --remove-name-section`, puis `wasm-opt` du paquet npm `binaryen` 132. Chaque réglage du
+profil est essayé par `cargo --config 'profile.release.package.<crate>.opt-level="z"'`, dans un dossier de build à part
+(`~/.cache/tmp`).
+
+### Tailles
+
+| mesure | module principal (o) | marge (o) |
+|---|---:|---:|
+| `main` edf0200 (avant OG23), sortie de `wasm-bindgen` | 1 571 221 | 1 643 |
+| `main` edf0200, + `wasm-opt -Oz` | 1 431 220 | 141 644 |
+| `main` e2ac468 (après OG23), sortie de `wasm-bindgen` | 1 598 137 | −25 273 |
+| `main` e2ac468, + `wasm-opt -Oz` (ce que `verifier.sh` livre et mesure) | 1 456 551 | 116 313 |
+
+### Réglages (sur edf0200, contre `-Oz` seul : 1 431 220 o)
+
+| Réglage | Module principal (o) | Gardé | Pourquoi |
+|---|---:|---|---|
+| `wasm-opt -Os` | 1 439 578 | non | moins bon que `-Oz` |
+| `wasm-opt -O3` | 1 454 818 | non | moins bon que `-Oz` |
+| `wasm-opt -O2` | 1 461 861 | non | moins bon que `-Oz` |
+| `wasm-opt -Oz --converge` | 1 430 358 | non | 862 o de moins seulement, pour une passe bien plus longue |
+| `-Oz` + `--merge-similar-functions`, `--gufa-optimizing`, `--dae-optimizing`, `-O4` | 1 431 220 à 1 445 133 | non | aucun ne fait mieux que `-Oz` seul |
+| `opt-level = "z"` sur `roomboard-core`, + `-Oz` | 1 339 462 | non | banc : pot sur zone +12 à +52 %, tracé +3 à +11 % |
+| `z` sur `roomboard-core` et `roomboard-wasm`, + `-Oz` | 1 304 563 | non | mêmes pertes que la ligne au-dessus |
+| `z` sur `roomboard-core`, `roomboard-wasm` et `yrs`, + `-Oz` | 1 251 948 | non | réunit les pertes de la ligne au-dessus et de celle d'en dessous ; pas de banc |
+| `z` sur `yrs` seul, + `-Oz` | 1 388 860 | non | banc : lecture +29 à +31 %, gomme +8 à +22 %, ajout de traits et enregistrement +7 à +9 % |
+| `z` sur `serde_json`, `zip`, `zlib-rs`, `flate2`, `serde-wasm-bindgen`, + `-Oz` | 1 429 458 | non | 1 762 o de moins seulement : trop peu pour toucher au profil |
+
+Cible d'OG28 non tenue : 150 Ko de marge. Sur `main`, la marge est de 116 313 o. Tout réglage qui gagne plus passe par
+`opt-level = "z"` sur `roomboard-core` ou `yrs`, et le banc le refuse (perte au-delà de 5 %). Pour la suite : chercher
+la place dans le code Rust (décompte par crate, comme OE71), pas dans le profil.
+
+### Banc de vitesse (Node, hors dépôt, 5 passages, médianes en ms, deux séries)
+
+Même script pour chaque variante : il charge le module par `initSync`, comme les tests du vrai module. Essais : 2 000
+traits de 120 points par `StrokeBuilder` (contour freedraw) ; 1 500 traits par `commit_stroke`, puis `save` ; `load` de
+ce fichier ; 100 `hit_test` et 100 `ids_in_rect` sur ces 1 500 traits ; 5 passages de gomme (`erase`), puis 5 `undo` ;
+`fill_zone` sur la figure du banc S6 (`zone-s6-banc.test.ts`), puis `undo`.
+
+Module de `main` e2ac468, ce que `verifier.sh` livre (charge de la VM, `uptime` 1 min : 1,2) :
+
+| essai | sans `wasm-opt` | `-Oz` |
+|---|---:|---:|
+| `StrokeBuilder` | 353 ; 352 | 355 ; 347 |
+| `commit_stroke` + `save` | 109 ; 109 | 106 ; 105 |
+| `load` | 22 ; 22 | 21 ; 21 |
+| `hit_test` + `ids_in_rect` | 1 996 ; 1 988 | 1 878 ; 1 875 |
+| `erase` + `undo` | 178 ; 179 | 176 ; 178 |
+| `fill_zone` S6 + `undo` | 19 ; 19 | 19 ; 19 |
+
+Pire écart de `-Oz` : +1 % (`fill_zone`, 19,3 contre 19,1 ms), sous le bruit du banc. Le seuil de 5 % tient sur chaque
+essai. `-Oz` est gardé.
+
+Réglages `z`, sur le module d'edf0200. Les écarts sont pris contre le départ (sans `wasm-opt`) de la même campagne :
+
+| essai | départ | `-Oz` | `z` cœur + `-Oz` | `z` `yrs` + `-Oz` |
+|---|---:|---:|---:|---:|
+| `StrokeBuilder` | 381 ; 354 / 352 ; 352 | 367 ; 350 / 348 ; 349 | 393 ; 392 | 351 ; 347 |
+| `commit_stroke` + `save` | 134 ; 108 / 109 ; 110 | 114 ; 106 / 106 ; 105 | 108 ; 107 | 118 ; 117 |
+| `load` | 25 ; 22 / 22 ; 22 | 24 ; 21 / 21 ; 21 | 21 ; 21 | 28 ; 28 |
+| `hit_test` + `ids_in_rect` | 2 292 ; 2 035 / 1 972 ; 1 974 | 2 126 ; 1 893 / 1 886 ; 1 840 | 2 160 ; 2 120 | 1 903 ; 1 951 |
+| `erase` + `undo` | 204 ; 180 / 189 ; 175 | 189 ; 179 / 178 ; 173 | 195 ; 194 | 204 ; 214 |
+| `fill_zone` S6 + `undo` | 26 ; 19 / 19 ; 19 | 20 ; 20 / 20 ; 20 | 29 ; 29 | 19 ; 20 |
+
+La barre oblique sépare les deux campagnes : la première (charge 7,9 à 4,4) avec `z` sur le cœur, la seconde (charge
+2,5 à 1,4) avec `z` sur `yrs`. `z` sur le cœur ralentit le pot sur zone et le tracé ; `z` sur `yrs` ralentit la
+lecture, la gomme et l'enregistrement.
