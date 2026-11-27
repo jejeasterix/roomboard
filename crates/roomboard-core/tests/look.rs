@@ -7,6 +7,7 @@ use roomboard_core::commands::{Command, CommandError, EraseMode};
 use roomboard_core::document::Document;
 use roomboard_core::element::{Look, StrokeStyle};
 use roomboard_core::format::load;
+use roomboard_core::rich_text::{SpanAttrs, SpanInput};
 use roomboard_core::shape::ShapeKind;
 use roomboard_core::style::StylePatch;
 use yrs::updates::decoder::Decode;
@@ -716,13 +717,14 @@ fn set_style_roughness_draws_seed() {
         ..Default::default()
     };
     set_style(&mut d, &[&a], rough(2)).expect("2");
-    let l = d.element(&a).unwrap().look.unwrap();
-    assert_eq!(l.roughness, Some(2));
-    assert!(l.seed.is_some(), "graine tirée");
+    let l1 = d.element(&a).unwrap().look.unwrap();
+    assert_eq!(l1.roughness, Some(2));
+    assert!(l1.seed.is_some(), "graine tirée");
     set_style(&mut d, &[&a], rough(1)).expect("1");
-    let l = d.element(&a).unwrap().look.unwrap();
-    assert_eq!(l.roughness, Some(1));
-    assert!(l.seed.is_some());
+    let l2 = d.element(&a).unwrap().look.unwrap();
+    assert_eq!(l2.roughness, Some(1));
+    assert!(l2.seed.is_some());
+    assert_ne!(l1.seed, l2.seed, "niveau changé : graine neuve");
     set_style(&mut d, &[&a], rough(0)).expect("0");
     assert_eq!(
         d.element(&a).unwrap().look,
@@ -731,4 +733,172 @@ fn set_style_roughness_draws_seed() {
     );
     assert_eq!(raw_field(&d, &a, "roughness"), None);
     assert_eq!(raw_field(&d, &a, "seed"), None);
+}
+
+// --- T2b : défauts relevés aux revues de T1 et T2 ---
+
+/// G12 : la gomme recopie les cinq clés d'aspect telles quelles, même illisibles (comme `group`).
+#[test]
+fn erase_partial_copies_raw_look_keys() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let s = add_stroke(&mut d, Look::default());
+    let d0 = with_raw_field(&d, &s, "strokeStyle", In::from("dashdot"));
+    let mut d = with_raw_field(&d0, &s, "opacity", In::from(100.0));
+    let c = d
+        .apply(Command::Erase {
+            page,
+            path: vec![200.0, 80.0, 200.0, 120.0],
+            radius: 6.0,
+            mode: EraseMode::Partial,
+        })
+        .expect("gomme");
+    assert!(c.ids.len() >= 2, "deux morceaux");
+    for id in &c.ids {
+        assert_eq!(raw_field(&d, id, "strokeStyle"), Some("dashdot".into()));
+        assert_eq!(raw_field(&d, id, "opacity"), Some("100".into()));
+        assert_eq!(raw_field(&d, id, "roughness"), None);
+    }
+}
+
+#[test]
+fn neutral_looks_are_neutral() {
+    for l in neutral_looks() {
+        assert!(l.is_neutral(), "{l:?}");
+    }
+    assert!(!dashed().is_neutral());
+}
+
+/// Valeurs hors domaine à la création : aucune clé d'aspect écrite.
+#[test]
+fn out_of_domain_look_at_creation_writes_no_key() {
+    let bad = Look {
+        stroke_style: Some("wavy".into()),
+        roughness: Some(3),
+        seed: Some(5),
+        roundness: Some("sharp".into()),
+        opacity: Some(150),
+    };
+    let mut d = blank();
+    let r = add_rect(&mut d, bad.clone());
+    let s = add_stroke(&mut d, bad.clone());
+    let t = set_text(&mut d, None, "abc", bad)[0].clone();
+    for id in [&r, &s, &t] {
+        let keys = raw_keys(&d, id);
+        for k in LOOK_KEYS {
+            assert!(!keys.contains(&k.to_string()), "{k} écrit sur {id}");
+        }
+    }
+}
+
+/// Au même niveau de tracé : aucune graine neuve, même sans graine lisible.
+#[test]
+fn set_style_same_roughness_draws_no_seed() {
+    let mut d = blank();
+    let a = add_rect(&mut d, Look::default());
+    let mut d = with_raw_field(&d, &a, "roughness", In::from(1.0));
+    let v = d.version();
+    let c = set_style(
+        &mut d,
+        &[&a],
+        StylePatch {
+            roughness: Some(1),
+            ..Default::default()
+        },
+    )
+    .expect("même niveau");
+    assert!(c.ids.is_empty());
+    assert_eq!(d.version(), v);
+    assert_eq!(raw_field(&d, &a, "seed"), None);
+}
+
+/// Sélection mixte, une commande : chaque genre ne reçoit que les champs qu'il admet.
+#[test]
+fn set_style_mixed_selection_field_by_field() {
+    let mut d = blank();
+    let r = add_rect(&mut d, Look::default());
+    let s = add_stroke(&mut d, Look::default());
+    let t = set_text(&mut d, None, "abc", Look::default())[0].clone();
+    let mut d = with_raw_image(&d, "i1", vec![]);
+    let i = "i1".to_string();
+    set_style(
+        &mut d,
+        &[&r, &s, &t, &i],
+        StylePatch {
+            color: Some("#1d4ed8".into()),
+            width: Some(8.0),
+            fill: Some(Some("#ff0000".into())),
+            opacity: Some(40.0),
+            ..Default::default()
+        },
+    )
+    .expect("mixte");
+    let f = |id: &String, k: &str| raw_field(&d, id, k);
+    let some = |x: &str| Some(x.to_string());
+    assert_eq!(f(&r, "color"), some("#1d4ed8"));
+    assert_eq!(f(&r, "width"), some("8"));
+    assert_eq!(f(&r, "fill"), some("#ff0000"));
+    assert_eq!(f(&r, "opacity"), some("40"));
+    assert_eq!(f(&s, "color"), some("#1d4ed8"));
+    assert_eq!(f(&s, "width"), some("8"));
+    assert_eq!(f(&s, "fill"), None);
+    assert_eq!(f(&s, "opacity"), some("40"));
+    assert_eq!(f(&t, "color"), some("#1d4ed8"));
+    assert_eq!(f(&t, "width"), None);
+    assert_eq!(f(&t, "fill"), None);
+    assert_eq!(f(&t, "opacity"), some("40"));
+    assert_eq!(f(&i, "color"), None);
+    assert_eq!(f(&i, "width"), None);
+    assert_eq!(f(&i, "fill"), None);
+    assert_eq!(f(&i, "opacity"), some("40"));
+}
+
+/// H17 : `color` règle la couleur de l'élément texte, sans effacer les couleurs posées sur une partie du texte.
+#[test]
+fn set_style_color_keeps_text_span_colors() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let red = SpanAttrs {
+        color: Some("#dc2626".into()),
+        ..SpanAttrs::default()
+    };
+    let spans = vec![
+        SpanInput {
+            text: "Le ".into(),
+            attrs: SpanAttrs::default(),
+        },
+        SpanInput {
+            text: "chat".into(),
+            attrs: red,
+        },
+    ];
+    let t = d
+        .apply(Command::SetText {
+            page,
+            id: None,
+            x: 0.0,
+            y: 0.0,
+            content: "Le chat".into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+            spans: Some(spans),
+            look: Look::default(),
+        })
+        .expect("texte")
+        .ids[0]
+        .clone();
+    let before = d.element(&t).unwrap().text.unwrap().spans;
+    set_style(
+        &mut d,
+        &[&t],
+        StylePatch {
+            color: Some("#1d4ed8".into()),
+            ..Default::default()
+        },
+    )
+    .expect("couleur");
+    assert_eq!(d.element(&t).unwrap().style.unwrap().color, "#1d4ed8");
+    assert_eq!(d.element(&t).unwrap().text.unwrap().spans, before);
 }
