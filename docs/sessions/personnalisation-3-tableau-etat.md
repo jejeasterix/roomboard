@@ -3,9 +3,9 @@
 Statut : en cours
 Gabarit : lots (provisoire : 15 points en 3 lots A, B, C)
 Objectif : L'outil Tableau accueille des objets dans ses cases (la case s'adapte), se règle finement (bordures, alignement, en-tête) et sert en classe (case cachée, tri, tableau de tri, collage Excel/Word).
-Avancement : 0/3 lots clos · lot A 10/11 tâches
-Étage : 3 (vague séquentielle, worktree partagé) — depuis 2026-11-27 19:25
-Lot : A « objets dans les cases » — 10/11 tâches terminées — depuis 2026-11-27 19:25
+Avancement : 0/3 lots clos · lot A 11/11 tâches
+Étage : 4 (lot A) / 3 (lot B, worktree --B) — depuis 2026-11-27 22:20
+Lot : A « objets dans les cases » — 11/11 tâches terminées — depuis 2026-11-27 19:25
 Tâche : —
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau   Branche : feat/personnalisation-3-tableau   Base : origin/main @ 53a14b6e
@@ -21,7 +21,7 @@ Tailles Wasm mesurées à 53a14b6e : principal 1 429 754 o · formats 2 794 527 
 Tailles Wasm avant (brief, à 59b75db) : principal 1 429 407 o · formats 2 794 527 o
 
 ## Compteurs
-contre-relecture cadrage 1/2 · relecture plan 1/3 (aucun bloquant ; 8 corrections faites, coupe T1/T2) · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 · relecture plan 1/3 (aucun bloquant ; 8 corrections faites, coupe T1/T2) · vagues sans progrès 0/2 · correctifs de fin 2/2 (tour 1 : 1 bloquant, 3 majeurs ; tour 2 : 1 majeur neuf, corrigé en C4)
 
 ## Tâches (lot A, plan 957b90fd ; toutes « partagé », séquentielles)
 | id | état | essais | commit vert | preuve rejouée |
@@ -36,7 +36,12 @@ contre-relecture cadrage 1/2 · relecture plan 1/3 (aucun bloquant ; 8 correctio
 | T6 | terminée | 1/3 | 63fb9aa7 | D11/cellKey/Alt+Entrée : 49 passés ; essai S4 colonne revient à 240 |
 | T7 | terminée | 1/3 (+1 relance limite de tours) | 87c0514e | set_table_options 1 ; vitest 72 ; essai S2 au doigt 64×48 ; module 1 482 684 o |
 | T8 | terminée | 2/3 (essai 1 : S3 rouge, îlot d'options sur la case dans l'essai) | 9173659c | commit_stroke_with 2 ; pen D10 3 ; web 4105 (197 fichiers) ; module 1 483 963 o ; défaut trouvé : trait perdu si le cœur refuse cell → repli a14fb697 |
-| T9 | en cours | 1/3 (+1 relance limite de tours) | | |
+| T9 | terminée | 1/3 (+1 relance ; régression cellContent bg:null corrigée 3aebad3c) | 3aebad3c | set_cell_image 2 ; S5 7 dont S5 PDF ; web 4118 ; module 1 488 946 o |
+| C1 | terminée (bloquant tour 1 : fond absent du PDF vectoriel) | 1/3 | 283a0230 | pdf-overlay-vector + CLI /Subtype /Image ; 508 tests ciblés au rejeu |
+| C2 | terminée (worktree isolé, fusionné ddd05888) | 1/3 | f3843eb0 | PlaceInCell refuse id en double ; cell_of ; table_links 26 ; module 1 489 781 o |
+| C3 | terminée (Sortir réduit la case, écouteur du menu, a11y, icônes 24 px) | 1/3 | b70c04e9 | web 4134 |
+| C4 | terminée (tour 2 : lien perdu en zone fusionnée ; garde rognage ; menu fermé sur Alt) | 1/3 | 8ebdd850 | 25 ciblés + essai OK |
+| Fusion origin/main | f6f3f43f intégré (6 conflits, deux côtés gardés) | — | e2e40a23 | cargo check, tsc, 236 ciblés, contrat 501 |
 
 
 ## Terminé quand
