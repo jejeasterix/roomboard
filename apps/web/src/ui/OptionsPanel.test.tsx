@@ -727,8 +727,8 @@ describe("OptionsPanel (OG23, T13) : section Image et Glisser une copie", () => 
     expect(on.engine.setDragCopy).toHaveBeenLastCalledWith(false);
   });
   it("bascule grisée quand aucune cible ne l'admet", () => {
-    const table = { id: "t", kind: "table", transform: [1, 0, 0, 1, 0, 0] } as unknown as ElementView;
-    const { container } = mount({ tool: "select", selection: [table] });
+    const unknown = { id: "t", kind: "unknown", transform: [1, 0, 0, 1, 0, 0] } as unknown as ElementView;
+    const { container } = mount({ tool: "select", selection: [unknown] });
     expect(toggle(container).hasAttribute("disabled")).toBe(true);
   });
 });

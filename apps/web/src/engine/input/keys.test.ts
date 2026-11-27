@@ -231,6 +231,17 @@ describe("arrangeKey (OG23, déc. 24)", () => {
     expect(arrangeKey(k("Ó", { code: "KeyH", altKey: true, shiftKey: true }))).toBe("align-center");
     expect(arrangeKey(k("h", { altKey: true }))).toBeNull();
   });
+  it("arrangeKey : un contrôle de l'interface ou un évènement déjà traité ne range rien (OG23, T19, comme nudgeKey)", () => {
+    const role = (r: string) => ({ tagName: "DIV", getAttribute: (n: string) => (n === "role" ? r : null) });
+    for (const target of [{ tagName: "BUTTON" }, { tagName: "SELECT" }, { tagName: "INPUT", type: "range" }, role("slider"), role("tab"), { tagName: "DIV", isContentEditable: true }]) {
+      expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target })), JSON.stringify(target)).toBeNull();
+      expect(arrangeKey(k("H", { shiftKey: true, target })), JSON.stringify(target)).toBeNull();
+    }
+    expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, defaultPrevented: true }))).toBeNull();
+    expect(arrangeKey(k("H", { shiftKey: true, defaultPrevented: true }))).toBeNull();
+    expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: { tagName: "CANVAS" } }))).toBe("align-left");
+    expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: null }))).toBe("align-left");
+  });
   it("arrangeKey refuse Ctrl, saisie, composition", () => {
     expect(arrangeKey(k("H", { shiftKey: true, ctrlKey: true }))).toBeNull();
     expect(arrangeKey(k("H", { shiftKey: true, metaKey: true }))).toBeNull();

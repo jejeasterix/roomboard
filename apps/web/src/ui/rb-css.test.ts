@@ -16,6 +16,21 @@ describe("rb.css (design-l1, L1-6)", () => {
     expect(decls).toHaveLength(29);
     for (const d of decls) expect(CSS, d).toContain(d);
   });
+  it("toute var(--…) de rb.css est définie dans rb.css (OG23, T19 : --rf-gray-200 n'existait pas, le damier n'était pas peint)", () => {
+    const defined = new Set([...CSS.matchAll(/(--[\w-]+)\s*:/g)].map(([, n]) => n));
+    const used = [...CSS.matchAll(/var\(\s*(--[\w-]+)\s*(,|\))/g)].filter(([, , end]) => end === ")").map(([, n]) => n!);
+    expect(used.length).toBeGreaterThan(0);
+    expect(used.filter((n) => !defined.has(n))).toEqual([]);
+  });
+  it("le damier de la case Transparent emploie des jetons de gris définis", () => {
+    const r = rule(".rb-pick[data-transparent] .rb-pick-dot, .rb-color-transparent .rb-pick-dot");
+    expect(r).toContain("repeating-conic-gradient(var(--rf-gray-300) 0 25%, var(--rf-white) 0 50%)");
+  });
+  it("les en-têtes d'accordéon : règle .rb-opt-h, aucun style en ligne dans OptionsPanel", () => {
+    expect(rule(".rb-opt-h")).toContain("margin: 0;");
+    expect(rule(".rb-opt-h")).toContain("font: inherit;");
+    expect(readFileSync(join(__dirname, "OptionsPanel.tsx"), "utf8")).not.toMatch(/class="rb-opt-h" style=/);
+  });
   it("tailles S 44, M 48, L 64, icône 24, cases du sélecteur 36", () => {
     for (const d of ["--rb-btn-s: 44px;", "--rb-btn-m: 48px;", "--rb-btn-l: 64px;", "--rb-icon: 24px;", "--rb-cell: 36px;"]) expect(CSS).toContain(d);
     expect(rule(".rb-table-picker-grid")).toContain("repeat(8, var(--rb-cell))");

@@ -4651,6 +4651,26 @@ describe.each(factories)("contrat OG23 lot B : $name", ({ f }) => {
     d.free();
   });
 
+  it("SetStyle dragCopy (décision 29) : tableau, média, objet 3D l'admettent comme trait, forme, texte, image ; une étape, annuler défait", () => {
+    const d = f.blank();
+    const p = first(d);
+    const ids = [
+      commit(d, p, 100),
+      d.apply({ type: "AddShape", page: p, shape: "rect", x0: 10, y0: 10, x1: 60, y1: 50, style: { color: "#000000", width: 2 }, fill: null }).ids[0] ?? "",
+      d.apply({ type: "AddImage", page: p, asset: png, w: 64, h: 48, matrix: I }).ids[0] ?? "",
+      addTable(d, p),
+      c14Add(d, p),
+      c15Add(d, p),
+    ];
+    expect(ids.every((id) => id !== "")).toBe(true);
+    const c = d.apply({ type: "SetStyle", ids, patch: { dragCopy: true } });
+    expect(c.ids).toEqual(ids);
+    unchanged(d, () => d.apply({ type: "SetStyle", ids, patch: { dragCopy: true } }));
+    d.undo(); // une seule étape pour les six éléments
+    expect(d.apply({ type: "SetStyle", ids, patch: { dragCopy: true } }).ids).toEqual(ids);
+    d.free();
+  });
+
   it("SetImageParams transparent x y : départ relu, hors image ou seul refusé du même message", () => {
     const d = f.blank();
     const p = first(d);
