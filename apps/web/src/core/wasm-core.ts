@@ -2,6 +2,7 @@
 // une dérive de forme entre Rust et TS lève une erreur au lieu de passer sous un `as`, sauf un `kind` d'une version
 // plus récente, rendu comme cadre inconnu (voir la branche `default`).
 import type {
+  CellLink,
   AssetInfo,
   LinkedAsset,
   AssetRef,
@@ -180,9 +181,19 @@ export function toElementView(v: unknown): ElementView | null {
   // C3 (Z1) : chemin de groupes, chaînes non vide ; absent (Option::None → undefined) laissé absent.
   const group = v["group"];
   if (group !== undefined && group !== null && (!isStrings(group) || group.length === 0)) throw new Error(ELEMENT);
+  // personnalisation-3 (D1) : lien de case, trois chaînes ; absent laissé absent.
+  const cell = v["cell"];
+  if (cell !== undefined && cell !== null && !(isStrings(cell) && cell.length === 3)) throw new Error(ELEMENT);
+  const link: CellLink | null = isStrings(cell) && cell.length === 3 ? [cell[0] ?? "", cell[1] ?? "", cell[2] ?? ""] : null;
   // OG11 : aspect lu défensivement (`toLook`), omis s'il est neutre.
   const look = toLook(v["look"]);
-  const base = { id, transform: toMatrix(v["transform"]), ...(isStrings(group) ? { group } : {}), ...(look ? { look } : {}) };
+  const base = {
+    id,
+    transform: toMatrix(v["transform"]),
+    ...(isStrings(group) ? { group } : {}),
+    ...(look ? { look } : {}),
+    ...(link ? { cell: link } : {}),
+  };
   switch (kind) {
     case "stroke":
       return { ...base, kind, style: toStyle(v["style"]) };
@@ -644,6 +655,28 @@ class WasmCoreDocument implements CoreDocument {
         return toChange(this.d.split_table_cell(cmd.id, cmd.row, cmd.col));
       case "SetTableShade":
         return toChange(this.d.set_table_shade(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col, cmd.shade ?? undefined));
+      case "PlaceInCell":
+        return toChange(
+          this.d.place_in_cell(
+            [...cmd.ids],
+            new Float64Array(cmd.matrix),
+            cmd.cell?.[0],
+            cmd.cell?.[1],
+            cmd.cell?.[2],
+            cmd.sizes.flatMap(([t, a, l]) => [t, a, l]),
+            new Float64Array(cmd.sizes.map((s) => s[3])),
+          ),
+        );
+      case "SetTableLineSizes":
+        return toChange(
+          this.d.set_table_line_sizes(
+            cmd.id,
+            cmd.cols.map((c) => c[0]),
+            new Float64Array(cmd.cols.map((c) => c[1])),
+            cmd.rows.map((r) => r[0]),
+            new Float64Array(cmd.rows.map((r) => r[1])),
+          ),
+        );
       case "ImportTable":
         return toChange(
           this.d.import_table(
