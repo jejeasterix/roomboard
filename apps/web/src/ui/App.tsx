@@ -185,8 +185,10 @@ export function App(props: AppProps): JSX.Element {
   const helpDoc = props.stages.ownerDocument;
   helpDoc.addEventListener("keydown", helpKey);
   // T39 : Échap ferme l'Aide même si le focus n'est pas dans le panneau, et s'arrête là (la page ne désélectionne pas en plus).
+  // T41 : une couche posée par-dessus (menu ☰, sélecteur de couleur, éditeur de lien) garde son Échap : l'Aide attend le suivant.
   const helpEscape = (e: KeyboardEvent): void => {
     if (e.key !== "Escape" || panel() !== "help" || e.isComposing) return;
+    if (e.target instanceof Element && e.target.closest("[data-menu-list], [data-color-picker], [data-link-popover]") !== null) return;
     e.preventDefault();
     e.stopPropagation();
     setPanel(null);

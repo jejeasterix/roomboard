@@ -23,14 +23,17 @@ export interface LinkPopoverProps {
 
 export const LINK_REFUSED = "Lien refusé : il doit commencer par https://, http:// ou mailto:.";
 export const LINK_NOT_SAVED = "Lien non enregistré : l'élément ne l'accepte pas.";
+export const LINK_BAD_CHARS = "Le lien contient une espace ou un caractère interdit ; encodez-le (%20).";
 export const LINK_TOO_LONG = "Lien trop long : 2 048 caractères au plus.";
+
+const BAD_CHARS = /[\s"<>\\\p{Cc}]/u;
 
 /** Saisie lue : bords retirés ; vide = retrait ; sinon le lien, ou le message du refus. */
 export function checkLink(raw: string): { readonly ok: true; readonly url: string | null } | { readonly ok: false; readonly message: string } {
   const url = raw.trim();
   if (url === "") return { ok: true, url: null };
   if ([...url].length > LINK_MAX_CHARS) return { ok: false, message: LINK_TOO_LONG };
-  if (!validLink(url)) return { ok: false, message: LINK_REFUSED };
+  if (!validLink(url)) return { ok: false, message: /^(https?:\/\/|mailto:)/.test(url) && BAD_CHARS.test(url) ? LINK_BAD_CHARS : LINK_REFUSED };
   return { ok: true, url };
 }
 

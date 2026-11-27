@@ -41,8 +41,12 @@ export function createWebShell(w: WebShellWindow): ShellPort {
     // T18 (déc. 38) : jamais `window.open(url)` nu : schéma contrôlé, onglet neuf sans `opener`.
     openLink(url) {
       if (!validLink(url) || w.open === undefined) return;
-      // T39 : une fenêtre bloquée (`open` rend null) ne reste pas silencieuse.
-      if (w.open(url, "_blank", "noopener") === null) w.alert(LINK_OPEN_FAILED);
+      // T41 : avec `noopener`, `window.open` rend toujours null (norme HTML) : le retour ne dit rien ; seule une exception est un échec.
+      try {
+        w.open(url, "_blank", "noopener");
+      } catch {
+        w.alert(LINK_OPEN_FAILED);
+      }
     },
   };
 }

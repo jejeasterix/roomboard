@@ -12,7 +12,7 @@ export function groupedShortcuts(list: readonly Shortcut[] = SHORTCUTS): Readonl
   return [...groups];
 }
 
-/** Aide — raccourcis (H4) : ouverte par « ? » ou le menu ☰ ; Échap ou « Fermer » la ferme. */
+/** Aide — raccourcis (H4) : ouverte par « ? » ou le menu ☰ ; « Fermer » la ferme ; Échap, par l'écoute de l'App (T41). */
 export function HelpPanel(props: HelpPanelProps): JSX.Element {
   let root: HTMLElement | undefined;
   onMount(() => root?.focus());
@@ -23,12 +23,6 @@ export function HelpPanel(props: HelpPanelProps): JSX.Element {
       data-panel="aide"
       aria-label="Aide — raccourcis"
       tabindex="-1"
-      onKeyDown={(e) => {
-        if (e.key !== "Escape") return;
-        e.preventDefault();
-        e.stopPropagation();
-        props.close();
-      }}
     >
       <header class="rb-help-head">
         <h2>Aide — raccourcis</h2>

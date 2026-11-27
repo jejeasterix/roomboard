@@ -162,9 +162,9 @@ describe("OptionsPanel lot 2 (T15)", () => {
     fireEvent.click(container.querySelector('[data-option="font"] [data-choice="Georgia"]')!);
     fireEvent.click(container.querySelector('[data-option="fontSize"] [data-choice="48"]')!);
     fireEvent.click(container.querySelector('[data-option="font"] [data-choice="default"]')!);
-    expect(engine.run).toHaveBeenNthCalledWith(1, { type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: "Georgia" } });
-    expect(engine.run).toHaveBeenNthCalledWith(2, { type: "FormatText", id: "t", start: 0, len: 5, attrs: { size: 48 } });
-    expect(engine.run).toHaveBeenNthCalledWith(3, { type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: null } });
+    expect(engine.runAll).toHaveBeenNthCalledWith(1, [{ type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: "Georgia" } }]);
+    expect(engine.runAll).toHaveBeenNthCalledWith(2, [{ type: "FormatText", id: "t", start: 0, len: 5, attrs: { size: 48 } }]);
+    expect(engine.runAll).toHaveBeenNthCalledWith(3, [{ type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: null } }]);
   });
   it("T37 : Police sur trois textes : un seul runAll (une étape d'annulation), aucun run", () => {
     const { container, engine } = mount({ tool: "select", selection: [textEl("a", "ab"), textEl("b", "cde"), textEl("c", "f")] });
@@ -334,7 +334,7 @@ describe("OptionsPanel : avant la saisie, focus, sélecteur borné (T31)", () =>
     const { container, calls, engine } = mount({ tool: "select", selection: [textEl("t", "abcde")] });
     fireEvent.click(container.querySelector('[data-option="font"] [data-choice="Georgia"]')!);
     expect(calls).toContainEqual({ font: "Georgia" });
-    expect(engine.run).toHaveBeenCalledWith({ type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: "Georgia" } });
+    expect(engine.runAll).toHaveBeenCalledWith([{ type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: "Georgia" } }]);
   });
   it("un appui sur un bouton du panneau ne prend pas le focus (pointerdown et mousedown annulés)", () => {
     const { container } = mount({ tool: "text", selection: [], editing: true });
