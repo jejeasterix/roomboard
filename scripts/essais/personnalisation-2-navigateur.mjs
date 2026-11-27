@@ -756,6 +756,22 @@ const centerOf = async (page, sel) => {
 };
 const pressed2 = async (page, sel) => (await page.locator(sel).first().getAttribute("aria-pressed")) === "true";
 
+/** Rectangle d'un élément visible (px CSS de la fenêtre) ; absent ou masqué : null. */
+const rectOf = (page, sel) =>
+  page.evaluate((q) => {
+    const e = document.querySelector(q);
+    if (!e || e.getClientRects().length === 0) return null;
+    const r = e.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }, sel);
+const overlap = (a, b) => a !== null && b !== null && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+/** Rectangles des îlots visibles hors `.rb-options` et hors l'élément `self` (sélecteur). */
+const otherIslands = (page, self) =>
+  page.evaluate((me) => [...document.querySelectorAll(".rb-island")].filter((e) => !e.matches("[data-options]") && !e.matches(me) && e.getClientRects().length > 0).map((e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }), self);
+
 /** S8 : sélecteur de couleur, pointes de flèche, Aide, Effacer la page, Lien. */
 async function s8(browser, base, mode, tmp) {
   const { ctx, page, cdp, errors } = await newPage(browser, base);
@@ -813,6 +829,9 @@ async function s8(browser, base, mode, tmp) {
   if (mode === "doigt") await clickItem(page, "help");
   else await page.keyboard.press("?");
   await page.waitForSelector('[data-panel="aide"]', { state: "visible", timeout: 15000 });
+  const helpBox = await rectOf(page, ".rb-help");
+  const panelBehind = await rectOf(page, OPT);
+  check(!overlap(helpBox, panelBehind), `S8.3 : le panneau d'options ne dépasse pas autour de l'Aide (${JSON.stringify(panelBehind)} / ${JSON.stringify(helpBox)})`);
   const dup = await page.locator('[data-panel="aide"] [data-shortcut-id="duplicate"]').innerText();
   const lnk = await page.locator('[data-panel="aide"] [data-shortcut-id="link"]').innerText();
   lire("[data-panel=aide] contient Ctrl+D Dupliquer", `${dup.replace(/\s+/g, " ")} | ${lnk.replace(/\s+/g, " ")}`);
@@ -914,6 +933,13 @@ async function nettete2(browser, base) {
   await away();
   await calage(page, OPT, "panneau Texte", 3);
   for (const v of ["left", "center", "right"]) await icon(`icône align-${v}`, opt("textAlign", v));
+  const margins = await page.$$eval(`${OPT} [data-edit="font"] .rb-radio`, (els) => els.map((b) => {
+    const rb = b.getBoundingClientRect();
+    const rl = b.querySelector(".rb-radio-label").getBoundingClientRect();
+    return { name: b.getAttribute("data-choice"), left: rl.left - rb.left, right: rb.right - rl.right, h: rb.height };
+  }));
+  lire("marges des choix de Police", JSON.stringify(margins));
+  check(margins.length === 3 && margins.every((m) => m.left >= 8 - 0.01 && m.right >= 8 - 0.01 && m.h >= 44), "S7 : chaque choix de Police a 8 px de marge intérieure et une cible de 44 px au moins");
   // Pointes (outil Flèche) : début et fin.
   await page.click(item("arrow"));
   await away();
@@ -929,6 +955,22 @@ async function nettete2(browser, base) {
   await waitAttr(page, "data-selection", "1");
   await away();
   await icon("icône link (Actions)", `${OPT} [data-option="actions"] [data-option-value="link"]`);
+  // Éditeur de lien : style des boutons d'îlot, hors du panneau et des autres îlots.
+  await page.click(`${OPT} [data-option="actions"] [data-option-value="link"]`);
+  await page.locator("[data-link-popover]").waitFor({ state: "visible", timeout: 15000 });
+  await away();
+  const linkBox = await rectOf(page, "[data-link-popover]");
+  const linkPanel = await rectOf(page, OPT);
+  check(!overlap(linkBox, linkPanel), `éditeur de lien : ne recouvre pas le panneau d'options (${JSON.stringify(linkBox)} / ${JSON.stringify(linkPanel)})`);
+  const linkHit = (await otherIslands(page, "[data-link-popover]")).filter((r) => overlap(linkBox, r));
+  check(linkHit.length === 0, `éditeur de lien : ne recouvre aucun îlot${linkHit.length ? ` (${JSON.stringify(linkHit)})` : ""}`);
+  check(linkBox.x >= 0 && linkBox.y >= 0 && linkBox.x + linkBox.w <= VIEWPORT.width && linkBox.y + linkBox.h <= VIEWPORT.height, "éditeur de lien : entier dans la fenêtre");
+  const okStyle = await page.$eval("[data-link-ok]", (e) => { const c = getComputedStyle(e); const r = e.getBoundingClientRect(); return { border: c.borderTopWidth, bg: c.backgroundColor, color: c.color, w: r.width, h: r.height, radius: c.borderTopLeftRadius }; });
+  lire("bouton ✓ de l'éditeur de lien", JSON.stringify(okStyle));
+  check(okStyle.border === "0px" && okStyle.bg === "rgba(0, 0, 0, 0)" && okStyle.w >= 44 && okStyle.h >= 44 && okStyle.radius !== "0px", "éditeur de lien : le bouton ✓ prend le style des boutons d'îlot (sans bordure ni fond gris, cible ≥ 44 px)");
+  await page.keyboard.press("Escape");
+  await page.locator("[data-link-popover]").waitFor({ state: "hidden", timeout: 15000 });
+  await waitAttr(page, "data-selection", "1");
   // Grille du sélecteur : cases sur la grille de pixels, pastilles sans frange (cases non focalisées).
   await page.click(`${OPT} [data-more-colors="strokeColor"]`);
   await page.locator("[data-color-picker]").waitFor({ state: "visible", timeout: 15000 });
@@ -949,6 +991,11 @@ async function nettete2(browser, base) {
     return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: innerHeight };
   });
   check(pop.top >= 0 && pop.bottom <= pop.h, `sélecteur de couleur : entier dans la fenêtre (haut ${pop.top}, bas ${pop.bottom}, fenêtre ${pop.h} px)`);
+  const panelNow = await rectOf(page, OPT);
+  const popNow = await rectOf(page, ".rb-color-pop");
+  check(popNow.x >= panelNow.x + panelNow.w + 8 - 0.01, `sélecteur de couleur : à droite du panneau d'options (bord gauche ${popNow.x}, bord droit du panneau ${panelNow.x + panelNow.w})`);
+  const hit = (await otherIslands(page, ".rb-color-pop")).filter((r) => overlap(popNow, r));
+  check(hit.length === 0, `sélecteur de couleur : ne recouvre aucun îlot${hit.length ? ` (${JSON.stringify(hit)})` : ""}`);
   const small = await page.$$eval("[data-color-picker] .rb-color-cell", (els) => els.filter((e) => e.getBoundingClientRect().height < 44 || e.getBoundingClientRect().width < 44).length);
   check(small === 0, "sélecteur de couleur : cibles de 44 px au moins");
   for (const i of [8, 22, 37]) {

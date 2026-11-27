@@ -16,7 +16,7 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle }
+interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
   const engine = {
@@ -40,6 +40,7 @@ function mount(o: Opts) {
       profileId={() => "p"}
       settings={settings}
       annotating={() => o.annotating ?? false}
+      hidden={() => o.hidden ?? false}
       sideStart={() => null}
     />
   ));
@@ -385,5 +386,32 @@ describe("OptionsPanel : avant la saisie, focus, sélecteur borné (T31)", () =>
     const pop = container.querySelector<HTMLElement>(".rb-color-pop")!;
     expect(pop.style.left).toMatch(/^\d+px$/);
     expect(pop.style.top).toMatch(/^\d+px$/);
+  });
+  it("T33 : masqué quand l'Aide est ouverte (hidden)", () => {
+    expect(mount({ tool: "rect", selection: [], hidden: true }).container.querySelector("[data-options]")).toBeNull();
+    expect(mount({ tool: "rect", selection: [] }).container.querySelector("[data-options]")).not.toBeNull();
+  });
+  it("T33 : le sélecteur s'ancre à droite du panneau (bord droit + 8 px), entier", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    container.querySelector<HTMLElement>("[data-options]")!.getBoundingClientRect = () => ({ top: 112, bottom: 700, left: 16, right: 247.5, width: 231.5, height: 588, x: 16, y: 112, toJSON: () => ({}) });
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    expect(container.querySelector<HTMLElement>(".rb-color-pop")!.style.left).toBe("256px");
+  });
+  it("T33 : le sélecteur ne monte pas au-dessus du haut du panneau et défile au besoin", () => {
+    const h = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() { return (this as HTMLElement).classList.contains("rb-color-pop") ? 780 : 0; } });
+    const inner = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 900 });
+    try {
+      const { container } = mount({ tool: "rect", selection: [] });
+      container.querySelector<HTMLElement>("[data-options]")!.getBoundingClientRect = () => ({ top: 112, bottom: 700, left: 16, right: 248, width: 232, height: 588, x: 16, y: 112, toJSON: () => ({}) });
+      fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+      const pop = container.querySelector<HTMLElement>(".rb-color-pop")!;
+      expect(parseInt(pop.style.top, 10)).toBeGreaterThanOrEqual(112);
+      expect(pop.style.maxBlockSize).toBe("780px");
+    } finally {
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: inner });
+      if (h) Object.defineProperty(HTMLElement.prototype, "offsetHeight", h); else delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
+    }
   });
 });
