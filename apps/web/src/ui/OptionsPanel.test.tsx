@@ -16,7 +16,7 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean }
+interface Opts { units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
   const engine = {
@@ -28,8 +28,9 @@ function mount(o: Opts) {
     bringToFront: vi.fn(() => true),
     sendToBack: vi.fn(() => true),
     reorder: vi.fn(() => true),
+    arrange: vi.fn(() => true),
   };
-  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, textFormat: o.editing ? {} : null } as unknown as EngineState;
+  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, selectionUnits: o.units ?? o.selection.length, textFormat: o.editing ? {} : null } as unknown as EngineState;
   const settings = createDeviceSettings(null);
   const r = render(() => (
     <OptionsPanel
@@ -504,5 +505,59 @@ describe("OptionsPanel accordéon et couleurs (OG23, T5)", () => {
     expect(w.textContent).toContain("Fin");
     const labels = [...container.querySelectorAll('[data-option="roughness"] .rb-radio')].map((b) => b.textContent);
     expect(labels).toEqual(["Net", "À main levée", "Très à main levée"]);
+  });
+});
+
+describe("OptionsPanel (OG23, T7) : Pression, Aligner, Transformer", () => {
+  const rects = (n: number): ElementView[] => Array.from({ length: n }, (_, i) => rectEl(`r${i}`, "#000000"));
+  it("Pression · Variable", () => {
+    const { container } = mount({ tool: "pen", selection: [] });
+    const head = container.querySelector('[data-option-head="pressure"]')!;
+    expect(head.textContent).toContain("Pression");
+    expect(head.textContent).toContain("· Variable");
+  });
+  it("Pression : Constante écrit variability", () => {
+    const { container, calls } = mount({ tool: "pen", selection: [] });
+    fireEvent.click(container.querySelector('[data-option="pressure"] [data-option-value="constant"]')!);
+    expect(calls).toContainEqual({ variability: "constant" });
+  });
+  it("Pression : un trait constant relu comme Constante", () => {
+    const stroke = { id: "s", kind: "stroke", style: { color: "#000000", width: 4 }, look: { variability: "constant" } } as unknown as ElementView;
+    const { container } = mount({ tool: "select", selection: [stroke] });
+    expect(container.querySelector('[data-option-head="pressure"]')!.textContent).toContain("· Constante");
+    expect(container.querySelector('[data-option="pressure"] [data-option-value="constant"]')!.getAttribute("aria-checked")).toBe("true");
+  });
+  it("Aligner : 2 unités, Répartir à 3", () => {
+    const two = mount({ tool: "select", selection: rects(2) }).container;
+    expect(two.querySelectorAll('[data-option="align"] button[data-option-value]').length).toBe(6);
+    expect(two.querySelector('[data-option="align"] [data-option-value="distribute-h"]')).toBeNull();
+    cleanup();
+    const three = mount({ tool: "select", selection: rects(3) }).container;
+    expect(three.querySelectorAll('[data-option="align"] button[data-option-value]').length).toBe(8);
+    expect(three.querySelector('[data-option="align"] [data-option-value="distribute-v"]')).not.toBeNull();
+  });
+  it("Aligner : un bouton appelle arrange, avec son raccourci", () => {
+    const { container, engine } = mount({ tool: "select", selection: rects(3) });
+    const b = container.querySelector('[data-option="align"] [data-option-value="align-left"]')!;
+    expect(b.getAttribute("aria-keyshortcuts")).toBe("Alt+Shift+ArrowLeft");
+    fireEvent.click(b);
+    fireEvent.click(container.querySelector('[data-option="align"] [data-option-value="distribute-h"]')!);
+    expect(engine.arrange.mock.calls).toEqual([["align-left"], ["distribute-h"]]);
+  });
+  it("Aligner : une seule unité, pas de section", () => {
+    const { container } = mount({ tool: "select", selection: rects(1) });
+    expect(container.querySelector('[data-option="align"]')).toBeNull();
+  });
+  it("Transformer : quatre boutons, arrange appelé", () => {
+    const { container, engine } = mount({ tool: "select", selection: rects(1) });
+    const btns = [...container.querySelectorAll('[data-option="transform"] button[data-option-value]')];
+    expect(btns.map((b) => b.getAttribute("data-option-value"))).toEqual(["flip-h", "flip-v", "rotate-ccw", "rotate-cw"]);
+    for (const b of btns) fireEvent.click(b);
+    expect(engine.arrange.mock.calls).toEqual([["flip-h"], ["flip-v"], ["rotate-ccw"], ["rotate-cw"]]);
+  });
+  it("ordre : Disposition, Aligner, Transformer, Actions", () => {
+    const { container } = mount({ tool: "select", selection: rects(2) });
+    const order = [...container.querySelectorAll("[data-option]")].map((e) => e.getAttribute("data-option"));
+    expect(order.slice(-4)).toEqual(["layers", "align", "transform", "actions"]);
   });
 });
