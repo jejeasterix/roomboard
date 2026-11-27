@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deepStrictEqual } from "node:assert";
 import { createRequire } from "node:module";
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 import { ROOT, solidPng } from "./commun.mjs";
 import { normalise } from "./cli-normalise.mjs";
 import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
@@ -497,6 +497,62 @@ try {
     const refus = cli(["run", f, "--ops", "-"], `${JSON.stringify({ type: "Restack", ids: [a], to: 3 })}\n`);
     verifie("personnalisation-2 : Restack hors bornes refusé (code 1)", refus.code === 1 && refus.brut.includes("rang de page hors bornes"), refus.brut);
     console.log("personnalisation-2 : Restack puis undo");
+  }
+  // personnalisation-2-retours (OG23, DA-2, D15) : Arrange align-left puis undo, une étape chacun ; flip-h d'un texte et
+  // d'un rectangle (le texte reste droit) ; how inconnu : code 2 ; SetStyle variability constant relu ; PDF d'un
+  // rectangle à trait transparent : un remplissage, aucun tracé.
+  {
+    const f = join(dir, "retours.roomboard");
+    const lignes = (...o) => `${o.map((x) => JSON.stringify(x)).join("\n")}\n`;
+    const el = (st, id) => st.pages.flatMap((p) => p.elements).find((e) => e.id === id);
+    const rect = (x, y, color = "#000000") => ({ type: "AddShape", page: "$page:0", shape: "rect", x0: x, y0: y, x1: x + 50, y1: y + 50, style: { color, width: 4 }, fill: "#fef08a" });
+    const pts = [];
+    for (let i = 0; i <= 20; i++) pts.push(100 + i * 10, 600, 0.5);
+    const texte = { type: "SetText", page: "$page:0", id: null, x: 400, y: 400, content: "abc", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 };
+    const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], lignes(rect(40, 0), rect(200, 100), rect(120, 200), texte, { type: "CommitStroke", page: "$page:0", points: pts, style: { color: "#1e40af", width: 4 } }));
+    verifie("personnalisation-2-retours : trois rectangles, un texte, un trait posés", neuf.code === 0, neuf.brut);
+    const [a, b, c, t, k] = neuf.lignes.filter((l) => l.change).map((l) => l.change.ids[0]);
+    const s = cli(["run", f, "--save", "--ops", "-"], lignes({ type: "Arrange", ids: [a, b, c], how: "align-left" }, { op: "state" }, { op: "undo" }, { op: "state" }));
+    const x0 = (k2, id) => el(s.lignes[k2].state, id)?.transform?.[4];
+    const alignes = x0(1, a) === 40 && x0(1, b) === 40 && x0(1, c) === 40;
+    const rendus = x0(3, a) === 40 && x0(3, b) === 200 && x0(3, c) === 120;
+    verifie("personnalisation-2-retours : Arrange align-left puis undo, une étape chacun", s.code === 0 && alignes && rendus, s.brut);
+    const flip = cli(["run", f, "--save", "--ops", "-"], lignes({ type: "Arrange", ids: [t, a], how: "flip-h" }, { op: "state" }));
+    const mt = el(flip.lignes[1]?.state ?? { pages: [] }, t)?.transform;
+    const ma = el(flip.lignes[1]?.state ?? { pages: [] }, a)?.transform;
+    verifie("personnalisation-2-retours : flip-h, texte droit et rectangle retourné", flip.code === 0 && mt?.[0] === 1 && mt?.[3] === 1 && ma?.[0] === -1, flip.brut);
+    const spin = cli(["run", f, "--ops", "-"], lignes({ type: "Arrange", ids: [a], how: "spin" }));
+    verifie("personnalisation-2-retours : how inconnu refusé (code 2)", spin.code === 2 && spin.brut.includes("how : une de"), spin.brut);
+    const vari = cli(["run", f, "--ops", "-"], lignes({ type: "SetStyle", ids: [k], patch: { variability: "constant" } }, { op: "state" }));
+    verifie("personnalisation-2-retours : SetStyle variability constant relu", vari.code === 0 && el(vari.lignes[1].state, k)?.look?.variability === "constant", vari.brut);
+    // Flux du PDF (`stream … endstream`), chacun inflaté s'il le peut, sinon brut. krilla écrit l'opérateur seul sur sa
+    // ligne (`h\nS\n`) : on cherche `S` ou `s` entre deux blancs ; témoin : le même rectangle à trait opaque en a un.
+    const fluxDe = (couleur, nom) => {
+      const g = join(dir, `${nom}.roomboard`);
+      const pose = cli(["run", "--new", "--out", g, "--ops", "-"], lignes(rect(100, 100, couleur)));
+      const pdf = join(dir, `${nom}.pdf`);
+      const ex = cli(["export", g, pdf]);
+      const brut = pose.code === 0 && ex.code === 0 ? readFileSync(pdf) : Buffer.alloc(0);
+      const flux = [];
+      for (let i = brut.indexOf("stream"); i >= 0; i = brut.indexOf("stream", i + 6)) {
+        if (brut.subarray(i - 3, i).toString() === "end") continue;
+        const debut = i + 6 + (brut[i + 6] === 0x0d ? 2 : 1);
+        const fin = brut.indexOf("endstream", debut);
+        if (fin < 0) continue;
+        const corps = brut.subarray(debut, fin);
+        try {
+          flux.push(inflateSync(corps).toString("latin1"));
+        } catch {
+          flux.push(corps.toString("latin1"));
+        }
+      }
+      return { ok: brut.length > 0, tout: flux.join("\n"), brut: `${pose.brut} ${ex.brut}` };
+    };
+    const trace = (t) => /(^|\s)[Ss]\s/.test(t);
+    const clair = fluxDe("transparent", "transparent");
+    const temoin = fluxDe("#000000", "opaque");
+    verifie("personnalisation-2-retours : PDF d'un trait transparent, un remplissage, aucun tracé (témoin opaque : un tracé)", clair.ok && temoin.ok && /(^|\s)f\*?\s/.test(clair.tout) && !trace(clair.tout) && trace(temoin.tout), `${clair.brut} ${clair.tout.slice(0, 400)}`);
+    console.log("personnalisation-2-retours : Arrange");
   }
 
   // personnalisation-1a (T7, D15) : SetPageMode, AddPage mode, MovePage, DuplicatePage ; refus code 1.
