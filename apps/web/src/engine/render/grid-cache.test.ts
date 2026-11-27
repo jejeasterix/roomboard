@@ -7,6 +7,9 @@ import { visibleGridRect } from "../page";
 import { cacheMargin, cacheRect, EDGE_EPS, GridLinesCache, visibleLines } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX } from "./grid-paint";
 
+/** Cadre de largeur 1920 sans borne vers le bas (page étendue par son fond, DA4). */
+const TALL = { x0: 0, y0: 0, x1: 1920, y1: Number.POSITIVE_INFINITY };
+
 // Vrai module Wasm, patron du contrat (`core/wasm-core.contract.test.ts`) : chargé en Node par `initSync` sur les octets ;
 // sous `ROOMBOARD_WASM_REQUIRED=1`, un `.wasm` absent fait échouer ce fichier au lieu de sauter la parité sur le vrai cœur.
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -38,7 +41,7 @@ describe("rectangle gardé (E3, S4)", () => {
     for (const [w, h] of [[800, 600], [1280, 720], [1920, 1080], [3840, 2160]] as const) {
       for (const z of [0.15, 0.37, 1, 2.5, 8]) {
         const v = { x0: 0, y0: 5000, x1: w / z, y1: 5000 + h / z };
-        const r = cacheRect(v, z, 1920);
+        const r = cacheRect(v, z, TALL);
         const dots = (b: Bounds): number => (((Math.min(b.x1, 1920) - b.x0) * z) / MIN_DOT_PX + 1) * (((b.y1 - b.y0) * z) / MIN_DOT_PX + 1);
         expect(r.x0 <= v.x0 && r.y0 <= v.y0 && r.x1 >= v.x1 && r.y1 >= v.y1, `${w}×${h} z=${z}`).toBe(true);
         expect(r.y1 - v.y1).toBeLessThanOrEqual(h / 2 / z + 1e-9);
@@ -97,34 +100,34 @@ describe("GridLinesCache (E3, S4)", () => {
 
   it("S4 : même vue → 1 appel ; défilement dans la marge → 1 ; au-delà → 2 ; zoom → 3 ; page → 4", () => {
     const { compute, cache } = setup();
-    for (let i = 0; i < 10; i++) cache.get("p", at(0), 1, 1920);
+    for (let i = 0; i < 10; i++) cache.get("p", at(0), 1, TALL);
     expect(compute).toHaveBeenCalledTimes(1);
     expect(compute.mock.calls[0]?.slice(2)).toEqual([4, 8]);
-    expect(cache.get("p", at(50), 1, 1920)).toEqual(one([0, 1050, 0, 1650]));
+    expect(cache.get("p", at(50), 1, TALL)).toEqual(one([0, 1050, 0, 1650]));
     expect(compute).toHaveBeenCalledTimes(1);
-    cache.get("p", at(400), 1, 1920);
+    cache.get("p", at(400), 1, TALL);
     expect(compute).toHaveBeenCalledTimes(2);
-    cache.get("p", at(400), 2, 1920);
+    cache.get("p", at(400), 2, TALL);
     expect(compute).toHaveBeenCalledTimes(3);
     expect(compute.mock.calls[2]?.slice(2)).toEqual([2, 4]);
-    cache.get("q", at(400), 2, 1920);
+    cache.get("q", at(400), 2, TALL);
     expect(compute).toHaveBeenCalledTimes(4);
   });
 
   it("invalidate : autre page → rien ; la page ou full → recalcul ; clear → recalcul", () => {
     const { compute, cache } = setup();
-    cache.get("p", at(0), 1, 1920);
+    cache.get("p", at(0), 1, TALL);
     cache.invalidate({ ...NO_CHANGE, pages: ["q"] });
-    cache.get("p", at(0), 1, 1920);
+    cache.get("p", at(0), 1, TALL);
     expect(compute).toHaveBeenCalledTimes(1);
     cache.invalidate({ ...NO_CHANGE, pages: ["p"] });
-    cache.get("p", at(0), 1, 1920);
+    cache.get("p", at(0), 1, TALL);
     expect(compute).toHaveBeenCalledTimes(2);
     cache.invalidate({ ...NO_CHANGE, full: true });
-    cache.get("p", at(0), 1, 1920);
+    cache.get("p", at(0), 1, TALL);
     expect(compute).toHaveBeenCalledTimes(3);
     cache.clear();
-    cache.get("p", at(0), 1, 1920);
+    cache.get("p", at(0), 1, TALL);
     expect(compute).toHaveBeenCalledTimes(4);
   });
 
@@ -138,19 +141,19 @@ describe("GridLinesCache (E3, S4)", () => {
     const full: Bounds = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
     const up: Bounds = { x0: 0, y0: 0, x1: 1920, y1: 480 };
     expect(cacheMargin(3840, 2160, 2, 1920)).toBe(0);
-    expect(cache.get("p", full, 2, 1920)).toEqual({ above: false, levels: [] });
-    expect(cache.get("p", full, 2, 1920)).toEqual({ above: false, levels: [] });
+    expect(cache.get("p", full, 2, TALL)).toEqual({ above: false, levels: [] });
+    expect(cache.get("p", full, 2, TALL)).toEqual({ above: false, levels: [] });
     expect(compute).toHaveBeenCalledTimes(1);
-    expect(cache.get("p", up, 2, 1920)).toEqual(one([], [0, 0]));
+    expect(cache.get("p", up, 2, TALL)).toEqual(one([], [0, 0]));
     expect(compute).toHaveBeenCalledTimes(2);
-    expect(compute.mock.calls[1]?.[1]).toEqual(cacheRect(up, 2, 1920));
+    expect(compute.mock.calls[1]?.[1]).toEqual(cacheRect(up, 2, TALL));
   });
 
   it("page sans grille : null gardé aussi (aucun appel par image)", () => {
     const compute = vi.fn(() => null);
     const cache = new GridLinesCache(compute);
-    expect(cache.get("p", at(0), 1, 1920)).toBeNull();
-    expect(cache.get("p", at(10), 1, 1920)).toBeNull();
+    expect(cache.get("p", at(0), 1, TALL)).toBeNull();
+    expect(cache.get("p", at(10), 1, TALL)).toBeNull();
     expect(compute).toHaveBeenCalledTimes(1);
   });
 });
@@ -208,13 +211,13 @@ describe.skipIf(wasmCore === null)("cache contre calcul direct sur le vrai modul
     expect(cacheMargin(3840, 2160, 2, 1920)).toBe(0);
     // 427 × 241 points > MAX_GRID_DOTS : le cœur saute le niveau pour la vue entière.
     expect(direct(d, p, full!, 2)?.levels).toEqual([]);
-    expect(cache.get(p, full!, 2, 1920)).toEqual(direct(d, p, full!, 2));
+    expect(cache.get(p, full!, 2, TALL)).toEqual(direct(d, p, full!, 2));
     // Défilement de 1 200 px vers le haut : vue bornée à y ≥ 0, comprise dans l'entrée gardée ; 427 × 107 points tiennent.
     const up = visibleGridRect({ ...cam, ty: 1200 }, 3840, 2160);
     expect(up).toEqual({ x0: 0, y0: 0, x1: 1920, y1: 480 });
     const want = direct(d, p, up!, 2);
     expect((want?.levels[0]?.dots.length ?? 0) / 2).toBe(427 * 107);
-    expect(cache.get(p, up!, 2, 1920)).toEqual(want);
+    expect(cache.get(p, up!, 2, TALL)).toEqual(want);
   });
 
   it.each([
@@ -228,11 +231,11 @@ describe.skipIf(wasmCore === null)("cache contre calcul direct sur le vrai modul
     for (const zoom of [0.37, 1, 2.5]) {
       const { d, p, compute, cache } = gridDoc(f, [level(kind, step)]);
       for (const [dx, dy] of [...moves, [0, step * zoom] as const]) {
-        const v = visibleGridRect({ zoom, tx: -200 * zoom - dx, ty: -5000 * zoom - dy }, 800, 600);
+        const v = visibleGridRect({ zoom, tx: -200 * zoom - dx, ty: -5000 * zoom - dy }, 800, 600, TALL);
         if (v === null) throw new Error("vue vide");
         const want = direct(d, p, v, zoom);
         expect(want?.levels.length, `${kind} z=${zoom} (${dx}, ${dy})`).toBeGreaterThan(0);
-        expect(cache.get(p, v, zoom, 1920), `${kind} z=${zoom} (${dx}, ${dy})`).toEqual(approx(want));
+        expect(cache.get(p, v, zoom, TALL), `${kind} z=${zoom} (${dx}, ${dy})`).toEqual(approx(want));
       }
       // Toutes ces vues servies par l'entrée gardée : la parité porte bien sur la recoupe, pas sur un recalcul.
       expect(compute, `${kind} z=${zoom}`).toHaveBeenCalledTimes(1);

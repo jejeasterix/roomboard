@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Change } from "../../core/api";
 import { IDENTITY, type Camera } from "../camera";
-import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
+import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR } from "../page";
 import { asGL, FakeGL } from "./fake-gl";
 import { EMPTY_OVERLAY } from "./overlay";
 import type { GridPreview, ImagePreview, LiveLayer, PageView, Renderer } from "./renderer";
@@ -45,6 +45,10 @@ function make() {
 }
 
 const f32 = (v: readonly number[]): number[] => Array.from(new Float32Array(v));
+/** Cadre étendu vers le bas au-delà de toute vue (fond plus haut que la page, DA4). */
+const TALL = { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: Number.POSITIVE_INFINITY };
+/** Cadre d'avant toute scène : la page par défaut, 1920 × 1080. */
+const DEFAULT_FRAME = { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: PAGE_HEIGHT };
 /** Contour concave en U (8 sommets) : un éventail en couleur depuis le premier sommet déborderait dans le creux. */
 const U = new Float32Array([0, 0, 30, 0, 30, 30, 20, 30, 20, 10, 10, 10, 10, 30, 0, 30]);
 const stroke = (outline: Float32Array): LiveLayer => ({
@@ -84,14 +88,14 @@ describe("géométrie WebGL2 (échelon 4)", () => {
   });
 
   it("pageScissor : cadre de page en pixels du tampon, origine en bas, borné au tampon", () => {
-    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 1, 1)).toEqual([10, 0, 960, 700]);
-    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 2, 2)[2]).toBe(1260);
+    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 1, 1, TALL)).toEqual([10, 0, 960, 700]);
+    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 2, 2, TALL)[2]).toBe(1260);
   });
 
   it("page dessinée jusqu'au bas de la vue : le ciseau va jusqu'au bas du tampon quand ty < 0", () => {
-    expect(pageScissor({ zoom: 1, tx: 0, ty: -5000 }, 200, 100, 1, 1)).toEqual([0, 0, 200, 100]);
-    expect(pageScissor({ zoom: 1, tx: 0, ty: 40 }, 200, 100, 1, 1)).toEqual([0, 0, 200, 60]);
-    expect(pageScissor({ zoom: 1, tx: 0, ty: 700 }, 200, 100, 1, 1)[3]).toBe(0);
+    expect(pageScissor({ zoom: 1, tx: 0, ty: -5000 }, 200, 100, 1, 1, TALL)).toEqual([0, 0, 200, 100]);
+    expect(pageScissor({ zoom: 1, tx: 0, ty: 40 }, 200, 100, 1, 1, TALL)).toEqual([0, 0, 200, 60]);
+    expect(pageScissor({ zoom: 1, tx: 0, ty: 700 }, 200, 100, 1, 1, TALL)[3]).toBe(0);
   });
 
   it("splitPolygons : une paire NaN sépare deux polygones ; moins de 3 sommets écarté", () => {
@@ -152,7 +156,7 @@ describe("WebGL2LiveRenderer (échelon 4)", () => {
       [gl.TRIANGLES, false, f32(parseColor(SURROUND_COLOR))],
       [gl.TRIANGLES, true, f32(parseColor(PAGE_BACKGROUND))],
     ]);
-    expect(gl.log).toContain(`scissor ${pageScissor(cam, 200, 100, 1, 1).join(",")}`);
+    expect(gl.log).toContain(`scissor ${pageScissor(cam, 200, 100, 1, 1, DEFAULT_FRAME).join(",")}`);
     expect(gl.draws[0]?.count).toBe(thickPolyline([0, 0, 100, 0], 12).length / 2);
   });
 
