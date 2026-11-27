@@ -20,7 +20,7 @@ import { ColorPicker } from "./ColorPicker";
 import { LinkPopover } from "./LinkPopover";
 import { Icon, IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { createTip } from "./tooltip";
-import { BUTTON_PX, optionsWidth, placeOptions, topRowBottom, type Box, type Rect } from "./island-place";
+import { BUTTON_PX, optionsWidth, placeLinkAvoiding, placeOptions, topRowBottom, type Box, type Rect } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import {
   FONTS, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
@@ -41,6 +41,8 @@ export interface OptionsPanelProps {
   readonly sideStart: Accessor<Rect | null>;
   /** Îlots qui surplombent le panneau (îlot d'outils descendu) ; absent : aucun. */
   readonly above?: Accessor<readonly Rect[]>;
+  /** T33 : vrai quand un panneau passager (l'Aide) occupe la même place : le panneau d'options se retire plutôt que de dépasser. */
+  readonly hidden?: Accessor<boolean>;
 }
 
 const LABEL: Readonly<Record<OptionKey, string>> = {
@@ -114,7 +116,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const editing = (): boolean => props.state().textFormat != null;
   const off = (k: OptionKey): boolean => disabledIn(k, editing());
   const keys = createMemo((): readonly OptionKey[] =>
-    showsPanel(props.state().tool, props.state().selection.length, props.annotating())
+    props.hidden?.() !== true && showsPanel(props.state().tool, props.state().selection.length, props.annotating())
       ? sectionsFor(props.state().tool, targets(), editing(), (props.state().itemStyle ?? DEFAULT_ITEM_STYLE).background)
       : []);
   const saved = (): boolean => props.settings.island(props.profileId(), "options").collapsed === true;
@@ -213,14 +215,17 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
 
   /** T16 : sélecteur complet ouvert depuis le bouton « Autres couleurs » d'une section (S : Trait, G : Arrière-plan). */
   type ColorKey = "strokeColor" | "background";
-  const [picker, setPicker] = createSignal<{ key: ColorKey; anchor: HTMLElement; x: number; y: number } | null>(null);
+  const [picker, setPicker] = createSignal<{ key: ColorKey; anchor: HTMLElement; x: number; y: number; minTop: number } | null>(null);
   const anchors: Partial<Record<ColorKey, HTMLButtonElement>> = {};
   const openPicker = (key: ColorKey): void => {
     const anchor = anchors[key];
     if (anchor === undefined || off(key)) return;
     const r = anchor.getBoundingClientRect();
     const h = typeof window === "undefined" ? 0 : window.innerHeight;
-    setPicker({ key, anchor, x: Math.round(r.right + 8), y: Math.max(8, Math.min(Math.round(r.top), h > 0 ? h - 440 : 8)) });
+    // T33 (comme Excalidraw) : à droite du panneau d'options, jamais au-dessus de son haut (les îlots du haut restent libres).
+    const pr = root?.getBoundingClientRect();
+    const minTop = Math.max(8, Math.round(pr?.top ?? 0));
+    setPicker({ key, anchor, x: Math.round((pr?.right ?? r.right) + 8), y: Math.max(minTop, Math.min(Math.round(r.top), h > 0 ? h - 440 : 8)), minTop });
   };
   // T31 : hauteur réelle du sélecteur posé (rb-color-pop), mesurée après chaque ouverture ; le haut est borné par elle.
   let pop: HTMLDivElement | undefined;
@@ -230,7 +235,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     setPopH(pop?.offsetHeight ?? 0);
   });
   const winH = (): number => (typeof window === "undefined" ? 0 : window.innerHeight);
-  const popTop = (y: number): number => (winH() > 0 && popH() > 0 ? Math.max(8, Math.min(Math.round(y), Math.round(winH() - popH() - 8))) : Math.round(y));
+  const popTop = (y: number, minTop: number): number => (winH() > 0 && popH() > 0 ? Math.max(minTop, Math.min(Math.round(y), Math.round(winH() - popH() - 8))) : Math.round(y));
   const onObjectKey = (e: KeyboardEvent): void => {
     const hit = objectKey(e as unknown as KeyLike);
     if (hit !== "stroke-picker" && hit !== "fill-picker") return;
@@ -396,7 +401,12 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     }
     const maxX = a.w > 0 ? a.w - w - 8 : Number.MAX_SAFE_INTEGER;
     const maxY = a.h > 0 ? a.h - LINK_POP_H - 8 : Number.MAX_SAFE_INTEGER;
-    return { left: `${Math.round(Math.max(8, Math.min(x, maxX)))}px`, top: `${Math.round(Math.max(minTop, Math.min(y, maxY)))}px`, width: `${Math.round(w)}px` };
+    const top = Math.round(Math.max(minTop, Math.min(y, maxY)));
+    // T33 : ni le panneau d'options (posé, mesuré) ni les îlots voisins ne sont recouverts : décalé à leur droite.
+    const panel: Rect[] = root?.isConnected === true ? [{ x: pos().x, y: pos().y, w: root.offsetWidth, h: root.offsetHeight }] : [];
+    const obstacles = [...panel, ...(props.above?.() ?? []), ...(props.sideStart() !== null ? [props.sideStart()!] : [])];
+    const left = placeLinkAvoiding({ x: Math.max(8, Math.min(x, maxX)), y: top, w, h: LINK_POP_H }, obstacles, maxX);
+    return { left: `${left}px`, top: `${top}px`, width: `${Math.round(w)}px` };
   };
 
   return (
@@ -429,7 +439,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         </Show>
         <Show when={picker()} keyed>
           {(p) => (
-            <div ref={pop} class="rb-color-pop" style={{ left: `${p.x}px`, top: `${popTop(p.y)}px`, ...(winH() > 0 ? { "max-block-size": `${winH() - 16}px` } : {}) }}>
+            <div ref={pop} class="rb-color-pop" style={{ left: `${p.x}px`, top: `${popTop(p.y, p.minTop)}px`, ...(winH() > 0 ? { "max-block-size": `${winH() - p.minTop - 8}px` } : {}) }}>
               <ColorPicker
                 value={typeof value(p.key) === "string" && value(p.key) !== "transparent" ? (value(p.key) as string) : null}
                 choose={chooseFull}

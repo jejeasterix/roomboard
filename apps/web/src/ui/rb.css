@@ -423,8 +423,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-options:not([data-collapsed]) > [data-options-toggle] { position: absolute; inset-block-start: 12px; inset-inline-end: 12px; }
 .rb-options-sec:first-of-type h3 { display: flex; align-items: center; min-block-size: var(--rb-btn-size); padding-inline-end: var(--rb-btn-size); }
 .rb-options[data-collapsed] { padding: 4px; inline-size: auto; }
-.rb-options .rb-opt-btn { display: inline-grid; place-items: center; flex: none; inline-size: var(--rb-btn-size); block-size: var(--rb-btn-size); padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
-.rb-options .rb-opt-btn:hover, .rb-options .rb-pick:hover { background: var(--rf-gray-50); }
+.rb-options .rb-opt-btn, .rb-link-pop .rb-opt-btn { display: inline-grid; place-items: center; flex: none; inline-size: var(--rb-btn-size); block-size: var(--rb-btn-size); padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
+.rb-options .rb-opt-btn:hover, .rb-options .rb-pick:hover, .rb-link-pop .rb-opt-btn:hover { background: var(--rf-gray-50); }
 .rb-options button:focus-visible, .rb-options input:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 .rb-options-sec { display: grid; gap: 4px; min-inline-size: 0; }
 .rb-options-sec h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--rf-text-muted-aa); }
@@ -441,6 +441,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-pick[aria-pressed="true"] { background: var(--rf-violet-100); box-shadow: inset 0 0 0 1px var(--rf-violet-600); }
 .rb-options .rb-radios[data-look="segment"] { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
 .rb-options .rb-radios[data-look="segment"] .rb-radio { min-block-size: var(--rb-btn-size); min-inline-size: var(--rb-btn-size); padding: 0; display: grid; place-items: center; }
+/* T33 : un choix de texte (Courier New) garde 8 px de marge de chaque côté ; la cible reste de 44 px au moins. */
+.rb-options .rb-radios[data-look="segment"] .rb-radio:not(:has(.rb-icon)) { padding-inline: 8px; }
 .rb-options .rb-radios[data-look="segment"] .rb-radio-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .rb-options .rb-radios[data-look="segment"] .rb-radio:not(:has(.rb-icon)) .rb-radio-label { position: static; inline-size: auto; block-size: auto; clip-path: none; }
 .rb-opacity { display: flex; align-items: center; gap: 8px; }

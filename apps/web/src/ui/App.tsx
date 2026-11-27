@@ -622,6 +622,7 @@ export function App(props: AppProps): JSX.Element {
             annotating={annotating}
             sideStart={sideStart}
             above={above}
+            hidden={() => panel() === "help"}
           />
         )}
         onTopFree={setPopTop}
