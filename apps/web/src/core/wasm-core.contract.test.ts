@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { AssetRef, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage } from "./api";
+import { BAD_ORDER_MESSAGE } from "./api";
 import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
@@ -4197,6 +4198,69 @@ describe.skipIf(loaded === null)("contrat OG11 : vrai module seulement", () => {
     const c = d.apply({ type: "Erase", page, path: new Float32Array([100, 80, 100, 120]), radius: 6, mode: "partial" });
     expect(c.ids.length).toBeGreaterThanOrEqual(2);
     for (const id of c.ids) expect(d.element(id)?.look).toEqual({ opacity: 40 });
+    d.free();
+  });
+});
+
+// OG11 (DA-2) : `Restack`, ordre des objets, joué sur les deux cœurs. Discrimine le patron interdit : un bloc déplacé
+// élément par élément (une transaction chacun) laisserait, après un seul `undo`, l'ordre à moitié rétabli ; une
+// réécriture à l'identique quand l'ordre ne change pas pousserait une étape.
+describe.each(factories)("contrat Restack : $name", ({ f }) => {
+  const rect = (d: CoreDocument, p: string, x: number): string => {
+    const id = d.apply({ type: "AddShape", page: p, shape: "rect", x0: x, y0: 100, x1: x + 50, y1: 150, style, fill: null }).ids[0];
+    if (id === undefined) throw new Error("aucun id");
+    return id;
+  };
+
+  it("Restack : une étape, sur les deux cœurs", () => {
+    const d = f.blank();
+    const p = first(d);
+    const [a, b, c, e] = [rect(d, p, 0), rect(d, p, 100), rect(d, p, 200), rect(d, p, 300)];
+    const view = d.element(a);
+    const ch = d.apply({ type: "Restack", ids: [c!, a!, c!], to: 2 });
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+    expect(ch.ids).toEqual([a, c]);
+    expect(ch.pages).toEqual([p]);
+    expect(ch.removed).toEqual([]);
+    expect(d.element(a!)).toEqual(view);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([a, b, c, e]);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([a, b, c]);
+    d.free();
+  });
+
+  it("Restack : même ordre, aucune étape ; arrière-plan et premier plan", () => {
+    const d = f.blank();
+    const p = first(d);
+    const [a, b, c] = [rect(d, p, 0), rect(d, p, 100), rect(d, p, 200)];
+    unchanged(d, () => expect(d.apply({ type: "Restack", ids: [b!, c!], to: 1 }).ids).toEqual([]));
+    d.apply({ type: "Restack", ids: [c!], to: 0 });
+    expect(d.elementIds(p)).toEqual([c, a, b]);
+    d.apply({ type: "Restack", ids: [c!], to: 2 });
+    expect(d.elementIds(p)).toEqual([a, b, c]);
+    d.free();
+  });
+
+  it("Restack : rang hors bornes ou non entier, id inconnu, bloc vide, page mêlée : ordre invalide, rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = rect(d, p, 0);
+    rect(d, p, 100);
+    d.apply({ type: "AddPage", after: null });
+    const q = d.pageIds()[1]!;
+    const z = rect(d, q, 0);
+    for (const cmd of [
+      { type: "Restack", ids: [a], to: 2 },
+      { type: "Restack", ids: [a], to: -1 },
+      { type: "Restack", ids: [a], to: 0.5 },
+      { type: "Restack", ids: [a], to: 2 ** 32 + 1 },
+      { type: "Restack", ids: [a, "inconnu"], to: 0 },
+      { type: "Restack", ids: [], to: 0 },
+      { type: "Restack", ids: [a, z], to: 0 },
+    ] as const satisfies readonly Command[]) {
+      unchanged(d, () => expect(messageOf(() => d.apply(cmd))).toBe(BAD_ORDER_MESSAGE));
+    }
     d.free();
   });
 });

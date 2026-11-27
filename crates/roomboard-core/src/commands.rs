@@ -272,6 +272,13 @@ pub enum Command {
         pitch: f64,
         snapshot: Option<AssetRef>,
     },
+    /// Ordre des objets (OG11, DA-2) : le bloc `ids` d'une même page, dans son ordre relatif, posé au rang `to` (rang
+    /// du bas du bloc après déplacement : 0 = arrière-plan, `n - k` = premier plan) ; ids gardés, une étape ; même
+    /// ordre : aucune étape (D38) ; page mêlée, id inconnu, rang hors bornes : `BadOrder`.
+    Restack {
+        ids: Vec<String>,
+        to: u32,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -315,6 +322,7 @@ pub enum CommandError {
     BadImageParams,
     BadModel3d,
     BadStyle,
+    BadOrder,
 }
 
 impl std::fmt::Display for CommandError {
@@ -386,6 +394,7 @@ impl std::fmt::Display for CommandError {
                 "objet 3D invalide (format glb, gltf, obj, stl ou ply, boîte finie > 0, pitch de −85° à 85°, yaw dans ]−180°, 180°], 256 fichiers liés au plus, chemins de 1 à 1 024 caractères normalisés et uniques attendus)"
             ),
             CommandError::BadStyle => write!(f, "style invalide"),
+            CommandError::BadOrder => write!(f, "ordre invalide"),
         }
     }
 }
@@ -892,6 +901,7 @@ impl Document {
                 pitch,
                 snapshot,
             } => self.cmd_set_model3d_view(&id, yaw, pitch, snapshot.as_ref()),
+            Command::Restack { ids, to } => self.cmd_restack(&ids, to),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)

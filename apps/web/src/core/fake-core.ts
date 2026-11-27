@@ -107,6 +107,7 @@ import { ARROWHEADS, END_ARROWHEAD_DEFAULT, FILL_STYLES, START_ARROWHEAD_DEFAULT
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
+import { BAD_ORDER_MESSAGE } from "./api";
 
 /** Réglages d'une image (C5), tels que le cœur les range à plat sur l'élément. */
 const IMAGE_PARAM_KEYS = ["crop", "flipX", "flipY", "quarterTurns", "brightness", "contrast", "transparent"] as const;
@@ -1323,6 +1324,30 @@ class FakeDocument implements CoreDocument {
             });
           }
           return { pages, ids, removed: [] };
+        });
+      }
+      case "Restack": {
+        // Comme le cœur (`order.rs`) : doublons fusionnés ; vide, id inconnu, page mêlée, rang non entier ou hors bornes
+        // (`to + k > n`) : BAD_ORDER_MESSAGE ; bloc déjà aux rangs `to..to + k` : aucune étape (D38).
+        const asked = [...new Set(cmd.ids)];
+        const found = asked.map((id) => this.find(id));
+        if (asked.length === 0 || found.some((x) => x === undefined)) throw new Error(BAD_ORDER_MESSAGE);
+        const hits = (found as Found[]).sort((x, y) => x.index - y.index);
+        const page = hits[0]!.page;
+        if (hits.some((x) => x.page.id !== page.id)) throw new Error(BAD_ORDER_MESSAGE);
+        const to = cmd.to;
+        if (!Number.isInteger(to) || to < 0 || to + hits.length > page.elements.length) throw new Error(BAD_ORDER_MESSAGE);
+        if (hits.every((x, j) => x.index === to + j)) return this.unchanged();
+        const ids = hits.map((x) => x.element.id);
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === page.id);
+          if (p) {
+            const block = p.elements.filter((e) => ids.includes(e.id));
+            const rest = p.elements.filter((e) => !ids.includes(e.id));
+            rest.splice(to, 0, ...block);
+            p.elements.splice(0, p.elements.length, ...rest);
+          }
+          return { pages: [page.id], ids, removed: [] };
         });
       }
       case "SplitTableCell": {
