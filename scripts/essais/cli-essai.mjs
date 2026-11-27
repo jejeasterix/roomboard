@@ -558,6 +558,25 @@ try {
   const opts = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ type: "SetTableOptions", id: tab.id, fit: "shrink" }, { op: "state" }));
   const reluOpts = (opts.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id);
   verifie("T7 : SetTableOptions fit shrink, relu par state", opts.code === 0 && reluOpts?.table?.fit === "shrink", opts.brut);
+  // personnalisation-3 (T9) : image logée, SetCellImage, `state` : bg présent ; undo : image revenue.
+  const asset = { id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", name: "photo.png", mime: "image/png", size: 3 };
+  const poseImg = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "AddImage", page: "$page:0", asset, w: 100, h: 100, matrix: [1, 0, 0, 1, 0, 0] },
+    { op: "state" },
+  ));
+  const img = (poseImg.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.kind === "image");
+  verifie("T9 : une image posée", poseImg.code === 0 && img !== undefined, poseImg.brut);
+  const fond = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "PlaceInCell", ids: [img.id], matrix: [1, 0, 0, 1, 0, 0], cell: lien, sizes: [] },
+    { type: "SetCellImage", id: tab.id, row: lien[1], col: lien[2], from: img.id },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+  ));
+  const casesDe = (i) => (fond.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id)?.table?.cells ?? [];
+  const imgDe = (i) => (fond.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === img.id);
+  verifie("T9 : SetCellImage, state : bg présent, image partie", fond.code === 0 && casesDe(2).some((c) => c.bg === asset.id) && imgDe(2) === undefined, fond.brut);
+  verifie("T9 : undo : image revenue, liée, sans fond", casesDe(4).every((c) => c.bg === undefined) && imgDe(4)?.cell?.[2] === lien[2], fond.brut);
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);

@@ -264,6 +264,14 @@ pub enum Command {
         fit: Option<String>,
         header: Option<bool>,
     },
+    /// personnalisation-3 (T9) : `Some(image)` : l'image logée dans la case (`row`, `col`) devient son fond (`bg`) et
+    /// disparaît de la page ; non logée là : `BadTable` ; `None` : fond retiré. Une étape.
+    SetCellImage {
+        id: String,
+        row: String,
+        col: String,
+        from: Option<String>,
+    },
     /// Pot (C6a, D12, DA1) : contour (`color`), intérieur (`fill`) ou fond de la page (`background`) ; `None` = « Aucune »
     /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38). C6b : image
     /// (nouvel asset, `sourceAsset`, B2-B4).
@@ -923,6 +931,9 @@ impl Document {
             }
             Command::SetTableOptions { id, fit, header } => {
                 self.cmd_set_table_options(&id, fit.as_deref(), header)
+            }
+            Command::SetCellImage { id, row, col, from } => {
+                self.cmd_set_cell_image(&id, &row, &col, from.as_deref())
             }
             Command::ImportTable {
                 page,

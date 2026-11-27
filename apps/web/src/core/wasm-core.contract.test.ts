@@ -2250,6 +2250,49 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     d.free();
   });
 
+  // personnalisation-3 (T9, S5) : image logée -> fond de case ; refus, retrait, asset cité.
+  const p3Image = (d: CoreDocument, s: P3Cells): string => {
+    const o = d.apply({ type: "AddImage", page: first(d), asset: png, w: 100, h: 100, matrix: I }).ids[0] ?? "";
+    const v = tableOf(d, s.t);
+    const at = d.element(o)?.transform ?? I;
+    d.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 248 - at[4], 72 - at[5]], cell: s.link(1, 1), sizes: [[s.t, "col", v.cols[1]?.id ?? "", 416], [s.t, "row", v.rows[1]?.id ?? "", 316]] });
+    return o;
+  };
+  it("SetCellImage : l'image logée devient le fond (bg), l'image part, une étape ; annuler la rend liée", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const o = p3Image(d, s);
+    const [, r, k] = s.link(1, 1);
+    const at = d.element(o)?.transform;
+    const c = d.apply({ type: "SetCellImage", id: s.t, row: r, col: k, from: o });
+    expect(c.ids).toEqual([s.t]);
+    expect(c.removed).toEqual([o]);
+    expect(d.element(o)).toBeNull();
+    expect(tableOf(d, s.t).cells.find((x) => x.row === r && x.col === k)?.bg).toBe(png.id);
+    expect(d.citedAssets().map((a) => a.id)).toEqual([png.id]);
+    d.undo();
+    expect(d.element(o)?.cell).toEqual(s.link(1, 1));
+    expect(d.element(o)?.transform).toEqual(at);
+    expect(tableOf(d, s.t).cells.find((x) => x.row === r && x.col === k)?.bg).toBeUndefined();
+    d.apply({ type: "SetCellImage", id: s.t, row: r, col: k, from: o });
+    d.apply({ type: "SetCellImage", id: s.t, row: r, col: k, from: null });
+    expect(tableOf(d, s.t).cells.find((x) => x.row === r && x.col === k)?.bg).toBeUndefined();
+    unchanged(d, () => d.apply({ type: "SetCellImage", id: s.t, row: r, col: k, from: null }));
+    d.free();
+  });
+  it("SetCellImage refusé : image non logée dans cette case, case inconnue ; aucune étape", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const o = p3Image(d, s);
+    const free = d.apply({ type: "AddImage", page: first(d), asset: png, w: 100, h: 100, matrix: I }).ids[0] ?? "";
+    const [, r, k] = s.link(1, 1);
+    const [, r0, k0] = s.link(0, 0);
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetCellImage", id: s.t, row: r, col: k, from: free }))).toBe(TABLE_MESSAGE));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetCellImage", id: s.t, row: r0, col: k0, from: o }))).toBe(TABLE_MESSAGE));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetCellImage", id: s.t, row: "zz", col: k, from: o }))).toBe(TABLE_MESSAGE));
+    d.free();
+  });
+
   it("personnalisation-3 tailles en double : une ligne citée deux fois est refusée, rien d'écrit", () => {
     const d = f.blank();
     const s = p3Placed(d);

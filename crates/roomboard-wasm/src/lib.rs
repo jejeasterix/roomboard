@@ -1219,6 +1219,21 @@ impl Document {
         )
     }
 
+    /// personnalisation-3 (T9) : l'image logée `from` devient le fond de la case (`row`, `col`) ; `None` retire le fond.
+    pub fn set_cell_image(
+        &mut self,
+        id: &str,
+        row: &str,
+        col: &str,
+        from: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_cell_image_inner(id, row, col, from)
+                .map_err(cmd_err)?,
+        )
+    }
+
     /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
     #[allow(clippy::too_many_arguments)]
     pub fn import_table(
@@ -2212,6 +2227,21 @@ impl Document {
             id: id.to_string(),
             fit,
             header,
+        })
+    }
+
+    pub fn set_cell_image_inner(
+        &mut self,
+        id: &str,
+        row: &str,
+        col: &str,
+        from: Option<String>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetCellImage {
+            id: id.to_string(),
+            row: row.to_string(),
+            col: col.to_string(),
+            from,
         })
     }
 

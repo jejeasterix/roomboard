@@ -196,6 +196,8 @@ export type Command =
   | { readonly type: "SetTableLineSizes"; readonly id: string; readonly cols: readonly (readonly [string, number])[]; readonly rows: readonly (readonly [string, number])[] }
   /** personnalisation-3 (T7) : `fit` "shrink" écrit, "grow" retire ; `header` true écrit, false retire ; une étape. */
   | { readonly type: "SetTableOptions"; readonly id: string; readonly fit?: "grow" | "shrink"; readonly header?: boolean }
+  /** personnalisation-3 (T9) : l'image logée `from` devient le fond de la case et quitte la page ; null retire le fond ; une étape. */
+  | { readonly type: "SetCellImage"; readonly id: string; readonly row: string; readonly col: string; readonly from: string | null }
   /** C10b (F18) : tableau rempli ; cells = rows × cols textes en rangées ; merges = [ligne, colonne, lignes, colonnes]. */
   | {
       readonly type: "ImportTable";
@@ -303,6 +305,8 @@ export interface TableCell {
   readonly fill: string | null;
   readonly shade: string | null;
   readonly spans: readonly TextSpan[];
+  /** personnalisation-3 (T9) : id d'asset de l'image de fond de la case ; absent : aucun. */
+  readonly bg?: string;
 }
 /** Zone fusionnée (F29) : ancre par ids, étendue en rangs, après la règle F2 du cœur. */
 export interface TableMerge { readonly row: string; readonly col: string; readonly rows: number; readonly cols: number }

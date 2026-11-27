@@ -47,6 +47,9 @@ pub struct TableCellView {
     pub text: String,
     pub fill: Option<String>,
     pub shade: Option<String>,
+    /// Image de fond de case (personnalisation-3, T9) : id d'asset ; omise quand il n'y en a pas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bg: Option<String>,
     pub spans: Vec<TextSpanView>,
 }
 
@@ -107,6 +110,7 @@ pub(crate) struct RawCell {
     pub content: String,
     pub fill: Option<String>,
     pub shade: Option<String>,
+    pub bg: Option<String>,
 }
 
 pub(crate) fn cell_key(row: &str, col: &str) -> String {
@@ -213,12 +217,14 @@ pub(crate) fn read_cell<T: ReadTxn>(
     let content = text.as_ref().map(|t| t.get_string(txn)).unwrap_or_default();
     let fill = out_string(map.get(txn, "fill")).filter(|c| valid_color(c));
     let shade = out_string(map.get(txn, "shade")).filter(|c| valid_color(c));
+    let bg = out_string(map.get(txn, "bg")).filter(|a| crate::asset::is_asset_id(a));
     Some(RawCell {
         map,
         text,
         content,
         fill,
         shade,
+        bg,
     })
 }
 
@@ -324,7 +330,11 @@ impl RawTable {
                 let Some(cell) = read_cell(txn, self.cells.as_ref(), &r.id, &c.id) else {
                     continue;
                 };
-                if cell.content.is_empty() && cell.fill.is_none() && cell.shade.is_none() {
+                if cell.content.is_empty()
+                    && cell.fill.is_none()
+                    && cell.shade.is_none()
+                    && cell.bg.is_none()
+                {
                     continue;
                 }
                 cells.push(TableCellView {
@@ -333,6 +343,7 @@ impl RawTable {
                     text: cell.content,
                     fill: cell.fill,
                     shade: cell.shade,
+                    bg: cell.bg,
                     spans: rich_text::cell_spans(txn, cell.text.as_ref()),
                 });
             }
@@ -473,7 +484,7 @@ fn in_line(key: &str, axis: TableAxis, line: &str) -> bool {
 }
 
 /// `cells` du tableau : le `Y.Map` lu, sinon un neuf posé sur l'élément (PC12 de C10a). Une fois par transaction.
-fn cells_map(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> MapRef {
+pub(crate) fn cells_map(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> MapRef {
     match cells {
         Some(m) => m.clone(),
         None => e.insert(txn, "cells", MapPrelim::default()),
@@ -481,7 +492,7 @@ fn cells_map(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> Ma
 }
 
 /// Cellule absente posée en `Y.Map{ text, …fields }`.
-fn insert_cell(
+pub(crate) fn insert_cell(
     txn: &mut TransactionMut,
     cells: &MapRef,
     key: String,
@@ -1291,6 +1302,7 @@ pub(crate) mod tests {
                     text: "Lundi".into(),
                     fill: None,
                     shade: None,
+                    bg: None,
                     spans: plain_spans("Lundi")
                 },
                 TableCellView {
@@ -1299,6 +1311,7 @@ pub(crate) mod tests {
                     text: String::new(),
                     fill: Some("#fef08a".into()),
                     shade: None,
+                    bg: None,
                     spans: plain_spans("")
                 },
             ]
@@ -2367,6 +2380,7 @@ pub(crate) mod tests {
                 text: String::new(),
                 fill: Some("#fef08a".into()),
                 shade: None,
+                bg: None,
                 spans: plain_spans("")
             }]
         );

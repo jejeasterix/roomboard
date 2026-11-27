@@ -160,9 +160,10 @@ export function toTable(v: unknown): TableData {
     }),
     cells: cells.map((c: unknown) => {
       if (!isRecord(c)) throw new Error(ELEMENT);
-      const { row, col, text, fill, shade, spans } = c;
+      const { row, col, text, fill, shade, spans, bg } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
-      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text) };
+      const asset = optString(bg);
+      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text), ...(asset === null ? {} : { bg: asset }) };
     }),
     merges: merges.map((m: unknown) => {
       if (!isRecord(m)) throw new Error(ELEMENT);
@@ -684,6 +685,8 @@ class WasmCoreDocument implements CoreDocument {
         );
       case "SetTableOptions":
         return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header));
+      case "SetCellImage":
+        return toChange(this.d.set_cell_image(cmd.id, cmd.row, cmd.col, cmd.from ?? undefined));
       case "ImportTable":
         return toChange(
           this.d.import_table(

@@ -176,6 +176,8 @@ interface FakeCell {
   readonly spans: readonly TextSpan[];
   readonly fill: string | null;
   readonly shade: string | null;
+  /** personnalisation-3 (T9) : asset de l'image de fond. */
+  readonly bg: string | null;
   readonly span: readonly [string, string] | null;
 }
 /** Tableau (C10a) : objets repris tels quels d'une étape à l'autre, sauf ceux qu'une commande change. */
@@ -365,7 +367,7 @@ function inLine(key: string, axis: TableAxis, line: string): boolean {
 }
 /** Zone retenue (F2), en rangs, bornes comprises. */
 interface FakeMerge { readonly r0: number; readonly c0: number; readonly r1: number; readonly c1: number }
-const EMPTY_CELL: FakeCell = { text: "", spans: plainSpans(""), fill: null, shade: null, span: null };
+const EMPTY_CELL: FakeCell = { text: "", spans: plainSpans(""), fill: null, shade: null, bg: null, span: null };
 const overlaps = (a: FakeMerge, b: FakeMerge): boolean => a.r0 <= b.r1 && b.r0 <= a.r1 && a.c0 <= b.c1 && b.c0 <= a.c1;
 const inside = (a: FakeMerge, b: FakeMerge): boolean => b.r0 <= a.r0 && a.r1 <= b.r1 && b.c0 <= a.c0 && a.c1 <= b.c1;
 const contains = (m: FakeMerge, r: number, c: number): boolean => r >= m.r0 && r <= m.r1 && c >= m.c0 && c <= m.c1;
@@ -432,8 +434,8 @@ function tableView(t: FakeTable): TableData {
   for (const r of t.rows) {
     for (const c of t.cols) {
       const cell = t.cells.get(cellKey(r.id, c.id));
-      if (cell && (cell.text !== "" || cell.fill !== null || cell.shade !== null)) {
-        cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill, shade: cell.shade, spans: cell.spans });
+      if (cell && (cell.text !== "" || cell.fill !== null || cell.shade !== null || cell.bg !== null)) {
+        cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill, shade: cell.shade, spans: cell.spans, ...(cell.bg === null ? {} : { bg: cell.bg }) });
       }
     }
   }
@@ -1228,6 +1230,41 @@ class FakeDocument implements CoreDocument {
         const { fit: _f, header: _h, ...rest } = t;
         return this.writeTable(found, cmd.id, { ...rest, ...(fit ? { fit } : {}), ...(header ? { header } : {}) });
       }
+      case "SetCellImage": {
+        // personnalisation-3 (T9), comme `cmd_set_cell_image` : case connue ; `null` retire le fond (aucune étape sans fond) ;
+        // sinon l'image doit être logée dans cette case (BadTable), son asset passe en `bg`, l'image quitte la page.
+        const { found, t } = this.tableOf(cmd.id);
+        if (!t.rows.some((r) => r.id === cmd.row) || !t.cols.some((c) => c.id === cmd.col)) throw new Error(MESSAGES.badTable);
+        const key = cellKey(cmd.row, cmd.col);
+        const cell = t.cells.get(key);
+        if (cmd.from === null) {
+          if (!cell || cell.bg === null) return this.unchanged();
+          const cells = new Map(t.cells);
+          cells.set(key, { ...cell, bg: null });
+          return this.writeTable(found, cmd.id, { ...t, cells });
+        }
+        const img = this.find(cmd.from);
+        if (!img) throw new Error(`élément inconnu : ${cmd.from}`);
+        const link = img.element.cell;
+        const asset = img.element.image?.asset;
+        if (!asset || img.page.id !== found.page.id || link?.[0] !== cmd.id || link[1] !== cmd.row || link[2] !== cmd.col || !isAssetId(asset)) {
+          throw new Error(MESSAGES.badTable);
+        }
+        const cells = new Map(t.cells);
+        cells.set(key, { ...(cell ?? EMPTY_CELL), bg: asset });
+        const pageId = found.page.id;
+        const image = cmd.from;
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === pageId);
+          if (p) {
+            const i = p.elements.findIndex((e) => e.id === cmd.id);
+            const old = p.elements[i];
+            if (old) p.elements[i] = { ...old, table: { ...t, cells } };
+            p.elements.splice(0, p.elements.length, ...p.elements.filter((e) => e.id !== image));
+          }
+          return { pages: [pageId], ids: [cmd.id], removed: [image] };
+        });
+      }
       case "PlaceInCell": {
         // personnalisation-3 (D3), refus dans l'ordre de `cmd_place_in_cell` (section T1a) : 1 matrice, 2 tableau parmi les
         // ids (D36), 3 aucun id (aucune étape), 4 plusieurs pages, 5 case visée (D35), 6 tableaux des tailles puis
@@ -1734,7 +1771,7 @@ class FakeDocument implements CoreDocument {
           cmd.cells.forEach((text, i) => {
             const span = spans.get(i) ?? null;
             if (covered.has(i) || (text === "" && span === null)) return;
-            cells.set(cellKey(rows[Math.floor(i / cmd.cols)]?.id ?? "", cols[i % cmd.cols]?.id ?? ""), { text, spans: plainSpans(text), fill: null, shade: null, span });
+            cells.set(cellKey(rows[Math.floor(i / cmd.cols)]?.id ?? "", cols[i % cmd.cols]?.id ?? ""), { text, spans: plainSpans(text), fill: null, shade: null, bg: null, span });
           });
           
           return { color: cmd.color, size: cmd.size, cols, rows, cells };
@@ -1908,7 +1945,10 @@ class FakeDocument implements CoreDocument {
       scanAssets(p.id, acc);
       scanAssets(p.backdrop, acc);
       scanAssets(p.grid, acc);
-      for (const e of p.elements) scanAssets({ ...e, text: undefined, local: undefined }, acc);
+      for (const e of p.elements) {
+        scanAssets({ ...e, text: undefined, local: undefined }, acc);
+        if (e.table) for (const c of e.table.cells.values()) if (c.bg !== null) acc.add(c.bg);
+      }
     }
     return [...acc].sort().map((id) => assetInfo(this.state.assets, id));
   }
@@ -2305,6 +2345,7 @@ function loadTable(v: unknown): FakeTable | null {
       const text = typeof c["text"] === "string" ? c["text"] : "";
       const fill = c["fill"];
       const shade = c["shade"];
+      const bg = c["bg"];
       const span = c["span"];
       const s = c["spans"];
       // C7b : segments lisibles normalisés ; JSON d'avant C7b ou segments illisibles : un segment (R16).
@@ -2314,6 +2355,7 @@ function loadTable(v: unknown): FakeTable | null {
         spans,
         fill: typeof fill === "string" && validColor(fill) ? fill : null,
         shade: typeof shade === "string" && validColor(shade) ? shade : null,
+        bg: typeof bg === "string" && isAssetId(bg) ? bg : null,
         span: Array.isArray(span) && span.length === 2 && typeof span[0] === "string" && typeof span[1] === "string" ? [span[0], span[1]] : null,
       });
     }

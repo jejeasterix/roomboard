@@ -13,7 +13,10 @@ use crate::element::{
     apply_transform, cell_link_to_any, compose, finite_positive, fits_f32, invert, out_string,
     out_transform, read_cell_link, transform_to_any, Transform, IDENTITY,
 };
-use crate::table::{merges_of, read_cell, read_raw, Line, RawTable, TableAxis, TABLE_KIND};
+use crate::table::{
+    cell_key, cells_map, insert_cell, merges_of, read_cell, read_raw, Line, RawTable, TableAxis,
+    TABLE_KIND,
+};
 
 /// Taille d'une ligne ou d'une colonne écrite par `PlaceInCell` (D3).
 #[derive(Debug, Clone, PartialEq)]
@@ -351,6 +354,76 @@ impl Document {
             }
         }
         Ok(self.table_done_with(page, id, Vec::new()))
+    }
+
+    /// `SetCellImage` (T9) : `Some(image)` : l'image logée dans cette case devient son fond `bg` (asset de l'image, image
+    /// retirée de la page), une étape ; image non logée dans cette case : `BadTable`. `None` : `bg` retiré, aucune étape
+    /// s'il n'y en avait pas.
+    pub(crate) fn cmd_set_cell_image(
+        &mut self,
+        id: &str,
+        row: &str,
+        col: &str,
+        from: Option<&str>,
+    ) -> Result<Change, CommandError> {
+        let (page, e, raw) = self.table_of(id)?;
+        if !raw.rows.iter().any(|l| l.id == row) || !raw.cols.iter().any(|l| l.id == col) {
+            return Err(CommandError::BadTable);
+        }
+        let current = {
+            let txn = self.read();
+            read_cell(&txn, raw.cells.as_ref(), row, col)
+        };
+        let Some(image) = from else {
+            let Some(cell) = current.filter(|c| c.bg.is_some()) else {
+                return Ok(self.unchanged());
+            };
+            {
+                let mut txn = self.transact_local();
+                cell.map.remove(&mut txn, "bg");
+            }
+            return Ok(self.table_done_with(page, id, Vec::new()));
+        };
+        let (asset, elements, index) = {
+            let txn = self.read();
+            let f = self
+                .find_element(&txn, image)
+                .ok_or_else(|| CommandError::UnknownElement(image.to_string()))?;
+            let linked = read_cell_link(&txn, &f.element)
+                .is_some_and(|l| l[0] == id && l[1] == row && l[2] == col);
+            let asset =
+                out_string(f.element.get(&txn, "asset")).filter(|a| crate::asset::is_asset_id(a));
+            let is_image = out_string(f.element.get(&txn, "kind")).as_deref() == Some("image");
+            match asset {
+                Some(a) if linked && is_image && f.page_id == page => (a, f.elements, f.index),
+                _ => return Err(CommandError::BadTable),
+            }
+        };
+        {
+            let mut txn = self.transact_local();
+            match current {
+                Some(c) => {
+                    c.map.insert(&mut txn, "bg", In::from(asset.as_str()));
+                }
+                None => {
+                    let cells = cells_map(&mut txn, &e, raw.cells.as_ref());
+                    insert_cell(
+                        &mut txn,
+                        &cells,
+                        cell_key(row, col),
+                        "",
+                        vec![("bg", In::from(asset.as_str()))],
+                    );
+                }
+            }
+            elements.remove(&mut txn, index);
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: vec![id.to_string()],
+            removed: vec![image.to_string()],
+            ..Default::default()
+        }))
     }
 
     /// T5 : retire les éléments `ids` placés sous le tableau `table` de `page` et les réinsère juste au-dessus de lui,
@@ -1272,5 +1345,123 @@ mod tests {
             cell: Some(l),
         });
         assert!(matches!(r, Err(CommandError::BadTable)));
+    }
+
+    // T9 (aide) : image 1 × 1 libre sur la page, asset de test.
+    fn add_png_image(d: &mut Document, p: &str) -> String {
+        use crate::asset::AssetRef;
+        d.apply(Command::AddImage {
+            page: p.into(),
+            asset: AssetRef {
+                id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
+                name: "photo.png".into(),
+                mime: "image/png".into(),
+                size: 3.0,
+            },
+            w: 100.0,
+            h: 100.0,
+            matrix: IDENTITY,
+        })
+        .expect("image")
+        .ids[0]
+            .clone()
+    }
+
+    // S5 (cœur) : l'image logée devient le fond de sa case, une étape ; Ctrl+Z la rend.
+    #[test]
+    fn set_cell_image_takes_asset_and_removes_image() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let img = add_png_image(&mut d, &p);
+        place11(&mut d, &t, &img);
+        let l = link(&d, &t, 1, 1);
+        d.apply(Command::SetCellImage {
+            id: t.clone(),
+            row: l[1].clone(),
+            col: l[2].clone(),
+            from: Some(img.clone()),
+        })
+        .expect("fond");
+        assert!(d.element(&img).is_none());
+        assert!(view(&d, &t)
+            .cells
+            .iter()
+            .any(|c| c.row == l[1] && c.col == l[2] && c.bg.is_some()));
+        assert!(d.undo());
+        assert!(d.element(&img).is_some());
+        assert_eq!(d.element(&img).expect("image").cell, Some(l.clone()));
+        assert!(view(&d, &t).cells.iter().all(|c| c.bg.is_none()));
+        // `None` retire le fond ; sans fond : aucune étape.
+        d.apply(Command::SetCellImage {
+            id: t.clone(),
+            row: l[1].clone(),
+            col: l[2].clone(),
+            from: Some(img.clone()),
+        })
+        .expect("fond");
+        d.apply(Command::SetCellImage {
+            id: t.clone(),
+            row: l[1].clone(),
+            col: l[2].clone(),
+            from: None,
+        })
+        .expect("retrait");
+        assert!(view(&d, &t).cells.iter().all(|c| c.bg.is_none()));
+        let v = d.version();
+        d.apply(Command::SetCellImage {
+            id: t,
+            row: l[1].clone(),
+            col: l[2].clone(),
+            from: None,
+        })
+        .expect("rien");
+        assert_eq!(d.version(), v);
+    }
+
+    #[test]
+    fn set_cell_image_refuses_unlinked() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let img = add_png_image(&mut d, &p);
+        let l = link(&d, &t, 1, 1);
+        assert_eq!(
+            d.apply(Command::SetCellImage {
+                id: t,
+                row: l[1].clone(),
+                col: l[2].clone(),
+                from: Some(img)
+            }),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    // U3 : l'asset de `bg` reste cité, donc gardé à l'enregistrement et au rechargement.
+    #[test]
+    fn cell_image_asset_kept_on_save() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-27T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let img = add_png_image(&mut d, &p);
+        place11(&mut d, &t, &img);
+        let l = link(&d, &t, 1, 1);
+        d.apply(Command::SetCellImage {
+            id: t.clone(),
+            row: l[1].clone(),
+            col: l[2].clone(),
+            from: Some(img),
+        })
+        .expect("fond");
+        assert_eq!(d.cited_assets().len(), 1);
+        let back = load(&save(&d, &meta).expect("save")).expect("load");
+        assert_eq!(back.cited_assets().len(), 1);
+        assert!(view(&back, &t).cells.iter().any(|c| c.bg.is_some()));
     }
 }
