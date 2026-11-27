@@ -110,25 +110,30 @@ export interface DeviceSettings {
   onChange(cb: () => void): () => void;
 }
 
-function readFrame(kv: KeyValue | null): boolean {
+/** Réglage d'appareil booléen : vrai par défaut, la valeur « coupée » écrite sous `key` quand il est faux. */
+function readFlag(kv: KeyValue | null, key: string, off: string): boolean {
   try {
-    return kv?.getItem(FRAME_KEY) !== FRAME_HIDDEN;
+    return kv?.getItem(key) !== off;
   } catch {
     return true;
   }
 }
 
-function readPalmEraser(kv: KeyValue | null): boolean {
+/** Garde `on` sous `key` (clé retirée si vrai, `off` écrit sinon) ; faux quand le stockage refuse. */
+function keepFlag(kv: KeyValue | null, key: string, off: string, on: boolean): boolean {
+  if (kv === null) return false;
   try {
-    return kv?.getItem(PALM_ERASER_KEY) !== PALM_ERASER_OFF;
-  } catch {
+    if (on) kv.removeItem(key);
+    else kv.setItem(key, off);
     return true;
+  } catch {
+    return false;
   }
 }
 
 export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
-  let frame = readFrame(kv);
-  let palmEraser = readPalmEraser(kv);
+  let frame = readFlag(kv, FRAME_KEY, FRAME_HIDDEN);
+  let palmEraser = readFlag(kv, PALM_ERASER_KEY, PALM_ERASER_OFF);
   const listeners = new Set<() => void>();
   const islands = new Map<string, IslandState>();
   /** Style courant écrit dans cette séance (gardé même si le stockage refuse) ; undefined : lire le stockage. */
@@ -138,32 +143,14 @@ export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
     frame: () => frame,
     setFrame(on) {
       frame = on;
-      let kept = false;
-      if (kv !== null) {
-        try {
-          if (on) kv.removeItem(FRAME_KEY);
-          else kv.setItem(FRAME_KEY, FRAME_HIDDEN);
-          kept = true;
-        } catch {
-          kept = false;
-        }
-      }
+      const kept = keepFlag(kv, FRAME_KEY, FRAME_HIDDEN, on);
       for (const cb of [...listeners]) cb();
       return kept;
     },
     palmEraser: () => palmEraser,
     setPalmEraser(on) {
       palmEraser = on;
-      let kept = false;
-      if (kv !== null) {
-        try {
-          if (on) kv.removeItem(PALM_ERASER_KEY);
-          else kv.setItem(PALM_ERASER_KEY, PALM_ERASER_OFF);
-          kept = true;
-        } catch {
-          kept = false;
-        }
-      }
+      const kept = keepFlag(kv, PALM_ERASER_KEY, PALM_ERASER_OFF, on);
       for (const cb of [...listeners]) cb();
       return kept;
     },

@@ -10,7 +10,7 @@
  */
 import { DETECT_MS, eraserCircle, isLargeContact, isTightCluster, joinsCluster, type ContactBox } from "./contact";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./gesture";
-import type { GestureEvent, InputSample } from "./sampler";
+import { pressureOf, type GestureEvent, type InputSample } from "./sampler";
 
 export const SECOND_FINGER_MS = 150;
 
@@ -87,7 +87,7 @@ const SWITCHABLE: ReadonlySet<ToolChoice> = new Set<ToolChoice>(["pen", "eraser"
 
 const lastOf = (samples: readonly InputSample[]): InputSample | undefined => samples[samples.length - 1];
 const boxOf = (t: Track): ContactBox => ({ x: t.x, y: t.y, width: t.w, height: t.h });
-const sampleAt = (x: number, y: number, t: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t });
+const sampleAt = (x: number, y: number, t: number): InputSample => ({ x, y, pressure: pressureOf("touch", 0), tiltX: 0, tiltY: 0, t });
 
 export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
   const tracks = new Map<number, Track>();
