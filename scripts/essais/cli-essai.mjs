@@ -444,6 +444,36 @@ try {
   verifie("D79 : Ctrl-C pendant une conversion : code 130", pidFaux !== null && sortie.code === 130, JSON.stringify(sortie));
   verifie("D79 : une ligne {\"error\":…} « conversion Office interrompue »", errEnfant.trim().split("\n").length === 1 && messageErreur(errEnfant)?.startsWith("conversion Office interrompue (SIGINT)"), errEnfant);
   verifie("D79 : rien écrit", !existsSync(join(dir, "lent.roomboard")));
+
+  // personnalisation-1a (T7, D15) : SetPageMode, AddPage mode, MovePage, DuplicatePage ; refus code 1.
+  const lignesOps = (...o) => `${o.map((x) => JSON.stringify(x)).join("\n")}\n`;
+  const vuePage = (st, i) => st?.pages?.[i]?.page;
+  const carre1a = (page, x) => ({ type: "AddShape", page, shape: "rect", x0: x, y0: 20, x1: x + 100, y1: 120, style: { color: "#1e40af", width: 4 }, fill: null });
+  const pm = join(dir, "pages-1a.roomboard");
+  const nm = cli(["new", pm]);
+  verifie("1a : new pages-1a.roomboard", nm.code === 0 && existsSync(pm), nm.brut);
+  const mo = cli(["run", pm, "--ops", "-"], lignesOps({ type: "SetPageMode", page: "$page:0", mode: "portrait" }, { op: "state" }, { op: "undo" }, { op: "state" }));
+  const portrait1a = vuePage(mo.lignes[1]?.state, 0);
+  verifie("1a : SetPageMode portrait : mode « page », hauteur 3413,33", mo.code === 0 && portrait1a?.mode === "page" && Math.abs(portrait1a.height - 3413.33) < 0.01, mo.brut);
+  verifie("1a : undo, une étape : hauteur 1080, plus rien à annuler", vuePage(mo.lignes[3]?.state, 0)?.height === 1080 && mo.lignes[3]?.state?.canUndo === false, mo.brut);
+  const mv = cli(["run", pm, "--save", "--ops", "-"], lignesOps({ type: "AddPage", after: "$page:0", mode: "infinite" }, { type: "MovePage", page: "$page:1", to: 0 }, { op: "state" }));
+  const apres1a = mv.lignes[2]?.state;
+  verifie("1a : AddPage mode infinite puis MovePage en tête", mv.code === 0 && vuePage(apres1a, 0)?.mode === "infinite" && vuePage(apres1a, 1)?.mode === "page", mv.brut);
+  const ordre1a = (st) => (st?.pages ?? []).map((x) => x.page.id);
+  egal("1a : réouverture identique (ordre des ids)", ordre1a(etat(pm)), ordre1a(apres1a));
+  const pd = join(dir, "dup-1a.roomboard");
+  const nd = cli(["new", pd]);
+  verifie("1a : new dup-1a.roomboard", nd.code === 0, nd.brut);
+  const du = cli(["run", pd, "--ops", "-"], lignesOps(carre1a("$page:0", 10), carre1a("$page:0", 300), { type: "DuplicatePage", page: "$page:0" }, { op: "state" }, { type: "Delete", ids: ["$3.1"] }, { type: "SetPageMode", page: "$page:1", mode: "infinite" }, { op: "state" }));
+  const copie1a = du.lignes[3]?.state;
+  const fin1a = du.lignes[6]?.state;
+  verifie("1a : DuplicatePage d'une page à deux objets : copie au rang 1, deux objets", du.code === 0 && copie1a?.pages?.length === 2 && copie1a.pages[1].elements.length === 2 && vuePage(copie1a, 1)?.id !== vuePage(copie1a, 0)?.id, du.brut);
+  verifie("1a : $3.1 est un élément copié, $page:1 la copie", fin1a?.pages?.[0]?.elements.length === 2 && fin1a.pages[1].elements.length === 1 && vuePage(fin1a, 0)?.mode === "page" && vuePage(fin1a, 1)?.mode === "infinite", du.brut);
+  const avant1a = empreinte(pm);
+  const loin = cli(["run", pm, "--save", "--ops", "-"], lignesOps({ type: "MovePage", page: "$page:0", to: 99 }));
+  verifie("1a : MovePage to 99 : code 1, fichier inchangé", loin.code === 1 && empreinte(pm) === avant1a, loin.brut);
+  const a4 = cli(["run", pm, "--save", "--ops", "-"], lignesOps({ type: "SetPageMode", page: "$page:0", mode: "a4" }));
+  verifie("1a : SetPageMode a4 : code 1, fichier inchangé", a4.code === 1 && empreinte(pm) === avant1a, a4.brut);
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);
