@@ -4114,6 +4114,21 @@ describe.each(factories)("contrat OG11 lot 2 : $name", ({ f }) => {
   const restyle = (d: CoreDocument, ids: readonly string[], patch: LookPatch): Change => d.apply({ type: "SetStyle", ids, patch });
   const odd = <T>(v: unknown): T => v as T;
 
+  it("Lien : blancs Unicode et caractères interdits, même réponse sur les deux cœurs", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shape(d, p, "rect");
+    const v = d.version();
+    const bad = ["\u00A0", "\u2028", "\u3000", "\u0085", '"', "<", ">", "\\"];
+    for (const c of bad) {
+      expect(messageOf(() => restyle(d, [r], { link: `https://a${c}b` })), JSON.stringify(c)).toBe("style invalide");
+    }
+    expect(d.version()).toBe(v);
+    // U+FEFF n'est pas un blanc pour Rust (White_Space l'exclut) : accepté.
+    restyle(d, [r], { link: "https://a\uFEFFb" });
+    expect(d.element(r)?.look?.link).toBe("https://a\uFEFFb");
+  });
+
   it("Lien : javascript refusé, sur les deux cœurs", () => {
     const d = f.blank();
     const p = first(d);

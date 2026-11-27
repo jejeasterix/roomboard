@@ -565,6 +565,15 @@ export function createEngine(deps: EngineDeps): Engine {
       change = write();
     } catch (e) {
       trackSteps(v0);
+      // Un lot refusé au milieu garde ses écritures déjà faites : la scène est rafraîchie comme après une écriture réussie.
+      if (doc.version() !== v0) {
+        renderer.invalidate({ ...NO_CHANGE, full: true, version: doc.version() });
+        imageEdit?.changed(doc.version());
+        followPages(before, showAppeared);
+        selectTool.prune();
+        tableTool.prune();
+        requestScene();
+      }
       error = e instanceof Error ? e.message : String(e);
       emit();
       return null;
@@ -599,6 +608,9 @@ export function createEngine(deps: EngineDeps): Engine {
     lotWidth = 1;
     const v = doc.version();
     if (v === v0) return;
+    // Continuité : le sommet doit finir à `v0`, sinon une écriture hors `commit` s'est glissée entre les deux.
+    const top = undoLots[undoLots.length - 1];
+    if (top !== undefined && top.at !== v0) undoLots.length = 0;
     undoLots.push({ at: v, width });
     redoLots.length = 0;
   }
@@ -636,7 +648,8 @@ export function createEngine(deps: EngineDeps): Engine {
   function lotWidthFor(which: "undo" | "redo"): number {
     const mine = which === "undo" ? undoLots : redoLots;
     const top = mine[mine.length - 1];
-    if (top !== undefined && top.at === doc.version()) return top.width;
+    if (top === undefined) return 1;
+    if (top.at === doc.version()) return top.width;
     undoLots.length = 0;
     redoLots.length = 0;
     return 1;

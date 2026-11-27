@@ -2476,7 +2476,7 @@ describe("moteur — style courant du texte et alignement en saisie (T31)", () =
 
 describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () => {
   function texts() {
-    const { doc, engine } = setup();
+    const { doc, engine, renderer } = setup();
     const page = engine.state().page;
     const add = (x: number, content: string): string =>
       doc.apply({ type: "SetText", page, id: null, x, y: 10, content, color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 }).ids[0] ?? "";
@@ -2495,7 +2495,7 @@ describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () =
       const el = doc.element(id);
       return el?.kind === "text" ? el.text.spans[0]?.attrs.size : undefined;
     };
-    return { doc, engine, ids, fmt, fontOf, sizeOf };
+    return { doc, engine, renderer, ids, fmt, fontOf, sizeOf };
   }
   it("runAll Police : un seul annuler les rétablit tous, un seul rétablir les refait", () => {
     const { engine, ids, fmt, fontOf } = texts();
@@ -2524,6 +2524,49 @@ describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () =
     engine.undo();
     for (const id of ids) expect(fontOf(id)).toBeUndefined();
     expect(doc.canUndo()).toBe(true);
+  });
+  it("rétablir sans rien à rétablir ne jette pas la pile : un annuler défait encore tout le lot", () => {
+    const { engine, ids, fmt, fontOf } = texts();
+    engine.runAll(fmt({ font: "Georgia" }));
+    engine.redo();
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+  });
+  it("un annuler de trop (pile vide) ne jette pas la pile de rétablir : un rétablir refait tout le lot", () => {
+    const { doc, engine } = setup();
+    const page = engine.state().page;
+    const add = (x: number) => ({ type: "SetText" as const, page, id: null, x, y: 10, content: "t", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    engine.runAll([add(0), add(300), add(600)]);
+    expect(doc.elementIds(page).length).toBe(3);
+    engine.undo();
+    expect(doc.elementIds(page).length).toBe(0);
+    engine.undo();
+    engine.redo();
+    expect(doc.elementIds(page).length).toBe(3);
+  });
+  it("une écriture hors commit puis une écriture par commit : les piles sont jetées, l'annuler retombe sur une étape", () => {
+    const { doc, engine, ids, fmt, fontOf } = texts();
+    const page = engine.state().page;
+    engine.runAll(fmt({ font: "Georgia" }));
+    doc.apply({ type: "SetText", page, id: null, x: 0, y: 400, content: "hors", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    engine.run({ type: "SetText", page, id: null, x: 0, y: 500, content: "via", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    const count = doc.elementIds(page).length;
+    engine.undo();
+    expect(doc.elementIds(page).length).toBe(count - 1);
+    engine.undo();
+    expect(doc.elementIds(page).length).toBe(count - 2);
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+  });
+  it("runAll refusé au milieu : écritures gardées, scène invalidée, un annuler défait la première", () => {
+    const { engine, renderer, ids, fmt, fontOf } = texts();
+    const cmds = [...fmt({ font: "Georgia" }).slice(0, 1), { type: "FormatText" as const, id: "absent", start: 0, len: 1, attrs: { font: "Georgia" } }];
+    const seen = renderer.changes.length;
+    expect(engine.runAll(cmds)).toBeNull();
+    expect(engine.state().error).not.toBeNull();
+    expect(fontOf(ids[0] ?? "")).toBe("Georgia");
+    expect(renderer.changes.length).toBeGreaterThan(seen);
+    engine.undo();
+    expect(fontOf(ids[0] ?? "")).toBeUndefined();
   });
   it("runAll d'une seule commande ou d'une liste vide : comme run, sans erreur", () => {
     const { engine, ids, fmt, fontOf } = texts();
