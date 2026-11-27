@@ -21,7 +21,10 @@ export interface RadioChoicesProps<T extends string> {
   readonly label: string;
   readonly look: "card" | "tile" | "segment";
   readonly options: readonly RadioOption<T>[];
-  readonly value: T;
+  /** `null` : valeur mixte ou hors liste (OG11), aucun bouton enfoncé, le premier reste tabulable. */
+  readonly value: T | null;
+  /** Attribut posé sur chaque bouton avec sa valeur (sélecteur d'essai) ; `data-choice` reste. */
+  readonly valueAttr?: string;
   choose(v: T): void;
 }
 
@@ -30,7 +33,7 @@ const STEP: Readonly<Record<string, -1 | 1>> = { ArrowLeft: -1, ArrowUp: -1, Arr
 
 export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX.Element {
   let group: HTMLDivElement | undefined;
-  const known = (): boolean => props.options.some((o) => o.value === props.value);
+  const known = (): boolean => props.value !== null && props.options.some((o) => o.value === props.value);
   const onKey = (e: KeyboardEvent, index: number): void => {
     if (!Object.hasOwn(STEP, e.key)) return;
     e.preventDefault();
@@ -55,6 +58,7 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
               aria-checked={on()}
               tabIndex={on() || (i() === 0 && !known()) ? 0 : -1}
               data-choice={o.value}
+              {...(props.valueAttr ? { [props.valueAttr]: o.value } : {})}
               onClick={() => props.choose(o.value)}
               onKeyDown={(e) => onKey(e, i())}
             >

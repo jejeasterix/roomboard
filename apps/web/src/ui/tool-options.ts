@@ -16,14 +16,14 @@ const BY_TOOL: Readonly<Partial<Record<string, readonly OptionKey[]>>> = {
   arrow: FORM,
   text: ["strokeColor", "opacity"],
 };
+const BY_KIND: Readonly<Record<string, (e: ElementView) => readonly OptionKey[]>> = {
+  stroke: () => BY_TOOL["pen"]!,
+  shape: (e) => (e.kind === "shape" ? BY_TOOL[e.shape.shape] ?? [] : []),
+  text: () => BY_TOOL["text"]!,
+  image: () => ["opacity"],
+};
 function byElement(e: ElementView): readonly OptionKey[] {
-  switch (e.kind) {
-    case "stroke": return BY_TOOL["pen"]!;
-    case "shape": return BY_TOOL[e.shape.shape] ?? [];
-    case "text": return BY_TOOL["text"]!;
-    case "image": return ["opacity"];
-    default: return [];
-  }
+  return Object.hasOwn(BY_KIND, e.kind) ? BY_KIND[e.kind]!(e) : [];
 }
 export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _editing: boolean): readonly OptionKey[] {
   const on = new Set<OptionKey>(BY_TOOL[tool] ?? []);

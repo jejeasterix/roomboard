@@ -108,6 +108,12 @@ export function nudge(at: Point, key: string, big: boolean): Point | null {
   return { x: at.x + dx * step, y: at.y + dy * step };
 }
 
+/** OG11 : coin haut-gauche du panneau d'options, sous la rangée du haut (`tops` = sa hauteur), à droite de la barre
+ *  latérale quand elle existe (`sideStart`, relative au bord gauche de la zone) ; y borné pour rester dans la zone. */
+export function placeOptions(area: Box, sideStart: Box | null, tops: number): Point {
+  return { x: sideStart ? sideStart.w + GAP : EDGE, y: Math.min(tops + GAP, Math.max(EDGE, area.h - EDGE)) };
+}
+
 /** L2-16 : panneau des profils ouvert, voie de l'îlot d'outils dans la place à sa gauche, sous la rangée du haut ;
  *  null si cette place est plus étroite que 2 × 16 + 3 boutons (H13 : les îlots restent sous le panneau). */
 export function sheetLane(area: Box, sheet: number, band: number, btn: number): Lane | null {

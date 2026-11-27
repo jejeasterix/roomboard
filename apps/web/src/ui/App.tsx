@@ -8,7 +8,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type 
 import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
 import type { ImageData } from "../core/api";
-import type { DeviceSettings } from "../device-settings";
+import { createDeviceSettings, type DeviceSettings } from "../device-settings";
 import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost, type ToolbarHost } from "../app/toolbar-host";
 import type { AnnotationControl, AnnotationState, PointerMode } from "../platform/annotation-port";
@@ -23,6 +23,7 @@ import { ANNOTATION_ROLE, MENU_ROLE, annotationBarOf, itemsForMode, resolveStart
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
 import { IslandLayer } from "./Island";
+import { OptionsPanel } from "./OptionsPanel";
 import { layoutFor } from "./layout";
 import { MediaBar, type MediaControls } from "./MediaBar";
 import { MenuBar } from "./MenuBar";
@@ -158,6 +159,8 @@ export function App(props: AppProps): JSX.Element {
     tick();
     return ws.tabs.active()?.id ?? null;
   };
+  /** Repli du panneau d'options : réglages d'appareil, ou mémoire seule quand l'hôte n'en fournit pas. */
+  const optionSettings = props.device ?? createDeviceSettings(null);
   const board = () => {
     tick();
     state();
@@ -457,6 +460,17 @@ export function App(props: AppProps): JSX.Element {
         size={size}
         sheetOpen={() => panel() === "editor"}
         watch={islandWatch}
+      />
+      <OptionsPanel
+        engine={() => board().engine}
+        state={state}
+        element={(id) => ws.active().board.doc.element(id)}
+        presets={() => profile().presets}
+        size={size}
+        profileId={() => profile().id}
+        settings={optionSettings}
+        annotating={annotating}
+        sideStart={() => null}
       />
       <Toasts />
       <Show when={selectedMedia()}>

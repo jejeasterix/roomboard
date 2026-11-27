@@ -94,4 +94,11 @@ describe("RadioChoices (design-l3, L3-23, DA-L3-2)", () => {
     expect(value()).toBe('a"b');
     expect(document.activeElement).toBe(radios[0]);
   });
+  it("OG11 : value null : aucun enfoncé, premier tabulable ; valueAttr pose l'attribut", () => {
+    const r = render(() => <RadioChoices name="dock" label="Emplacement" look="segment" options={DOCKS} value={null} valueAttr="data-option-value" choose={() => {}} />);
+    const radios = [...r.container.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+    expect(radios.map((b) => b.getAttribute("aria-checked"))).toEqual(["false", "false", "false"]);
+    expect(radios.map((b) => b.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+    expect(radios.map((b) => b.getAttribute("data-option-value"))).toEqual(["top", "left", "floating"]);
+  });
 });
