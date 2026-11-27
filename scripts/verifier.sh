@@ -44,8 +44,11 @@ wasm-bindgen --target web --remove-name-section --out-dir "$FORMATS_OUT" \
 
 pnpm install --frozen-lockfile
 # Marge du module formats (OE71, docs/essais/taille-wasm.md) : wasm-opt -Oz du paquet npm `binaryen` (Apache-2.0),
-# après wasm-bindgen, comme le fait wasm-pack ; la colle JS reste celle de wasm-bindgen. Le module principal n'y passe pas.
+# après wasm-bindgen, comme le fait wasm-pack ; la colle JS reste celle de wasm-bindgen.
 pnpm exec wasm-opt -Oz "$FORMATS_OUT/roomboard_formats_wasm_bg.wasm" -o "$FORMATS_OUT/roomboard_formats_wasm_bg.wasm"
+# OG23 (docs/essais/taille-wasm.md, § OG23) : le module principal passe par le même wasm-opt -Oz. Après OG12, OG23 et
+# OG26, il dépassait le plafond H2-13 (1 598 137 o) ; -Oz le ramène à 1 456 551 o. Le plafond ne change pas.
+pnpm exec wasm-opt -Oz "$WASM_OUT/roomboard_wasm_bg.wasm" -o "$WASM_OUT/roomboard_wasm_bg.wasm"
 # Licences des dépendances (U39, R21) : après pnpm install, sur le node_modules réel.
 bash scripts/tests/controle-licences.test.sh
 node scripts/controle-licences.mjs
