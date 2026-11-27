@@ -417,7 +417,8 @@ async function s5(browser, base, mode) {
   let inside = "";
   for (let i = 0; i < 80 && inside !== "strokeStyle"; i++) {
     await page.keyboard.press("Tab");
-    inside = await page.evaluate(() => document.activeElement?.closest("[data-option]")?.getAttribute("data-option") ?? "");
+    // Cadrage décision 4 : chaque section a un en-tête tabulable ; le groupe, ce sont ses boutons radio.
+    inside = await page.evaluate(() => (document.activeElement?.getAttribute("role") === "radio" ? document.activeElement.closest("[data-option]")?.getAttribute("data-option") : null) ?? "");
   }
   check(inside === "strokeStyle", "S5.1 : Tab atteint le groupe « Style du trait »");
   await page.keyboard.press("ArrowRight");
