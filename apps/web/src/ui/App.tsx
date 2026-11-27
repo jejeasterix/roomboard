@@ -4,10 +4,14 @@
  * scène avec l'îlot des onglets et `#etat` (L2-5, L2-14) ; la scène (`main.rb-stages`) n'occupe que sa case. Panneaux
  * passagers (réglages, grille, image, bibliothèque, profils) au-dessus des îlots.
  */
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
-import type { ImageData } from "../core/api";
+import type { GridView, ImageData } from "../core/api";
+import { stampOf } from "../app/my-backgrounds";
+import { appShortcut } from "../engine/input/keys";
+import { GRID_KIND_LABELS } from "../grid-edit";
+import { BackgroundsWindow, GRID_SAVED_MESSAGE, type BackgroundsUi } from "./BackgroundsWindow";
 import type { DeviceSettings } from "../device-settings";
 import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost, type ToolbarHost } from "../app/toolbar-host";
@@ -71,6 +75,8 @@ export interface AppProps {
   navigate(search: string): void;
   /** C4 : bibliothèque ; absente (tests anciens) : le bouton n'ouvre rien. */
   readonly library?: { readonly library: ResourceLibrary; readonly shared: SharedFolder; readonly packs: TypedFiles };
+  /** personnalisation-1b : fenêtre des fonds et « Mes fonds » ; absente (tests anciens) : le bouton « Fonds » n'ouvre rien. */
+  readonly backgrounds?: BackgroundsUi;
   /** design-l4 (L4-14) : réglages de l'appareil ; donnés au panneau Réglages seulement avec la capacité d'annotation
    *  (H10) ; absents (tests anciens) : aucun bouton du cadre. */
   readonly device?: DeviceSettings;
@@ -218,6 +224,21 @@ export function App(props: AppProps): JSX.Element {
     },
   };
 
+  /** personnalisation-1b (Q21) : grille du brouillon et couleur de la page montrée vers « Mes fonds » ; rien dans le document. */
+  const saveGridAsBackground = async (b: BoardSession, grid: GridView): Promise<void> => {
+    const ui = props.backgrounds;
+    if (ui === undefined) return;
+    const kind = grid.levels[0]?.kind ?? "";
+    const label = Object.hasOwn(GRID_KIND_LABELS, kind) ? GRID_KIND_LABELS[kind as keyof typeof GRID_KIND_LABELS] : "personnalisée";
+    const color = b.doc.page(b.engine.state().page)?.background ?? "#ffffff";
+    try {
+      await ui.mine.addSource({ color, grid, image: null }, `Grille ${label} — ${stampOf(ui.now())}`, "grid");
+      await ws.say(GRID_SAVED_MESSAGE, "info");
+    } catch (e) {
+      await ws.say(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   /** Séance de la grille (E8, CR3) : moteur `b` figé à l'ouverture (jamais `ws.active()` au rappel : chaque onglet a son
    *  moteur) ; le démontage de `GridPanel` coupe l'aperçu sur ce moteur-là. */
   const gridPanelFor = (b: BoardSession): JSX.Element => (
@@ -234,6 +255,7 @@ export function App(props: AppProps): JSX.Element {
         return null;
       }}
       cancel={() => setPanel(null)}
+      saveAsBackground={props.backgrounds === undefined ? undefined : (grid) => void saveGridAsBackground(b, grid)}
     />
   );
   /** Onglet, page ou version qui change pendant la séance (annuler, rétablir, autre écriture) : panneau fermé (E8). */
@@ -346,6 +368,18 @@ export function App(props: AppProps): JSX.Element {
     ),
   );
   createEffect(on(() => props.active.profile(), (p) => { if (annotating()) ann?.control.sendProfile(p); }, { defer: true }));
+  // personnalisation-1b (Q28) : Ctrl+Maj+F (Cmd+Maj+F sous macOS) ouvre ou ferme la fenêtre des fonds, hors champ de
+  // saisie et hors annotation ; écouté ici, jamais par le moteur.
+  onMount(() => {
+    const onShortcut = (e: KeyboardEvent): void => {
+      const key = { key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: e.isComposing, target: e.target instanceof HTMLElement ? e.target : null };
+      if (props.backgrounds === undefined || annotating() || appShortcut(key) !== "backgrounds") return;
+      e.preventDefault();
+      leaveEditor(() => setPanel((cur) => (cur === "backgrounds" ? null : "backgrounds")));
+    };
+    window.addEventListener("keydown", onShortcut);
+    onCleanup(() => window.removeEventListener("keydown", onShortcut));
+  });
 
   // Mode de démarrage (U14, C1 P10) : une seule fois, au montage ; changer de profil ensuite ne le rejoue pas (P11).
   host.setMode(resolveStartMode(props.active.profile(), props.active.capabilities()).mode);
@@ -581,6 +615,9 @@ export function App(props: AppProps): JSX.Element {
             {imagePanelFor(ws.active().board, id())}
           </div>
         )}
+      </Show>
+      <Show when={panel() === "backgrounds" ? props.backgrounds : undefined}>
+        {(ui) => <BackgroundsWindow ui={ui()} host={ws} close={() => setPanel(null)} />}
       </Show>
       <Show when={panel() === "library" ? props.library : undefined}>
         {(lib) => (

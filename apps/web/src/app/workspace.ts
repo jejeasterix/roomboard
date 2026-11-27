@@ -164,6 +164,11 @@ export interface Workspace {
   /** Question si l'onglet est modifié ; dernier onglet : un vierge d'abord (CL5b-5). */
   close(id: string): Promise<boolean>;
   importFiles(files: readonly DroppedFile[], at?: Point | null): Promise<ImportReport>;
+  /** personnalisation-1b (Q22) : fenêtre des fonds ouverte, tout dépôt natif va à `h` (« Mes fonds ») au lieu de la page ;
+   *  null : dérivation retirée, le dépôt reprend son chemin. */
+  setDropDiverter(h: ((files: readonly DroppedFile[]) => Promise<void>) | null): void;
+  /** personnalisation-1b (Q22) : boîte d'ouverture du système (« Importer une image… ») ; annulée : liste vide. */
+  pickFiles(): Promise<readonly DroppedFile[]>;
   /** Tableau HTML collé (C10b, F19) dans l'onglet actif, centre de la vue ; vrai si le collage est pris (tableau posé
    *  ou refusé pour sa taille), faux sans tableau lisible (PC9). */
   pasteTable(html: string): Promise<boolean>;
@@ -486,6 +491,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   };
 
   let exporting = false;
+  let diverter: ((files: readonly DroppedFile[]) => Promise<void>) | null = null;
   const ws: Workspace = {
     tabs,
     active() {
@@ -723,6 +729,10 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       }
     },
     importFiles: (files, at = null) => importer.importFiles(files, at),
+    setDropDiverter(h) {
+      diverter = h;
+    },
+    pickFiles: () => host.pick(),
     async pasteTable(html) {
       const t = tabs.active()?.session;
       if (t === undefined) return false;
@@ -920,9 +930,12 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     return true;
   });
   // C11a (P17, P18) : en annotation, tout dépôt natif sur la fenêtre principale compte comme un dépôt sur la zone.
+  // personnalisation-1b (Q22) : fenêtre des fonds ouverte, le dépôt va à « Mes fonds » (dérivation posée par la fenêtre).
   const stopDrop = host.onDrop((files, at) => {
     const a = gate();
-    const done: Promise<unknown> = a !== null && a.state().active ? a.dropOnZone(files, at) : ws.importFiles(files, at);
+    const divert = diverter;
+    const done: Promise<unknown> =
+      divert !== null ? divert(files) : a !== null && a.state().active ? a.dropOnZone(files, at) : ws.importFiles(files, at);
     void done.catch((e: unknown) => {
       console.warn(`RoomBoard : dépôt abandonné (${messageOf(e)})`);
     });

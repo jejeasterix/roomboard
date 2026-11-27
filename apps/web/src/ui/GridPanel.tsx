@@ -35,6 +35,9 @@ export interface GridPanelProps {
   /** Écrit la grille ; rend le message du refus du cœur, ou null si elle est écrite. */
   apply(grid: GridView | null): string | null;
   cancel(): void;
+  /** personnalisation-1b (Q21) : « Enregistrer comme fond » : la grille du brouillon va à « Mes fonds », rien n'est écrit
+   *  dans le document. Absent : pas de bouton. */
+  saveAsBackground?(grid: GridView): void;
 }
 
 export function GridPanel(props: GridPanelProps): JSX.Element {
@@ -125,6 +128,21 @@ export function GridPanel(props: GridPanelProps): JSX.Element {
         <button type="button" data-grille="apply" onClick={() => setError(props.apply(toGrid(draft())))}>
           Appliquer
         </button>
+        <Show when={props.saveAsBackground}>
+          {(save) => (
+            <button
+              type="button"
+              data-grille="save-background"
+              disabled={off()}
+              onClick={() => {
+                const g = toGrid(draft());
+                if (g !== null) save()(g);
+              }}
+            >
+              Enregistrer comme fond
+            </button>
+          )}
+        </Show>
         <button type="button" data-grille="cancel" onClick={() => props.cancel()}>
           Fermer sans appliquer
         </button>

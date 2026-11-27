@@ -2594,4 +2594,27 @@ describe("C11b : envoi au tableau et fond figé (P3, P6 à P14, P17, P31)", () =
     expect(ws.annotationBackdrop()).toBeNull();
     expect(strokes(ws.tabs.list().find((t) => t.kind === "annotation")!.session)).toBe(1);
   });
+
+  it("personnalisation-1b (Q22) : dérivation posée, un dépôt va à Mes fonds et pas à la page ; retirée, l'import reprend", async () => {
+    const ws = await setupWorkspace();
+    const got: string[] = [];
+    ws.setDropDiverter(async (files) => {
+      got.push(...files.map((f) => f.name));
+    });
+    dropHandler!([plainFile("a.png", pngHead(10, 10))], null);
+    await flush();
+    expect(got).toEqual(["a.png"]);
+    const doc = ws.active().board.doc;
+    expect(doc.elementIds(doc.pageIds()[0]!)).toEqual([]);
+    ws.setDropDiverter(null);
+    dropHandler!([plainFile("b.tif")], null);
+    await flush();
+    await flush();
+    expect(got).toEqual(["a.png"]);
+  });
+
+  it("personnalisation-1b (Q22) : pickFiles rend les fichiers de la boîte d'ouverture", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pickFiles()).toEqual([]);
+  });
 });

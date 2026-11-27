@@ -27,7 +27,7 @@
 .rb-bg-card { position: relative; }
 .rb-bg-pick { display: flex; flex-direction: column; gap: var(--rf-space-xs); inline-size: 100%; padding: 0; border: none; background: transparent; color: var(--rf-navy-500); font: inherit; text-align: start; cursor: pointer; }
 .rb-bg-thumb { display: block; aspect-ratio: 16 / 9; inline-size: 100%; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); overflow: hidden; }
-.rb-bg-thumb img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.rb-bg-thumb img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; pointer-events: none; -webkit-user-drag: none; user-select: none; }
 .rb-bg-pick:hover .rb-bg-thumb, .rb-bg-pick:focus-visible .rb-bg-thumb { outline: 2px solid var(--rf-violet-600); outline-offset: 0; }
 .rb-bg-label { font-size: 14px; line-height: 20px; min-block-size: 20px; }
 .rb-bg-remove { position: absolute; inset-block-start: 4px; inset-inline-end: 4px; display: inline-grid; place-items: center; inline-size: 44px; block-size: 44px; border: none; border-radius: var(--rf-radius-lg); background: rgba(255, 255, 255, 0.92); color: var(--rf-navy-500); box-shadow: var(--rf-shadow-card); }
