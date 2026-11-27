@@ -15,7 +15,9 @@ import type { Engine, EngineState } from "../engine/engine";
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../engine/item-style";
 import type { ButtonSize, Profile } from "../toolbar";
 import { observeBox } from "./Island";
-import { IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
+import { objectKey, type KeyLike } from "../engine/input/keys";
+import { ColorPicker } from "./ColorPicker";
+import { Icon, IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { createTip } from "./tooltip";
 import { BUTTON_PX, optionsWidth, placeOptions, topRowBottom, type Box } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
@@ -200,9 +202,67 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     );
   };
 
-  const colors = (k: "strokeColor" | "background", picks: Accessor<readonly Pick[]>, make: (c: string | null) => Partial<ItemStyle>): JSX.Element => (
-    <div class="rb-pick-row"><For each={picks()}>{(p) => swatch(k, p, () => write(make(p.color)))}</For></div>
+  /** T16 : sélecteur complet ouvert depuis le bouton « Autres couleurs » d'une section (S : Trait, G : Arrière-plan). */
+  type ColorKey = "strokeColor" | "background";
+  const [picker, setPicker] = createSignal<{ key: ColorKey; anchor: HTMLElement; x: number; y: number } | null>(null);
+  const anchors: Partial<Record<ColorKey, HTMLButtonElement>> = {};
+  const openPicker = (key: ColorKey): void => {
+    const anchor = anchors[key];
+    if (anchor === undefined || off(key)) return;
+    const r = anchor.getBoundingClientRect();
+    const h = typeof window === "undefined" ? 0 : window.innerHeight;
+    setPicker({ key, anchor, x: Math.round(r.right + 8), y: Math.max(8, Math.min(Math.round(r.top), h > 0 ? h - 440 : 8)) });
+  };
+  const onObjectKey = (e: KeyboardEvent): void => {
+    const hit = objectKey(e as unknown as KeyLike);
+    if (hit !== "stroke-picker" && hit !== "fill-picker") return;
+    if (!keys().includes(hit === "stroke-picker" ? "strokeColor" : "background")) return;
+    e.preventDefault();
+    openPicker(hit === "stroke-picker" ? "strokeColor" : "background");
+  };
+  onMount(() => {
+    window.addEventListener("keydown", onObjectKey);
+    onCleanup(() => window.removeEventListener("keydown", onObjectKey));
+  });
+  // Section retirée ou panneau replié : le sélecteur ouvert n'a plus de bouton d'origine.
+  createEffect(() => {
+    const p = picker();
+    if (p !== null && (!keys().includes(p.key) || collapsed())) setPicker(null);
+  });
+  const moreColors = (k: ColorKey): JSX.Element => {
+    const tip = createTip();
+    return (
+      <>
+        <button
+          ref={(el) => { anchors[k] = el; }}
+          type="button"
+          class="rb-pick-more"
+          data-more-colors={k}
+          aria-label="Autres couleurs"
+          aria-haspopup="dialog"
+          aria-expanded={picker()?.key === k}
+          disabled={off(k)}
+          {...tipPointerHandlers(tip)}
+          onPointerDown={(e) => { keep(e); tip.down(e.pointerType); }}
+          onMouseDown={keep}
+          onClick={() => (picker()?.key === k ? setPicker(null) : openPicker(k))}
+        >
+          <Icon name="plus" />
+        </button>
+        <TipBubble tip={tip} label="Autres couleurs" anchor={() => anchors[k]!} />
+      </>
+    );
+  };
+  const colors = (k: ColorKey, picks: Accessor<readonly Pick[]>, make: (c: string | null) => Partial<ItemStyle>): JSX.Element => (
+    <div class="rb-pick-row"><For each={picks()}>{(p) => swatch(k, p, () => write(make(p.color)))}</For>{moreColors(k)}</div>
   );
+  const chooseFull = (c: string): void => {
+    const p = picker();
+    if (p === null) return;
+    write(p.key === "strokeColor" ? { color: c } : { background: c });
+    setPicker(null);
+    p.anchor.focus();
+  };
   // Les corps ne lisent rien hors d'un getter de prop ou d'un memo : un `emit` du moteur ne les reconstruit pas,
   // le focus clavier reste dans la section.
   const strokeChoices = createMemo(() => strokePicks(props.presets(), props.state().tool));
@@ -325,6 +385,18 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
               </section>
             )}
           </For>
+        </Show>
+        <Show when={picker()} keyed>
+          {(p) => (
+            <div class="rb-color-pop" style={{ left: `${p.x}px`, top: `${p.y}px` }}>
+              <ColorPicker
+                value={typeof value(p.key) === "string" && value(p.key) !== "transparent" ? (value(p.key) as string) : null}
+                choose={chooseFull}
+                close={() => setPicker(null)}
+                anchor={p.anchor}
+              />
+            </div>
+          )}
         </Show>
       </aside>
     </Show>

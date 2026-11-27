@@ -112,6 +112,26 @@ describe("objectKey (OG11)", () => {
   });
 });
 
+describe("objectKey : S et G (OG11, T16)", () => {
+  it("S ouvre le trait", () => {
+    expect(objectKey(k("s"))).toBe("stroke-picker");
+    expect(objectKey(k("S"))).toBe("stroke-picker");
+  });
+  it("G ouvre le fond", () => {
+    expect(objectKey(k("g"))).toBe("fill-picker");
+  });
+  it("S et G : rien avec modificateur, en champ ou en composition", () => {
+    for (const key of ["s", "g"]) {
+      expect(objectKey(k(key, { ctrlKey: true }))).toBeNull();
+      expect(objectKey(k(key, { metaKey: true }))).toBeNull();
+      expect(objectKey(k(key, { shiftKey: true }))).toBeNull();
+      expect(objectKey(k(key, { altKey: true }))).toBeNull();
+      expect(objectKey(k(key, { target: { tagName: "INPUT", type: "text" } }))).toBeNull();
+      expect(objectKey(k(key, { isComposing: true }))).toBeNull();
+    }
+  });
+});
+
 describe("keyAction : réglette et cases (le focus y reste après un réglage)", () => {
   it("Ctrl+Z sur un input range, checkbox, radio, button : annuler", () => {
     for (const type of ["range", "checkbox", "radio", "button", "color"]) {

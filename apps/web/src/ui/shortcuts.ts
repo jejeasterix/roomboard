@@ -22,6 +22,8 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("back", "Disposition", "Arrière-plan", "Ctrl+Maj+↓"),
   s("pan", "Vue", "Déplacer la vue", "Espace + glisser"),
   s("bold", "Texte", "Gras, italique, souligné", "Ctrl+B, I, U"),
+  s("stroke-picker", "Options", "Couleur du trait", "S"),
+  s("fill-picker", "Options", "Couleur de l'arrière-plan", "G"),
 ]);
 const MAC: ReadonlyArray<readonly [string, string]> = [["Ctrl+", "⌘"], ["Maj+", "⇧"], ["Alt+", "⌥"]];
 export function shortcutText(id: string, mac: boolean): string | null {
