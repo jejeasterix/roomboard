@@ -429,6 +429,11 @@ async function lectures(browser, base) {
   await page.waitForSelector("[data-profile-editor]", { timeout: 15000 });
   await page.click('[data-edit="button-size"] [data-choice="s"]');
   await frames(page);
+  // T34 : le panneau d'options est retiré tant que l'éditeur de profils est ouvert ; on l'enregistre puis on mesure.
+  check((await rectOf(page, OPT)) === null, "T34 : le panneau d'options est retiré sous l'éditeur de profils");
+  await page.click('[data-edit="save"]');
+  await page.waitForSelector("[data-profile-editor]", { state: "hidden", timeout: 15000 });
+  await frames(page);
   const w = Math.round((await page.locator(OPT).boundingBox()).width);
   lire("largeur [data-options] en S", w);
   check(w === 260, `largeur du panneau en S : ${w} (260)`);
