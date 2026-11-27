@@ -19,6 +19,12 @@ export interface LookPatch {
   readonly roundness?: "round" | null;
   readonly opacity?: number;
 }
+/** Traits non pleins (le plein est le neutre : absent de `Look`). */
+export const STROKE_STYLES: readonly string[] = ["dashed", "dotted"];
+/** Graine neuve d'un geste : entier 32 bits non signé. */
+export function newSeed(): number {
+  return (Math.random() * 2 ** 32) >>> 0;
+}
 export const NEUTRAL_LOOK: Look = Object.freeze({});
 const isRec = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const int = (v: unknown, max: number): number | undefined =>
@@ -28,7 +34,7 @@ const int = (v: unknown, max: number): number | undefined =>
 export function toLook(v: unknown): Look | undefined {
   if (!isRec(v)) return undefined;
   const out: { -readonly [K in keyof Look]: Look[K] } = {};
-  if (v["strokeStyle"] === "dashed" || v["strokeStyle"] === "dotted") out.strokeStyle = v["strokeStyle"];
+  if (typeof v["strokeStyle"] === "string" && STROKE_STYLES.includes(v["strokeStyle"])) out.strokeStyle = v["strokeStyle"] as "dashed" | "dotted";
   const r = int(v["roughness"], 2);
   if (r === 1 || r === 2) {
     out.roughness = r;

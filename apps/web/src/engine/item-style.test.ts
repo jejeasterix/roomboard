@@ -19,4 +19,15 @@ describe("item-style", () => {
   it("défaut : Architecte, Droits, plein, opaque", () => {
     expect(DEFAULT_ITEM_STYLE).toEqual({ color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100 });
   });
+  it("parseItemStyle : couleur invalide refusée (color, background)", () => {
+    expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, color: "red" }))?.color).toBe("red"); // nom CSS valide
+    expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, color: "rouge!" }))).toBeNull();
+    expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, background: "#12" }))).toBeNull();
+    expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, background: "#facc15" }))?.background).toBe("#facc15");
+  });
+  it("parseItemStyle : un champ absent prend son défaut, un champ invalide rend null", () => {
+    expect(parseItemStyle(JSON.stringify({ color: "#1d4ed8", opacity: 40 }))).toEqual({ ...DEFAULT_ITEM_STYLE, color: "#1d4ed8", opacity: 40 });
+    expect(parseItemStyle("{}")).toEqual(DEFAULT_ITEM_STYLE);
+    expect(parseItemStyle(JSON.stringify({ color: "#1d4ed8", opacity: 150 }))).toBeNull();
+  });
 });

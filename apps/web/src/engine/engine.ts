@@ -760,8 +760,11 @@ export function createEngine(deps: EngineDeps): Engine {
         orbit.close();
         return true;
       }
-      // OG11 (DA-6) : Ctrl+D duplique ; pris tant qu'une sélection existe (même si la copie est refusée).
-      if (objectKey(e) === "duplicate") return engine.duplicateSelection() || selectTool.selection().length > 0;
+      // OG11 (DA-6, déc. 39) : Ctrl+D duplique ; toujours pris (preventDefault), comme Excalidraw : pas de favori du navigateur.
+      if (objectKey(e) === "duplicate") {
+        engine.duplicateSelection();
+        return true;
+      }
       if (edit !== null) {
         // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
         if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
