@@ -247,7 +247,7 @@ impl Document {
         Some(Geom {
             id,
             transform,
-            outline: shape_polygon(s.kind, s.w, s.h, s.style.width).into(),
+            outline: shape_polygon(&s.geom(), s.style.width).into(),
             rings: Vec::new(),
         })
     }
@@ -703,6 +703,7 @@ mod tests {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: crate::linear::LineInit::default(),
         })
         .expect("rect")
         .ids[0]
@@ -734,6 +735,7 @@ mod tests {
                 style: pen(),
                 fill: None,
                 look: Look::default(),
+                line: crate::linear::LineInit::default(),
             })
             .expect("forme")
             .ids[0]

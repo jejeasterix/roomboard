@@ -387,6 +387,7 @@ mod tests {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: crate::linear::LineInit::default(),
         })
         .expect("forme")
         .ids[0]

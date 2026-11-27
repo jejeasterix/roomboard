@@ -89,6 +89,7 @@ fn look_of(
         end_arrowhead,
         text_align,
         link,
+        elbowed: None,
     })
 }
 
@@ -1442,6 +1443,7 @@ impl Document {
             end_arrowhead: end_arrowhead_set.then_some(end_arrowhead),
             text_align: text_align_set.then_some(text_align),
             link: link_set.then_some(link),
+            elbowed: None,
         };
         to_js(&self.set_style_inner(ids, patch).map_err(cmd_err)?)
     }
@@ -2332,6 +2334,7 @@ impl Document {
             },
             fill,
             look,
+            line: roomboard_core::linear::LineInit::default(),
         })
     }
 

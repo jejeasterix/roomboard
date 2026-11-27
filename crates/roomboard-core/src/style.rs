@@ -29,6 +29,8 @@ pub struct StylePatch {
     pub end_arrowhead: Option<Option<String>>,
     pub text_align: Option<Option<String>>,
     pub link: Option<Option<String>>,
+    /// OG12 (n° 12 c) : `Some(Some(true))` écrit `elbowed`, `Some(None)` et `Some(Some(false))` le retirent ; flèche seulement.
+    pub elbowed: Option<Option<bool>>,
 }
 
 /// `Some(Some(s))` hors de `allowed`.
@@ -138,7 +140,7 @@ fn writes_for(
         }
     }
     if let Some(s) = &p.roundness {
-        if is_shape && shape == Some("rect") {
+        if is_shape && matches!(shape, Some("rect" | "line" | "arrow")) {
             w.push(("roundness", s.as_deref().map(In::from)));
         }
     }
@@ -153,6 +155,12 @@ fn writes_for(
         }
     }
     if is_shape && shape == Some("arrow") {
+        if let Some(e) = p.elbowed {
+            w.push((
+                "elbowed",
+                (e == Some(true)).then(|| In::Any(Any::Bool(true))),
+            ));
+        }
         if let Some(h) = &p.start_arrowhead {
             w.push(("startArrowhead", head(h, START_ARROWHEAD_DEFAULT)));
         }
@@ -210,6 +218,17 @@ impl Document {
                         plan.push((e.clone(), key, v));
                         any = true;
                     }
+                }
+                // OG12 (n° 12 c) : changer de type coudé vide les points intérieurs dans la même étape (quitter : les
+                // deux extrémités restent ; entrer : T4 reroute).
+                let switched = patch.elbowed.is_some_and(|want| {
+                    kind == "shape"
+                        && shape.as_deref() == Some("arrow")
+                        && (read_look(&txn, &e).elbowed == Some(true)) != (want == Some(true))
+                });
+                if switched && differs(&txn, &e, "points", None) {
+                    plan.push((e.clone(), "points", None));
+                    any = true;
                 }
                 if any && !touched.contains(id) {
                     touched.push(id.clone());

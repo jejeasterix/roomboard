@@ -21,6 +21,7 @@ fn add(d: &mut Document) -> String {
         },
         fill: None,
         look: Look::default(),
+        line: roomboard_core::linear::LineInit::default(),
     })
     .unwrap()
     .ids[0]
@@ -55,6 +56,7 @@ fn restack_keeps_ids_and_fields() {
                 link: Some("https://example.org".into()),
                 ..Look::default()
             },
+            line: roomboard_core::linear::LineInit::default(),
         })
         .unwrap()
         .ids[0]

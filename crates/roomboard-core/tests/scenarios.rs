@@ -160,6 +160,7 @@ fn s3_text_stroke_shape_survive_save_load() {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: roomboard_core::linear::LineInit::default(),
         })
         .expect("rect")
         .ids[0]
@@ -198,6 +199,7 @@ fn s4_transform_two_elements_then_undo_twice() {
         style: pen(),
         fill: None,
         look: Look::default(),
+        line: roomboard_core::linear::LineInit::default(),
     })
     .expect("rect");
     let ids = d.ids_in_rect(
