@@ -39,9 +39,20 @@ describe("lecture d'une opération (D6)", () => {
     expect(codeOf(() => parseOp({ type: "CommitStroke", page: "p", points: [1, "a"], style }, ctx()))).toBe("usage");
     expect(codeOf(() => parseOp({ type: "Erase", page: "p", path: "0,0", radius: 4, mode: "object" }, ctx()))).toBe("usage");
   });
-  it("COMMAND_TYPES couvre les 30 commandes de Command, sans doublon", () => {
+  it("COMMAND_TYPES couvre les 33 commandes de Command, sans doublon", () => {
     expect(ALL_COMMANDS).toBe(true);
-    expect(new Set(COMMAND_TYPES).size).toBe(30);
+    expect(new Set(COMMAND_TYPES).size).toBe(33);
+  });
+  it("SetPageMode, MovePage, DuplicatePage, AddPage mode lus (T7, D15) : références de page résolues", () => {
+    const cmd = (o: object) => {
+      const op = parseOp(o, ctx());
+      return op.kind === "command" ? op.cmd : null;
+    };
+    for (const t of ["SetPageMode", "MovePage", "DuplicatePage"]) expect(COMMAND_TYPES).toContain(t);
+    expect(cmd({ type: "SetPageMode", page: "$page:1", mode: "portrait" })).toEqual({ type: "SetPageMode", page: "p1", mode: "portrait" });
+    expect(cmd({ type: "MovePage", page: "$page:0", to: 1 })).toEqual({ type: "MovePage", page: "p0", to: 1 });
+    expect(cmd({ type: "DuplicatePage", page: "$page:1" })).toEqual({ type: "DuplicatePage", page: "p1" });
+    expect(cmd({ type: "AddPage", after: "$page:0", mode: "infinite" })).toEqual({ type: "AddPage", after: "p0", mode: "infinite" });
   });
 });
 
