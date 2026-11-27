@@ -4,8 +4,11 @@
  * l'ajustement et l'ascenseur se recalent sans attendre le prochain défilement. Seuls comptent les attributs d'un îlot
  * ou d'un groupe de coin, et l'arrivée ou le départ d'un îlot ; l'intérieur d'un îlot (boutons) ne réveille rien.
  */
-/** Îlots de barre (`data-island`) et groupes de coin ; un popover (lien) n'en est pas un. */
-const ISLAND = ".rb-island[data-island], .rb-corner";
+/** Îlots de barre, seuls à réserver le haut de la page (`fitTop`) ; ni le panneau d'options ni un popover (lien). */
+export const BAR_ISLAND = ".rb-island[data-island]";
+const ISLAND = `${BAR_ISLAND}, .rb-corner`;
+/** Attributs par lesquels un îlot bouge ou change de taille (`Island.tsx`) ; la scène et ses `data-*` ne réveillent rien. */
+const MOVES = ["style", "class", "hidden", "data-anchor", "data-wrap", "data-compact", "data-collapsed"];
 
 const isIsland = (n: Node): boolean => n instanceof Element && (n.matches(ISLAND) || n.querySelector(ISLAND) !== null);
 
@@ -26,7 +29,7 @@ export function watchIslands(
       onChange();
     });
   });
-  observer.observe(root, { subtree: true, childList: true, attributes: true });
+  observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: MOVES });
   return () => {
     observer.disconnect();
     if (pending !== null) cancel(pending);

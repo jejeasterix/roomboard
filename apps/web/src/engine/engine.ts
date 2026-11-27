@@ -161,13 +161,13 @@ export interface PageScroll {
   readonly span: number;
 }
 
+/** Deux caméras identiques au px près (OG27 : une vue restée à son ajustement). */
+const sameCamera = (a: Camera, b: Camera): boolean => a.zoom === b.zoom && a.tx === b.tx && a.ty === b.ty;
+
 /**
  * Touches de l'ascenseur (OG24), prises seulement si la vue bouge : ↑ ↓ d'un huitième de `span`, Maj+↑ ↓ de 90 % de
  * `span`, Début et Fin aux bords. Hors portrait (ou page qui tient dans la vue) : rien, la touche passe.
  */
-/** Deux caméras identiques au px près (OG27 : une vue restée à son ajustement). */
-const sameCamera = (a: Camera, b: Camera): boolean => a.zoom === b.zoom && a.tx === b.tx && a.ty === b.ty;
-
 export function scrollShortcut(e: KeyLike, engine: Pick<Engine, "pageScroll" | "scrollPageBy" | "scrollPageTo">): boolean {
   const k = scrollKey(e);
   const s = k === null ? null : engine.pageScroll();
@@ -388,18 +388,18 @@ export function createEngine(deps: EngineDeps): Engine {
   let fillColor: string | null = DEFAULT_FILL_COLOR;
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
-  /** « Ajuster la page » : selon la disposition de la page `id` (la page montrée par défaut) ; en Infini, contenu ∪ fond. */
+  /** « Ajuster la page » : selon la disposition de la page montrée ; en Infini, contenu ∪ fond. */
   const fitTop = (): number => deps.fitTop?.() ?? 16;
-  const fit = (w: number, h: number, id: string = pageId): Camera => {
-    const view = doc.page(id);
+  const fit = (w: number, h: number): Camera => {
+    const view = doc.page(pageId);
     const top = fitTop();
     if (view === null) return fitFor("landscape", w, h, null, null, top);
     // décision 10 : Infini = contenu ∪ fond ; sinon largeur (OG24 : le portrait aussi, il défile).
     const layout = pageLayoutOf(view);
-    return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(id, view.backdrop?.rect ?? null) : null, top);
+    return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(view.backdrop?.rect ?? null) : null, top);
   };
-  const contentRect = (id: string, backdrop: Bounds | null): PageRect | null => {
-    const b = doc.bounds(doc.elementIds(id));
+  const contentRect = (backdrop: Bounds | null): PageRect | null => {
+    const b = doc.bounds(doc.elementIds(pageId));
     const rects = [b, backdrop].filter((r): r is Bounds => r !== null);
     if (rects.length === 0) return null;
     return {
@@ -418,15 +418,13 @@ export function createEngine(deps: EngineDeps): Engine {
   let lastDeleted: string[] | null = null;
   /** Caméra de chaque page quittée (D17 : par page, dans l'interface, jamais dans le document). */
   const cameras = new Map<string, Camera>();
-  /** Pages déjà ajustées à la vue : l'ajustement ne se fait qu'une fois par page (HL3-6, HL3b-7). */
-  const fitted = new Set<string>();
   let viewW = 0;
   let viewH = 0;
   /** OG27 : dernier ajustement de chaque page (caméra et haut sous les îlots) ; une vue qui y est encore suit le haut. */
+  /** Pages déjà ajustées à la vue : l'ajustement ne se fait qu'une fois par page (HL3-6, HL3b-7). */
   const fits = new Map<string, { readonly camera: Camera; readonly top: number }>();
   const setFit = (id: string, c: Camera): void => {
     fits.set(id, { camera: c, top: fitTop() });
-    fitted.add(id);
   };
   /** OG27 : vue `c` de la page `id` décalée du seul écart du haut (`top`), si elle est encore à son ajustement d'une page
    *  Page ; null sinon (vue déplacée par la main, Infini, page disparue, haut inchangé). Ni zoom ni contenu relus. */
@@ -1272,7 +1270,8 @@ export function createEngine(deps: EngineDeps): Engine {
       const top = fitTop();
       // Pages quittées encore ajustées : leur caméra gardée suit (elles se montreront sous le nouveau haut).
       for (const [id, saved] of cameras) {
-        const next = id === pageId ? null : followTop(id, saved, top);
+        if (id === pageId) continue;
+        const next = followTop(id, saved, top);
         if (next !== null) cameras.set(id, next);
       }
       const next = followTop(pageId, camera, top);
@@ -1426,7 +1425,7 @@ export function createEngine(deps: EngineDeps): Engine {
       renderer.resize(width, height, dpr);
       viewW = width;
       viewH = height;
-      if (!fitted.has(pageId) && width > 0 && height > 0) {
+      if (!fits.has(pageId) && width > 0 && height > 0) {
         setCamera(fit(width, height));
         setFit(pageId, camera);
       }

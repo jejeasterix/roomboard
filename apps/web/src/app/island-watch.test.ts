@@ -50,7 +50,8 @@ describe("watchIslands (OG27)", () => {
   });
 
   it("intérieur d'un îlot, élément hors îlot ou popover : rien", async () => {
-    const { root, button, onChange, flush } = setup();
+    const { root, island, button, onChange, flush } = setup();
+    island.dataset["camera"] = "1,0,0"; // attribut hors de la liste des mouvements
     button.setAttribute("aria-pressed", "true");
     button.append(document.createElement("span"));
     const plain = document.createElement("div");
