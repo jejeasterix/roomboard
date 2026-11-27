@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import type { ExportCanvas } from "./pdf-overlay";
-import { GRID_THUMB_WORLD, renderThumbnail, THUMB_MAX, thumbSize, type ThumbDeps } from "./thumbnail";
+import { GRID_THUMB_WORLD, PAGE_IMAGE_SCALE, renderPageImage, renderThumbnail, THUMB_MAX, thumbSize, type ThumbDeps } from "./thumbnail";
 
 function depsOf() {
   const painted: { rect: unknown; scale: number }[] = [];
@@ -53,6 +53,60 @@ describe("C4 : vignette", () => {
   it("C4 : objets sans élément : null, aucune toile", async () => {
     const { deps, sizes } = depsOf();
     expect(await renderThumbnail(fakeCore.blank(), createAssetStore(async () => "x"), "fragment", deps)).toBeNull();
+    expect(sizes).toEqual([]);
+  });
+});
+
+describe("personnalisation-1b : renderPageImage (Q20, Q29)", () => {
+  const ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+  function pageDeps() {
+    const fills: string[] = [];
+    const sizes: [number, number][] = [];
+    const draws: unknown[][] = [];
+    const painted: { rect: unknown; scale: number }[] = [];
+    const ctx = {
+      fillStyle: "",
+      fillRect: vi.fn(function (this: { fillStyle: string }) { fills.push(this.fillStyle); }),
+      drawImage: vi.fn((...a: unknown[]) => void draws.push(a)),
+    } as unknown as CanvasRenderingContext2D;
+    const deps: ThumbDeps = {
+      canvas: (w, h): ExportCanvas => {
+        sizes.push([w, h]);
+        return { ctx, png: async () => new Uint8Array([0x89, 0x50]), release: () => undefined };
+      },
+      painter: () => ({ paintContent: (_c, _p, rect, scale) => void painted.push({ rect, scale }) }),
+      decode: async () => ({ width: 1000, height: 500, close() {} }) as never,
+    };
+    return { deps, fills, sizes, draws, painted };
+  }
+
+  it("page entière à l'échelle 2 (3840 × 2160) : couleur de la page puis contenu", async () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0]!;
+    d.apply({ type: "ApplyBackground", pages: [p], color: "#2f3e46", backdrop: null, grid: null });
+    const { deps, fills, sizes, painted } = pageDeps();
+    const blob = await renderPageImage(d, createAssetStore(async () => "x"), p, PAGE_IMAGE_SCALE, deps);
+    expect(blob?.type).toBe("image/png");
+    expect(sizes).toEqual([[3840, 2160]]);
+    expect(fills.at(-1)).toBe("#2f3e46");
+    expect(painted).toEqual([{ rect: { x0: 0, y0: 0, x1: 1920, y1: 1080 }, scale: 2 }]);
+  });
+
+  it("fond image dessiné sur son rect, à l'échelle", async () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0]!;
+    const assets = createAssetStore(async () => ABC);
+    await assets.put(new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }));
+    d.apply({ type: "SetBackdrop", page: p, backdrop: { asset: { id: ABC, name: "f.png", mime: "image/png", size: 3 }, w: 1000, h: 500, fit: "width" } });
+    const { deps, draws } = pageDeps();
+    await renderPageImage(d, assets, p, 0.25, deps);
+    expect(draws).toHaveLength(1);
+    expect(draws[0]!.slice(1)).toEqual([0, 0, 480, 240]);
+  });
+
+  it("page inconnue : null, aucune toile", async () => {
+    const { deps, sizes } = pageDeps();
+    expect(await renderPageImage(fakeCore.blank(), createAssetStore(async () => "x"), "nulle-part", 2, deps)).toBeNull();
     expect(sizes).toEqual([]);
   });
 });
