@@ -853,11 +853,13 @@ export function createEngine(deps: EngineDeps): Engine {
 
   const loop = createFrameLoop(deps.frames, frame, ENGINE_FRAME_HISTORY);
 
-  /** Exécute un geste ; `emit()` si la sélection a changé. */
-  const emitIfSelectionChanged = (run: () => void): void => {
+  /** Exécute un geste ; `emit()` si la sélection a changé, ou toujours pour l'éditeur de points (OG12 C3 : ses points
+   *  choisis changent sans toucher la sélection, et le relâché d'un glisser émet avant de choisir le point tiré). */
+  const emitIfSelectionChanged = (run: () => void, g?: GestureTool): void => {
     const before = selectTool.selection().join("\n");
+    const editor = g !== undefined && g === lineEditor;
     run();
-    if (selectTool.selection().join("\n") !== before) emit();
+    if (editor || selectTool.selection().join("\n") !== before) emit();
   };
 
   /** Le point d'appui touche-t-il l'élément `id` (le plus haut sous le point, tolérance de la sélection) ? */
@@ -984,7 +986,7 @@ export function createEngine(deps: EngineDeps): Engine {
               ? lineEditor
               : tools[t];
       owner.set(pointerId, g);
-      emitIfSelectionChanged(() => g.begin(pointerId, samples));
+      emitIfSelectionChanged(() => g.begin(pointerId, samples), g);
       loop.start();
     },
     extend(pointerId, samples, predicted) {
@@ -994,7 +996,7 @@ export function createEngine(deps: EngineDeps): Engine {
       const g = owner.get(pointerId);
       if (!g) return;
       owner.delete(pointerId);
-      emitIfSelectionChanged(() => g.close(pointerId, how));
+      emitIfSelectionChanged(() => g.close(pointerId, how), g);
       loop.start(); // une image de plus : couche vive effacée, aperçu retiré
     },
   };
