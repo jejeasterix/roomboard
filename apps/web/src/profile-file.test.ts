@@ -15,6 +15,15 @@ const errorsOf = (text: string): string[] => {
   const r = profileFromText(text);
   return "errors" in r ? r.errors : [];
 };
+/** Décisions 7 et 19 (H6) : la reprise ajoute `behavior.pageMode` et le groupe de navigation à la première barre `tools`, sans rien retirer. */
+const withReprise = (raw: string): unknown => {
+  const j = JSON.parse(raw);
+  j.behavior = { ...j.behavior, pageMode: "landscape" };
+  const nav = (action: string, label: string) => ({ id: action, kind: "action", action, label });
+  const first = j.toolbars.find((b: { role: string }) => b.role === "tools");
+  first.groups.push({ id: "pages", items: [nav("page-prev", "Page précédente"), nav("page-number", "Numéro de page"), nav("page-next", "Page suivante")] });
+  return j;
+};
 const DEFAUT = BUILTIN_PROFILES[0]!;
 const BUILTIN_IDS = new Set(BUILTIN_PROFILES.map((p) => p.id));
 
@@ -31,7 +40,7 @@ describe("profile-file (C1, DAC1-3)", () => {
     expect(ok(f.text).profile).toEqual(DEFAUT);
   });
 
-  it("S2 : 1.2 à outil inconnu : lu avec avertissements, réécrit sans rien perdre", () => {
+  it("S2 : 1.2 à outil inconnu : lu avec avertissements, réécrit sans rien perdre (hors reprise : pageMode et navigation)", () => {
     const raw = fixture("1.2-outil-inconnu.rbprofile");
     const { profile, warnings } = ok(raw);
     expect(warnings).toEqual(
@@ -42,7 +51,10 @@ describe("profile-file (C1, DAC1-3)", () => {
         "capacité inconnue : projector (élément projeter masqué)",
       ]),
     );
-    expect(JSON.parse(profileToFile(profile).text)).toEqual(JSON.parse(raw));
+    expect(JSON.parse(profileToFile(profile).text)).toEqual(withReprise(raw));
+    // Idempotence : relu puis réécrit, le fichier ne change plus (rien d'autre n'est ajouté).
+    const once = profileToFile(profile).text;
+    expect(profileToFile(ok(once).profile).text).toBe(once);
   });
 
   it("S2 : 2.0 refusé : mettez RoomBoard à jour", () => {

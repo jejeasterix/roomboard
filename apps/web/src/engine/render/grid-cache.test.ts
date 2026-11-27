@@ -199,6 +199,9 @@ function approx(lines: GridLines | null): unknown {
   return { ...lines, levels };
 }
 
+/** Cadre d'une page paysage neuve (`pageFrame`), celui que le cœur applique à sa grille (T7). */
+const PAGE_FRAME = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+
 // La fausse liaison ne rend aucune ligne pour ces types : la parité n'a de sens que sur le vrai cœur.
 describe.skipIf(wasmCore === null)("cache contre calcul direct sur le vrai module (E3, relecture T7)", () => {
   const f = wasmCore ?? fakeCore;
@@ -226,16 +229,16 @@ describe.skipIf(wasmCore === null)("cache contre calcul direct sur le vrai modul
     ["music", 20],
     ["seyes", 30.24],
   ] as const)("parité %s (pas %s) : lignes recoupées par visibleLines = gridLines(vue), défilements dans la marge, 3 zooms", (kind, step) => {
-    // Vue 800 × 600 px : marge de 300 px à ces zooms ; défilements (dx, dy) en px, dont un haut de vue posé sur une ligne.
+    // Page 1920 × 1080 (T7 : le cœur borne la grille au cadre ; hors cadre, aucune ligne) ; vue 800 × 600 px : marge de 300 px à ces zooms ; défilements (dx, dy) en px, dont un haut de vue posé sur une ligne.
     const moves: readonly (readonly [number, number])[] = [[0, 0], [0, 37.3], [0, -120.6], [-150.2, 0], [123.4, -260.1], [299, 299], [-299, -299]];
     for (const zoom of [0.37, 1, 2.5]) {
       const { d, p, compute, cache } = gridDoc(f, [level(kind, step)]);
       for (const [dx, dy] of [...moves, [0, step * zoom] as const]) {
-        const v = visibleGridRect({ zoom, tx: -200 * zoom - dx, ty: -5000 * zoom - dy }, 800, 600, TALL);
+        const v = visibleGridRect({ zoom, tx: -200 * zoom - dx, ty: -dy }, 800, 600, PAGE_FRAME);
         if (v === null) throw new Error("vue vide");
         const want = direct(d, p, v, zoom);
         expect(want?.levels.length, `${kind} z=${zoom} (${dx}, ${dy})`).toBeGreaterThan(0);
-        expect(cache.get(p, v, zoom, TALL), `${kind} z=${zoom} (${dx}, ${dy})`).toEqual(approx(want));
+        expect(cache.get(p, v, zoom, PAGE_FRAME), `${kind} z=${zoom} (${dx}, ${dy})`).toEqual(approx(want));
       }
       // Toutes ces vues servies par l'entrée gardée : la parité porte bien sur la recoupe, pas sur un recalcul.
       expect(compute, `${kind} z=${zoom}`).toHaveBeenCalledTimes(1);
