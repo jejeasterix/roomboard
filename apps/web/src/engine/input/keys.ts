@@ -146,3 +146,33 @@ export function appShortcut(e: KeyLike): AppShortcut | null {
   const key = e.key.toLowerCase();
   return key === "f" ? "backgrounds" : key === "h" ? "palm-eraser" : null;
 }
+
+/** Lot 2a (n° 35) : flèche seule, valeurs d'Excalidraw (ELEMENT_TRANSLATE_AMOUNT 1, ELEMENT_SHIFT_TRANSLATE_AMOUNT 5, MIT).
+ *  Sans Ctrl, Cmd ni Alt (Ctrl+flèche : ordre ; Alt+Maj+flèche : objet relié), hors IME, hors champ et hors contrôle de formulaire. */
+export const NUDGE_PX = 1;
+export const NUDGE_SHIFT_PX = 5;
+export function arrowMoveKey(e: KeyLike): { readonly dx: number; readonly dy: number } | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return null;
+  if (EDITABLE.has(e.target?.tagName?.toUpperCase() ?? "")) return null;
+  const n = e.shiftKey ? NUDGE_SHIFT_PX : NUDGE_PX;
+  switch (e.key) {
+    case "ArrowLeft": return { dx: -n, dy: 0 };
+    case "ArrowRight": return { dx: n, dy: 0 };
+    case "ArrowUp": return { dx: 0, dy: -n };
+    case "ArrowDown": return { dx: 0, dy: n };
+    default: return null;
+  }
+}
+
+export type ToolKeyChoice = "select" | "rect" | "diamond" | "ellipse" | "arrow" | "line" | "pen" | "text" | "eraser" | "hand";
+/** Lot 2a (n° 35) : lettres et chiffres d'outil d'Excalidraw (Tools.tsx, MIT) non déjà pris : S et G (sélecteurs de
+ *  couleur) restent à OptionsPanel. Touche seule : ni Ctrl, Cmd, Alt ni Maj ; hors IME et hors champ. */
+export const TOOL_KEYS: Readonly<Record<string, ToolKeyChoice>> = {
+  v: "select", r: "rect", d: "diamond", o: "ellipse", a: "arrow", l: "line", p: "pen", t: "text", e: "eraser", h: "hand",
+  "1": "select", "2": "rect", "3": "diamond", "4": "ellipse", "5": "arrow", "6": "line", "7": "pen", "8": "text", "0": "eraser",
+};
+export function toolKey(e: KeyLike): ToolKeyChoice | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || inEditable(e.target)) return null;
+  const k = e.key.toLowerCase();
+  return Object.hasOwn(TOOL_KEYS, k) ? TOOL_KEYS[k]! : null;
+}

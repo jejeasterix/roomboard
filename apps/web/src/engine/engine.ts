@@ -8,11 +8,12 @@ import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/
 import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type EraseMode, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, scrollBounds, scrollTo, zoomAt as zoomCamera, type Camera, type ScrollBounds } from "./camera";
+import { translateMatrix } from "./tools/handles";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
+import { arrowMoveKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isPointsShape, isSegment } from "../core/shapes";
@@ -1300,6 +1301,14 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       const dir = linkedKey(e);
       if (dir !== null) return engine.addLinked(dir);
+      // Lot 2a (n° 35) : flèche = 1 px, Maj = 5 px, une Transform par appui ; seulement avec une sélection (sinon la touche
+      // passe : ascenseur du portrait), hors « Modifier les points » et hors rognage ou pipette.
+      const nudge = arrowMoveKey(e);
+      if (nudge !== null && lineEditor === null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        const sel = selectTool.selection();
+        if (sel.length === 0) return false;
+        return run({ type: "Transform", ids: [...sel], matrix: translateMatrix(nudge.dx, nudge.dy) }) !== null;
+      }
       // OG11 (DA-6, déc. 39) : Ctrl+D duplique ; toujours pris (preventDefault), comme Excalidraw : pas de favori du navigateur.
       if (objectKey(e) === "duplicate") {
         engine.duplicateSelection();
@@ -1317,6 +1326,11 @@ export function createEngine(deps: EngineDeps): Engine {
         selectTool.setSelection([]);
         requestScene();
         emit();
+        return true;
+      }
+      const picked = lineEditor === null ? toolKey(e) : null;
+      if (picked !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        engine.setTool(picked);
         return true;
       }
       if (action === null) return false;
