@@ -44,6 +44,8 @@ export interface TableCellState {
   /** Zone fusionnée de la cellule active (F16) ; null ou absente hors zone. */
   readonly zone?: Range | null;
   readonly shaded?: boolean;
+  /** personnalisation-3 : nombre d'objets logés dans ce tableau (`cell[0]`), `#stage[data-table-linked]`. */
+  readonly linked?: number;
 }
 export interface TableHit { readonly id: string; readonly transform: Matrix; readonly table: TableData; readonly cell: Cell }
 

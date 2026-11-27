@@ -735,3 +735,15 @@ describe("outil Tableau — fond de page (C6a)", () => {
     expect(s.host.last().background).toBe("#fef08a");
   });
 });
+
+describe("outil Tableau (personnalisation-3)", () => {
+  it("linked : cellState compte les objets logés dans le tableau actif", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    expect(s.tool.cellState()?.linked).toBe(0);
+    const o = s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: 1000, y0: 1000, x1: 1100, y1: 1050, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    const t = s.table(id);
+    s.doc.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: [id, t.rows[0]?.id ?? "", t.cols[0]?.id ?? ""], sizes: [] });
+    expect(s.tool.cellState()?.linked).toBe(1);
+  });
+});

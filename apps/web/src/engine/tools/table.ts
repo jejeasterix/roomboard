@@ -360,7 +360,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         return r !== undefined && k !== undefined && cellContent(t, r.id, k.id).shade !== null;
       });
       const zone = mergeAt(t, at.cell);
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded };
+      // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
+      const linked = ctx.doc.elementIds(ctx.page()).filter((e) => ctx.doc.element(e)?.cell?.[0] === at.ref.id).length;
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked };
     },
     act(a) {
       if (!settle()) return;
