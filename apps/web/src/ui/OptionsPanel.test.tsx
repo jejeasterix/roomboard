@@ -26,8 +26,7 @@ function mount(o: Opts) {
     run: vi.fn(() => null),
     bringToFront: vi.fn(() => true),
     sendToBack: vi.fn(() => true),
-    bringForward: vi.fn(() => true),
-    sendBackward: vi.fn(() => true),
+    reorder: vi.fn(() => true),
   };
   const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: DEFAULT_ITEM_STYLE, textFormat: o.editing ? {} : null } as unknown as EngineState;
   const settings = createDeviceSettings(null);
@@ -183,13 +182,15 @@ describe("OptionsPanel lot 2 (T15)", () => {
     fireEvent.click(container.querySelector('[data-edit="startArrowhead"] [data-choice="arrow"]')!);
     expect(calls).toEqual([{ endArrowhead: "triangle" }, { startArrowhead: "arrow" }]);
   });
-  it("Disposition : quatre boutons, un appel du moteur chacun", () => {
+  it("Disposition : quatre boutons, les fonctions d'ordre d'OG4 (Restack), un appel chacun", () => {
     const { container, engine } = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
     for (const v of ["front", "forward", "backward", "back"]) fireEvent.click(container.querySelector(`[data-option="layers"] [data-option-value="${v}"]`)!);
     expect(engine.bringToFront).toHaveBeenCalledTimes(1);
-    expect(engine.bringForward).toHaveBeenCalledTimes(1);
-    expect(engine.sendBackward).toHaveBeenCalledTimes(1);
+    expect(engine.reorder).toHaveBeenNthCalledWith(1, "up");
+    expect(engine.reorder).toHaveBeenNthCalledWith(2, "down");
+    expect(engine.reorder).toHaveBeenCalledTimes(2);
     expect(engine.sendToBack).toHaveBeenCalledTimes(1);
+    expect("bringForward" in engine || "sendBackward" in engine).toBe(false);
   });
 });
 

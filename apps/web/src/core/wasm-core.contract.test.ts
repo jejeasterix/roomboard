@@ -3,7 +3,6 @@
 import { describe, expect, it } from "vitest";
 import type { AssetRef, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage } from "./api";
-import { BAD_ORDER_MESSAGE } from "./api";
 import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
@@ -4246,7 +4245,7 @@ describe.each(factories)("contrat Restack : $name", ({ f }) => {
     d.free();
   });
 
-  it("Restack : rang hors bornes ou non entier, id inconnu, bloc vide, page mêlée : ordre invalide, rien d'écrit", () => {
+  it("Restack : refus d'OG4 (rang hors bornes ou non entier, bloc vide : BadIndex ; id inconnu : UnknownElement ; page mêlée : MixedPages), rien d'écrit", () => {
     const d = f.blank();
     const p = first(d);
     const a = rect(d, p, 0);
@@ -4254,16 +4253,17 @@ describe.each(factories)("contrat Restack : $name", ({ f }) => {
     d.apply({ type: "AddPage", after: null });
     const q = d.pageIds()[1]!;
     const z = rect(d, q, 0);
-    for (const cmd of [
-      { type: "Restack", ids: [a], to: 2 },
-      { type: "Restack", ids: [a], to: -1 },
-      { type: "Restack", ids: [a], to: 0.5 },
-      { type: "Restack", ids: [a], to: 2 ** 32 + 1 },
-      { type: "Restack", ids: [a, "inconnu"], to: 0 },
-      { type: "Restack", ids: [], to: 0 },
-      { type: "Restack", ids: [a, z], to: 0 },
-    ] as const satisfies readonly Command[]) {
-      unchanged(d, () => expect(messageOf(() => d.apply(cmd))).toBe(BAD_ORDER_MESSAGE));
+    const range = "rang de page hors bornes";
+    for (const [cmd, message] of [
+      [{ type: "Restack", ids: [a], to: 2 }, range],
+      [{ type: "Restack", ids: [a], to: -1 }, range],
+      [{ type: "Restack", ids: [a], to: 0.5 }, range],
+      [{ type: "Restack", ids: [a], to: 2 ** 32 + 1 }, range],
+      [{ type: "Restack", ids: [a, "inconnu"], to: 0 }, "élément inconnu : inconnu"],
+      [{ type: "Restack", ids: [], to: 0 }, range],
+      [{ type: "Restack", ids: [a, z], to: 0 }, "objets de pages différentes"],
+    ] as const satisfies readonly (readonly [Command, string])[]) {
+      unchanged(d, () => expect(messageOf(() => d.apply(cmd))).toBe(message));
     }
     d.free();
   });
