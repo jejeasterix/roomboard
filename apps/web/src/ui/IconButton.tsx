@@ -117,10 +117,6 @@ export function IconButton(props: IconButtonProps): JSX.Element {
         aria-pressed={props.pressed ?? undefined}
         disabled={props.disabled === true}
         onClick={() => props.onPress()}
-        // Espace appartient au bouton (il le presse) : il n'atteint pas le moteur, qui en ferait la main du canevas.
-        onKeyDown={(e) => {
-          if (e.key === " ") e.stopPropagation();
-        }}
         {...tipPointerHandlers(tip)}
         onFocus={(e) => {
           if (focusVisible(e.currentTarget)) tip.focus();

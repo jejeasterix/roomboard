@@ -180,20 +180,15 @@ describe("IconButton (L1-4)", () => {
   });
 });
 
-describe("Espace sur un bouton (T22)", () => {
-  it("la touche Espace d'un bouton n'atteint pas la fenêtre (le moteur ne la prend pas pour la main) ; ailleurs elle passe", () => {
+describe("Espace sur un bouton de barre", () => {
+  it("Espace n'est pas arrêté par IconButton : il atteint la fenêtre (la vue se déplace, même focus sur un bouton)", () => {
     const seen: KeyboardEvent[] = [];
-    const on = (e: KeyboardEvent): void => { seen.push(e); e.preventDefault(); };
+    const on = (e: KeyboardEvent): void => { seen.push(e); };
     window.addEventListener("keydown", on);
     const { btn } = one();
-    const ev = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
-    btn.dispatchEvent(ev);
-    expect(seen).toHaveLength(0);
-    expect(ev.defaultPrevented).toBe(false);
-    btn.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    btn.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
     expect(seen).toHaveLength(1);
-    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true }));
-    expect(seen).toHaveLength(2);
+    expect(seen[0]!.key).toBe(" ");
     window.removeEventListener("keydown", on);
   });
 });
