@@ -170,9 +170,18 @@ export function toTable(v: unknown): TableData {
 /** OG11 : nombre passé au pont en `f64`. Absent ou null : `None` ; autre chose qu'un nombre : NaN, refusé par le pont
  *  (wasm-bindgen appliquerait `ToNumber`, « 45 » deviendrait 45, là où la fausse liaison refuse). */
 const num = (v: unknown): number | undefined => (v === undefined || v === null ? undefined : typeof v === "number" ? v : Number.NaN);
-/** T12 : les cinq chaînes du lot 2 de `look_of`, dans l'ordre du pont (`fillStyle`, pointes, `textAlign`, `link`). */
-type Lot2Args = [string | undefined, string | undefined, string | undefined, string | undefined, string | undefined];
-const lot2 = (l: Look | undefined): Lot2Args => [l?.fillStyle, l?.startArrowhead, l?.endArrowhead, l?.textAlign, l?.link];
+/** Les dix arguments d'aspect de `look_of`, dans l'ordre du pont : cinq du lot 1, puis `fillStyle`, pointes, `textAlign`, `link`. */
+type LookArgs = [string | undefined, number | undefined, number | undefined, string | undefined, number | undefined,
+  string | undefined, string | undefined, string | undefined, string | undefined, string | undefined];
+const lookArgs = (l: Look | undefined): LookArgs => [l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity),
+  l?.fillStyle, l?.startArrowhead, l?.endArrowhead, l?.textAlign, l?.link];
+
+/** Rang en `u32` côté pont (wasm-bindgen tronquerait sans erreur : 0,5 → 0, 2³² + 1 → 1) : non entier ou hors u32
+ *  refusé ici, avec le message de `BadIndex`, comme le faux cœur (`MovePage`, `Restack`). */
+const pageRank = (to: number): number => {
+  if (!Number.isInteger(to) || to < 0 || to > 0xffffffff) throw new Error("rang de page hors bornes");
+  return to;
+};
 
 /** Kind connu : forme contrôlée ; kind non reconnu : UnknownElement (U3, K8) ; id et transform toujours exigés. */
 export function toElementView(v: unknown): ElementView | null {
@@ -527,17 +536,13 @@ class WasmCoreDocument implements CoreDocument {
       case "AddPage": return toChange(this.d.add_page_after(cmd.after, cmd.mode));
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));
-      case "MovePage": return toChange(this.d.move_page(cmd.page, cmd.to));
+      case "MovePage": return toChange(this.d.move_page(cmd.page, pageRank(cmd.to)));
       case "DuplicatePage": return toChange(this.d.duplicate_page(cmd.page));
       case "Restack":
-        // u32 côté pont (wasm-bindgen tronquerait sans erreur : 0,5 → 0, 2³² + 1 → 1) : rang non entier ou hors u32
-        // refusé ici, avec le message de `BadIndex`, comme le faux cœur.
-        if (!Number.isInteger(cmd.to) || cmd.to < 0 || cmd.to > 0xffffffff) throw new Error("rang de page hors bornes");
-        return toChange(this.d.restack([...cmd.ids], cmd.to));
+        return toChange(this.d.restack([...cmd.ids], pageRank(cmd.to)));
       case "CommitStroke": {
         const l = cmd.look;
-        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity),
-          ...lot2(l)));
+        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, ...lookArgs(l)));
       }
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
@@ -547,7 +552,7 @@ class WasmCoreDocument implements CoreDocument {
         const l = cmd.look;
         return toChange(
           this.d.add_shape(cmd.page, cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1, cmd.style.color, cmd.style.width, cmd.fill ?? undefined,
-            l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity), ...lot2(l)),
+            ...lookArgs(l)),
         );
       }
       case "SetText": {
@@ -556,7 +561,7 @@ class WasmCoreDocument implements CoreDocument {
         const l = cmd.look;
         return toChange(
           this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight, spansArg(cmd.spans),
-            l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity), ...lot2(l)),
+            ...lookArgs(l)),
         );
       }
       case "SetStyle": {

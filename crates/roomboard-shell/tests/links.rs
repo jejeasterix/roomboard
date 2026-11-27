@@ -82,6 +82,16 @@ fn same_rule_as_core_valid_link() {
         "data:text/html,x",
         "https:x",
         "",
+        "mailto:a@b\" /a \"C:\\x\"",
+        "https://example.org/a b",
+        "https://example.org/a\tb",
+        "https://example.org/a\nb",
+        "https://example.org/a\"b",
+        "https://example.org/<b>",
+        "https://example.org/a\\b",
+        "https://example.org/a\u{7f}b",
+        "https://example.org/a\u{0}b",
+        "https://example.org/a%20b",
     ] {
         assert_eq!(
             valid_link(s),
@@ -91,6 +101,29 @@ fn same_rule_as_core_valid_link() {
     }
     assert!(valid_link(&at_max));
     assert_eq!(try_open(&over).0, Err(LinkError::Refused));
+}
+
+#[test]
+fn blanks_quotes_brackets_backslash_and_controls_refused() {
+    for bad in [
+        "mailto:a@b\" /a \"C:\\x\"",
+        "https://example.org/a b",
+        "https://example.org/a\tb",
+        "https://example.org/a\r\nb",
+        "https://example.org/a\"b",
+        "https://example.org/<b>",
+        "https://example.org/a\\b",
+        "https://example.org/a\u{7f}b",
+        "https://example.org/a\u{0}b",
+    ] {
+        let (r, seen) = try_open(bad);
+        assert_eq!(r, Err(LinkError::Refused), "{bad:?}");
+        assert!(seen.is_empty(), "{bad:?}");
+        assert!(!roomboard_core::element::valid_link(bad), "{bad:?}");
+    }
+    let (r, seen) = try_open("https://example.org/a%20b");
+    assert_eq!(r, Ok(()));
+    assert_eq!(seen, vec!["https://example.org/a%20b".to_string()]);
 }
 
 #[test]
