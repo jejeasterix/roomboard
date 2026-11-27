@@ -49,6 +49,7 @@ fn socle_document() -> Document {
         points: hline(100.0),
         style: pen(),
         look: Look::default(),
+        cell: None,
     })
     .expect("trait");
     d.apply(Command::AddShape {
@@ -87,6 +88,7 @@ fn socle_document() -> Document {
         points: hline(300.0),
         style: pen(),
         look: Look::default(),
+        cell: None,
     })
     .expect("trait 2");
     d

@@ -2165,6 +2165,7 @@ pub(crate) mod tests {
                     width: 4.0,
                 },
                 look: Look::default(),
+                cell: None,
             })
             .expect("trait")
             .ids[0]

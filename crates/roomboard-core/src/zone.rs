@@ -1263,6 +1263,7 @@ mod tests {
             points,
             style: pen(),
             look: Look::default(),
+            cell: None,
         })
         .expect("trait")
         .ids[0]
@@ -1543,6 +1544,7 @@ mod tests {
                 points,
                 style: pen(),
                 look: Look::default(),
+                cell: None,
             })
             .expect("côté");
         };

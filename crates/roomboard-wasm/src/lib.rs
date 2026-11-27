@@ -1380,11 +1380,18 @@ impl Document {
         seed: Option<f64>,
         roundness: Option<String>,
         opacity: Option<f64>,
+        cell_table: Option<String>,
+        cell_row: Option<String>,
+        cell_col: Option<String>,
     ) -> Result<JsValue, JsError> {
         let look = look_of(stroke_style, roughness, seed, roundness, opacity).map_err(cmd_err)?;
+        let cell = match (cell_table, cell_row, cell_col) {
+            (Some(t), Some(r), Some(c)) => Some([t, r, c]),
+            _ => None,
+        };
         to_js(
             &self
-                .commit_stroke_inner(page, points, color, width, look)
+                .commit_stroke_inner(page, points, color, width, look, cell)
                 .map_err(cmd_err)?,
         )
     }
@@ -2355,6 +2362,7 @@ impl Document {
         color: &str,
         width: f32,
         look: Look,
+        cell: Option<[String; 3]>,
     ) -> Result<Change, CommandError> {
         let style = StrokeStyle {
             color: color.to_string(),
@@ -2365,6 +2373,7 @@ impl Document {
             points: points.to_vec(),
             style,
             look,
+            cell,
         })
     }
 
@@ -2566,7 +2575,7 @@ mod tests {
             [500.0, 500.0, 0.5, 100.0, 500.0, 0.5],
             [100.0, 500.0, 0.5, 100.0, 100.0, 0.5],
         ] {
-            d.commit_stroke_inner(&p, &pts, "#000000", 4.0, Look::default())
+            d.commit_stroke_inner(&p, &pts, "#000000", 4.0, Look::default(), None)
                 .expect("trait");
         }
         assert!(d.zone_cells(&p, 2.0) > 160_000);
@@ -2710,7 +2719,7 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let c = d
-            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("commit");
         assert_eq!(c.ids.len(), 1);
         let u = d.undo_inner();
@@ -2722,7 +2731,7 @@ mod tests {
     fn erase_inner_partial_splits() {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("commit");
         let c = d
             .erase_inner(&p, &[300.0, 50.0, 300.0, 150.0], 10.0, false)
@@ -2735,7 +2744,7 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let id = d
-            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("commit")
             .ids[0]
             .clone();
@@ -2761,7 +2770,7 @@ mod tests {
     fn save_then_load_inner_keeps_elements() {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+        d.commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("commit");
         let bytes = d.save_inner("2026-11-16T12:00:00Z", "0.1.0").expect("save");
         let e = Document::load_inner(&bytes).expect("load");
@@ -2908,7 +2917,7 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let id = d
-            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default())
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0, Look::default(), None)
             .expect("trait")
             .ids[0]
             .clone();
@@ -4300,6 +4309,7 @@ mod tests {
                 "#000000",
                 4.0,
                 Look::default(),
+                None,
             )
             .expect("trait")
             .ids[0]
@@ -4329,6 +4339,7 @@ mod tests {
                 "#000000",
                 4.0,
                 Look::default(),
+                None,
             )
             .expect("trait")
             .ids[0]

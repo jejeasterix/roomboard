@@ -983,6 +983,7 @@ mod tests {
                 width: 4.0,
             },
             look: Look::default(),
+            cell: None,
         })
         .expect("commit")
         .ids[0]
@@ -1454,8 +1455,7 @@ mod tests {
                     page: p.clone(),
                     points: vec![10.0, 10.0, 0.5, 60.0, 60.0, 0.5],
                     style: pen.clone(),
-                    look: Look::default(),
-                },
+                    look: Look::default(), cell: None },
                 "shape" => Command::AddShape {
                     page: p.clone(),
                     shape: ShapeKind::Rect,

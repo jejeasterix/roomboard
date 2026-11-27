@@ -12,10 +12,10 @@ use crate::asset::{is_asset_id, AssetRef};
 use crate::copy::reinsert_kept;
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
-    apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, look_fields,
-    out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group, read_style,
-    style_fields, transform_to_any, Look, PageLayout, RawBackdrop, StrokeStyle, Transform,
-    FIT_WIDTH, IDENTITY, INFINITE_MODE, LOOK_KEYS, PAGE_HEIGHT, PORTRAIT_HEIGHT,
+    apply_transform, cell_link_to_any, compose, finite_positive, fits_f32, group_to_any, invert,
+    look_fields, out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group,
+    read_style, style_fields, transform_to_any, Look, PageLayout, RawBackdrop, StrokeStyle,
+    Transform, FIT_WIDTH, IDENTITY, INFINITE_MODE, LOOK_KEYS, PAGE_HEIGHT, PORTRAIT_HEIGHT,
 };
 use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
@@ -66,6 +66,8 @@ pub enum Command {
         style: StrokeStyle,
         /// OG11 : aspect écrit dans la même transaction ; neutre = aucune clé (DA-5).
         look: Look,
+        /// T8 (D10) : case du tableau à laquelle le trait appartient, écrite dans la même transaction.
+        cell: Option<[String; 3]>,
     },
     Erase {
         page: String,
@@ -756,7 +758,8 @@ impl Document {
                 points,
                 style,
                 look,
-            } => self.cmd_commit_stroke(&page, &points, &style, &look),
+                cell,
+            } => self.cmd_commit_stroke(&page, &points, &style, &look, cell.as_ref()),
             Command::Erase {
                 page,
                 path,
@@ -1557,6 +1560,7 @@ impl Document {
         flat: &[f32],
         style: &StrokeStyle,
         look: &Look,
+        cell: Option<&[String; 3]>,
     ) -> Result<Change, CommandError> {
         if flat.len() < 3 || !flat.len().is_multiple_of(3) || flat.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadPoints);
@@ -1565,14 +1569,18 @@ impl Document {
             return Err(CommandError::BadWidth);
         }
         let elements = self.page_elements_or_err(page)?;
+        if let Some(l) = cell {
+            self.check_cell_target(page, l)?;
+        }
         let (local, (ox, oy)) = to_local(&dedup(&from_flat(flat)));
         let id = yrs::uuid_v4().to_string();
         {
             let mut txn = self.transact_local();
-            elements.push_back(
-                &mut txn,
-                stroke_prelim(&id, &[1.0, 0.0, 0.0, 1.0, ox, oy], style, &local, look),
-            );
+            let mut prelim = stroke_prelim(&id, &[1.0, 0.0, 0.0, 1.0, ox, oy], style, &local, look);
+            if let Some(l) = cell {
+                prelim.insert("cell".into(), In::Any(cell_link_to_any(l)));
+            }
+            elements.push_back(&mut txn, prelim);
         }
         Ok(self.done(Change {
             pages: vec![page.to_string()],
@@ -1921,6 +1929,7 @@ pub(crate) mod tests {
             points: pts,
             style: pen(),
             look: Look::default(),
+            cell: None,
         })
         .expect("commit")
         .ids[0]
@@ -2015,6 +2024,7 @@ pub(crate) mod tests {
             points,
             style: pen(),
             look: Look::default(),
+            cell: None,
         };
         assert_eq!(d.apply(bad(vec![1.0, 2.0])), Err(CommandError::BadPoints));
         assert_eq!(
@@ -2049,6 +2059,7 @@ pub(crate) mod tests {
                     width,
                 },
                 look: Look::default(),
+                cell: None,
             });
             assert_eq!(r, Err(CommandError::BadWidth), "épaisseur {width}");
         }
@@ -2064,6 +2075,7 @@ pub(crate) mod tests {
             points: hline(1.0),
             style: pen(),
             look: Look::default(),
+            cell: None,
         });
         assert_eq!(r, Err(CommandError::UnknownPage("nope".into())));
     }
@@ -2590,6 +2602,7 @@ pub(crate) mod tests {
                 points: hline(1.0),
                 style: pen(),
                 look: Look::default(),
+                cell: None
             })
             .is_err());
         assert!(d
@@ -2598,6 +2611,7 @@ pub(crate) mod tests {
                 points: vec![1.0],
                 style: pen(),
                 look: Look::default(),
+                cell: None
             })
             .is_err());
         let bad_path = Command::Erase {
@@ -2741,6 +2755,7 @@ pub(crate) mod tests {
                 points: hline(1.0),
                 style: pen(),
                 look: Look::default(),
+                cell: None,
             })
             .expect("commit");
         assert_eq!(c1.version, 1);

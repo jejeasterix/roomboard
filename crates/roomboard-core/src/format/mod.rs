@@ -897,6 +897,7 @@ mod tests {
                     width: w,
                 },
                 look: Look::default(),
+                cell: None,
             })
             .expect("trait");
         }

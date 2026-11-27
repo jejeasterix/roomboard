@@ -41,6 +41,7 @@ fn fragment_document() -> Document {
             points,
             style: pen(),
             look: Look::default(),
+            cell: None,
         })
         .unwrap()
         .ids[0]

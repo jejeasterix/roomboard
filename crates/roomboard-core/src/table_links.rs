@@ -386,6 +386,28 @@ impl Document {
         crate::copy::reinsert_kept(&elements, txn, moves, to);
     }
 
+    /// Case visée (D35) : tableau connu, même page, ligne et colonne connues, case sans `shade` ; sinon `BadTable`.
+    pub(crate) fn check_cell_target(
+        &self,
+        page: &str,
+        l: &[String; 3],
+    ) -> Result<(), CommandError> {
+        let (tpage, _, raw) = self.table_of(&l[0])?;
+        if tpage != page {
+            return Err(CommandError::BadTable);
+        }
+        raw.ranks((l[1].as_str(), l[2].as_str()))
+            .ok_or(CommandError::BadTable)?;
+        let shaded = {
+            let txn = self.read();
+            read_cell(&txn, raw.cells.as_ref(), &l[1], &l[2]).is_some_and(|x| x.shade.is_some())
+        };
+        if shaded {
+            return Err(CommandError::BadTable);
+        }
+        Ok(())
+    }
+
     /// `PlaceInCell` (D3) : refus dans l'ordre du plan (T1a) ; puis une transaction : tailles et suivi des autres objets
     /// liés, matrice composée sur `ids`, `cell` posé ou retiré.
     pub(crate) fn cmd_place_in_cell(
@@ -422,19 +444,7 @@ impl Document {
         }
         // 5. Case visée : tableau connu, même page, ligne et colonne connues, case sans `shade` (D35).
         if let Some(l) = cell {
-            let (tpage, _, raw) = self.table_of(&l[0])?;
-            if tpage != page {
-                return Err(CommandError::BadTable);
-            }
-            raw.ranks((l[1].as_str(), l[2].as_str()))
-                .ok_or(CommandError::BadTable)?;
-            let shaded = {
-                let txn = self.read();
-                read_cell(&txn, raw.cells.as_ref(), &l[1], &l[2]).is_some_and(|x| x.shade.is_some())
-            };
-            if shaded {
-                return Err(CommandError::BadTable);
-            }
+            self.check_cell_target(&page, l)?;
         }
         // 6. Tableaux des tailles, dans l'ordre d'apparition.
         let mut tables: Vec<TableSizes> = Vec::new();
@@ -1213,5 +1223,54 @@ mod tests {
         assert_eq!(view(&d, &t).cols[0].width, 240.0);
         assert_eq!(view(&d, &t).rows[0].height, 64.0);
         assert_eq!(d.version(), ver);
+    }
+    #[test]
+    fn commit_stroke_with_cell() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let l = link(&d, &t, 1, 0);
+        let c = d
+            .apply(Command::CommitStroke {
+                page: p.clone(),
+                points: vec![20.0, 90.0, 0.5, 100.0, 100.0, 0.5, 180.0, 95.0, 0.5],
+                style: StrokeStyle {
+                    color: "#000000".into(),
+                    width: 4.0,
+                },
+                look: Look::default(),
+                cell: Some(l.clone()),
+            })
+            .expect("trait");
+        let s = c.ids[0].clone();
+        assert_eq!(raw_link(&d, &s), Some(l));
+        let y = tx(&d, &s)[5];
+        d.apply(Command::InsertTableLine {
+            id: t.clone(),
+            axis: TableAxis::Row,
+            at: 1,
+        })
+        .expect("ligne");
+        assert_eq!(tx(&d, &s)[5], y + 64.0);
+    }
+
+    #[test]
+    fn commit_stroke_with_bad_cell_is_refused() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let mut l = link(&d, &t, 1, 0);
+        l[1] = "inconnue".into();
+        let r = d.apply(Command::CommitStroke {
+            page: p.clone(),
+            points: vec![20.0, 90.0, 0.5, 100.0, 100.0, 0.5],
+            style: StrokeStyle {
+                color: "#000000".into(),
+                width: 4.0,
+            },
+            look: Look::default(),
+            cell: Some(l),
+        });
+        assert!(matches!(r, Err(CommandError::BadTable)));
     }
 }
