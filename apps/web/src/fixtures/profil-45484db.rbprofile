@@ -1,0 +1,512 @@
+{
+  "format": "roomboard-profile",
+  "schema": 1,
+  "id": "defaut",
+  "label": "Par défaut",
+  "interface": {
+    "buttonSize": "m"
+  },
+  "toolbars": [
+    {
+      "id": "outils",
+      "role": "tools",
+      "dock": "floating",
+      "groups": [
+        {
+          "id": "navigation",
+          "items": [
+            {
+              "id": "select",
+              "kind": "tool",
+              "tool": "select",
+              "label": "Sélection"
+            },
+            {
+              "id": "hand",
+              "kind": "tool",
+              "tool": "hand",
+              "label": "Main"
+            }
+          ]
+        },
+        {
+          "id": "dessin",
+          "items": [
+            {
+              "id": "sep-1",
+              "kind": "separator",
+              "label": ""
+            },
+            {
+              "id": "pen",
+              "kind": "tool",
+              "tool": "pen",
+              "label": "Stylo"
+            },
+            {
+              "id": "eraser",
+              "kind": "tool",
+              "tool": "eraser",
+              "label": "Gomme"
+            },
+            {
+              "id": "eraser-mode",
+              "kind": "action",
+              "action": "eraser-mode",
+              "label": "Gomme : partielle"
+            }
+          ]
+        },
+        {
+          "id": "edition",
+          "items": [
+            {
+              "id": "sep-2",
+              "kind": "separator",
+              "label": ""
+            },
+            {
+              "id": "rect",
+              "kind": "tool",
+              "tool": "rect",
+              "label": "Rectangle"
+            },
+            {
+              "id": "ellipse",
+              "kind": "tool",
+              "tool": "ellipse",
+              "label": "Ellipse"
+            },
+            {
+              "id": "line",
+              "kind": "tool",
+              "tool": "line",
+              "label": "Ligne"
+            },
+            {
+              "id": "arrow",
+              "kind": "tool",
+              "tool": "arrow",
+              "label": "Flèche"
+            },
+            {
+              "id": "text",
+              "kind": "tool",
+              "tool": "text",
+              "label": "Texte"
+            },
+            {
+              "id": "table",
+              "kind": "tool",
+              "tool": "table",
+              "label": "Tableau"
+            },
+            {
+              "id": "fill",
+              "kind": "tool",
+              "tool": "fill",
+              "label": "Pot"
+            }
+          ]
+        },
+        {
+          "id": "bureau",
+          "items": [
+            {
+              "id": "sep-3",
+              "kind": "separator",
+              "label": ""
+            },
+            {
+              "id": "desktop-annotation",
+              "kind": "action",
+              "action": "desktop-annotation",
+              "label": "Annotation du bureau",
+              "requires": [
+                "desktopAnnotation"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "menu",
+      "role": "menu",
+      "dock": "floating",
+      "groups": [
+        {
+          "id": "fichier",
+          "items": [
+            {
+              "id": "file-new",
+              "kind": "action",
+              "action": "file-new",
+              "label": "Nouveau"
+            },
+            {
+              "id": "file-open",
+              "kind": "action",
+              "action": "file-open",
+              "label": "Ouvrir"
+            },
+            {
+              "id": "file-import",
+              "kind": "action",
+              "action": "file-import",
+              "label": "Importer"
+            },
+            {
+              "id": "file-save",
+              "kind": "action",
+              "action": "file-save",
+              "label": "Enregistrer"
+            },
+            {
+              "id": "file-save-as",
+              "kind": "action",
+              "action": "file-save-as",
+              "label": "Enregistrer sous"
+            }
+          ]
+        },
+        {
+          "id": "export",
+          "items": [
+            {
+              "id": "sep-5",
+              "kind": "separator",
+              "label": ""
+            },
+            {
+              "id": "page-insert-file",
+              "kind": "action",
+              "action": "page-insert-file",
+              "label": "Insérer des pages…"
+            },
+            {
+              "id": "export-pdf",
+              "kind": "action",
+              "action": "export-pdf",
+              "label": "Exporter en PDF…"
+            },
+            {
+              "id": "export-iwb",
+              "kind": "action",
+              "action": "export-iwb",
+              "label": "Enregistrer une copie au format .iwb…"
+            },
+            {
+              "id": "export-ubz",
+              "kind": "action",
+              "action": "export-ubz",
+              "label": "Enregistrer une copie au format .ubz…"
+            },
+            {
+              "id": "edit-original",
+              "kind": "action",
+              "action": "edit-original",
+              "label": "Modifier dans l'application d'origine",
+              "requires": [
+                "officeConverter"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "vue",
+          "items": [
+            {
+              "id": "sep-6",
+              "kind": "separator",
+              "label": ""
+            },
+            {
+              "id": "grid",
+              "kind": "action",
+              "action": "grid",
+              "label": "Grille"
+            },
+            {
+              "id": "settings",
+              "kind": "action",
+              "action": "settings",
+              "label": "Réglages"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "historique",
+      "role": "history",
+      "dock": "floating",
+      "groups": [
+        {
+          "id": "historique",
+          "items": [
+            {
+              "id": "undo",
+              "kind": "action",
+              "action": "undo",
+              "label": "Annuler"
+            },
+            {
+              "id": "redo",
+              "kind": "action",
+              "action": "redo",
+              "label": "Rétablir"
+            },
+            {
+              "id": "fit-page",
+              "kind": "action",
+              "action": "fit-page",
+              "label": "Ajuster la page"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "panneaux",
+      "role": "panels",
+      "dock": "floating",
+      "groups": [
+        {
+          "id": "panneaux",
+          "items": [
+            {
+              "id": "library",
+              "kind": "action",
+              "action": "library",
+              "label": "Bibliothèque"
+            },
+            {
+              "id": "profiles",
+              "kind": "action",
+              "action": "profiles",
+              "label": "Profil"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pages",
+      "role": "pages",
+      "dock": "floating",
+      "groups": [
+        {
+          "id": "pages",
+          "items": [
+            {
+              "id": "page-prev",
+              "kind": "action",
+              "action": "page-prev",
+              "label": "Page précédente"
+            },
+            {
+              "id": "page-next",
+              "kind": "action",
+              "action": "page-next",
+              "label": "Page suivante"
+            },
+            {
+              "id": "page-add",
+              "kind": "action",
+              "action": "page-add",
+              "label": "Ajouter une page"
+            },
+            {
+              "id": "page-remove",
+              "kind": "action",
+              "action": "page-remove",
+              "label": "Retirer la page"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "annotation",
+      "role": "annotation",
+      "dock": "top",
+      "groups": [
+        {
+          "id": "mode",
+          "items": [
+            {
+              "id": "annotation-pointer",
+              "kind": "action",
+              "action": "annotation-pointer",
+              "label": "Souris",
+              "requires": [
+                "desktopAnnotation"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dessin",
+          "items": [
+            {
+              "id": "ann-sep-1",
+              "kind": "separator",
+              "label": ""
+            },
+            {
+              "id": "ann-pen",
+              "kind": "tool",
+              "tool": "pen",
+              "label": "Stylo"
+            },
+            {
+              "id": "ann-eraser",
+              "kind": "tool",
+              "tool": "eraser",
+              "label": "Gomme"
+            },
+            {
+              "id": "ann-eraser-mode",
+              "kind": "action",
+              "action": "eraser-mode",
+              "label": "Gomme : partielle"
+            },
+            {
+              "id": "ann-arrow",
+              "kind": "tool",
+              "tool": "arrow",
+              "label": "Flèche"
+            },
+            {
+              "id": "ann-rect",
+              "kind": "tool",
+              "tool": "rect",
+              "label": "Rectangle"
+            },
+            {
+              "id": "ann-text",
+              "kind": "tool",
+              "tool": "text",
+              "label": "Texte"
+            }
+          ]
+        },
+        {
+          "id": "bureau",
+          "items": [
+            {
+              "id": "ann-sep-2",
+              "kind": "separator",
+              "label": ""
+            },
+            {
+              "id": "ann-undo",
+              "kind": "action",
+              "action": "undo",
+              "label": "Annuler"
+            },
+            {
+              "id": "annotation-freeze",
+              "kind": "action",
+              "action": "annotation-freeze",
+              "label": "Figer le bureau",
+              "requires": [
+                "desktopAnnotation"
+              ]
+            },
+            {
+              "id": "annotation-screen",
+              "kind": "action",
+              "action": "annotation-screen",
+              "label": "Écran suivant",
+              "requires": [
+                "desktopAnnotation"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "envoi",
+          "items": [
+            {
+              "id": "ann-sep-3",
+              "kind": "separator",
+              "label": ""
+            },
+            {
+              "id": "depot-annotation",
+              "kind": "dropzone",
+              "label": "Déposer ici",
+              "requires": [
+                "desktopAnnotation"
+              ]
+            },
+            {
+              "id": "annotation-send",
+              "kind": "action",
+              "action": "annotation-send",
+              "label": "Envoyer au tableau",
+              "requires": [
+                "desktopAnnotation"
+              ]
+            },
+            {
+              "id": "annotation-send-new",
+              "kind": "action",
+              "action": "annotation-send-new",
+              "label": "Envoyer dans un nouvel onglet",
+              "requires": [
+                "desktopAnnotation"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "sortie",
+          "items": [
+            {
+              "id": "ann-sep-4",
+              "kind": "separator",
+              "label": ""
+            },
+            {
+              "id": "ann-desktop-annotation",
+              "kind": "action",
+              "action": "desktop-annotation",
+              "label": "Annotation du bureau",
+              "requires": [
+                "desktopAnnotation"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "presets": {
+    "pen": [
+      {
+        "id": "noir",
+        "label": "Noir",
+        "color": "#000000",
+        "width": 4
+      },
+      {
+        "id": "rouge",
+        "label": "Rouge",
+        "color": "#dc2626",
+        "width": 4
+      },
+      {
+        "id": "bleu",
+        "label": "Bleu",
+        "color": "#1d4ed8",
+        "width": 4
+      }
+    ]
+  },
+  "behavior": {
+    "startMode": "board"
+  }
+}
