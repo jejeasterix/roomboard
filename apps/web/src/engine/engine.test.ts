@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Change, Command, ElementView, StrokeStyle } from "../core/api";
+import type { Bounds, Change, Command, ElementView, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
@@ -16,6 +16,7 @@ import type { GridPreview, ImagePreview, LiveLayer, PageView, Renderer } from ".
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
+import { worldPoints } from "./tools/line-points";
 import type { TableCellState } from "./table-geom";
 import { createTableTool, type TablePicker } from "./tools/table";
 import { plainSpans } from "../core/rich-text";
@@ -2597,5 +2598,239 @@ describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () =
     engine.runAll(fmt({ font: "Georgia" }).slice(0, 1));
     engine.undo();
     expect(fontOf(ids[0] ?? "")).toBeUndefined();
+  });
+});
+
+describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt tardif, survol", () => {
+  function og12() {
+    const doc = fakeCore.blank();
+    const frames = new Frames();
+    const renderer = new FakeRenderer();
+    let select: ReturnType<typeof createSelectTool> | null = null;
+    let seen: ToolContext | null = null;
+    const tools: ToolFactories = {
+      pen: (ctx) => {
+        seen = ctx;
+        return fakeTool("pen", [], ctx);
+      },
+      eraser: (ctx) => fakeTool("eraser", [], ctx),
+      select: (ctx) => {
+        select = createSelectTool(ctx);
+        return select;
+      },
+      shape: (ctx, kind, style) => createShapeTool(ctx, kind, style),
+    };
+    const engine = createEngine({ doc, renderer, frames, tools });
+    const page = engine.state().page;
+    const rect = (x0: number, y0: number, x1: number, y1: number): string =>
+      doc.apply({ type: "AddShape", page, shape: "rect", x0, y0, x1, y1, style: PEN, fill: null }).ids[0] ?? "";
+    /** Ligne (ou flèche) de trois points : (100, 100), (150, 50), (200, 100). */
+    const line = (shape: "line" | "arrow" = "line"): string => {
+      const id = doc.apply({ type: "AddShape", page, shape, x0: 100, y0: 100, x1: 200, y1: 100, style: PEN, fill: null }).ids[0] ?? "";
+      doc.apply({ type: "SetLinePoints", id, points: [100, 100, 150, 50, 200, 100], start: null, end: null });
+      return id;
+    };
+    const ctx = (): ToolContext => {
+      if (seen === null) throw new Error("contexte absent");
+      return seen;
+    };
+    const sel = () => {
+      if (!select) throw new Error("outil Sélection absent");
+      return select;
+    };
+    const pointsOf = (id: string): [number, number][] => {
+      const v = doc.element(id);
+      return v?.kind === "shape" ? worldPoints(v) : [];
+    };
+    const tap = (pointerId: number, x: number, y: number, t = 0): void => {
+      engine.sink.begin(pointerId, "select", [{ ...sample, x, y, t }]);
+      engine.sink.close(pointerId, "end");
+    };
+    return { doc, frames, renderer, engine, page, rect, line, ctx, sel, pointsOf, tap };
+  }
+
+  it("Ctrl+Entrée : Modifier les points sur la flèche seule sélectionnée ; l'outil reste Sélection, la sélection est gardée", () => {
+    const { engine, line } = og12();
+    const id = line("arrow");
+    engine.select([id]);
+    expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(true);
+    expect(engine.state()).toMatchObject({ lineEditing: id, tool: "select", selection: [id], linePointsSelected: 0 });
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect(engine.state()).toMatchObject({ lineEditing: null, tool: "select", selection: [id] });
+  });
+
+  it("Ctrl+Entrée : flèche coudée, rien ; sans sélection unique, la touche passe", () => {
+    const { engine, doc, line, rect } = og12();
+    const id = line("arrow");
+    doc.apply({ type: "SetStyle", ids: [id], patch: { elbowed: true } });
+    engine.select([id]);
+    expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(false);
+    expect(engine.state().lineEditing).toBeNull();
+    engine.select([rect(300, 300, 400, 400)]);
+    expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(false);
+    expect(engine.editLinePoints()).toBe(false);
+    expect(engine.state().lineEditing).toBeNull();
+  });
+
+  it("lineEdit : en édition, un appui sur une poignée va à l'éditeur, Suppr retire le point choisi, Échap sort", () => {
+    const { engine, doc, line, pointsOf, tap } = og12();
+    const id = line();
+    engine.select([id]);
+    expect(engine.editLinePoints()).toBe(true);
+    // Glisser du point intérieur : l'éditeur le déplace seul (l'outil Sélection déplacerait toute la ligne).
+    const v0 = doc.version();
+    engine.sink.begin(1, "select", [{ ...sample, x: 150, y: 50 }]);
+    engine.sink.extend(1, [{ ...sample, x: 150, y: 80 }], []);
+    engine.sink.close(1, "end");
+    expect(doc.version()).toBe(v0 + 1);
+    expect(pointsOf(id)).toEqual([[100, 100], [150, 80], [200, 100]]);
+    expect(engine.state()).toMatchObject({ lineEditing: id, linePointsSelected: 1 });
+    // Suppr retire le point choisi (une SetLinePoints), la ligne reste : ce n'est pas la suppression de la sélection.
+    expect(engine.key(key("Delete"))).toBe(true);
+    expect(doc.element(id)).not.toBeNull();
+    expect(pointsOf(id)).toEqual([[100, 100], [200, 100]]);
+    expect(doc.version()).toBe(v0 + 2);
+    expect(engine.state()).toMatchObject({ lineEditing: id, linePointsSelected: 0, selection: [id] });
+    tap(2, 100, 100); // toucher d'un bout : point choisi
+    expect(engine.state().linePointsSelected).toBe(1);
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect(engine.state()).toMatchObject({ lineEditing: null, selection: [id], tool: "select" });
+    expect(doc.element(id)).not.toBeNull();
+    // Bouton « Retirer le point » : sur une ligne de deux points, la ligne part et l'édition se ferme.
+    engine.editLinePoints();
+    tap(3, 100, 100);
+    expect(engine.removeLinePoints()).toBe(true);
+    expect(doc.element(id)).toBeNull();
+    expect(engine.state()).toMatchObject({ lineEditing: null, selection: [] });
+    expect(engine.removeLinePoints()).toBe(false);
+  });
+
+  it("en édition : le calque montre les poignées de l'éditeur, sans le cadre de l'outil Sélection", () => {
+    const { engine, frames, renderer, line } = og12();
+    const id = line();
+    engine.select([id]);
+    engine.view.panBy(0, 0);
+    frames.tick();
+    const before = renderer.overlays.at(-1)?.points?.length ?? 0;
+    engine.editLinePoints();
+    engine.view.panBy(0, 0);
+    frames.tick();
+    const during = renderer.overlays.at(-1)?.points ?? [];
+    // Trois points et leurs deux milieux (éditeur) ; jamais les poignées de Sélection en double.
+    expect(during.length).toBeGreaterThan(0);
+    expect(new Set(during.map((p) => JSON.stringify(p))).size).toBe(during.length);
+    expect(before).toBeGreaterThan(0);
+  });
+
+  it("toucher hors de l'objet en édition : sortie ; changer d'outil : sortie ; double toucher d'une ligne : entrée", () => {
+    const { engine, line, tap } = og12();
+    const id = line();
+    engine.select([id]);
+    engine.editLinePoints();
+    tap(1, 500, 500);
+    expect(engine.state().lineEditing).toBeNull();
+    engine.select([id]);
+    engine.editLinePoints();
+    engine.setTool("pen");
+    expect(engine.state().lineEditing).toBeNull();
+    engine.select([id]);
+    tap(2, 125, 75, 0); // sur le segment (100, 100)-(150, 50)
+    tap(3, 125, 75, 120);
+    expect(engine.state()).toMatchObject({ lineEditing: id, tool: "select", selection: [id] });
+    engine.exitLineEdit();
+    expect(engine.state().lineEditing).toBeNull();
+  });
+
+  it("en édition : la ligne supprimée sort de l'édition ; annuler la rend sans rouvrir l'édition", () => {
+    const { engine, doc, line } = og12();
+    const id = line();
+    engine.select([id]);
+    engine.editLinePoints();
+    engine.deleteElements([id]);
+    expect(engine.state().lineEditing).toBeNull();
+    engine.undo();
+    expect(doc.element(id)).not.toBeNull();
+    expect(engine.state().lineEditing).toBeNull();
+  });
+
+  it("Alt+Maj+→ sur un rectangle seul : AddLinked, la copie devient la sélection ; sur deux objets, la touche passe", () => {
+    const { engine, doc, page, rect } = og12();
+    const a = rect(100, 100, 200, 200);
+    engine.select([a]);
+    expect(engine.key(key("ArrowRight", { altKey: true, shiftKey: true }))).toBe(true);
+    const ids = doc.elementIds(page);
+    expect(ids).toHaveLength(3);
+    const sel = engine.state().selection;
+    expect(sel).toHaveLength(1);
+    const copy = doc.element(sel[0] ?? "");
+    expect(sel[0]).not.toBe(a);
+    expect(copy).toMatchObject({ kind: "shape", shape: { shape: "rect" } });
+    expect(doc.bounds([sel[0] ?? ""])!.x0).toBeGreaterThan(200);
+    const b = rect(100, 400, 200, 500);
+    engine.select([a, b]);
+    expect(engine.key(key("ArrowRight", { altKey: true, shiftKey: true }))).toBe(false);
+    expect(engine.addLinked("down")).toBe(false);
+    expect(doc.elementIds(page)).toHaveLength(4);
+  });
+
+  it("Ctrl tenu : ctx.ctrl() vrai jusqu'au keyUp et à la perte du focus ; la touche n'est pas prise", () => {
+    const { engine, ctx } = og12();
+    const ctrl = (): boolean => ctx().ctrl?.() === true;
+    expect(ctrl()).toBe(false);
+    expect(engine.key(key("Control", { ctrlKey: true }))).toBe(false);
+    expect(ctrl()).toBe(true);
+    expect(engine.keyUp(key("Control"))).toBe(false);
+    expect(ctrl()).toBe(false);
+    engine.key(key("Meta", { metaKey: true }));
+    expect(ctrl()).toBe(true);
+    engine.releaseKeys();
+    expect(ctrl()).toBe(false);
+  });
+
+  it("contexte des outils : Liaison des flèches lue du style courant, type du pointeur du geste en cours", () => {
+    const { engine, ctx } = og12();
+    expect(ctx().bindingEnabled?.()).toBe(true);
+    engine.setItemStyle({ arrowBinding: false });
+    expect(ctx().bindingEnabled?.()).toBe(false);
+    engine.sink.begin(1, "pen", [sample], "touch");
+    expect(ctx().pointerType?.()).toBe("touch");
+    engine.sink.close(1, "end");
+    engine.sink.begin(2, "pen", [sample], "pen");
+    expect(ctx().pointerType?.()).toBe("pen");
+    engine.sink.close(2, "end");
+  });
+
+  it("doigt tardif : setTouchModifier(true) vaut Maj pour l'outil (un redimensionnement au doigt garde les proportions)", () => {
+    const resized = (held: boolean): Bounds => {
+      const { engine, doc, rect } = og12();
+      const a = rect(100, 100, 200, 200);
+      engine.select([a]);
+      engine.setTouchModifier(held);
+      const b0 = doc.bounds([a])!;
+      engine.sink.begin(1, "select", [{ ...sample, x: b0.x1, y: b0.y1 }], "touch");
+      engine.sink.extend(1, [{ ...sample, x: b0.x1 + 100, y: b0.y1 + 20 }], []);
+      engine.sink.close(1, "end");
+      return doc.bounds([a])!;
+    };
+    const free = resized(false);
+    const kept = resized(true);
+    expect(Math.abs(free.x1 - free.x0 - (free.y1 - free.y0))).toBeGreaterThan(20);
+    expect(kept.x1 - kept.x0).toBeCloseTo(kept.y1 - kept.y0, 0);
+  });
+
+  it("bindHint publié quand le calque surligne une cible (outil Flèche, survol d'un rectangle)", () => {
+    const { engine, frames, rect } = og12();
+    const a = rect(100, 100, 200, 200);
+    engine.setTool("arrow");
+    expect(engine.state().bindHint).toBeNull();
+    const states: (string | null | undefined)[] = [];
+    engine.onState((s) => states.push(s.bindHint));
+    engine.hover(196, 150);
+    frames.tick();
+    expect(engine.state().bindHint).toBe(a);
+    expect(states).toContain(a);
+    engine.hover(600, 500);
+    frames.tick();
+    expect(engine.state().bindHint).toBeNull();
   });
 });

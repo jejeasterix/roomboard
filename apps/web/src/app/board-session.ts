@@ -421,11 +421,21 @@ async function buildBoardSession(
     panHeld: () => engine.panHeld(),
     gestures: withPrediction(engine.sink, source),
     view: engine.view,
+    // OG12 T11 (n° 29) : le doigt posé pendant un geste au doigt vaut Maj pour l'outil (15°, proportions).
+    modifier: (held) => engine.setTouchModifier(held),
   });
   undo.push(() => sampler.dispose());
   sampler.onGesture((g) => router.handle(g));
   const middlePan = createMiddlePan(stage, engine.view);
   undo.push(() => middlePan.dispose());
+  // OG12 T11 : survol souris ou stylet sans bouton (surlignage des outils Ligne et Flèche), mêmes coordonnées que
+  // l'échantillonneur (`clientX - left`) ; le doigt ne survole pas. Retiré avec les écouteurs de scène.
+  const onHover = (e: PointerEvent): void => {
+    if (e.buttons !== 0 || e.pointerType === "touch") return;
+    const r = stage.getBoundingClientRect();
+    engine.hover(e.clientX - r.left, e.clientY - r.top);
+  };
+  stage.addEventListener("pointermove", onHover, { signal });
   // Outils Texte et Tableau seulement : sans cela, le mousedown qui suit le pointerdown donnerait le focus à la page, et la zone de
   // saisie, tout juste ouverte, le perdrait et validerait aussitôt une boîte vide. Avec les autres outils on laisse le
   // mousedown faire son travail : le dernier bouton cliqué perd le focus (Entrée ne le redéclenche plus).
@@ -740,6 +750,10 @@ async function buildBoardSession(
     stage.dataset["zones"] = tags.zones;
     stage.dataset["zoneMs"] = tags.zoneMs;
     stage.dataset["zoneCells"] = tags.zoneCells;
+    // OG12 T11 : `data-line-edit`, `data-bind`, `data-line-points` (essais S1, S2, S4).
+    stage.dataset["lineEdit"] = tags.lineEdit;
+    stage.dataset["bind"] = tags.bind;
+    stage.dataset["linePoints"] = tags.linePoints;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
   };
   mark(engine.state());
