@@ -111,3 +111,16 @@ describe("objectKey (OG11)", () => {
     expect(objectKey(k({ isComposing: true }))).toBeNull();
   });
 });
+
+describe("keyAction : réglette et cases (le focus y reste après un réglage)", () => {
+  it("Ctrl+Z sur un input range, checkbox, radio, button : annuler", () => {
+    for (const type of ["range", "checkbox", "radio", "button", "color"]) {
+      expect(keyAction(k("z", { ctrlKey: true, target: { tagName: "INPUT", type } }))).toBe("undo");
+    }
+  });
+  it("Ctrl+Z sur un input texte ou un champ sans type : rien", () => {
+    for (const type of ["text", "number", "search", undefined]) {
+      expect(keyAction(k("z", { ctrlKey: true, target: { tagName: "INPUT", type } }))).toBeNull();
+    }
+  });
+});

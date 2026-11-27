@@ -30,7 +30,7 @@ export function parseItemStyle(raw: string | null): ItemStyle | null {
   if (raw === null) return null;
   let v: unknown;
   try { v = JSON.parse(raw); } catch { return null; }
-  if (typeof v !== "object" || v === null) return null;
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
   const r = v as Record<string, unknown>;
   // Champ absent : son défaut (le lot 2 ajoute des champs sans perdre le style gardé) ; champ invalide : illisible (déc. 23).
   if (!KEYS.every((k) => !(k in r) || ok[k](r[k]))) return null;

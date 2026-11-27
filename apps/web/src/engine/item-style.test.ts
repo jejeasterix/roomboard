@@ -30,4 +30,7 @@ describe("item-style", () => {
     expect(parseItemStyle("{}")).toEqual(DEFAULT_ITEM_STYLE);
     expect(parseItemStyle(JSON.stringify({ color: "#1d4ed8", opacity: 150 }))).toBeNull();
   });
+  it("parseItemStyle : seul un objet simple est lu (tableau, null, scalaire : null)", () => {
+    for (const raw of ["[]", "[1]", "null", "3", "\"x\"", "true"]) expect(parseItemStyle(raw)).toBeNull();
+  });
 });

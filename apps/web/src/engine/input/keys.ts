@@ -6,7 +6,7 @@ export interface KeyLike {
   readonly shiftKey: boolean;
   readonly altKey: boolean;
   readonly isComposing: boolean;
-  readonly target: { readonly tagName?: string; readonly isContentEditable?: boolean } | null;
+  readonly target: { readonly tagName?: string; readonly type?: string; readonly isContentEditable?: boolean } | null;
 }
 
 export type KeyAction = "undo" | "redo" | "group" | "ungroup";
@@ -14,8 +14,16 @@ export type KeyAction = "undo" | "redo" | "group" | "ungroup";
 const EDITABLE = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
 /** Cible d'édition (champ, zone éditable) : ses touches lui appartiennent. Un bouton n'en est pas une. */
-const inEditable = (t: KeyLike["target"]): boolean =>
-  t !== null && (t.isContentEditable === true || (t.tagName !== undefined && EDITABLE.has(t.tagName.toUpperCase())));
+const NON_TEXT_INPUTS = new Set(["range", "checkbox", "radio", "button", "submit", "reset", "color", "file", "image"]);
+const inEditable = (t: KeyLike["target"]): boolean => {
+  if (t === null) return false;
+  if (t.isContentEditable === true) return true;
+  if (t.tagName === undefined) return false;
+  const tag = t.tagName.toUpperCase();
+  // Une réglette, une case ou un bouton gardent le focus après un réglage : ils n'attendent pas de saisie (cf. Excalidraw isWritableElement).
+  if (tag === "INPUT" && t.type !== undefined && NON_TEXT_INPUTS.has(t.type.toLowerCase())) return false;
+  return EDITABLE.has(tag);
+};
 
 /** Barre d'espace sans Ctrl, Cmd ni Alt, hors champ de saisie et hors composition IME (D17 : espace + glisser). */
 export function isPanKey(e: KeyLike): boolean {
