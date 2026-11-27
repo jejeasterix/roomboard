@@ -5,7 +5,7 @@
  * Pression (D8, HL3-4) : 0,5 tant qu'aucune valeur hors de {0 ; 0,5} n'a été vue, suivie ensuite.
  */
 import type { StrokeBuilderApi, StrokeStyle } from "../../core/api";
-import { lookFrom, type Look } from "../../core/look";
+import { opacityLook, type Look } from "../../core/look";
 import type { ItemStyle } from "../item-style";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
@@ -90,7 +90,7 @@ export function createPenTool(ctx: ToolContext, style: () => StrokeStyle & Parti
       const l: LiveStroke = {
         page: ctx.page(),
         style: st,
-        look: lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: cur.opacity ?? 100 }, null),
+        look: opacityLook(cur.opacity ?? 100),
         builder: ctx.doc.newStrokeBuilder(st),
         all: [],
         pending: [],

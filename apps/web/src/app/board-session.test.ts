@@ -14,7 +14,7 @@ import { createSettingsStore, echelonsTag, parseSettings, type ParsedSettings } 
 import { readSelection, readText, setSelection } from "./rich-dom";
 import type { WorkerLike } from "../platform/sheet-reader";
 import { stageTags } from "./stage-tags";
-import { createBoardSession, type SessionShared } from "./board-session";
+import { createBoardSession, createSharedItemStyle, type SessionShared } from "./board-session";
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../engine/item-style";
 import { DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW } from "../core/api";
 import { createModelViewLoader, snapshotSize, type ModelView, type PixelSize } from "../platform/model-view";
@@ -1341,5 +1341,40 @@ describe("session : style courant (OG11 T9)", () => {
   it("session : style courant absent ou illisible (null) : style par défaut", async () => {
     const s = await createBoardSession(fakeCore.blank(), { ...shared, itemStyle: () => null });
     expect(s.engine.itemStyle()).toEqual(DEFAULT_ITEM_STYLE);
+  });
+  it("deux onglets : un seul style courant", async () => {
+    const written: ItemStyle[] = [];
+    const hub = createSharedItemStyle(() => null, (st) => written.push(st));
+    const a = await createBoardSession(fakeCore.blank(), { ...shared, ...hub });
+    const docB = fakeCore.blank();
+    const b = await createBoardSession(docB, { ...shared, ...hub });
+    // A change le style : B le suit sans rien écrire dans son document (la sélection intacte est testée au niveau moteur).
+    const version = docB.version();
+    a.engine.setItemStyle({ opacity: 40 });
+    expect(b.engine.itemStyle().opacity).toBe(40);
+    expect(docB.version()).toBe(version);
+    a.engine.setItemStyle({ color: "#1d4ed8" });
+    expect(b.engine.itemStyle()).toMatchObject({ color: "#1d4ed8", opacity: 40 });
+    // L'appareil garde le dernier style complet ; l'adoption par B ne réécrit rien.
+    expect(written).toHaveLength(2);
+    expect(written[written.length - 1]).toMatchObject({ color: "#1d4ed8", opacity: 40 });
+    // Un changement dans B passe par le même style : A le suit, et le style écrit garde les deux champs.
+    b.engine.setItemStyle({ width: 9 });
+    expect(a.engine.itemStyle()).toMatchObject({ color: "#1d4ed8", opacity: 40, width: 9 });
+    expect(written[written.length - 1]).toMatchObject({ color: "#1d4ed8", opacity: 40, width: 9 });
+    a.dispose();
+    b.engine.setItemStyle({ width: 3 });
+    b.dispose();
+  });
+  it("traînée : style courant", async () => {
+    // Le style passé à la traînée suit le moteur (accesseurs), pas le stylo par défaut.
+    const trail = await import("../engine/render/trail-style");
+    const spy = vi.spyOn(trail, "trailStyleFor");
+    const s = await createBoardSession(fakeCore.blank(), { ...shared });
+    s.engine.setItemStyle({ color: "#1d4ed8", width: 7 });
+    const pen = spy.mock.calls[0]?.[1];
+    expect(pen).toMatchObject({ color: "#1d4ed8", width: 7 });
+    spy.mockRestore();
+    s.dispose();
   });
 });
