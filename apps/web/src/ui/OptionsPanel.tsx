@@ -14,7 +14,7 @@ import type { ButtonSize, Profile } from "../toolbar";
 import { observeBox } from "./Island";
 import { IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { createTip } from "./tooltip";
-import { BUTTON_PX, placeOptions, topRowBottom, type Box } from "./island-place";
+import { BUTTON_PX, optionsWidth, placeOptions, topRowBottom, type Box } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import {
   WIDTHS, appliesTo, backgroundPicks, formValue, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
@@ -59,8 +59,6 @@ const CORNERS: readonly RadioOption<"sharp" | "round">[] = [
   { value: "round", label: "Angles arrondis", icon: "corner-round" },
 ];
 const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({ value: w.value, label: w.label }));
-/** Largeur du panneau : 5 cibles, 4 écarts de 4, 2 marges de 12. */
-const widthOf = (btn: number): number => 5 * btn + 4 * 4 + 2 * 12;
 
 /** Une saisie de texte ouverte garde son focus : le bouton ne le prend jamais (comme FormatRow). */
 const keep = (e: Event): void => e.preventDefault();
@@ -219,7 +217,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         data-options
         data-collapsed={collapsed() ? "" : undefined}
         aria-label="Options de l'outil"
-        style={{ left: `${pos().x}px`, top: `${pos().y}px`, "--rb-btn-size": `${btn()}px`, ...(collapsed() ? {} : { width: `${widthOf(btn())}px` }) }}
+        style={{ left: `${pos().x}px`, top: `${pos().y}px`, "--rb-btn-size": `${btn()}px`, ...(collapsed() ? {} : { width: `${optionsWidth(btn())}px` }) }}
       >
         <IconButton
           icon={collapsed() ? "sliders-horizontal" : "chevron-left"}

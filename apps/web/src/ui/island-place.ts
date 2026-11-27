@@ -108,6 +108,14 @@ export function nudge(at: Point, key: string, big: boolean): Point | null {
   return { x: at.x + dx * step, y: at.y + dy * step };
 }
 
+/** T22 : largeur du panneau d'options pour des boutons de `btn` px : 5 cibles, 4 écarts de 4, 2 marges de 12, et un
+ *  intérieur de segments (2 marges de 4 en moins) multiple de 12, pour que 2 et 3 segments aient une largeur paire
+ *  entière : chaque icône de 24 px tombe sur la grille de pixels à 1x et 2x. */
+export function optionsWidth(btn: number): number {
+  const inner = Math.ceil((5 * btn + 4 * 4 - 2 * 4) / 12) * 12;
+  return inner + 2 * 4 + 2 * 12;
+}
+
 /** OG11 : bas de la rangée du haut (îlots posés à `EDGE`, hauts de `btn` + 8) pour la taille de bouton `btn` du profil. */
 export function topRowBottom(btn: number): number {
   return EDGE + btn + 8;
