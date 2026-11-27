@@ -201,6 +201,16 @@ describe("hôte des fenêtres de la coque (C11b, P24, P27, P28)", () => {
     await w.load({ document: doc, opaque: false });
     expect(f.emitted.at(-1)!.payload).toEqual({ base64: toBase64(doc), opaque: false });
   });
+  it("OG25 : palmEraser dans la charge du document seulement s'il est donné (enter et load)", async () => {
+    const f = fakeIpc();
+    const w = createTauriAnnotationWindows(f.ipc);
+    await w.enter({ ...place, document: doc, profile: BUILTIN_PROFILES[0]!, palmEraser: false });
+    expect(f.emitted.at(-1)!.payload).toEqual({ base64: toBase64(doc), opaque: false, palmEraser: false });
+    await w.load({ document: doc, opaque: true, palmEraser: true });
+    expect(f.emitted.at(-1)!.payload).toEqual({ base64: toBase64(doc), opaque: true, palmEraser: true });
+    await w.load({ document: doc, opaque: false });
+    expect(f.emitted.at(-1)!.payload).toEqual({ base64: toBase64(doc), opaque: false });
+  });
   it("collect : vue lisible rendue ; vue illisible ignorée (RF5)", async () => {
     const f = fakeIpc();
     const w = createTauriAnnotationWindows(f.ipc);

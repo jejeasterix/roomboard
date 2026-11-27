@@ -168,11 +168,21 @@ try {
   // S2 — paume : gomme à la bonne taille, puis l'outil d'avant (Stylo, couleur et épaisseur choisies).
   await fresh();
   await mouseLine(400);
+  // Épaisseur différente du défaut (4), par l'éditeur de profil comme l'utilisateur : « Rouge » à 12.
+  await page.click(item("profiles"));
+  await page.click('[data-profile-cmd="edit"]');
+  await page.waitForSelector("[data-profile-editor]", { timeout: 15000 });
+  const widthField = page.locator('[data-edit-preset="rouge"] input[data-edit="preset-width"]');
+  await widthField.fill("12");
+  await widthField.press("Tab");
+  await page.fill('input[data-edit="new-name"]', "Rouge épais");
+  await page.click('button[data-edit="save-new"]');
+  await page.waitForSelector("[data-profile-editor]", { state: "detached", timeout: 15000 });
   await page.click('button[data-preset="rouge"]');
   await send([down(11, 450, 640, { w: 20 }), ...line(11, 450, 640, 750, 640, { w: 20 }), up(11, 750, 640)]);
   await frames(page);
   const ref = await redIn([600, 625, 601, 655]);
-  check(ref > 0, `S2 : trait au doigt de référence, rouge (${ref} px)`);
+  check(ref > 6, `S2 : trait au doigt de référence, rouge, plus épais que le défaut (${ref} px)`);
   await send([
     down(12, 700, 260, { w: 30 }),
     { ...move(12, 700, 265, { w: 140, h: 120 }), wait: 40 },
@@ -192,8 +202,10 @@ try {
   await send([down(13, 450, 700, { w: 20 }), ...line(13, 450, 700, 750, 700, { w: 20 }), up(13, 750, 700)]);
   await frames(page);
   const after = await redIn([600, 685, 601, 715]);
-  check(after > 0 && Math.abs(after - ref) <= 2, `S2 : trait au doigt après la paume, même couleur et même épaisseur (${after} px, avant ${ref})`);
+  check(after > 0 && Math.abs(after - ref) <= 2, `S2 : trait au doigt après la paume, même couleur et même épaisseur 12 (${after} px, avant ${ref})`);
 
+  // Le profil épais de S2 ne suit pas les scénarios suivants.
+  await page.evaluate(() => localStorage.clear());
   // S2, variante Rectangle.
   await fresh();
   await mouseLine(400);
@@ -353,8 +365,7 @@ try {
   const hauteur = await page.$eval(SETTING, (b) => b.getBoundingClientRect().height);
   console.log(`hauteur du bouton Réglages : ${hauteur} px`);
   check(hauteur >= 44, `S8 : bouton du panneau Réglages haut de ${hauteur} px (cible tactile, 44 au moins)`);
-  const icons = await page.$$eval("#reglages svg", (l) => l.map((s) => s.getAttribute("viewBox")));
-  check(icons.every((v) => v === "-0.25 -0.25 24 24"), `S8 : netteté § 10, icônes du panneau calées (${icons.length})`);
+  console.log("S8 : netteté § 10 sans objet, panneau sans icône");
   const panel = await page.locator("#reglages").boundingBox();
   await shot("reglage-gomme-paume.png", around(panel, 8));
   await clickItem(page, "settings");

@@ -728,7 +728,8 @@ export function createEngine(deps: EngineDeps): Engine {
       owner.delete(pointerId);
       emitIfSelectionChanged(() => g.close(pointerId, how));
       loop.start(); // une image de plus : couche vive effacée, aperçu retiré
-    },    resize(pointerId, radiusPx) {
+    },
+    resize(pointerId, radiusPx) {
       owner.get(pointerId)?.resize?.(pointerId, radiusPx);
       loop.start(); // l'aperçu suit le rayon
     },

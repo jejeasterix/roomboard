@@ -6,7 +6,6 @@
 
 import { contactGeometry, type ContactGeometry } from "./contact";
 
-
 export interface InputSample {
   readonly x: number;
   readonly y: number;
