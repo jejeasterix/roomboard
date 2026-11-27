@@ -536,10 +536,13 @@ async function s6(browser, base) {
     for (let i = 0; i < 29; i++) await clickItem(page, "page-add");
     await page.waitForFunction(() => document.querySelector("#pages")?.textContent === "30 / 30", null, { timeout: 15000 });
     await frames(page);
-    const pg = await box(page, ISLAND("pages"));
-    const hi = await box(page, ISLAND("historique"));
+    // Décision 32 (c) : barre dépliée d'abord, puis placement attendu, avant de mesurer l'îlot des pages entier.
     // La barre latérale des pages défile en vertical, celle du bas en horizontal : on lit l'axe selon l'ancre de la barre.
     await openSideOf(page, ".rb-pages-list");
+    await frames(page);
+    await page.waitForFunction(() => document.querySelector(".rb-pages-list")?.closest("[data-island]")?.hasAttribute("data-collapsed") === false, null, { timeout: 15000 });
+    const pg = await box(page, ISLAND("pages"));
+    const hi = await box(page, ISLAND("historique"));
     const [sw, cw] = await page.$eval(".rb-pages-list", (e) => (e.scrollHeight > e.clientHeight || e.scrollWidth <= e.clientWidth ? [e.scrollHeight, e.clientHeight] : [e.scrollWidth, e.clientWidth]));
     check(inside(pg, MID) && apart(pg, hi), `S6 30 pages : îlot des pages entier, hors de l'îlot de l'historique (${pg.x}, ${pg.y}, ${pg.width} px)`);
     check(sw > cw && (await page.textContent("#pages")) === "30 / 30", `S6 30 pages : la liste des numéros défile (${sw} > ${cw}), #pages = « 30 / 30 »`);

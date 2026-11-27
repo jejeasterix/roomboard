@@ -225,8 +225,9 @@ async function s1(browser, base, tmp) {
   await settle(page);
   // Onglet replié Pages au doigt, puis segment Infini.
   check((await page.getAttribute(SIDE, "data-collapsed")) === "1", "barre latérale repliée à l'ouverture");
-  await tap(page, cdp, COLLAPSE);
+  await tap(page, cdp, `${SIDE} [data-side-tab="pages"]`); // l'onglet replié déplie la barre (table 2 bis)
   await side(page, "open");
+  await frames(page);
   await tap(page, cdp, mode("infinite"));
   await waitAttr(page, "data-page-mode", "infinite");
   check(true, "segment Infini touché : #stage[data-page-mode=infinite]");
