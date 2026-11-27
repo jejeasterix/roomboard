@@ -1,12 +1,12 @@
 # État — personnalisation-2
 
-Statut : en cours (OG14) — lot 2 repris sur feat/personnalisation-2b
+Statut : clôture (OG14) — lot 2 terminé sur feat/personnalisation-2b, PR puis fusion locale
 Gabarit : chantier (18 tâches : lot 1 = 10, lot 2 = 8 ; lot 1 fusionnable seul)
 Objectif : RoomBoard reçoit un panneau d'options par outil et un menu général ☰ copiés du comportement d'Excalidraw, remplis de nos commandes, tactile d'abord et clavier ensuite.
-Avancement : lot 1 clos ; lot 2 : T12–T17 + T28 faits, T13r (fusion origin/main + Restack unique d'OG4) terminée, T18 en cours, T19 à faire
-Étage : 3 (lot 2, V11) — depuis 2026-11-27 14:49
+Avancement : 2/2 lots clos (lot 1 : PR #63, #64 ; lot 2 : T12–T19, T28, T13r, T31–T41)
+Étage : 4 — depuis 2026-11-27 18:10
 Lot : —
-Tâche : T18 — Lien (H5) — depuis 15:14
+Tâche : —
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2   Branche : feat/personnalisation-2b   Base : origin/main @ f61d2c4
 Branche principale locale au lancement : 45484db
@@ -32,8 +32,16 @@ T13r : fusion origin/main 42af8b2, rouge 309b56d, Restack d'OG4 seule 0bbfc74, s
 Branche poussée : feat/personnalisation-2b (c98c9b2), base lot 1 avant l'intégration d'OG4/OG5. Contient T12 (champs fillStyle, pointes, textAlign, link), T13 (Restack minimal), T14 (rendu hachures, pointes, alignement, polices), T15 (panneau : Remplissage, Texte, Pointes, Disposition, raccourcis Ctrl+(Maj+)↑/↓), T16 (sélecteur de couleur, S et G), T17 (Aide « ? », Effacer la page, Ctrl+Maj+E export PDF), T28 (outils de création lisent le style lot 2). Preuves rejouées par tâche ; aucune suite complète, aucune relecture de lot.
 Prochaine tâche exacte : 1) `git merge origin/main` dans feat/personnalisation-2b ; **retirer le `Restack` de T13 (order.rs, BadOrder, pont, faux cœur, CLI) et brancher Disposition (T15) sur le `Restack { ids, to }` d'OG4 et ses raccourcis d'ordre** (OG4 a déjà des raccourcis d'ordre et la rangée Sélection Premier plan/Arrière-plan : garder un seul jeu, celui d'OG4, et l'afficher dans le panneau) ; 2) T18 lien (non commencé) ; 3) T19 essai navigateur S6–S8 + captures ; 4) double relecture du lot ; 5) verifier.sh --e2e ; 6) PR et fusion.
 
+## Fin du lot 2 (OG14)
+- T13r : fusion origin/main (42af8b2), Restack d'OG4 seule (0bbfc74, d0d0541).
+- T18 lien (5bba1fa) ; T19 essai lot 2, captures (3e88acd) ; T31–T34 écarts vus à l'essai et à la critique de rendu (S7.1 police avant saisie, focus, sélecteur borné et ancré, calage strict, éditeur de lien, Aide, panneaux passagers) ; T35 lien ouvert par roomboard-shell, sans plugin opener (règle C16).
+- Double relecture tour 1 (conformité + qualité en 3 zones) : 0 blocker, 3 major → T36–T39 ; tour 2 : 0 blocker, 2 major (alerte web à tort, piles de runAll) → T40, T41. Correctifs de fin : 2/2.
+- Preuves rejouées : verifier.sh --e2e OK sur a8e31c5, e5f0f7e, puis la tête finale (voir PR).
+- Constats d'architecture : tests Disposition en double dans engine.test.ts:2104 (laissés) ; regroupement d'annulation côté moteur (`runAll`) faute d'un lot atomique dans le cœur — à porter dans le cœur si d'autres gestes en ont besoin.
+- Hors périmètre gardé : comportements des flèches communs avec Excalidraw (courbure, liaison, édition des points) → OG12.
+
 ## Compteurs
-contre-relecture cadrage 1/2 (aucun bloquant, 7 importantes arbitrées) · relecture plan 1/3 (1 bloquant + 7 importants corrigés ; tour 2 sauté faute de temps, lot 1 relu en entier) · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 · relecture plan 1/3 · vagues sans progrès 0/2 · correctifs de fin 2/2 (lot 2)
 
 ## Tâches
 Table complète : en tête de docs/plans/personnalisation-2-PLAN.md. Vagues : V1 T1,T3,T7 · V2 T2,T6,T8 · V3 T4 · V4 T5,T9 · V5 T10 · V6 T11 | lot 2 : V7 T12 · V8 T13,T14 · V9 T15 · V10 T16,T17 · V11 T18 · V12 T19
