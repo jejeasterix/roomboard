@@ -385,6 +385,29 @@ async function scenario(page, url, { captures }) {
   await page.keyboard.press("Escape");
   await fr();
 
+  // S10 (D17) : bouton « En-tête » de la rangée du tableau, puis Ctrl+Z, puis Alt+E.
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...cell6(0, 0));
+  await page.keyboard.type("Nom");
+  await page.keyboard.press("Escape");
+  await fr();
+  check((await attr("data-table-header")) === "0", "S10 : sans en-tête au départ (data-table-header=0)");
+  await page.click('[data-table-action="table-header"]');
+  await fr();
+  check((await attr("data-table-header")) === "1", "S10 : en-tête posé (data-table-header=1)");
+  await capture("en-tete");
+  await page.keyboard.press("Control+z");
+  await fr();
+  check((await attr("data-table-header")) === "0", "S10 : Ctrl+Z rend la ligne normale (data-table-header=0)");
+  await page.keyboard.press("Alt+e");
+  await fr();
+  check((await attr("data-table-header")) === "1", "S10 : Alt+E pose l'en-tête");
+  await page.keyboard.press("Control+z");
+  await fr();
+  await page.keyboard.press("Escape");
+  await fr();
+
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
 }
 
