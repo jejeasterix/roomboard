@@ -113,7 +113,7 @@ function fakeTool(name: "pen" | "eraser", log: string[], ctx: ToolContext): Fake
   };
 }
 
-function setup(extra: Pick<EngineDeps, "fitTop"> = {}) {
+function setup(extra: Pick<EngineDeps, "fitTop" | "pageMode"> = {}) {
   const doc = fakeCore.blank();
   const frames = new Frames();
   const renderer = new FakeRenderer();
@@ -478,6 +478,64 @@ describe("createEngine", () => {
     expect(engine.prevPage()).toBe(false);
     expect(engine.nextPage()).toBe(true);
     expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2, selection: [], selectionBounds: null });
+  });
+
+  it("nextOrAdd sur la dernière page ajoute une page au mode du profil, Ctrl+Z la retire", () => {
+    const { doc, engine } = setup({ pageMode: () => "portrait" });
+    expect(engine.nextOrAdd()).toBe(true);
+    expect(doc.pageIds()).toHaveLength(2);
+    expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2, pageLayout: "portrait", pageMode: "page" });
+    engine.undo();
+    expect(doc.pageIds()).toHaveLength(1);
+  });
+
+  it("nextOrAdd ailleurs : page suivante", () => {
+    const { doc, engine } = setup();
+    engine.addPage();
+    engine.prevPage();
+    expect(engine.nextOrAdd()).toBe(true);
+    expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2 });
+    expect(doc.pageIds()).toHaveLength(2);
+  });
+
+  it("movePage garde la page montrée", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    engine.addPage();
+    engine.addPage();
+    engine.showPage(p1);
+    expect(engine.movePage(p1, 2)).toBe(true);
+    expect(doc.pageIds()[2]).toBe(p1);
+    expect(engine.state()).toMatchObject({ page: p1, pageIndex: 2 });
+  });
+
+  it("duplicatePage montre la copie", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    expect(engine.duplicatePage()).toBe(true);
+    const ids = doc.pageIds();
+    expect(ids).toHaveLength(2);
+    expect(engine.state().page).toBe(ids[1]);
+    expect(engine.state().page).not.toBe(p1);
+  });
+
+  it("setPageMode portrait : fitPage montre tout le cadre", () => {
+    const { engine } = setup();
+    engine.resize(1000, 800, 1);
+    expect(engine.state().pageLayout).toBe("landscape");
+    expect(engine.setPageMode("portrait")).toBe(true);
+    expect(engine.state().pageLayout).toBe("portrait");
+    engine.fitPage();
+    const cam = engine.camera();
+    // cadre portrait entier visible : hauteur du cadre (1920 × 16 / 9) × zoom ≤ hauteur de la vue
+    expect(cam.zoom * ((1920 * 16) / 9)).toBeLessThanOrEqual(800 + 1e-6);
+  });
+
+  it("pageMode / pageLayout dans l'état", () => {
+    const { engine } = setup();
+    expect(engine.state()).toMatchObject({ pageMode: "page", pageLayout: "landscape" });
+    engine.setPageMode("infinite");
+    expect(engine.state()).toMatchObject({ pageMode: "infinite", pageLayout: "infinite" });
   });
 
   function editSetup() {
