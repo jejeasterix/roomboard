@@ -243,6 +243,12 @@ export interface Engine {
   deleteSelection(): boolean;
   /** OG11 (Ctrl+D) : copie de la sélection décalée de +10/+10, sélectionnée ; une étape ; faux sans sélection. */
   duplicateSelection(): boolean;
+  /** OG23 (T11) : copie `ids` décalée de (dx, dy) (extrait + insertion, une étape, copies sélectionnées) ; `strip` retire
+   *  `dragCopy` des copies ; faux sans copie posée. */
+  duplicate(ids: readonly string[], dx: number, dy: number, strip: boolean): boolean;
+  /** OG23 (T11) : pose ou retire « Glisser une copie » sur la sélection (un SetStyle, une étape), hors style courant ;
+   *  faux sans sélection ou si le cœur refuse. */
+  setDragCopy(on: boolean): boolean;
   /** OG23 : Aligner, Répartir, Retourner, Tourner la sélection (groupes entiers) ; vrai si le document a changé. */
   arrange(how: ArrangeHow): boolean;
   /** OG23 : déplace la sélection de (dx, dy) unités de scène ; faux sans sélection. */
@@ -739,6 +745,7 @@ export function createEngine(deps: EngineDeps): Engine {
     alt: () => altHeld,
     requestFrame: requestScene,
     stateChanged: () => emit(),
+    duplicate: (ids, dx, dy, strip) => engine.duplicate(ids, dx, dy, strip),
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   /** Style de texte de l'outil Tableau et de l'import : couleur du stylo, taille par défaut ; l'outil Texte a `textToolStyle`. */
@@ -1035,16 +1042,27 @@ export function createEngine(deps: EngineDeps): Engine {
       return true;
     },
     duplicateSelection() {
-      const sel = selectTool.selection();
-      if (sel.length === 0) return false;
-      // Ni commande du cœur ni presse-papiers : l'extrait de la sélection réinséré à +10/+10 (une étape, copies sélectionnées).
-      const fragment = doc.extract(pageId, sel);
+      return engine.duplicate(selectTool.selection(), 10, 10, false);
+    },
+    duplicate(ids, dx, dy, strip) {
+      if (ids.length === 0) return false;
+      // Ni commande du cœur ni presse-papiers : l'extrait réinséré au décalage (une étape, copies sélectionnées).
+      const fragment = doc.extract(pageId, ids);
       try {
-        const change = engine.insertFragment(fragment, 10, 10);
+        if (strip) {
+          const copies = fragment.elementIds(fragment.pageIds()[0] ?? "");
+          fragment.apply({ type: "SetStyle", ids: copies, patch: { dragCopy: false } });
+        }
+        const change = engine.insertFragment(fragment, dx, dy);
         return change !== null && change.ids.length > 0;
       } finally {
         fragment.free();
       }
+    },
+    setDragCopy(on) {
+      const sel = selectTool.selection();
+      if (sel.length === 0) return false;
+      return run({ type: "SetStyle", ids: [...sel], patch: { dragCopy: on } }) !== null;
     },
     restack,
     arrange,

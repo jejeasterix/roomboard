@@ -20,6 +20,8 @@ export interface ToolContext {
   alt?(): boolean;
   /** Demande une image (outil à l'arrêt dont l'aperçu a changé : ensemble masqué vidé) ; absent = sans effet. */
   requestFrame?(): void;
+  /** OG23 (T11) : pose une copie des éléments `ids` décalée de (dx, dy), `strip` retirant `dragCopy` des copies ; absent = sans effet. */
+  duplicate?(ids: readonly string[], dx: number, dy: number, strip: boolean): boolean;
   /** L'outil a changé ce que publie l'état (cellule active du tableau) sans écrire ; absent = sans effet. */
   stateChanged?(): void;
 }

@@ -2193,6 +2193,55 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(engine.state().elementCount).toBe(1);
   });
 
+  describe("Glisser une copie (OG23, T11)", () => {
+    const withCopyProp = () => {
+      const s = styleSetup();
+      const a = s.addRect();
+      s.doc.apply({ type: "SetStyle", ids: [a], patch: { dragCopy: true } });
+      s.sel().setSelection([a]);
+      return { ...s, a };
+    };
+
+    it("dragCopy : copie sans la propriété, sélectionnée", () => {
+      const { engine, doc, a } = withCopyProp();
+      expect(engine.duplicate([a], 200, 0, true)).toBe(true);
+      const copy = engine.state().selection[0] ?? "";
+      expect(copy).not.toBe(a);
+      expect(doc.element(copy)?.look?.dragCopy).toBeUndefined();
+      expect(doc.element(a)?.look?.dragCopy).toBe(true);
+      expect(doc.element(copy)?.transform?.[4]).toBe((doc.element(a)?.transform?.[4] ?? Number.NaN) + 200);
+    });
+
+    it("Ctrl+D garde dragCopy", () => {
+      const { engine, doc } = withCopyProp();
+      expect(engine.duplicateSelection()).toBe(true);
+      const copy = engine.state().selection[0] ?? "";
+      expect(doc.element(copy)?.look?.dragCopy).toBe(true);
+    });
+
+    it("setDragCopy : une étape, hors style courant", () => {
+      const { engine, doc, addRect, sel } = styleSetup();
+      const a = addRect();
+      sel().setSelection([a]);
+      const before = engine.itemStyle();
+      expect(engine.setDragCopy(true)).toBe(true);
+      expect(doc.element(a)?.look?.dragCopy).toBe(true);
+      expect(engine.itemStyle()).toEqual(before);
+      engine.undo();
+      expect(doc.element(a)?.look?.dragCopy).toBeUndefined();
+    });
+
+    it("glisser encore l'original : 3 objets, Ctrl+Z : 2", () => {
+      const { engine, a } = withCopyProp();
+      engine.duplicate([a], 200, 0, true);
+      engine.select([a]);
+      engine.duplicate([a], 400, 0, true);
+      expect(engine.state().elementCount).toBe(3);
+      engine.undo();
+      expect(engine.state().elementCount).toBe(2);
+    });
+  });
+
   describe("Disposition (T15)", () => {
     const three = () => {
       const s = styleSetup();
