@@ -310,7 +310,11 @@ MIT en tête de chaque fichier :
   `getFormValue` (`packages/excalidraw/actions/actionProperties.tsx`) ;
 - `apps/web/src/ui/ColorPicker.tsx`, `apps/web/src/ui/open-color.ts` (T16) : sélecteur de couleur
   (`packages/excalidraw/components/ColorPicker/`) et palette (`packages/common/src/colors.ts`) ; les teintes viennent
-  d'open-color (https://github.com/yeun/open-color, MIT, Copyright (c) 2016 heeyeun) et `bronze` de Radix Colors (https://github.com/radix-ui/colors, MIT, Copyright (c) 2021-2022 Modulz, Copyright (c) 2022-Present WorkOS).
+  d'open-color (https://github.com/yeun/open-color, MIT, Copyright (c) 2016 heeyeun) et `bronze` de Radix Colors (https://github.com/radix-ui/colors, MIT, Copyright (c) 2021-2022 Modulz, Copyright (c) 2022-Present WorkOS) ;
+- `crates/roomboard-core/src/arrange.rs` (OG23, T1) : répartition adaptée de `distributeElements`
+  (`packages/element/src/distribute.ts` : écarts égaux, et par les centres quand les objets se chevauchent) ;
+  retournement d'après `packages/excalidraw/actions/actionFlip.ts` (le texte garde sa matrice, seule sa place suit) ;
+- `apps/web/src/core/arrange.ts` (OG23, T4) : noms des dispositions et leur lecture, miroir du cœur.
 
 Texte : MIT (https://opensource.org/licenses/MIT), identique à celui de roughjs ci-dessus, titulaire « Excalidraw ».
 
