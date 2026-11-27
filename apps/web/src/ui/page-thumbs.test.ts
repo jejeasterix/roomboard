@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createPageThumbs } from "./page-thumbs";
+import { REVOKE_GRACE_MS, createPageThumbs } from "./page-thumbs";
 
 let n = 0;
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   n = 0;
   vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:t${++n}`);
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 const png = (): Blob => new Blob([new Uint8Array([1])], { type: "image/png" });
 
@@ -22,6 +26,8 @@ describe("createPageThumbs (DA7)", () => {
     expect(await thumbs.get("a", 120)).toBe(a1);
     expect(render).toHaveBeenCalledTimes(1);
     thumbs.invalidate(["a"]);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled(); // délai de grâce : une image en chargement garde sa source
+    vi.advanceTimersByTime(REVOKE_GRACE_MS);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(a1);
     const a2 = await thumbs.get("a", 120);
     expect(a2).not.toBe(a1);
@@ -41,6 +47,7 @@ describe("createPageThumbs (DA7)", () => {
     expect(render).toHaveBeenCalledTimes(1);
     const a2 = await thumbs.get("a", 120, "portrait");
     expect(a2).not.toBe(a1);
+    vi.advanceTimersByTime(REVOKE_GRACE_MS);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(a1);
     expect(render).toHaveBeenCalledTimes(2);
     expect(await thumbs.get("a", 120)).toBe(a2); // sans `form` : rien ne change

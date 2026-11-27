@@ -10,6 +10,9 @@ export interface PageThumbs {
   dispose(): void;
 }
 
+/** Délai avant de révoquer une URL remplacée ou invalidée. */
+export const REVOKE_GRACE_MS = 2000;
+
 interface Kept {
   readonly version: number;
   readonly width: number;
@@ -35,10 +38,16 @@ export function createPageThumbs(render: (pageId: string, width: number) => Prom
   let queue: Promise<unknown> = Promise.resolve();
   let disposed = false;
   const versionOf = (page: string): number => versions.get(page) ?? 0;
+  /** URL remplacées, révoquées après `REVOKE_GRACE_MS` : une image encore en chargement ne doit pas perdre sa source (ERR_FILE_NOT_FOUND). */
+  const dying = new Map<string, ReturnType<typeof setTimeout>>();
   const forget = (page: string): void => {
     const k = kept.get(page);
-    if (k) URL.revokeObjectURL(k.url);
     kept.delete(page);
+    if (!k) return;
+    dying.set(k.url, setTimeout(() => {
+      dying.delete(k.url);
+      URL.revokeObjectURL(k.url);
+    }, REVOKE_GRACE_MS));
   };
 
   /** Tâche de la file : rend la version courante ; invalidée pendant le rendu, elle recommence (l'ancienne jamais servie). */
@@ -97,6 +106,11 @@ export function createPageThumbs(render: (pageId: string, width: number) => Prom
     dispose() {
       disposed = true;
       for (const page of [...kept.keys()]) forget(page);
+      for (const [url, t] of dying) {
+        clearTimeout(t);
+        URL.revokeObjectURL(url);
+      }
+      dying.clear();
       pending.clear();
     },
   };
