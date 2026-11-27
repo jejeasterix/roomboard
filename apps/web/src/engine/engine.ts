@@ -12,7 +12,7 @@ import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from ".
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
+import { cellKey, editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import type { LookPatch } from "../core/look";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -856,6 +856,9 @@ export function createEngine(deps: EngineDeps): Engine {
         spaceHeld = true;
         return true;
       }
+      const ck = cellKey(e);
+      // personnalisation-3 (H12) : la touche passe s'il n'y a rien à loger ou à sortir.
+      if ((ck === "place" || ck === "unplace") && tool === "select" && selectTool.placeInCell?.(ck === "unplace") === true) return true;
       const order = orderKey(e);
       if (order !== null) {
         // Lot 2 : Ctrl+↑ ↓ un rang, Ctrl+Maj+↑ ↓ extrémités ; pris seulement avec une sélection (sinon la touche passe).

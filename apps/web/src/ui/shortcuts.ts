@@ -20,6 +20,8 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("bold", "Texte", "Gras, italique, souligné", "Ctrl+B, I, U"),
   // OG19 (H1-11) : actions de la barre d'outils ; l'id est celui de l'action, l'infobulle de son bouton le montre.
   s("backgrounds", "Vue", "Fonds", "Ctrl+Maj+F"),
+  s("cell-place", "Tableau", "Loger la sélection dans la case", "Alt+Entrée"),
+  s("cell-unplace", "Tableau", "Sortir la sélection de sa case", "Alt+Maj+Entrée"),
   s("page-prev", "Pages", "Page précédente", "Pg préc"),
   s("page-next", "Pages", "Page suivante", "Pg suiv"),
   s("page-number", "Pages", "Barre latérale, onglet Pages", "Ctrl+Maj+P"),

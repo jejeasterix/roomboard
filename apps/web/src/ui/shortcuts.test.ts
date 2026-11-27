@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, editAction, isPanKey, keyAction, objectKey, pageKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, cellKey, editAction, isPanKey, keyAction, objectKey, pageKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, shortcutText } from "./shortcuts";
 
@@ -10,6 +10,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   duplicate: ["object", "duplicate"], delete: ["edit", "delete"], escape: ["edit", "escape"],
   copy: ["native", "c"], cut: ["native", "x"], paste: ["native", "v"], pan: ["pan", " "], bold: ["rich", "b"],
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
+  "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"],
 };
 const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown" };
 const press = (keys: string): KeyLike => {
@@ -32,6 +33,7 @@ describe("shortcuts", () => {
       else if (by === "edit") expect(editAction(e), s.id).toBe(value);
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
+      else if (by === "cell") expect(cellKey({ ...press("Enter"), code: "Enter", altKey: true, shiftKey: s.keys.includes("Maj") }), s.id).toBe(value);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
       else {
         // Copier, couper, coller (événements natifs) et Ctrl+B (rich-edit) : aucun reconnaisseur ne les vole.

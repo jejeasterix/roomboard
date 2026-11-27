@@ -249,6 +249,10 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
     setSelection(ids) {
       selection = [...ids];
     },
+    placeInCell(out) {
+      const cmd = cellDrop?.place(selection, out) ?? null;
+      return cmd !== null && ctx.run(cmd) !== null;
+    },
     prune() {
       const present = new Set(ctx.doc.elementIds(ctx.page()));
       selection = selection.filter((id) => present.has(id));

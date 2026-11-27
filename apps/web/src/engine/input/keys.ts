@@ -1,6 +1,7 @@
 /** Raccourcis d'annulation (D11) : Ctrl+Z, Ctrl+Y, Ctrl+Maj+Z ; Cmd sous macOS. Ctrl+G grouper, Ctrl+Maj+G dégrouper (C3, Z13). */
 export interface KeyLike {
   readonly key: string;
+  readonly code?: string;
   readonly ctrlKey: boolean;
   readonly metaKey: boolean;
   readonly shiftKey: boolean;
@@ -47,6 +48,19 @@ export type ObjectKey = "duplicate" | "link" | "stroke-picker" | "fill-picker" |
 export function objectKey(e: KeyLike): ObjectKey | null {
   if (e.isComposing || e.altKey || inEditable(e.target)) return null;
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "d") return "duplicate";
+  return null;
+}
+
+export type CellKey = "place" | "unplace" | "fit" | "cell-image";
+/** personnalisation-3 (H12) : Alt+Entrée loger, Alt+Maj+Entrée sortir, Alt+F agrandir / rétrécir, Alt+I fond de case ;
+ *  par `code` (Alt change `key` sous macOS) ; hors champ, hors IME, sans Ctrl ni Cmd (Alt Gr = Ctrl+Alt refusé). */
+export function cellKey(e: KeyLike): CellKey | null {
+  if (!e.altKey || e.ctrlKey || e.metaKey || e.isComposing || inEditable(e.target)) return null;
+  const code = e.code ?? "";
+  if (code === "Enter" || e.key === "Enter") return e.shiftKey ? "unplace" : "place";
+  if (e.shiftKey) return null;
+  if (code === "KeyF") return "fit";
+  if (code === "KeyI") return "cell-image";
   return null;
 }
 
