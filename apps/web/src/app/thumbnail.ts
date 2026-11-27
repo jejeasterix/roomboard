@@ -1,12 +1,15 @@
 /**
  * Vignette d'une ressource (C4, D12) : PNG de 128 px au plus grand côté, rendue par le peintre d'export
  * (`paintContent`, même code de dessin que l'écran) sur une toile d'export, libérée aussitôt. Objets : la boîte de
- * leurs éléments ; grille : une fenêtre monde de 320 × 320 (la grille est peinte par `paintContent`, D12).
+ * leurs éléments ; grille : une fenêtre monde de 320 × 320 (la grille est peinte par `paintContent`, D12). Miniature de
+ * page (DA7) : `renderPageThumb`, au cadre de la page.
  */
-import type { Bounds, CoreDocument } from "../core/api";
+import { PDF_PAGE_KIND, type BackdropView, type Bounds, type CoreDocument } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
+import { PAGE_BACKGROUND, pageFrame } from "../engine/page";
 import type { BitmapDecoder, ImageSource } from "../engine/render/image-cache";
-import type { PageView } from "../engine/render/renderer";
+import type { BackdropPainter, PageView } from "../engine/render/renderer";
+import { pageExportRect } from "./pdf-export";
 import { loadImageSource, type ContentPainter, type ExportCanvas } from "./pdf-overlay";
 
 export const THUMB_MAX = 128;
@@ -42,6 +45,58 @@ export async function renderThumbnail(doc: CoreDocument, assets: AssetStore, kin
     canvas.ctx.fillStyle = "#ffffff";
     canvas.ctx.fillRect(0, 0, size.w, size.h);
     deps.painter(canvas.ctx, doc, images).paintContent(canvas.ctx, view, rect, size.scale);
+    return new Blob([(await canvas.png()) as BlobPart], { type: "image/png" });
+  } finally {
+    canvas.release();
+    images.dispose();
+  }
+}
+
+/** Fond de page (PF14) peint une fois, à son rectangle (H16) : bitmap d'un fond `image`, peintre d'un fond `pdf-page`. */
+function paintBackdrop(ctx: CanvasRenderingContext2D, b: BackdropView, images: ImageSource, rect: Bounds, scale: number, size: { readonly w: number; readonly h: number }, painter: BackdropPainter | undefined): void {
+  const r = b.rect;
+  if (r === null) return;
+  const camera = { zoom: scale, tx: -rect.x0 * scale, ty: -rect.y0 * scale };
+  ctx.save();
+  ctx.setTransform(scale, 0, 0, scale, camera.tx, camera.ty);
+  if (b.kind === "image") {
+    const bmp = images.bitmap(b.asset);
+    if (bmp) ctx.drawImage(bmp, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+  } else if (b.kind === PDF_PAGE_KIND) {
+    painter?.paint(ctx, b, camera, { w: size.w, h: size.h, dpr: 1 });
+  }
+  ctx.restore();
+}
+
+/**
+ * Miniature d'une page (DA7), `width` en pixels du tampon (le panneau passe sa largeur CSS × devicePixelRatio : traits
+ * nets). Rectangle : Page → son cadre (`pageFrame`) ; Infini → boîte du contenu ∪ fond (`pageExportRect`, règle de
+ * l'export PDF) ; page infinie vide → 1920 × 1080 (16:9), fond de page. Même peintre que l'écran (`paintContent`).
+ */
+export async function renderPageThumb(
+  doc: CoreDocument,
+  assets: AssetStore,
+  pageId: string,
+  width: number,
+  deps: ThumbDeps & { backdrop?: BackdropPainter },
+): Promise<ImageBitmap | Blob | null> {
+  const page = doc.page(pageId);
+  if (page === null || !(width > 0)) return null;
+  const ids = doc.elementIds(pageId);
+  const frame = pageFrame(page);
+  const rect = frame ?? pageExportRect(null, ids.length > 0 ? doc.bounds(ids) : null, page.backdrop?.rect ?? null);
+  const w = Math.max(1, Math.round(width));
+  const scale = w / (rect.x1 - rect.x0);
+  const h = Math.max(1, Math.round((rect.y1 - rect.y0) * scale));
+  const view: PageView = { id: pageId, elementIds: ids, background: page.background, backdrop: page.backdrop, width: page.width, height: page.height, mode: page.mode };
+  const images = await loadImageSource(doc, assets, deps.decode);
+  const canvas = deps.canvas(w, h);
+  try {
+    canvas.ctx.fillStyle = PAGE_BACKGROUND;
+    canvas.ctx.fillStyle = page.background || PAGE_BACKGROUND;
+    canvas.ctx.fillRect(0, 0, w, h);
+    if (page.backdrop) paintBackdrop(canvas.ctx, page.backdrop, images, rect, scale, { w, h }, deps.backdrop);
+    deps.painter(canvas.ctx, doc, images).paintContent(canvas.ctx, view, rect, scale);
     return new Blob([(await canvas.png()) as BlobPart], { type: "image/png" });
   } finally {
     canvas.release();
