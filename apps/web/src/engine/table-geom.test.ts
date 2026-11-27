@@ -240,3 +240,12 @@ describe("D10 : cellContaining (T8)", () => {
     expect(cellContaining(doc, page, { x0: 20, y0: 70, x1: 300, y1: 126 }, 20, 90, 2)).toBeNull();
   });
 });
+
+describe("cellContent : fond d'image (T9, S5)", () => {
+  it("S5 : bg présent quand la case a un fond, absent sinon", () => {
+    const bg = "a".repeat(64);
+    const t = { color: "#000000", size: 36, cols: [{ id: "c", width: 240 }], rows: [{ id: "r", height: 64 }], cells: [{ row: "r", col: "c", text: "", fill: null, shade: null, spans: [], bg }], merges: [] };
+    expect(cellContent(t, "r", "c").bg).toBe(bg);
+    expect("bg" in cellContent({ ...t, cells: [] }, "r", "c")).toBe(false);
+  });
+});

@@ -161,9 +161,9 @@ export function cellContent(
   t: TableData,
   rowId: string,
   colId: string,
-): { readonly text: string; readonly spans: readonly TextSpan[]; readonly fill: string | null; readonly shade: string | null; readonly bg: string | null } {
+): { readonly text: string; readonly spans: readonly TextSpan[]; readonly fill: string | null; readonly shade: string | null; readonly bg?: string } {
   const c = t.cells.find((x) => x.row === rowId && x.col === colId);
-  return { text: c?.text ?? "", spans: c?.spans ?? plainSpans(c?.text ?? ""), fill: c?.fill ?? null, shade: c?.shade ?? null, bg: c?.bg ?? null };
+  return { text: c?.text ?? "", spans: c?.spans ?? plainSpans(c?.text ?? ""), fill: c?.fill ?? null, shade: c?.shade ?? null, ...(c?.bg === undefined ? {} : { bg: c.bg }) };
 }
 
 /** Le tableau le plus haut de `tables` (ordre de la pile) sous (x, y) monde (I2) ; matrice non inversible : sauté. */
