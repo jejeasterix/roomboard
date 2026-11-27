@@ -44,4 +44,12 @@ describe("style courant : police et taille du prochain texte (T31)", () => {
     expect(mergeItemStyle(DEFAULT_ITEM_STYLE, { fontSize: -3 }).fontSize).toBe(36);
     expect(mergeItemStyle(DEFAULT_ITEM_STYLE, { font: "Courier New" }).font).toBe("Courier New");
   });
+  it("OG12 : arrowType et arrowBinding, défauts et validation", () => {
+    expect(DEFAULT_ITEM_STYLE.arrowType).toBe("sharp");
+    expect(DEFAULT_ITEM_STYLE.arrowBinding).toBe(true);
+    const s = parseItemStyle('{"arrowType":"elbow","arrowBinding":false}');
+    expect([s?.arrowType, s?.arrowBinding]).toEqual(["elbow", false]);
+    expect(parseItemStyle('{"arrowType":"x"}')).toBeNull();
+    expect(parseItemStyle('{"color":"#000000"}')?.arrowType).toBe("sharp");
+  });
 });

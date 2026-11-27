@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newSeed, STROKE_STYLES, lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
+import { elbowedOf, newSeed, STROKE_STYLES, lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
 import { ARROWHEADS, endArrowheadOf, FILL_STYLES, fillStyleOf, LINK_MAX_CHARS, startArrowheadOf, TEXT_ALIGNS, textAlignOf, validLink } from "./look";
 
 describe("look", () => {
@@ -69,5 +69,17 @@ describe("look — lot 2 (T12)", () => {
     expect(FILL_STYLES).toEqual(["hachure", "cross-hatch"]);
     expect(ARROWHEADS).toEqual(["none", "arrow", "triangle", "triangle_outline"]);
     expect(TEXT_ALIGNS).toEqual(["center", "right"]);
+  });
+});
+
+describe("look OG12", () => {
+  it("elbowed et pointes neuves", () => {
+    expect(toLook({ elbowed: true })).toEqual({ elbowed: true });
+    expect(toLook({ elbowed: "oui" })).toBeUndefined();
+    expect(toLook({ endArrowhead: "circle_outline" })?.endArrowhead).toBe("circle_outline");
+    expect(ARROWHEADS).toHaveLength(7);
+    expect(lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100, elbowed: true }, null)).toEqual({ elbowed: true });
+    expect(elbowedOf({ elbowed: true })).toBe(true);
+    expect(elbowedOf(undefined)).toBe(false);
   });
 });

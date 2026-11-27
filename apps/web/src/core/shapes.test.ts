@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyMatrix, arrowWings, boxPolygon, composeMatrix, ELLIPSE_VERTICES, invertMatrix, isShapeKind, normalizeShape, shapePolygon } from "./shapes";
+import { anchorPoint, ANCHOR_RATIOS, applyMatrix, arrowWings, bandPolygonForTest, boxPolygon, composeMatrix, CURVE_STEPS, ELLIPSE_VERTICES, flattenPath, invertMatrix, isShapeKind, linePath, normalizeShape, shapePolygon } from "./shapes";
 
 describe("shapes (miroir de shape.rs)", () => {
   it("normalizeShape : rectangle et ellipse au coin haut-gauche, tailles positives", () => {
@@ -88,5 +88,30 @@ describe("invertMatrix (C10a, miroir de element::invert)", () => {
     [1, 0, 0, 1, 0, 0].forEach((v, i) => expect(id[i]).toBeCloseTo(v, 12));
     expect(invertMatrix([1, 2, 2, 4, 0, 0])).toBeNull();
     expect(invertMatrix([Number.NaN, 0, 0, 1, 0, 0])).toBeNull();
+  });
+});
+
+describe("OG12 : chemin, courbe et ancrage (miroir de linear.rs)", () => {
+  it("flattenPath : deux points tels quels, trois points en 2 × 16 pas passant par le point intérieur", () => {
+    expect(flattenPath(linePath(100, 0), true)).toEqual([[0, 0], [100, 0]]);
+    const f = flattenPath(linePath(100, 0, [50, -80]), true);
+    expect(f.length).toBe(1 + 2 * CURVE_STEPS);
+    expect(f.some(([x, y]) => Math.abs(x - 50) < 1e-9 && Math.abs(y + 80) < 1e-9)).toBe(true);
+  });
+  it("bandPolygon : chemin vide = polygone du socle ; polyligne couvre son point intérieur", () => {
+    expect(shapePolygon("arrow", 100, 0, 4, { inner: [], curve: true })).toEqual(shapePolygon("arrow", 100, 0, 4));
+    const p = bandPolygonForTest([[0, 0], [50, -80], [100, 0]], 4, false);
+    const xs = p.filter((_, i) => i % 2 === 0);
+    const ys = p.filter((_, i) => i % 2 === 1);
+    expect(Math.min(...ys)).toBeLessThan(-80);
+    expect(Math.max(...xs)).toBeGreaterThan(100);
+  });
+  it("anchorPoint : contour + écart 5 + épaisseur / 2, dedans sans écart, ellipse", () => {
+    const b = { id: "a", m: [1, 0, 0, 1, 10, 20] as const, w: 100, h: 50, ellipse: false, gap: 7 };
+    expect(anchorPoint(b, 1, 0.5)).toEqual([117, 45]);
+    expect(anchorPoint(b, 0.3, 0.4)).toEqual([40, 40]);
+    const [x, y] = anchorPoint({ ...b, ellipse: true }, 0.5, 0);
+    expect([x, Math.round(y * 1e9) / 1e9]).toEqual([60, 13]);
+    expect(ANCHOR_RATIOS).toEqual([[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]]);
   });
 });
