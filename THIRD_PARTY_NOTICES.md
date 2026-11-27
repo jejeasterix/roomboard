@@ -338,7 +338,7 @@ Texte : MIT, identique à celui de roughjs ci-dessus, titulaire « Excalidraw »
 ## Icônes Lucide (ISC), OG12
 
 Tracés repris de Lucide (https://github.com/lucide-icons/lucide), recopiés dans `apps/web/src/ui/icons.ts` : `spline`
-(« Modifier les points », icône `edit-points`) et `circle-minus` (« Retirer le point », icône `point-remove`). Licence ISC,
+(« Modifier les points », icône `edit-points`) et `circle-minus` (« Retirer le point », icône `point-remove`) ; lot 2a : `diamond` (outil « Losange », icône `diamond`). Licence ISC,
 texte identique à celui de la section Lucide ci-dessus.
 
 ## Crate `roomboard-formats` (C12, PDF vectoriel par krilla)
