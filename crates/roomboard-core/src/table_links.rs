@@ -1297,6 +1297,61 @@ mod tests {
         assert_eq!(view(&d, &t).rows[0].height, 64.0);
         assert_eq!(d.version(), ver);
     }
+    // Constat C2-1 : `PlaceInCell` contrôlait la dernière taille d'une ligne citée deux fois, l'écriture posait la
+    // première différente ; la liste est refusée comme pour `SetTableLineSizes`, rien d'écrit.
+    #[test]
+    fn place_in_cell_refuses_repeated_line() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 10.0, 10.0, 50.0, 50.0);
+        let c0 = view(&d, &t).cols[0].id.clone();
+        let ver = d.version();
+        for (a, b) in [(400.0, 240.0), (1e39, 240.0)] {
+            let size = |size: f64| LineSize {
+                table: t.clone(),
+                axis: TableAxis::Col,
+                line: c0.clone(),
+                size,
+            };
+            assert_eq!(
+                d.apply(Command::PlaceInCell {
+                    ids: vec![o.clone()],
+                    matrix: IDENTITY,
+                    cell: Some(link(&d, &t, 0, 0)),
+                    sizes: vec![size(a), size(b)],
+                }),
+                Err(CommandError::BadTable)
+            );
+        }
+        assert_eq!(view(&d, &t).cols[0].width, 240.0);
+        assert_eq!(d.version(), ver);
+    }
+
+    // Constat C2-3 : un objet au transform illisible est écarté, comme par `Transform` ; ni matrice, ni lien écrits.
+    #[test]
+    fn place_in_cell_ignores_unreadable_transform() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 10.0, 10.0, 50.0, 50.0);
+        {
+            let mut txn = d.transact_untracked();
+            let f = d.find_element(&txn, &o).expect("objet");
+            f.element.insert(&mut txn, "transform", "illisible");
+        }
+        let ver = d.version();
+        let r = d.apply(Command::PlaceInCell {
+            ids: vec![o.clone()],
+            matrix: [1.0, 0.0, 0.0, 1.0, 5.0, 5.0],
+            cell: Some(link(&d, &t, 0, 0)),
+            sizes: vec![],
+        });
+        assert!(r.is_ok());
+        assert_eq!(raw_link(&d, &o), None);
+        assert_eq!(d.version(), ver);
+    }
+
     #[test]
     fn commit_stroke_with_cell() {
         let mut d = Document::blank();

@@ -577,6 +577,21 @@ try {
   const imgDe = (i) => (fond.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === img.id);
   verifie("T9 : SetCellImage, state : bg présent, image partie", fond.code === 0 && casesDe(2).some((c) => c.bg === asset.id) && imgDe(2) === undefined, fond.brut);
   verifie("T9 : undo : image revenue, liée, sans fond", casesDe(4).every((c) => c.bg === undefined) && imgDe(4)?.cell?.[2] === lien[2], fond.brut);
+  // personnalisation-3 (D4) : SetTableLineSizes, l'objet logé suit, undo en une étape.
+  const taillesAvant = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ op: "state" }));
+  const yForme = (r, i) => (r.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === forme.id)?.transform?.[5];
+  const ligne0 = tab.table.rows[0].id;
+  const tailles = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "SetTableLineSizes", id: tab.id, cols: [], rows: [[ligne0, 100]] },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+  ));
+  const hauteurDe = (r, i) => (r.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id)?.table?.rows?.find((l) => l.id === ligne0)?.height;
+  const h0 = hauteurDe(taillesAvant, 0);
+  verifie("D4 : SetTableLineSizes change la hauteur de la ligne", tailles.code === 0 && h0 !== 100 && hauteurDe(tailles, 1) === 100, tailles.brut);
+  verifie("D4 : l'objet logé suit la ligne agrandie", yForme(tailles, 1) === yForme(taillesAvant, 0) + (100 - h0), tailles.brut);
+  verifie("D4 : undo, une étape : hauteur et objet reviennent", hauteurDe(tailles, 3) === h0 && yForme(tailles, 3) === yForme(taillesAvant, 0), tailles.brut);
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);
