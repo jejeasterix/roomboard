@@ -143,10 +143,11 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-toast-ok { display: grid; place-items: center; flex: none; inline-size: 32px; block-size: 32px; border-radius: 50%; background: var(--rf-success); color: var(--rf-white); }
 .rb-toast b { font-weight: 600; color: var(--rf-violet-700); }
 /* design-l2 (L2-15, D-DS2) : panneaux passagers en îlot (rayon 12, filet, ombre) ; Réglages et Grille sous la rangée
-   du haut (88 px), à gauche ; Image à droite (C5, I26, inchangé). */
-.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: calc(100% - 32px); max-height: calc(100% - 104px); overflow: auto; background: var(--rf-white); border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); margin: 88px 0 0 16px; }
+   du haut (88 px), à gauche ; Image à droite (C5, I26, inchangé). T16 : 16 px sous l'îlot d'outils quand il descend sur
+   la voie suivante (--rb-pop-top, posé par App depuis IslandLayer ; 88 px sinon). */
+.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: calc(100% - 32px); max-height: calc(100% - var(--rb-pop-top, 88px) - 16px); overflow: auto; background: var(--rf-white); border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); margin: var(--rb-pop-top, 88px) 0 0 16px; }
 /* Panneau de l'image (C5, I26) : calé à droite, l'image déposée au centre ou à gauche reste visible. */
-.rb-popover[data-panel="image"] { justify-self: end; margin: 88px 16px 0 0; }
+.rb-popover[data-panel="image"] { justify-self: end; margin: var(--rb-pop-top, 88px) 16px 0 0; }
 /* Panneau de la bibliothèque (C4, D15) : recouvre la scène sur toute sa hauteur, calé à droite. */
 .rb-popover[data-panel="library"] { justify-self: end; align-self: stretch; width: min(360px, 40vw); max-width: 100%; max-height: 100%; margin: 0; border-radius: 0; }
 .rb-library { display: flex; flex-direction: column; gap: 8px; padding: 8px; }

@@ -118,11 +118,13 @@ export async function openSideOf(page, sel) {
   return true;
 }
 /** design-l2 (L2-26) : clic sur l'élément `id`, menu ouvert d'abord s'il le faut (fichier, export, Grille, Réglages),
- *  barre latérale des pages dépliée d'abord si l'élément y est (page-add, page-remove...). */
+ *  barre latérale des pages dépliée d'abord si l'élément y est (page-add, page-remove...), puis repliée si c'est elle
+ *  qui l'a dépliée (T16, comme `pageTo`) : la scène reste libre aux coordonnées de dessin des essais. */
 export async function clickItem(page, id) {
   await openMenuOf(page, id);
-  await openSideOf(page, item(id));
+  const opened = await openSideOf(page, item(id));
   await page.click(item(id));
+  if (opened) await page.click('[data-island="pages"] [data-island-collapse]');
 }
 /** Va à la page `n` (1 à N) par sa miniature `.rb-pages-list [data-page="n"]` ; déplie la barre latérale si besoin, puis
  *  la replie si c'est elle qui l'a dépliée. */

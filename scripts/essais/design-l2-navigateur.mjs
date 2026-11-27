@@ -222,7 +222,8 @@ async function s1(browser, base) {
     const clash = clashes(boxes);
     check(clash.length === 0, `S1 ${vp.width} : aucun îlot n'en recouvre un autre${clash.length ? ` (${clash.join(", ")})` : ""}`);
     // OF83 : la page ajustée commence sous les îlots du haut (maquette 01 : y 152), à l'ouverture et après « Ajuster la page ».
-    const low = Math.max(...Object.values(boxes).filter((b) => b.y < vp.height / 4 && b.height < vp.height / 3).map((b) => b.y + b.height));
+    // personnalisation-1a (décision 10) : la barre latérale (îlot `pages`, ancre side-*) ne compte pas dans le haut réservé.
+    const low = Math.max(...Object.entries(boxes).filter(([k, b]) => k !== "pages" && b.y < vp.height / 4 && b.height < vp.height / 3).map(([, b]) => b.y + b.height));
     const pageTop = async () => Number((await page.getAttribute("#stage", "data-camera")).split(",")[2]);
     const open = await pageTop();
     // Rangée de préréglages du stylo présente : le haut réservé tombe 12 px sous elle, ni plus ni moins.

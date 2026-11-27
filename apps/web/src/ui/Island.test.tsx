@@ -244,10 +244,10 @@ describe("Island (design-l2 L2-7 à L2-16)", () => {
 });
 
 describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
-  function layer(bars: readonly Bar[]) {
+  function layer(bars: readonly Bar[], onTopFree?: (y: number) => void) {
     const rendered = vi.fn((b: Bar, c: Accessor<boolean>) => <div data-toolbar={b.id} data-c={c() ? "1" : "0"} />);
     const r = render(() => (
-      <IslandLayer bars={() => bars} render={rendered} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} />
+      <IslandLayer bars={() => bars} render={rendered} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} {...(onTopFree !== undefined ? { onTopFree } : {})} />
     ));
     const ids = (sel: string): (string | null)[] => [...r.container.querySelectorAll(sel)].map((e) => e.getAttribute("data-island"));
     return { ...r, rendered, ids };
@@ -309,8 +309,11 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
       vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
         return at(folded)(this);
       });
-      const { container, unmount } = layer([bar("menu", "menu"), bar("outils", "tools"), bar("panneaux", "panels"), bar("pages", "pages", folded)]);
+      const onTopFree = vi.fn();
+      const { container, unmount } = layer([bar("menu", "menu"), bar("outils", "tools"), bar("panneaux", "panels"), bar("pages", "pages", folded)], onTopFree);
       await Promise.resolve();
+      // T16 (design-l4) : les panneaux passagers se posent 16 px sous l'outil descendu (bas à 136), pas à 88 sur lui
+      expect(onTopFree).toHaveBeenLastCalledWith(136 + 16);
       const tools = container.querySelector<HTMLElement>('[data-island="outils"]')!;
       const pages = container.querySelector<HTMLElement>('[data-island="pages"]')!;
       expect(pos(tools)).toEqual(["170px", "80px"]);

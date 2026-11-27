@@ -218,13 +218,25 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await page.keyboard.press("Escape");
   const box0 = await stageBox(page, 640);
   check(box0.height >= 640, `S4 : scène de ${Math.round(box0.width)} × ${Math.round(box0.height)} px (hauteur ≥ 640) avec les deux actions`);
-  await openSideOf(page, ".rb-pages-list"); // la liste se mesure barre latérale dépliée
+  const unfolded = await openSideOf(page, ".rb-pages-list"); // la liste se mesure barre latérale dépliée
+  // T16 : mesurée selon son axe de défilement (liste en colonne dans la barre latérale : la hauteur qu'elle peut prendre,
+  // bornée par son max-block-size et par la place laissée dans l'îlot ; en rangée : sa largeur), même intention.
   const list = await page.evaluate(() => {
     const l = document.querySelector(".rb-pages-list");
     const b = l?.querySelector("button");
-    return { visible: l?.clientWidth ?? 0, button: b?.getBoundingClientRect().width ?? 0, first: b ? l.getBoundingClientRect().left <= b.getBoundingClientRect().left + 0.5 && b.getBoundingClientRect().right <= l.getBoundingClientRect().right + 0.5 : false };
+    if (!l || !b) return { visible: 0, button: 0, first: false, axis: "?" };
+    const lr = l.getBoundingClientRect();
+    const br = b.getBoundingClientRect();
+    if (!getComputedStyle(l).flexDirection.startsWith("column")) {
+      return { visible: l.clientWidth, button: br.width, first: lr.left <= br.left + 0.5 && br.right <= lr.right + 0.5, axis: "largeur" };
+    }
+    const isl = l.closest(".rb-island");
+    const room = isl ? (Number.parseFloat(isl.style.maxBlockSize) || Infinity) - isl.getBoundingClientRect().height : 0;
+    const max = Number.parseFloat(getComputedStyle(l).maxBlockSize) || Infinity;
+    return { visible: Math.min(max, l.clientHeight + Math.max(0, room)), button: br.height, first: lr.top <= br.top + 0.5 && br.bottom <= lr.bottom + 0.5, axis: "hauteur" };
   });
-  check(list.button > 0 && list.visible >= 3 * list.button && list.first, `S4 : liste des pages de ${Math.round(list.visible)} px visibles (≥ 3 boutons de ${Math.round(list.button)} px), le bouton « 1 » entier`);
+  check(list.button > 0 && list.visible >= 3 * list.button && list.first, `S4 : liste des pages de ${Math.round(list.visible)} px visibles en ${list.axis} (≥ 3 miniatures de ${Math.round(list.button)} px), la miniature « 1 » entière`);
+  if (unfolded) await page.click('[data-island="pages"] [data-island-collapse]'); // T16 : repliée, la scène reste libre
 
   // S1 : .iwb ZIP.
   const k273 = dialogs.length;
