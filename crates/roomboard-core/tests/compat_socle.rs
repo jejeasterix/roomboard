@@ -75,9 +75,7 @@ fn socle_document() -> Document {
     })
     .expect("texte");
     let p2 = d
-        .apply(Command::AddPage {
-            after: Some(p1.clone()),
-        })
+        .apply(Command::add_page(Some(p1.clone())))
         .expect("page")
         .pages[0]
         .clone();

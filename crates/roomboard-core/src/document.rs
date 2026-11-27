@@ -17,9 +17,9 @@ use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 use crate::element::ImageView;
 use crate::element::{
     backdrop_view, finite_positive, out_f64, out_string, out_transform, read_backdrop, read_group,
-    read_image, read_style, read_unknown, unknown_view, ElementView, FillView, PageView, ShapeView,
-    StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND,
-    SCHEMA,
+    read_image, read_style, read_unknown, unknown_view, ElementView, FillView, PageLayout,
+    PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH, INFINITE_MODE,
+    PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
@@ -76,16 +76,31 @@ fn roots(doc: &Doc) -> (MapRef, ArrayRef, MapRef) {
     )
 }
 
-pub(crate) fn insert_page(pages: &ArrayRef, txn: &mut TransactionMut, index: u32) -> String {
+/// Page neuve à `index` : Portrait porte `PORTRAIT_HEIGHT`, Infini `mode = "infinite"` ; `None` et Paysage
+/// n'écrivent jamais `mode` (absent = Page).
+pub(crate) fn insert_page(
+    pages: &ArrayRef,
+    txn: &mut TransactionMut,
+    index: u32,
+    layout: Option<PageLayout>,
+) -> String {
     let id = yrs::uuid_v4();
-    let page = MapPrelim::from([
+    let height = if layout == Some(PageLayout::Portrait) {
+        PORTRAIT_HEIGHT
+    } else {
+        PAGE_HEIGHT
+    };
+    let mut fields = vec![
         ("id", In::from(id.clone())),
         ("width", In::from(PAGE_WIDTH)),
-        ("height", In::from(PAGE_HEIGHT)),
+        ("height", In::from(height)),
         ("background", In::from(DEFAULT_BACKGROUND)),
         ("elements", In::Array(ArrayPrelim::from(Vec::<In>::new()))),
-    ]);
-    pages.insert(txn, index, page);
+    ];
+    if layout == Some(PageLayout::Infinite) {
+        fields.push(("mode", In::from(INFINITE_MODE)));
+    }
+    pages.insert(txn, index, fields.into_iter().collect::<MapPrelim>());
     id.to_string()
 }
 
@@ -139,10 +154,15 @@ impl Document {
 
     /// Document de démarrage : une page, créée sans origine avant `History` (D37).
     pub fn blank() -> Self {
+        Self::blank_with(None)
+    }
+
+    /// Document de démarrage dont la page a la disposition `layout` ; rien ne s'annule (D37).
+    pub fn blank_with(layout: Option<PageLayout>) -> Self {
         let (doc, meta, pages, assets) = Self::bare();
         {
             let mut txn = doc.transact_mut();
-            insert_page(&pages, &mut txn, 0);
+            insert_page(&pages, &mut txn, 0, layout);
         }
         Self::assemble(doc, meta, pages, assets)
     }
@@ -173,7 +193,7 @@ impl Document {
             let mut txn = doc.transact_mut();
             for (i, &(w, h)) in sizes.iter().enumerate() {
                 let index = i as u32;
-                insert_page(&pages, &mut txn, index);
+                insert_page(&pages, &mut txn, index, None);
                 if let Some(Out::YMap(page)) = pages.get(&txn, index) {
                     let mut fields = vec![
                         ("asset", In::from(asset.id.as_str())),
@@ -211,7 +231,7 @@ impl Document {
         let index = index.min(self.page_count());
         let id = {
             let mut txn = self.doc.transact_mut_with(LOCAL);
-            insert_page(&self.pages, &mut txn, index)
+            insert_page(&self.pages, &mut txn, index, None)
         };
         self.bump();
         id
@@ -245,6 +265,11 @@ impl Document {
             background: out_string(m.get(&txn, "background"))?,
             backdrop: read_backdrop(&txn, &m).and_then(|r| backdrop_view(r, width)),
             grid: grid::read(&txn, &m),
+            // Valeur inconnue : lue Page, jamais une page illisible (U3).
+            mode: match out_string(m.get(&txn, "mode")).as_deref() {
+                Some(INFINITE_MODE) => INFINITE_MODE.into(),
+                _ => "page".into(),
+            },
         })
     }
 

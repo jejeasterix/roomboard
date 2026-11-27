@@ -2,16 +2,19 @@
 //! effet (gomme qui ne touche rien) n'ouvre aucune transaction d'écriture : aucune étape vide (D38).
 use std::collections::BTreeSet;
 
+use yrs::types::AsPrelim;
 use yrs::{
     Any, Array, ArrayRef, GetString, In, Map, MapPrelim, MapRef, Out, ReadTxn, TextPrelim, TextRef,
 };
 
 use crate::asset::{is_asset_id, AssetRef};
+use crate::copy::reinsert_kept;
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
     apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, out_bytes, out_f64,
     out_string, out_transform, read_backdrop, read_group, read_style, style_fields,
-    transform_to_any, StrokeStyle, Transform, FIT_WIDTH, IDENTITY,
+    transform_to_any, PageLayout, StrokeStyle, Transform, FIT_WIDTH, IDENTITY, INFINITE_MODE,
+    PAGE_HEIGHT, PORTRAIT_HEIGHT,
 };
 use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
@@ -30,8 +33,23 @@ pub enum EraseMode {
 pub enum Command {
     AddPage {
         after: Option<String>,
+        mode: Option<PageLayout>,
     },
     RemovePage {
+        page: String,
+    },
+    /// Disposition d'une page (décisions 3, 4, 6) : une étape ; même valeur : aucune (D38).
+    SetPageMode {
+        page: String,
+        mode: PageLayout,
+    },
+    /// Déplace une page au rang final `to` en gardant son id et ceux de ses éléments (DA2) ; une étape.
+    MovePage {
+        page: String,
+        to: u32,
+    },
+    /// Recopie une page juste après elle, ids neufs (décision 7) ; une étape.
+    DuplicatePage {
         page: String,
     },
     CommitStroke {
@@ -261,6 +279,13 @@ pub enum Command {
     },
 }
 
+impl Command {
+    /// Page neuve sans disposition (Paysage, `mode` absent).
+    pub fn add_page(after: Option<String>) -> Command {
+        Command::AddPage { after, mode: None }
+    }
+}
+
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BackdropInput {
@@ -301,6 +326,7 @@ pub enum CommandError {
     BadMedia,
     BadImageParams,
     BadModel3d,
+    BadIndex,
 }
 
 impl std::fmt::Display for CommandError {
@@ -371,6 +397,7 @@ impl std::fmt::Display for CommandError {
                 f,
                 "objet 3D invalide (format glb, gltf, obj, stl ou ply, boîte finie > 0, pitch de −85° à 85°, yaw dans ]−180°, 180°], 256 fichiers liés au plus, chemins de 1 à 1 024 caractères normalisés et uniques attendus)"
             ),
+            CommandError::BadIndex => write!(f, "rang de page hors bornes"),
         }
     }
 }
@@ -614,8 +641,11 @@ impl Document {
 
     pub fn apply(&mut self, cmd: Command) -> Result<Change, CommandError> {
         let change = match cmd {
-            Command::AddPage { after } => self.cmd_add_page(after.as_deref()),
+            Command::AddPage { after, mode } => self.cmd_add_page(after.as_deref(), mode),
             Command::RemovePage { page } => self.cmd_remove_page(&page),
+            Command::SetPageMode { page, mode } => self.cmd_set_page_mode(&page, mode),
+            Command::MovePage { page, to } => self.cmd_move_page(&page, to),
+            Command::DuplicatePage { page } => self.cmd_duplicate_page(&page),
             Command::CommitStroke {
                 page,
                 points,
@@ -1177,7 +1207,11 @@ impl Document {
         }
     }
 
-    fn cmd_add_page(&mut self, after: Option<&str>) -> Result<Change, CommandError> {
+    fn cmd_add_page(
+        &mut self,
+        after: Option<&str>,
+        mode: Option<PageLayout>,
+    ) -> Result<Change, CommandError> {
         let index = match after {
             Some(a) => {
                 self.page_index(a)
@@ -1188,7 +1222,7 @@ impl Document {
         };
         let id = {
             let mut txn = self.transact_local();
-            insert_page(self.pages_ref(), &mut txn, index)
+            insert_page(self.pages_ref(), &mut txn, index, mode)
         };
         Ok(self.done(Change {
             pages: vec![id],
@@ -1214,6 +1248,88 @@ impl Document {
             removed,
             ..Default::default()
         }))
+    }
+
+    /// Paysage et Portrait : `mode` retiré s'il vaut `"infinite"` (valeur inconnue gardée, U3) et hauteur écrite ;
+    /// Infini : `mode` écrit, hauteur gardée (décision 6). Même disposition : aucune étape (D38).
+    fn cmd_set_page_mode(
+        &mut self,
+        page: &str,
+        layout: PageLayout,
+    ) -> Result<Change, CommandError> {
+        let (infinite, height) = {
+            let txn = self.read();
+            let (_, m) = self
+                .find_page(&txn, page)
+                .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+            (
+                out_string(m.get(&txn, "mode")).as_deref() == Some(INFINITE_MODE),
+                out_f64(m.get(&txn, "height")),
+            )
+        };
+        let target_h = match layout {
+            PageLayout::Portrait => PORTRAIT_HEIGHT,
+            _ => PAGE_HEIGHT,
+        };
+        let same = match layout {
+            PageLayout::Infinite => infinite,
+            _ => !infinite && height == Some(target_h),
+        };
+        if same {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            let (_, m) = self.find_page(&txn, page).expect("page lue plus haut");
+            match layout {
+                PageLayout::Infinite => {
+                    m.insert(&mut txn, "mode", INFINITE_MODE);
+                }
+                _ => {
+                    if infinite {
+                        m.remove(&mut txn, "mode");
+                    }
+                    m.insert(&mut txn, "height", target_h);
+                }
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
+            ..Default::default()
+        }))
+    }
+
+    /// Retire la page puis réinsère sa recopie complète (`id` compris, DA2) au rang final `to`, dans une transaction :
+    /// sélection, caméra par page et cache des contours restent valides. Même rang : aucune étape (D38).
+    fn cmd_move_page(&mut self, page: &str, to: u32) -> Result<Change, CommandError> {
+        let from = self
+            .page_index(page)
+            .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+        if to >= self.page_count() {
+            return Err(CommandError::BadIndex);
+        }
+        if to == from {
+            return Ok(self.unchanged());
+        }
+        let prelim = {
+            let txn = self.read();
+            let (_, m) = self.find_page(&txn, page).expect("page lue plus haut");
+            m.as_prelim(&txn)
+        };
+        {
+            let mut txn = self.transact_local();
+            reinsert_kept(self.pages_ref(), &mut txn, vec![(from, prelim)], to);
+        }
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
+            ..Default::default()
+        }))
+    }
+
+    /// Recopie de la page juste après elle (ids neufs, champs inconnus gardés) : une étape ; `Change.pages` = [copie].
+    fn cmd_duplicate_page(&mut self, page: &str) -> Result<Change, CommandError> {
+        let tmp = self.extract_page(page)?;
+        self.insert_pages(&tmp, page)
     }
 
     fn cmd_commit_stroke(
@@ -1715,15 +1831,9 @@ pub(crate) mod tests {
     fn add_page_after_inserts_next() {
         let mut d = Document::blank();
         let p0 = first(&d);
-        let last = d
-            .apply(Command::AddPage { after: None })
-            .expect("ajout")
-            .pages[0]
-            .clone();
+        let last = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
         let mid = d
-            .apply(Command::AddPage {
-                after: Some(p0.clone()),
-            })
+            .apply(Command::add_page(Some(p0.clone())))
             .expect("ajout")
             .pages[0]
             .clone();
@@ -1733,11 +1843,7 @@ pub(crate) mod tests {
     #[test]
     fn remove_page_then_undo_restores_its_stroke() {
         let mut d = Document::blank();
-        let p1 = d
-            .apply(Command::AddPage { after: None })
-            .expect("ajout")
-            .pages[0]
-            .clone();
+        let p1 = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
         let id = commit(&mut d, &p1, hline(100.0));
         let before = bits(&d.stroke_points(&id));
         let c = d
@@ -1803,7 +1909,11 @@ pub(crate) mod tests {
         let v = d.page(&p).expect("page");
         assert_eq!((v.mode.as_str(), v.height), ("page", PORTRAIT_HEIGHT));
         assert!((PORTRAIT_HEIGHT - 3413.333).abs() < 0.001);
-        assert_eq!(raw_mode(&d, &p).as_deref(), Some("frame"), "valeur inconnue gardée (U3)");
+        assert_eq!(
+            raw_mode(&d, &p).as_deref(),
+            Some("frame"),
+            "valeur inconnue gardée (U3)"
+        );
     }
 
     #[test]
@@ -1831,7 +1941,11 @@ pub(crate) mod tests {
         set_mode(&mut d, &p, PageLayout::Landscape);
         let v = d.page(&p).expect("page");
         assert_eq!((v.mode.as_str(), v.height), ("page", 1080.0));
-        assert_eq!(raw_mode(&d, &p), None, "retour en Page : champ retiré, jamais \"page\"");
+        assert_eq!(
+            raw_mode(&d, &p),
+            None,
+            "retour en Page : champ retiré, jamais \"page\""
+        );
         assert!(d.undo());
         let v = d.page(&p).expect("page");
         assert_eq!((v.mode.as_str(), v.height), ("infinite", PORTRAIT_HEIGHT));
@@ -1934,9 +2048,9 @@ pub(crate) mod tests {
                 to: 0,
             })
             .expect("déplacement");
-        assert_eq!(n.since(), 1, "un déplacement = une transaction");
         assert_eq!(d.page_ids(), vec![c.clone(), a.clone(), b.clone()]);
         assert_eq!(d.element_ids(&c), vec![s1.clone(), s2.clone()]);
+        assert_eq!(n.since(), 1, "un déplacement = une transaction");
         assert_eq!(d.page(&c), before, "tous les champs de page gardés");
         assert_eq!(ch.pages, vec![c.clone()]);
         assert!(ch.ids.is_empty() && ch.removed.is_empty());
@@ -1979,7 +2093,10 @@ pub(crate) mod tests {
             Err(CommandError::BadIndex)
         );
         assert_eq!(n.since(), 0);
-        assert_eq!(CommandError::BadIndex.to_string(), "rang de page hors bornes");
+        assert_eq!(
+            CommandError::BadIndex.to_string(),
+            "rang de page hors bornes"
+        );
         assert_eq!(d.page_ids()[0], a);
     }
 
@@ -2102,11 +2219,7 @@ pub(crate) mod tests {
                 page: "nope".into()
             })
             .is_err());
-        assert!(d
-            .apply(Command::AddPage {
-                after: Some("nope".into())
-            })
-            .is_err());
+        assert!(d.apply(Command::add_page(Some("nope".into()))).is_err());
         assert!(d
             .apply(Command::CommitStroke {
                 page: "nope".into(),
@@ -2264,7 +2377,7 @@ pub(crate) mod tests {
             })
             .expect("commit");
         assert_eq!(c1.version, 1);
-        let c2 = d.apply(Command::AddPage { after: None }).expect("ajout");
+        let c2 = d.apply(Command::add_page(None)).expect("ajout");
         assert_eq!(c2.version, 2);
     }
 
@@ -3955,9 +4068,7 @@ pub(crate) mod tests {
         )
         .expect("grille");
         let q = d
-            .apply(Command::AddPage {
-                after: Some(p.clone()),
-            })
+            .apply(Command::add_page(Some(p.clone())))
             .expect("page")
             .pages[0]
             .clone();
@@ -4122,9 +4233,7 @@ pub(crate) mod tests {
         let a = rect_at(&mut d, &p, 0.0);
         let b = rect_at(&mut d, &p, 100.0);
         let q = d
-            .apply(Command::AddPage {
-                after: Some(p.clone()),
-            })
+            .apply(Command::add_page(Some(p.clone())))
             .expect("page")
             .pages[0]
             .clone();
