@@ -82,19 +82,21 @@ async function scenario(page, url, { captures, tmp }) {
   await fr();
 
   // S1 : un rectangle, un trait et un texte (cadrage), sélectionnés, groupés (geste de c3-groupes-navigateur.mjs).
+  // OG19 : à 1280, l'îlot d'outils reste en haut et le panneau d'options replié remonte en (80, 80) à (136, 136) :
+  // les gestes partent 100 px plus à droite, hors de lui.
   await page.click(item("rect"));
-  await drag(120, 120, 220, 200);
+  await drag(220, 120, 320, 200);
   await page.click(item("pen"));
-  await drag(120, 260, 360, 260);
+  await drag(220, 260, 460, 260);
   await page.click(item("text"));
   await fr();
-  await mouse.click(260, 140);
+  await mouse.click(360, 140);
   await page.waitForSelector("#texte-edition", { state: "visible", timeout: 5000 });
   await page.keyboard.type("1/2");
   await page.click(item("select")); // le blur valide le texte
   await waitAttr("data-elements", "3");
   await fr();
-  await drag(90, 90, 760, 330);
+  await drag(190, 90, 860, 330);
   await waitAttr("data-selection", "3");
   await page.keyboard.press("Control+g");
   await waitAttr("data-grouped", "1");
