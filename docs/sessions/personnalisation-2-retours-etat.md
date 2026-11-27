@@ -4,7 +4,7 @@ Statut : en cours
 Gabarit : chantier (14 tâches, lots A T1-T9 et B T10-T14)
 Objectif : Le panneau d'options de RoomBoard range ses sections en accordéon et donne à Jérôme couleurs avancées et transparentes, pression du stylo, organiser, aligner, transformer, dupliquer, « Glisser une copie » et des options propres à chaque type d'objet (image : rogner, effacer le fond).
 Avancement : 14/14 tâches du plan terminées · correctifs T15-T22 et second tour terminés
-Étage : 4 (clôture : verifier --e2e après fusion de origin/main, PR, fusion) — depuis 2026-11-27 23:00
+Étage : 4 (fusion dans main) — depuis 2026-11-28 00:32
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -58,6 +58,7 @@ Lancement 18:45 CET · borne 01:15 · repli à 01:05 (pousser, état, premier lo
 - ImagePanel : `on(props.version)` se relance à chaque nouvel état, même à version égale (cause du défaut S6.3).
 
 ## Hypothèses à revoir
+- Module principal passé à wasm-opt -Oz (banc de vitesse du chemin de l'encre non fait).
 - Enveloppe Wasm du chantier (cadrage : +20 000 o) portée à +32 000 o (≤ 1 472 761 o) : T1 seul fait +24 076 o ; le plafond fixe de 1 572 864 o reste intact. Prise par l'orchestrateur.
 - Contre-relecture du cadrage : un seul tour (aucun bloquant au tour 1), pour le temps.
 - Relecture du plan : un tour, lancée en parallèle de la vague 1 (aucun défaut ne touchait T1 et T3 ; B1 corrigé avant T5).
@@ -67,7 +68,10 @@ Lancement 18:45 CET · borne 01:15 · repli à 01:05 (pousser, état, premier lo
 - origin/main avait avancé (OG12 PR 71, OG25, OG24, OG27) : fusion 423903ab, 31 conflits tranchés (Alt+Maj+flèche : séance de points d'OG12, puis objet relié sur une forme seule, sinon Aligner ; « + » du haut cédé à la poignée Déplacer).
 - verifier.sh --e2e sur 423903ab : tests unitaires verts (cargo 1682, web 4620, cli 290) ; essai c2-image en délai sous charge, rejoué seul : OK ; suite complète relancée.
 - Tailles : Wasm principal 1 440 761 → 1 467 735 o (OG23 seul) → 1 540 581 o avec OG12 ; formats 2 794 527 → 2 795 895 o.
-- Prochaine tâche exacte si interruption : relire ~/.cache/tmp/og23-ref/verifier-e2e-4.log ; si code=0, ouvrir la PR (corps ~/.cache/tmp/og23-ref/pr.md), git fetch, merge --no-ff local dans main, push sans --force.
+- Seconde fusion de origin/main (OG26 tableau, PR 72 et 74) : ca6632d3. Module principal à 1 598 137 o > plafond ; décision : wasm-opt -Oz aussi sur le module principal (ed8d5807) → 1 456 551 o.
+- Essais existants ajustés au parcours de l'accordéon : personnalisation-2 S5.1 (Tab sur le segment), outils-excalidraw (amorce openOptionSections dans gestes.mjs).
+- verifier.sh --e2e : OK sur ed8d5807 (cargo 1738, web 4741, cli 291, 2319 lignes « ok — ») ; délais sous charge vus une fois chacun (c2-image, c6b) puis verts.
+- PR #73. Prochaine tâche exacte si interruption : fusion locale --no-ff de feat/personnalisation-2-retours dans main (~/projets/roomboard), push sans --force, puis nettoyage des worktrees.
 
 ## Hors périmètre
 - Édition des points et connecteurs : livrés par OG12 (PR 71), intégrés ; sa section « Type de flèche » est dans l'accordéon.
@@ -76,3 +80,7 @@ Lancement 18:45 CET · borne 01:15 · repli à 01:05 (pousser, état, premier lo
 
 ## Portes
 ouvertes : — · passées : —
+
+## Notes du coffre à poser
+
+Voir la description de la PR #73 (cinq blocs : journal, trois décisions, segment de la ligne 21 de la fiche).
