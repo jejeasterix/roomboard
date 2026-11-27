@@ -51,10 +51,10 @@ const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", too
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 87 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils et les îlots", () => {
+  it("ICONS : 88 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils et les îlots", () => {
     const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...OPTION_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(87);
+    expect(Object.keys(ICONS)).toHaveLength(88);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -74,12 +74,12 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
   it("calage : viewBox -0.25 -0.25 24 24", () => {
     expect(ICON_VIEWBOX).toBe("-0.25 -0.25 24 24");
   });
-  it("chaque outil et chaque action connus ont une icône de la table (11 + 37)", () => {
+  it("chaque outil et chaque action connus ont une icône de la table (11 + 39)", () => {
     expect(Object.keys(TOOL_ICONS).sort()).toEqual(Object.keys(TOOL_TABLE).sort());
     expect(Object.keys(ACTION_ICONS).sort()).toEqual(Object.keys(ACTION_TABLE).sort());
     for (const name of [...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS)]) expect(Object.hasOwn(ICONS, name), name).toBe(true);
     expect(Object.keys(TOOL_ICONS)).toHaveLength(11);
-    expect(Object.keys(ACTION_ICONS)).toHaveLength(37);
+    expect(Object.keys(ACTION_ICONS)).toHaveLength(39);
   });
   it("balises admises, attributs en chaînes non vides", () => {
     for (const [name, node] of Object.entries(ICONS)) {

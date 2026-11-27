@@ -116,6 +116,8 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "file-save": { label: "Enregistrer" },
   "file-save-as": { label: "Enregistrer sous" },
   settings: { label: "Réglages" },
+  help: { label: "Aide" },
+  "page-clear": { label: "Effacer la page" },
   profiles: { label: "Profil" },
   grid: { label: "Grille" },
   library: { label: "Bibliothèque" },

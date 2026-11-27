@@ -146,6 +146,8 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
     importFiles: () => undefined,
     toggle: () => undefined,
     insertPages: () => undefined,
+      pageElementIds: () => [],
+      confirm: async () => false,
     selection: () => undefined,
   };
   const host = createLocalToolbarHost(targets, () => profile);

@@ -34,6 +34,8 @@ import { PagesBar } from "./PagesBar";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
 import { GridPanel } from "./GridPanel";
+import { HelpPanel } from "./HelpPanel";
+import { isHelpKey } from "./shortcuts";
 import { ImagePanel } from "./ImagePanel";
 import { LibraryPanel, type SharedFolder } from "./LibraryPanel";
 import type { ResourceLibrary } from "../app/library";
@@ -77,7 +79,7 @@ export interface AppProps {
   readonly device?: DeviceSettings;
 }
 
-type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library";
+type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library" | "help";
 
 export function App(props: AppProps): JSX.Element {
   const ws = props.workspace;
@@ -141,6 +143,15 @@ export function App(props: AppProps): JSX.Element {
   };
   follow();
   const stopTabs = ws.tabs.onChange(follow);
+  // « ? » ouvre l'Aide (hors champ, sans Ctrl ni Alt, hors composition) ; l'écoute est ici : le panneau est à l'état de la page.
+  const helpKey = (e: KeyboardEvent): void => {
+    if (!isHelpKey(e) || annotating()) return;
+    e.preventDefault();
+    leaveEditor(() => setPanel((cur) => (cur === "help" ? null : "help")));
+  };
+  const helpDoc = props.stages.ownerDocument;
+  helpDoc.addEventListener("keydown", helpKey);
+  onCleanup(() => helpDoc.removeEventListener("keydown", helpKey));
   const stopClipboard = ws.onClipboard(() => bump());
   onCleanup(() => {
     stopClipboard();
@@ -308,6 +319,8 @@ export function App(props: AppProps): JSX.Element {
       importFiles: (files, at) => void (ann !== undefined && annotating() ? ann.control.dropOnZone(files, at ?? null) : ws.importFiles(files, at)),
       insertPages: () => void ws.insertPages(),
       exportPdf: () => void ws.exportPdf(),
+      pageElementIds: () => ws.active().board.doc.elementIds(ws.active().board.engine.state().page),
+      confirm: (m) => props.shell.confirm(m),
       exportBoard: (format) => void ws.exportBoard(format),
       editOriginal: () => void ws.editOriginal(),
       selection: (a) => ws.selection(a),
@@ -587,6 +600,11 @@ export function App(props: AppProps): JSX.Element {
             </div>
           );
         }}
+      </Show>
+      <Show when={panel() === "help"}>
+        <div class="rb-popover rb-help">
+          <HelpPanel close={() => setPanel(null)} />
+        </div>
       </Show>
       <Show when={panel() === "grid"}>
         <div class="rb-popover">{gridPanelFor(ws.active().board)}</div>

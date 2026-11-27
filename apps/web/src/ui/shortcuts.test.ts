@@ -30,7 +30,7 @@ describe("shortcuts", () => {
       else if (by === "object") expect(objectKey(e), s.id).toBe(value);
       else if (by === "order") expect(orderKey(e), s.id).toBe(value);
       else if (by === "edit") expect(editAction(e), s.id).toBe(value);
-      else if (by === "help") expect(isHelpKey({ ...press("?"), key: "?", shiftKey: true }), s.id).toBe(true);
+      else if (by === "help") expect(isHelpKey({ ...press("?"), key: "?" }), s.id).toBe(true);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/[ ,]/)[0]!)), s.id).toBe(true);
       else {
         // Copier, couper, coller (événements natifs) et Ctrl+B (rich-edit) : aucun reconnaisseur ne les vole.
@@ -46,7 +46,7 @@ describe("shortcuts", () => {
     expect(shortcutText("inconnu", false)).toBeNull();
   });
   it("isHelpKey : « ? » hors champ, sans Ctrl ni Alt, hors composition", () => {
-    const q = { ...press("?"), key: "?", shiftKey: true };
+    const q = { ...press("?"), key: "?" };
     expect(isHelpKey(q)).toBe(true);
     expect(isHelpKey({ ...q, ctrlKey: true })).toBe(false);
     expect(isHelpKey({ ...q, altKey: true })).toBe(false);

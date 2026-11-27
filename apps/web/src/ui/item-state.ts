@@ -23,6 +23,8 @@ export interface ToolbarView {
   readonly canRedo: boolean;
   readonly pageIndex: number;
   readonly pageCount: number;
+  /** Objets de la page montrée ; absent : inconnu (« Effacer la page » reste actif). */
+  readonly elementCount?: number;
   /** Cellule active de l'outil Tableau (C10a) ; absente ou null : aucune (PC9). */
   readonly tableCell?: TableCellState | null;
   /** État de la barre de format (C7b, R15) ; absent ou null : aucune séance de saisie (boutons grisés). */
@@ -80,6 +82,7 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   "page-prev": (v) => ({ disabled: v.pageIndex <= 0 }),
   "page-next": (v) => ({ disabled: v.pageIndex >= v.pageCount - 1 }),
   "page-remove": (v) => ({ disabled: v.pageCount <= 1 }),
+  "page-clear": (v) => ({ disabled: v.elementCount === 0 }),
   "table-row-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.rows >= TABLE_MAX_LINES }),
   "table-col-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.cols >= TABLE_MAX_LINES }),
   // Toutes les lignes (resp. colonnes) couvertes : `removeLines` ne ferait rien.
