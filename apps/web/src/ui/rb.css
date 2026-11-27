@@ -181,8 +181,6 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-island > .rb-side { overflow-x: hidden; overflow-y: auto; }
 .rb-side [hidden] { display: none; }
 .rb-side-tabs { display: flex; gap: 4px; }
-.rb-side .rb-tab { block-size: auto; min-block-size: var(--rb-btn-s); padding: 0 var(--rb-pad); }
-.rb-side .rb-tab:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 .rb-side-actions { display: flex; flex-wrap: wrap; gap: 4px; }
 .rb-side-body { display: flex; flex-direction: column; gap: var(--rb-gap); min-block-size: 0; }
 .rb-side-group { display: flex; flex-direction: column; gap: 4px; }
@@ -212,6 +210,9 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-tab-new { display: grid; place-items: center; flex: none; inline-size: 48px; block-size: 48px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
 .rb-tab-close:hover, .rb-tab-new:hover { background: var(--rf-gray-50); }
 .rb-tab:focus-visible, .rb-tab-close:focus-visible, .rb-tab-new:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+/* Onglet de la barre latérale (T10), après les règles d'onglet qu'il reprend. */
+.rb-side .rb-tab { block-size: auto; min-block-size: var(--rb-btn-s); padding: 0 var(--rb-pad); }
+.rb-side .rb-tab:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 
 /* Rangée des préréglages (C1, P18) : en fin de barre d'outils, pour l'outil actif ; pastille + libellé, sans état enfoncé. */
 .rb-preset { display: inline-flex; align-items: center; gap: var(--rb-gap); }
