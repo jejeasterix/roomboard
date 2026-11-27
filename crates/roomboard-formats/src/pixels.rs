@@ -152,12 +152,28 @@ fn ramp(alpha: u8, g: u32, tolerance: u8, soft: u8) -> u8 {
 
 /// Rend transparente la couleur `t.rgb` (I12-I14), décidée sur les couleurs d'origine ; seul l'alpha change.
 pub fn transparent_color(px: &mut [u8], w: u32, h: u32, t: &Transparent) -> Result<(), PixelError> {
+    transparent_color_from(px, w, h, t, None)
+}
+
+/// OG23 (T10) : comme `transparent_color`, depuis le point touché `seed` (pixels de `px`) : seule la zone jointe à ce
+/// point s'efface (`flood_region`), le mode contigu ou global est alors ignoré ; `None` : comportement de C5.
+pub fn transparent_color_from(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    t: &Transparent,
+    seed: Option<(u32, u32)>,
+) -> Result<(), PixelError> {
     check(px, w, h)?;
     let limit = t.tolerance.saturating_add(t.soft);
     let max = u32::from(limit) * 255;
-    let mask = t
-        .contiguous
-        .then(|| flood_region(px, w, h, &border(w, h), |p| gap100(p, t.rgb) <= max));
+    let close = |p: &[u8]| gap100(p, t.rgb) <= max;
+    let mask = match seed {
+        Some(p) => Some(flood_region(px, w, h, &[p], close)),
+        None => t
+            .contiguous
+            .then(|| flood_region(px, w, h, &border(w, h), close)),
+    };
     for (i, p) in px.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         if mask.as_ref().is_some_and(|m| !m[i]) {
             continue;

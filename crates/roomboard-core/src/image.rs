@@ -11,12 +11,19 @@ use crate::document::Document;
 use crate::element::{any_f64, out_f64, out_string, read_image, transform_to_any, Transform};
 
 /// Couleur rendue transparente (I5, I12-I14) : `color` en `#rrggbb` minuscules ; `tolerance`, `soft` de 0 à 100.
+/// OG23 (T10) : départ `x`, `y` de la baguette en pixels source, les deux ou aucun, dans l'image ; avec un départ, seule
+/// la zone jointe au point touché s'efface (`contiguous` ignoré). Un départ illisible rend toute la couleur illisible
+/// (lue absente, comme `crop`) : `plan` la réécrit alors sans lui, une fois.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TransparentView {
     pub color: String,
     pub tolerance: u8,
     pub soft: u8,
     pub contiguous: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y: Option<u32>,
 }
 
 /// Couleur transparente demandée (I6) : valeurs brutes, contrôlées par `transparent_of`.
@@ -26,6 +33,8 @@ pub struct TransparentInput {
     pub tolerance: f64,
     pub soft: f64,
     pub contiguous: bool,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
 }
 
 /// Réglages normalisés (I4, I5) : neutres à `None`, `false` ou 0 ; `crop` = `[x, y, w, h]` en pixels source, jamais
@@ -78,14 +87,25 @@ fn crop_of(c: [f64; 4], w: f64, h: f64) -> Option<Option<[u32; 4]>> {
     Some((!full).then_some([x as u32, y as u32, cw as u32, ch as u32]))
 }
 
-/// Domaine de la couleur transparente (I5).
-fn transparent_of(t: &TransparentInput) -> Option<TransparentView> {
+/// Domaine de la couleur transparente d'une image `w × h` (I5) ; départ (T10) : les deux ou aucun, entiers,
+/// `0 ≤ x < w`, `0 ≤ y < h`.
+fn transparent_of(t: &TransparentInput, w: f64, h: f64) -> Option<TransparentView> {
     parse_rgb_hex(&t.color)?;
+    let (x, y) = match (t.x, t.y) {
+        (None, None) => (None, None),
+        (Some(x), Some(y)) => (
+            Some(int_in(x, 0.0, w - 1.0)? as u32),
+            Some(int_in(y, 0.0, h - 1.0)? as u32),
+        ),
+        _ => return None,
+    };
     Some(TransparentView {
         color: t.color.clone(),
         tolerance: int_in(t.tolerance, 0.0, 100.0)? as u8,
         soft: int_in(t.soft, 0.0, 100.0)? as u8,
         contiguous: t.contiguous,
+        x,
+        y,
     })
 }
 
@@ -110,16 +130,24 @@ fn read_crop(o: Option<Out>, w: f64, h: f64) -> Option<[u32; 4]> {
     crop_of(c, w, h).flatten()
 }
 
-fn read_transparent<T: ReadTxn>(txn: &T, o: Option<Out>) -> Option<TransparentView> {
+fn read_transparent<T: ReadTxn>(txn: &T, o: Option<Out>, w: f64, h: f64) -> Option<TransparentView> {
     let Some(Out::YMap(m)) = o else {
         return None;
     };
-    transparent_of(&TransparentInput {
-        color: out_string(m.get(txn, "color"))?,
-        tolerance: out_f64(m.get(txn, "tolerance"))?,
-        soft: out_f64(m.get(txn, "soft"))?,
-        contiguous: out_bool(m.get(txn, "contiguous"))?,
-    })
+    // Départ présent mais non numérique : NaN, refusé par `transparent_of` comme un départ hors de l'image.
+    let seed = |key: &str| m.get(txn, key).map(|v| out_f64(Some(v)).unwrap_or(f64::NAN));
+    transparent_of(
+        &TransparentInput {
+            color: out_string(m.get(txn, "color"))?,
+            tolerance: out_f64(m.get(txn, "tolerance"))?,
+            soft: out_f64(m.get(txn, "soft"))?,
+            contiguous: out_bool(m.get(txn, "contiguous"))?,
+            x: seed("x"),
+            y: seed("y"),
+        },
+        w,
+        h,
+    )
 }
 
 /// Réglages de l'image `e` de taille source `w × h`, champ par champ : un champ illisible ou hors domaine est lu comme
@@ -134,7 +162,7 @@ pub(crate) fn read_params<T: ReadTxn>(txn: &T, e: &MapRef, w: f64, h: f64) -> Im
         quarter_turns: int("quarterTurns", 0.0, 3.0).map_or(0, |v| v as u8),
         brightness: int("brightness", -100.0, 100.0).map_or(0, |v| v as i8),
         contrast: int("contrast", -100.0, 100.0).map_or(0, |v| v as i8),
-        transparent: read_transparent(txn, e.get(txn, "transparent")),
+        transparent: read_transparent(txn, e.get(txn, "transparent"), w, h),
     }
 }
 
@@ -175,19 +203,24 @@ pub(crate) fn normalize(p: &ImageParamsInput, w: f64, h: f64) -> Option<ImagePar
         contrast: int_in(p.contrast, -100.0, 100.0)? as i8,
         transparent: match &p.transparent {
             None => None,
-            Some(t) => Some(transparent_of(t)?),
+            Some(t) => Some(transparent_of(t, w, h)?),
         },
     })
 }
 
-/// `transparent` en `Y.Map` de champs scalaires (I2, comme `backdrop`).
+/// `transparent` en `Y.Map` de champs scalaires (I2, comme `backdrop`) ; `x`, `y` seulement s'ils sont là (T10).
 fn transparent_prelim(t: &TransparentView) -> In {
-    In::Map(MapPrelim::from([
+    let mut fields = vec![
         ("color", In::from(t.color.as_str())),
         ("tolerance", In::Any(Any::from(f64::from(t.tolerance)))),
         ("soft", In::Any(Any::from(f64::from(t.soft)))),
         ("contiguous", In::Any(Any::Bool(t.contiguous))),
-    ]))
+    ];
+    if let (Some(x), Some(y)) = (t.x, t.y) {
+        fields.push(("x", In::Any(Any::from(f64::from(x)))));
+        fields.push(("y", In::Any(Any::from(f64::from(y)))));
+    }
+    In::Map(MapPrelim::from_iter(fields))
 }
 
 /// Écritures du passage de `cur` (lu, normalisé) à `next` : seuls les champs qui changent ; voulu neutre = champ retiré
@@ -479,6 +512,8 @@ mod tests {
                     tolerance: 10,
                     soft: 0,
                     contiguous: true,
+                    x: None,
+                    y: None,
                 }),
             }
         );
@@ -629,6 +664,8 @@ mod tests {
                 tolerance: 10,
                 soft: 2,
                 contiguous: false,
+                x: None,
+                y: None,
             }),
             ..plain.clone()
         };
