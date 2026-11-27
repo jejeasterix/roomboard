@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
+import { ARRANGE_HOWS } from "../../core/arrange";
+import { appShortcut, arrangeKey, editAction, inEditable, isPanKey, keyAction, nudgeKey, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -202,5 +203,52 @@ describe("appShortcut (personnalisation-1b, Q28)", () => {
   });
   it("Ctrl+Maj+F n'est pas une touche du moteur (annuler, grouper)", () => {
     expect(keyAction(k("F", { ctrlKey: true, shiftKey: true }))).toBeNull();
+  });
+});
+
+describe("arrangeKey (OG23, déc. 24)", () => {
+  const letter = (l: string, code: string, mods: Partial<Omit<KeyLike, "key">>, azerty: boolean): KeyLike =>
+    mods.altKey === true ? k(azerty ? "˙" : "Ó", { ...mods, code }) : k(l, { ...mods, code });
+  const SPECS: ReadonlyArray<readonly [string, "h" | "v" | "r" | "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown", Partial<Omit<KeyLike, "key">>]> = [
+    ["flip-h", "h", { shiftKey: true }], ["flip-v", "v", { shiftKey: true }], ["rotate-cw", "r", { shiftKey: true }],
+    ["rotate-ccw", "r", { altKey: true, shiftKey: true }], ["align-center", "h", { altKey: true, shiftKey: true }], ["align-middle", "v", { altKey: true, shiftKey: true }],
+    ["distribute-h", "h", { altKey: true }], ["distribute-v", "v", { altKey: true }],
+    ["align-left", "ArrowLeft", { altKey: true, shiftKey: true }], ["align-right", "ArrowRight", { altKey: true, shiftKey: true }],
+    ["align-top", "ArrowUp", { altKey: true, shiftKey: true }], ["align-bottom", "ArrowDown", { altKey: true, shiftKey: true }],
+  ];
+  it("arrangeKey AZERTY et QWERTY", () => {
+    expect(SPECS.map(([how]) => how).sort()).toEqual([...ARRANGE_HOWS].sort());
+    for (const [how, l, mods] of SPECS) {
+      const named = l.startsWith("Arrow");
+      for (const azerty of [true, false]) {
+        const e = named ? k(l, mods) : letter(mods.shiftKey === true && mods.altKey !== true ? l.toUpperCase() : l, `Key${l.toUpperCase()}`, mods, azerty);
+        expect(arrangeKey(e), `${how} ${azerty ? "AZERTY" : "QWERTY"}`).toBe(how);
+      }
+    }
+  });
+  it("arrangeKey lit code avec Alt", () => {
+    expect(arrangeKey(k("˙", { code: "KeyH", altKey: true }))).toBe("distribute-h");
+    expect(arrangeKey(k("Ó", { code: "KeyH", altKey: true, shiftKey: true }))).toBe("align-center");
+    expect(arrangeKey(k("h", { altKey: true }))).toBeNull();
+  });
+  it("arrangeKey refuse Ctrl, saisie, composition", () => {
+    expect(arrangeKey(k("H", { shiftKey: true, ctrlKey: true }))).toBeNull();
+    expect(arrangeKey(k("H", { shiftKey: true, metaKey: true }))).toBeNull();
+    expect(arrangeKey(k("H", { shiftKey: true, target: { tagName: "INPUT", type: "text" } }))).toBeNull();
+    expect(arrangeKey(k("H", { shiftKey: true, isComposing: true }))).toBeNull();
+    expect(arrangeKey(k("h"))).toBeNull();
+    expect(arrangeKey(k("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBe("front");
+  });
+  it("nudgeKey", () => {
+    expect(nudgeKey(k("ArrowLeft"))).toEqual({ dx: -1, dy: 0 });
+    expect(nudgeKey(k("ArrowRight"))).toEqual({ dx: 1, dy: 0 });
+    expect(nudgeKey(k("ArrowUp"))).toEqual({ dx: 0, dy: -1 });
+    expect(nudgeKey(k("ArrowDown", { shiftKey: true }))).toEqual({ dx: 0, dy: 5 });
+    expect(nudgeKey(k("ArrowLeft", { ctrlKey: true }))).toBeNull();
+    expect(nudgeKey(k("ArrowLeft", { metaKey: true }))).toBeNull();
+    expect(nudgeKey(k("ArrowLeft", { altKey: true }))).toBeNull();
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "TEXTAREA" } }))).toBeNull();
+    expect(nudgeKey(k("a"))).toBeNull();
   });
 });

@@ -1,6 +1,8 @@
+import type { ArrangeHow } from "../../core/arrange";
 /** Raccourcis d'annulation (D11) : Ctrl+Z, Ctrl+Y, Ctrl+Maj+Z ; Cmd sous macOS. Ctrl+G grouper, Ctrl+Maj+G dégrouper (C3, Z13). */
 export interface KeyLike {
   readonly key: string;
+  readonly code?: string;
   readonly ctrlKey: boolean;
   readonly metaKey: boolean;
   readonly shiftKey: boolean;
@@ -113,4 +115,35 @@ export function appShortcut(e: KeyLike): AppShortcut | null {
   if (e.isComposing || e.altKey || !e.shiftKey || !(e.ctrlKey || e.metaKey)) return null;
   if (inEditable(e.target)) return null;
   return e.key.toLowerCase() === "f" ? "backgrounds" : null;
+}
+
+/** OG23 (déc. 24) : avec Alt, la lettre est lue par `code` (Option+H donne « ˙ » sous macOS), sinon par `key` ; H, V, R
+ *  sont à la même place en AZERTY, QWERTY et QWERTZ. Jamais avec Ctrl ni Cmd, hors champ, hors composition. */
+export function arrangeKey(e: KeyLike): ArrangeHow | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || inEditable(e.target)) return null;
+  const letter = e.altKey ? (e.code ?? "").replace(/^Key/, "").toLowerCase() : e.key.toLowerCase();
+  if (e.altKey && e.shiftKey) {
+    if (e.key === "ArrowLeft") return "align-left";
+    if (e.key === "ArrowRight") return "align-right";
+    if (e.key === "ArrowUp") return "align-top";
+    if (e.key === "ArrowDown") return "align-bottom";
+    if (letter === "h") return "align-center";
+    if (letter === "v") return "align-middle";
+    if (letter === "r") return "rotate-ccw";
+    return null;
+  }
+  if (e.altKey) return letter === "h" ? "distribute-h" : letter === "v" ? "distribute-v" : null;
+  if (e.shiftKey) return letter === "h" ? "flip-h" : letter === "v" ? "flip-v" : letter === "r" ? "rotate-cw" : null;
+  return null;
+}
+
+/** Flèche seule : 1 px ; Maj : 5 px (Excalidraw) ; jamais avec Ctrl, Cmd ou Alt (Ctrl+flèches = Disposition d'OG4). */
+export function nudgeKey(e: KeyLike): { dx: number; dy: number } | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return null;
+  const s = e.shiftKey ? 5 : 1;
+  if (e.key === "ArrowLeft") return { dx: -s, dy: 0 };
+  if (e.key === "ArrowRight") return { dx: s, dy: 0 };
+  if (e.key === "ArrowUp") return { dx: 0, dy: -s };
+  if (e.key === "ArrowDown") return { dx: 0, dy: s };
+  return null;
 }
