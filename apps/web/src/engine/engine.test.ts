@@ -2026,6 +2026,30 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(colorOf(b)).toBe("#000000");
   });
 
+  it("arrowType sur une sélection mixte : SetStyle des seules flèches", () => {
+    const { engine, doc, addRect, sel, lookOf } = styleSetup();
+    const r = addRect();
+    const page = engine.state().page;
+    const a = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 10, y0: 10, x1: 90, y1: 60, style: PEN, fill: null }).ids[0] ?? "";
+    sel().setSelection([r, a]);
+    const v = doc.version();
+    engine.setItemStyle({ arrowType: "round" });
+    expect(lookOf(a)?.["roundness"]).toBe("round");
+    expect(lookOf(r)?.["roundness"]).toBeUndefined();
+    engine.setItemStyle({ arrowType: "elbow" });
+    expect(lookOf(a)?.["elbowed"]).toBe(true);
+    expect(lookOf(a)?.["roundness"]).toBeUndefined();
+    engine.undo();
+    engine.undo();
+    expect(lookOf(a)?.["elbowed"]).toBeUndefined();
+    expect(lookOf(a)?.["roundness"]).toBeUndefined();
+    const v2 = doc.version();
+    engine.setItemStyle({ arrowBinding: false });
+    expect(doc.version()).toBe(v2);
+    expect(engine.itemStyle().arrowBinding).toBe(false);
+    expect(v2).toBeGreaterThan(v);
+  });
+
   it("setItemStyle sans sélection : style courant seul, rien d'écrit", () => {
     const { engine, doc } = styleSetup();
     const v = doc.version();

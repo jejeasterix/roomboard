@@ -105,6 +105,16 @@ describe("tool-options lot 2 (T15)", () => {
     expect(sectionsFor("arrow", [], false)).not.toContain("layers");
     expect(sectionsFor("rect", [rect("a", "#000000")], false)).not.toContain("arrowheads");
   });
+  it("Type de flèche : section de l'outil Flèche, juste avant Pointes ; Angles pour la ligne", () => {
+    const k = sectionsFor("arrow", [], false);
+    expect(k.indexOf("arrowType")).toBe(k.indexOf("arrowheads") - 1);
+    const l = sectionsFor("line", [], false);
+    expect(l).toContain("roundness");
+    expect(l).not.toContain("arrowType");
+    const arrow = { ...rect("w", "#000000"), shape: { shape: "arrow", w: 10, h: 10, fill: null } } as unknown as ElementView;
+    expect(sectionsFor("select", [arrow], false)).toContain("arrowType");
+    expect(sectionsFor("select", [rect("a", "#000000")], false)).not.toContain("arrowType");
+  });
   it("TEXT_SIZES", () => {
     expect(TEXT_SIZES).toEqual([24, 36, 48, 72]);
   });

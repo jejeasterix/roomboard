@@ -185,15 +185,33 @@ describe("OptionsPanel lot 2 (T15)", () => {
     fireEvent.click(container.querySelector('[data-option="fillStyle"] [data-choice="hachure"]')!);
     expect(calls).toContainEqual({ fillStyle: "hachure" });
   });
-  it("Pointes : début et fin, quatre choix chacune", () => {
+  it("Pointes : début et fin, sept choix chacune", () => {
     const { container, calls } = mount({ tool: "select", selection: [arrowEl("a")] });
     const end = container.querySelectorAll('[data-option="arrowheads"] [data-edit="endArrowhead"] [data-choice]');
-    expect([...end].map((b) => b.getAttribute("data-choice"))).toEqual(["none", "arrow", "triangle", "triangle_outline"]);
+    expect([...end].map((b) => b.getAttribute("data-choice"))).toEqual(["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline"]);
     expect(container.querySelector('[data-edit="endArrowhead"] [data-choice="arrow"]')!.getAttribute("aria-checked")).toBe("true");
     expect(container.querySelector('[data-edit="startArrowhead"] [data-choice="none"]')!.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(container.querySelector('[data-edit="endArrowhead"] [data-choice="triangle"]')!);
     fireEvent.click(container.querySelector('[data-edit="startArrowhead"] [data-choice="arrow"]')!);
     expect(calls).toEqual([{ endArrowhead: "triangle" }, { startArrowhead: "arrow" }]);
+  });
+  it("Type de flèche : trois choix, écrit arrowType ; coudée enfoncée", () => {
+    const { container, calls } = mount({ tool: "arrow", selection: [] });
+    const ch = [...container.querySelectorAll('[data-option="arrowType"] [data-option-value]')].map((b) => b.getAttribute("data-option-value"));
+    expect(ch).toEqual(["sharp", "round", "elbow"]);
+    fireEvent.click(container.querySelector('[data-option="arrowType"] [data-option-value="round"]')!);
+    expect(calls).toContainEqual({ arrowType: "round" });
+    const elbow = { ...arrowEl("e"), look: { elbowed: true } } as unknown as ElementView;
+    const m = mount({ tool: "select", selection: [elbow] });
+    expect(m.container.querySelector('[data-option="arrowType"] [data-option-value="elbow"]')!.getAttribute("aria-checked")).toBe("true");
+  });
+  it("Liaison des flèches : interrupteur, écrit arrowBinding", () => {
+    const { container, calls } = mount({ tool: "arrow", selection: [] });
+    const sw = container.querySelector('[data-option="arrowheads"] [data-option-value="arrow-binding"]')!;
+    expect(sw.getAttribute("role")).toBe("switch");
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(sw);
+    expect(calls).toContainEqual({ arrowBinding: false });
   });
   it("Disposition : quatre boutons, les fonctions d'ordre d'OG4 (Restack), un appel chacun", () => {
     const { container, engine } = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
