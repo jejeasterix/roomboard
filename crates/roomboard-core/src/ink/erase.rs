@@ -3,7 +3,7 @@
 //! de chaque morceau (rayon `r`) s'arrête alors au bord de la gomme : le trou visible a son diamètre. Un trait devient
 //! 0, 1 ou plusieurs morceaux.
 use super::hit::dist_to_path;
-use super::outline::outline_radius;
+use super::outline::{outline_radius_with, InkStyle};
 use super::points::InkPoint;
 
 fn lerp(a: InkPoint, b: InkPoint, t: f32) -> InkPoint {
@@ -52,8 +52,29 @@ pub fn erase(
     path: &[f32],
     radius: f32,
 ) -> Option<Vec<Vec<InkPoint>>> {
-    let covered =
-        |p: &InkPoint| dist_to_path(path, p.x, p.y) <= radius + outline_radius(width, p.pressure);
+    erase_with(
+        points,
+        &InkStyle {
+            width,
+            constant: false,
+        },
+        path,
+        radius,
+    )
+}
+
+/// `erase` avec le style entier (OG23) : un trait à pression constante est coupé avec le rayon de son contour.
+pub fn erase_with(
+    points: &[InkPoint],
+    style: &InkStyle,
+    path: &[f32],
+    radius: f32,
+) -> Option<Vec<Vec<InkPoint>>> {
+    let width = style.width;
+    let covered = |p: &InkPoint| {
+        dist_to_path(path, p.x, p.y)
+            <= radius + outline_radius_with(width, p.pressure, style.constant)
+    };
     // Pas d'avant OG20 ((rayon + largeur / 2) / 2) : mêmes points écrits ; il reste sous la plus petite portée
     // (rayon + largeur / 4, pression 0).
     let pts = densify(points, ((radius + width / 2.0) / 2.0).max(0.25));
@@ -181,12 +202,18 @@ mod tests {
         let pieces = erase(&pts, width, &[50.0, -40.0, 50.0, 40.0], radius).expect("touché");
         assert_eq!(pieces.len(), 2, "largeur {width}");
         let xs = |piece: &[InkPoint]| -> Vec<f32> {
-            outline(piece, &InkStyle { width })
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|c| c[0])
-                .collect()
+            outline(
+                piece,
+                &InkStyle {
+                    width,
+                    constant: false,
+                },
+            )
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| c[0])
+            .collect()
         };
         let left = xs(&pieces[0]).into_iter().fold(f32::MIN, f32::max);
         let right = xs(&pieces[1]).into_iter().fold(f32::MAX, f32::min);

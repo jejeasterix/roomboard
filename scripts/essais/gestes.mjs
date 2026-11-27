@@ -3,7 +3,7 @@
 // Doigt = événements du protocole (Input.dispatchTouchEvent, pointerType « touch ») ; l'état se lit par `roomboard state`.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { Echec, foldOptions, frames, item, ROOT, stageBox } from "./commun.mjs";
+import { Echec, foldOptions, frames, item, openOptionSections, ROOT, stageBox } from "./commun.mjs";
 
 export const URL_QS = "/?fichiers=repli";
 export const BIN = join(ROOT, "apps", "cli", "dist", "roomboard.mjs");
@@ -24,6 +24,8 @@ export async function newPage(browser, base, { scale = 1, query = URL_QS, fold =
     void d.accept();
   });
   if (fold) await foldOptions(page);
+  // OG23 (accordéon, déc. 7) : sections ouvertes avant le chargement, comme l'amorce de personnalisation-2-navigateur.mjs.
+  await openOptionSections(page);
   const cdp = await ctx.newCDPSession(page);
   await page.goto(`${base}${query}`);
   await page.waitForSelector('#stage[data-ready="1"]', { timeout: 30000 });

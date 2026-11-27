@@ -20,6 +20,8 @@ export interface ImageEdit {
   preview(p: ImageParams | null): void;
   /** Arme la pipette : couleur `#rrggbb` d'origine du prochain appui sur l'image ; null si désarmée. */
   pick(): Promise<string | null>;
+  /** Comme `pick`, avec le pixel source touché (départ de « Depuis le point touché »). */
+  pickPoint(): Promise<PickedPoint | null>;
   startCrop(): void;
   /** Sort du rognage ; `apply` : écrit le cadre (une étape). Vrai si écrit. */
   finishCrop(apply: boolean): boolean;
@@ -34,6 +36,8 @@ export interface ImageEdit {
   keepsDraft(v: number): boolean;
   close(): void;
 }
+
+export interface PickedPoint { readonly color: string; readonly x: number; readonly y: number }
 
 export interface ImageEditDeps {
   readonly ctx: ToolContext;
@@ -82,7 +86,7 @@ export function createImageEdit(deps: ImageEditDeps): ImageEditSession {
   const { ctx, id } = deps;
   let pixelDraft: ImageParams | null = null;
   let crop: { frame: Bounds; readonly full: ImageData; readonly matrix: Matrix } | null = null;
-  let picking: ((c: string | null) => void) | null = null;
+  let picking: ((c: PickedPoint | null) => void) | null = null;
   let drag: Drag | null = null;
   let writing = false;
   let open = true;
@@ -142,7 +146,7 @@ export function createImageEdit(deps: ImageEditDeps): ImageEditSession {
         if (c === null) return; // bitmap pas prêt : la pipette reste armée
         const done = picking;
         picking = null;
-        done(c);
+        done({ color: c, x: px[0], y: px[1] });
         ctx.stateChanged?.();
         return;
       }
@@ -179,12 +183,15 @@ export function createImageEdit(deps: ImageEditDeps): ImageEditSession {
       refresh();
     },
     pick() {
+      return session.pickPoint().then((r) => r?.color ?? null);
+    },
+    pickPoint() {
       if (picking !== null) {
         disarm();
         return Promise.resolve(null);
       }
       if (crop !== null || current() === null) return Promise.resolve(null);
-      const armed = new Promise<string | null>((resolve) => (picking = resolve));
+      const armed = new Promise<PickedPoint | null>((resolve) => (picking = resolve));
       ctx.stateChanged?.();
       return armed;
     },

@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { clickItem, DIST, Echec, foldOptions, frames, gitSha, item, loadPlaywright, openMenuOf, ROOT, serve, stageBox, VIEWPORT } from "./commun.mjs";
+import { clickItem, DIST, Echec, foldOptions, frames, gitSha, item, loadPlaywright, openMenuOf, openOptionSections, ROOT, serve, stageBox, VIEWPORT } from "./commun.mjs";
 import { edgeRow, fringes, hex, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "personnalisation-2";
@@ -57,6 +57,7 @@ async function newPage(browser, base, { scale = 1, query = URL_QS, fold = false,
     void d.accept();
   });
   if (fold) await foldOptions(page);
+  await openOptionSections(page);
   const cdp = await ctx.newCDPSession(page);
   await page.goto(`${base}${query}`);
   await page.waitForSelector('#stage[data-ready="1"]', { timeout: 30000 });
@@ -416,7 +417,8 @@ async function s5(browser, base, mode) {
   let inside = "";
   for (let i = 0; i < 80 && inside !== "strokeStyle"; i++) {
     await page.keyboard.press("Tab");
-    inside = await page.evaluate(() => document.activeElement?.closest("[data-option]")?.getAttribute("data-option") ?? "");
+    // Cadrage décision 4 : chaque section a un en-tête tabulable ; le groupe, ce sont ses boutons radio.
+    inside = await page.evaluate(() => (document.activeElement?.getAttribute("role") === "radio" ? document.activeElement.closest("[data-option]")?.getAttribute("data-option") : null) ?? "");
   }
   check(inside === "strokeStyle", "S5.1 : Tab atteint le groupe « Style du trait »");
   await page.keyboard.press("ArrowRight");

@@ -6,7 +6,7 @@
  */
 import type { CellLink, StrokeBuilderApi, StrokeStyle } from "../../core/api";
 import { cellContaining } from "../table-geom";
-import { opacityLook, type Look } from "../../core/look";
+import { lookFrom, type Look } from "../../core/look";
 import type { ItemStyle } from "../item-style";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
@@ -35,7 +35,7 @@ const EMPTY = new Float32Array(0);
 const NONE: ReadonlySet<string> = new Set<string>();
 
 /** OG11 : le style courant (`ItemStyle`) ; un style de stylo seul (couleur, épaisseur) vaut opaque. */
-export function createPenTool(ctx: ToolContext, style: () => StrokeStyle & Partial<Pick<ItemStyle, "opacity">>): GestureTool {
+export function createPenTool(ctx: ToolContext, style: () => StrokeStyle & Partial<Pick<ItemStyle, "opacity" | "variability">>): GestureTool {
   const strokes = new Map<number, LiveStroke>();
   let pressureVaries = false;
 
@@ -91,8 +91,8 @@ export function createPenTool(ctx: ToolContext, style: () => StrokeStyle & Parti
       const l: LiveStroke = {
         page: ctx.page(),
         style: st,
-        look: opacityLook(cur.opacity ?? 100),
-        builder: ctx.doc.newStrokeBuilder(st),
+        look: lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: cur.opacity ?? 100, variability: cur.variability }, null),
+        builder: ctx.doc.newStrokeBuilder(st, cur.variability === "constant"),
         all: [],
         pending: [],
         outline: EMPTY,

@@ -7,10 +7,13 @@ use crate::commands::{Change, CommandError};
 use crate::document::Document;
 use crate::element::{
     finite_positive, out_string, read_look, valid_link, ARROWHEADS, END_ARROWHEAD_DEFAULT,
-    FILL_STYLES, START_ARROWHEAD_DEFAULT, STROKE_STYLES, TEXT_ALIGNS,
+    FILL_STYLES, START_ARROWHEAD_DEFAULT, STROKE_STYLES, TEXT_ALIGNS, VARIABILITY_CONSTANT,
 };
 use crate::fill::{differs, set_or_remove};
+use crate::media::MEDIA_KIND;
+use crate::model3d::MODEL3D_KIND;
 use crate::rich_text::valid_color;
+use crate::table::TABLE_KIND;
 
 /// Patch de style : `None` laisse le champ ; `Some(None)` le retire (neutre). `roughness: Some(0)` retire `roughness` et
 /// `seed` ; `opacity` dans [0, 100], arrondie, `Some(100.0)` retire `opacity`. Lot 2 (T12) : une pointe égale à son
@@ -29,6 +32,11 @@ pub struct StylePatch {
     pub end_arrowhead: Option<Option<String>>,
     pub text_align: Option<Option<String>>,
     pub link: Option<Option<String>>,
+    /// OG23 : `Some(Some("constant"))` pose la pression constante, `Some(None)` la retire ; traits seuls.
+    pub variability: Option<Option<String>>,
+    /// OG23 (T10) : `Some(true)` pose « Glisser une copie », `Some(false)` le retire ; traits, formes, textes, images
+    /// (genres dont l'aspect est lu) ; tableaux, médias, objets 3D et zones ignorés sans erreur.
+    pub drag_copy: Option<bool>,
     /// OG12 (n° 12 c) : `Some(Some(true))` écrit `elbowed`, `Some(None)` et `Some(Some(false))` le retirent ; flèche seulement.
     pub elbowed: Option<Option<bool>>,
 }
@@ -65,6 +73,7 @@ impl StylePatch {
             || outside(&self.end_arrowhead, &ARROWHEADS)
             || outside(&self.text_align, &TEXT_ALIGNS)
             || matches!(&self.link, Some(Some(l)) if !valid_link(l))
+            || outside(&self.variability, &[VARIABILITY_CONSTANT])
         {
             return bad;
         }
@@ -177,6 +186,21 @@ fn writes_for(
         // Tout élément dont l'aspect est lu (`look_view`) ; jamais le remplissage de zone (`fill`).
         if matches!(kind, "stroke" | "shape" | "text" | "image") {
             w.push(("link", l.as_deref().map(In::from)));
+        }
+    }
+    if let Some(v) = &p.variability {
+        if kind == "stroke" {
+            w.push(("variability", v.as_deref().map(In::from)));
+        }
+    }
+    if let Some(b) = p.drag_copy {
+        // Décision 29 : tout objet (trait, forme, texte, image, tableau, média, objet 3D) ; jamais le remplissage de zone.
+        if matches!(kind, "stroke" | "shape" | "text" | "image")
+            || kind == TABLE_KIND
+            || kind == MEDIA_KIND
+            || kind == MODEL3D_KIND
+        {
+            w.push(("dragCopy", b.then_some(In::Any(Any::Bool(true)))));
         }
     }
     w

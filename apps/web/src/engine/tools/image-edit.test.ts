@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { dragFrame } from "./image-edit";
+import { describe, expect, it, vi } from "vitest";
+import type { ImageElement } from "../../core/api";
+import { createImageEdit, dragFrame } from "./image-edit";
 
 const from = { x0: 10, y0: 10, x1: 110, y1: 60 };
 describe("cadre de rognage (I28)", () => {
@@ -14,5 +15,19 @@ describe("cadre de rognage (I28)", () => {
   it("jamais moins d'une unité", () => {
     expect(dragFrame({ handle: "e", start: [110, 30], from }, -500, 0, 200, 100)).toEqual({ x0: 10, y0: 10, x1: 11, y1: 60 });
     expect(dragFrame({ handle: "n", start: [60, 10], from }, 0, 500, 200, 100)).toEqual({ x0: 10, y0: 59, x1: 110, y1: 60 });
+  });
+});
+
+describe("pipette avec point source (OG23, T12)", () => {
+  it("pickPoint rend le point source", async () => {
+    const el = { kind: "image", id: "i", transform: [1, 0, 0, 1, 0, 0], image: { asset: "a", w: 200, h: 100 } } as unknown as ImageElement;
+    const ctx = { doc: { element: () => el }, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: vi.fn(), stateChanged: vi.fn(), requestFrame: vi.fn() };
+    const edit = createImageEdit({ ctx: ctx as never, id: "i", setPreview: vi.fn(), colorAt: () => "#102030", closed: vi.fn() });
+    const p = edit.pickPoint();
+    edit.gesture.begin(1, [{ x: 50.4, y: 20.7, pressure: 1, tiltX: 0, tiltY: 0, t: 0 }]);
+    expect(await p).toEqual({ color: "#102030", x: 50, y: 20 });
+    const q = edit.pick();
+    edit.gesture.begin(1, [{ x: 10, y: 10, pressure: 1, tiltX: 0, tiltY: 0, t: 0 }]);
+    expect(await q).toBe("#102030");
   });
 });

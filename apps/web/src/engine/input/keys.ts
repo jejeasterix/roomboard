@@ -1,3 +1,4 @@
+import type { ArrangeHow } from "../../core/arrange";
 /** Raccourcis d'annulation (D11) : Ctrl+Z, Ctrl+Y, Ctrl+Maj+Z ; Cmd sous macOS. Ctrl+G grouper, Ctrl+Maj+G dégrouper (C3, Z13). */
 export interface KeyLike {
   readonly key: string;
@@ -7,7 +8,14 @@ export interface KeyLike {
   readonly shiftKey: boolean;
   readonly altKey: boolean;
   readonly isComposing: boolean;
-  readonly target: { readonly tagName?: string; readonly type?: string; readonly isContentEditable?: boolean } | null;
+  /** Touche déjà prise par un contrôle de l'interface (`preventDefault`) : le moteur ne la rejoue pas (T17). */
+  readonly defaultPrevented?: boolean;
+  readonly target: {
+    readonly tagName?: string;
+    readonly type?: string;
+    readonly isContentEditable?: boolean;
+    readonly getAttribute?: (name: string) => string | null;
+  } | null;
 }
 
 export type KeyAction = "undo" | "redo" | "group" | "ungroup";
@@ -24,6 +32,18 @@ export const inEditable = (t: KeyLike["target"]): boolean => {
   // Une réglette, une case ou un bouton gardent le focus après un réglage : ils n'attendent pas de saisie (cf. Excalidraw isWritableElement).
   if (tag === "INPUT" && t.type !== undefined && NON_TEXT_INPUTS.has(t.type.toLowerCase())) return false;
   return EDITABLE.has(tag);
+};
+
+const CONTROL_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT", "BUTTON"]);
+const CONTROL_ROLES = new Set(["radio", "gridcell", "tab", "menuitem", "menuitemradio", "menuitemcheckbox", "slider", "option"]);
+/** Contrôle de l'interface qui garde les flèches (bouton, champ de tout type, réglette, case de grille, onglet, menu,
+ *  segment, option, zone éditable) ; la scène et le body n'en sont pas (OG23, T17). */
+export const inControl = (t: KeyLike["target"]): boolean => {
+  if (t === null) return false;
+  if (t.isContentEditable === true) return true;
+  if (t.tagName !== undefined && CONTROL_TAGS.has(t.tagName.toUpperCase())) return true;
+  const role = t.getAttribute?.("role");
+  return role !== null && role !== undefined && CONTROL_ROLES.has(role);
 };
 
 /** Barre d'espace sans Ctrl, Cmd ni Alt, hors champ de saisie et hors composition IME (D17 : espace + glisser). */
@@ -173,4 +193,35 @@ export function appShortcut(e: KeyLike): AppShortcut | null {
   if (inEditable(e.target)) return null;
   const key = e.key.toLowerCase();
   return key === "f" ? "backgrounds" : key === "h" ? "palm-eraser" : null;
+}
+
+/** OG23 (déc. 24) : avec Alt, la lettre est lue par `code` (Option+H donne « ˙ » sous macOS), sinon par `key` ; H, V, R
+ *  sont à la même place en AZERTY, QWERTY et QWERTZ. Jamais avec Ctrl ni Cmd, hors champ de saisie (un bouton, un radio ou une case de grille focalisés ne bloquent pas : seules les flèches seules, `nudgeKey`, leur appartiennent), hors composition, ni si déjà traité. */
+export function arrangeKey(e: KeyLike): ArrangeHow | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.defaultPrevented === true || inEditable(e.target)) return null;
+  const letter = e.altKey ? (e.code ?? "").replace(/^Key/, "").toLowerCase() : e.key.toLowerCase();
+  if (e.altKey && e.shiftKey) {
+    if (e.key === "ArrowLeft") return "align-left";
+    if (e.key === "ArrowRight") return "align-right";
+    if (e.key === "ArrowUp") return "align-top";
+    if (e.key === "ArrowDown") return "align-bottom";
+    if (letter === "h") return "align-center";
+    if (letter === "v") return "align-middle";
+    if (letter === "r") return "rotate-ccw";
+    return null;
+  }
+  if (e.altKey) return letter === "h" ? "distribute-h" : letter === "v" ? "distribute-v" : null;
+  if (e.shiftKey) return letter === "h" ? "flip-h" : letter === "v" ? "flip-v" : letter === "r" ? "rotate-cw" : null;
+  return null;
+}
+
+/** Flèche seule : 1 px ; Maj : 5 px (Excalidraw) ; jamais avec Ctrl, Cmd ou Alt (Ctrl+flèches = Disposition d'OG4). */
+export function nudgeKey(e: KeyLike): { dx: number; dy: number } | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented === true || inEditable(e.target) || inControl(e.target)) return null;
+  const s = e.shiftKey ? 5 : 1;
+  if (e.key === "ArrowLeft") return { dx: -s, dy: 0 };
+  if (e.key === "ArrowRight") return { dx: s, dy: 0 };
+  if (e.key === "ArrowUp") return { dx: 0, dy: -s };
+  if (e.key === "ArrowDown") return { dx: 0, dy: s };
+  return null;
 }

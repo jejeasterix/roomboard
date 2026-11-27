@@ -6,10 +6,11 @@
  * Dans toute autre chaîne, `$$` donne un `$` littéral (`"$$1"` est le texte « $1 », jamais une référence).
  */
 import type { Command } from "../../web/src/core/api";
+import { ARRANGE_HOWS, isArrangeHow } from "../../web/src/core/arrange";
 import { CliError } from "./contract";
 
 export const COMMAND_TYPES = [
-  "AddPage", "RemovePage", "SetPageMode", "MovePage", "DuplicatePage", "Restack",
+  "AddPage", "RemovePage", "SetPageMode", "MovePage", "DuplicatePage", "Restack", "Arrange",
   "CommitStroke", "Erase", "Delete", "AddShape", "SetText", "Transform", "AddImage", "AddMedia",
   "SetMedia", "AddModel3d", "SetModel3dView", "SetBackdrop", "FormatText", "SetGrid", "ApplyBackground", "AddTable", "SetTableCell",
   "InsertTableLine", "RemoveTableLine", "SetTableSizes", "SetTableFill", "MergeTableCells", "SplitTableCell",
@@ -84,6 +85,8 @@ export function parseOp(line: unknown, ctx: RefContext): Op {
       const to = cmd["to"];
       if (typeof to !== "number" || !Number.isInteger(to) || to < 0) throw new CliError("usage", "to : entier ≥ 0 attendu");
     }
+    // OG23 : `how` refusé avant le cœur (code 2), comme `to` ; le cœur lèverait « disposition inconnue » (code 1).
+    if (type === "Arrange" && !isArrangeHow(cmd["how"])) throw new CliError("usage", `how : une de ${ARRANGE_HOWS.join(", ")}`);
     return { kind: "command", cmd: cmd as unknown as Command };
   }
   const op = v["op"];

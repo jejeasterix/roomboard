@@ -68,6 +68,14 @@ describe("mesure sans canvas (D37, H25, H26)", () => {
     m.fillStyle = "#11223380";
     expect(m.fillStyle).toBe(`rgba(17, 34, 51, ${0x80 / 255})`);
   });
+  it("fillStyle transparent : rgba(0, 0, 0, 0) (OG23, seul nom lu, comme un canvas)", () => {
+    const m = nodeMeasureContext();
+    m.fillStyle = "#F00";
+    m.fillStyle = "transparent";
+    expect(m.fillStyle).toBe("rgba(0, 0, 0, 0)");
+    m.fillStyle = "red";
+    expect(m.fillStyle).toBe("rgba(0, 0, 0, 0)");
+  });
   it("nodeMeasureContext — measureText : 0,6 × taille lue dans font × longueur", () => {
     const m = nodeMeasureContext();
     m.font = 'bold 20px "Atkinson Hyperlegible", sans-serif';

@@ -285,3 +285,36 @@ describeWasm("S2 à S4 — écrire un PDF (cli-lot3)", () => {
     expect(existsSync(join(dir, "x.pdf"))).toBe(false);
   });
 });
+
+// OG23 (écart PDF du plan) : un trait transparent n'écrit aucun opérateur de tracé ; le fond reste. Le même rectangle
+// à trait opaque en écrit un (témoin : sans la garde de `record-ctx.ts`, le trait transparent passerait aussi).
+describeWasm("PDF : trait transparent (OG23)", () => {
+  const opsOf = async (color: string): Promise<{ fnArray: number[]; OPS: Record<string, number> }> => {
+    const dir = tmpDir();
+    const a = join(dir, "t.roomboard");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    const add = { type: "AddShape", page: "$page:0", shape: "rect", x0: 100, y0: 100, x1: 300, y1: 200, style: { color, width: 6 }, fill: "#fef08a" };
+    expect(await main(["run", a, "--save"], memoryIO([JSON.stringify(add)]))).toBe(0);
+    const out = join(dir, "t.pdf");
+    expect(await main(["export", a, out], memoryIO())).toBe(0);
+    await loadNodePdfjs();
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(readFileSync(out)), verbosity: 0 }).promise;
+    const list = await (await doc.getPage(1)).getOperatorList();
+    await doc.cleanup();
+    const OPS = pdfjs.OPS as unknown as Record<string, number>;
+    // pdf.js replie un chemin dans `constructPath`, l'opérateur de peinture en premier argument : on lit les deux.
+    const args = list.argsArray as unknown[][];
+    const fnArray = list.fnArray.flatMap((f, i) => (f === OPS["constructPath"] && typeof args[i]?.[0] === "number" ? [f, args[i][0] as number] : [f]));
+    return { fnArray, OPS };
+  };
+  const strokes = (OPS: Record<string, number>): number[] =>
+    ["stroke", "closeStroke", "fillStroke", "eoFillStroke", "closeFillStroke", "closeEOFillStroke"].map((k) => OPS[k] ?? -1);
+  it("PDF : rectangle à trait transparent sans tracé ; fond jaune rempli ; trait opaque : un tracé", { timeout: 30_000 }, async () => {
+    const clear = await opsOf("transparent");
+    expect(clear.fnArray.some((f) => f === clear.OPS["fill"] || f === clear.OPS["eoFill"])).toBe(true);
+    expect(clear.fnArray.filter((f) => strokes(clear.OPS).includes(f))).toEqual([]);
+    const solid = await opsOf("#1e40af");
+    expect(solid.fnArray.some((f) => strokes(solid.OPS).includes(f))).toBe(true);
+  });
+});

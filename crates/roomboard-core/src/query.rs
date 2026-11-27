@@ -10,8 +10,8 @@ use yrs::{Array, Map, MapRef, Out, ReadTxn};
 use crate::commands::{read_shape, read_stroke, read_text, similarity_scale, world_to_local_path};
 use crate::document::Document;
 use crate::element::{
-    apply_transform, invert, out_string, out_transform, read_image, read_unknown, unknown_view,
-    Transform,
+    apply_transform, constant_ink, invert, out_string, out_transform, read_image, read_unknown,
+    unknown_view, Transform,
 };
 use crate::fill_element::{read_fill, FILL_KIND};
 use crate::ink::hit::{dist_to_edges, hit_outline, path_hits_outline, point_in_polygon};
@@ -31,7 +31,7 @@ pub struct Bounds {
 }
 
 impl Bounds {
-    fn union(self, o: Bounds) -> Bounds {
+    pub(crate) fn union(self, o: Bounds) -> Bounds {
         Bounds {
             x0: self.x0.min(o.x0),
             y0: self.y0.min(o.y0),
@@ -142,7 +142,10 @@ impl Document {
         let txn = self.read();
         let found = self.find_element(&txn, id)?;
         let (_, style, pts) = read_stroke(&txn, &found.element)?;
-        Some(self.cached_outline(id, &style, &pts).to_vec())
+        Some(
+            self.cached_outline(id, &style, &pts, constant_ink(&txn, &found.element))
+                .to_vec(),
+        )
     }
 
     /// Anneaux locaux d'un `fill` (C8, Q12) : `[n, x0, y0, …]` par anneau, extérieur d'abord ; `None` pour tout autre
@@ -165,7 +168,7 @@ impl Document {
         let raw_id = out_string(e.get(txn, "id"));
         let id = raw_id.clone().unwrap_or_default();
         if let Some((transform, style, pts)) = read_stroke(txn, e) {
-            let outline = self.cached_outline(&id, &style, &pts);
+            let outline = self.cached_outline(&id, &style, &pts, constant_ink(txn, e));
             return Some(Geom {
                 id,
                 transform,
@@ -691,7 +694,13 @@ mod tests {
             "rendu, collision et boîte lisent le même cache"
         );
         let pts = d.stroke_points(&a).expect("points");
-        let exact = ink_outline(&pts, &InkStyle { width: 4.0 });
+        let exact = ink_outline(
+            &pts,
+            &InkStyle {
+                width: 4.0,
+                constant: false,
+            },
+        );
         let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
         assert_eq!(
             bits(&o),

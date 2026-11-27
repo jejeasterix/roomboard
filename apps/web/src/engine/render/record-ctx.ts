@@ -211,14 +211,19 @@ export class RecordingContext2D {
     const path = a instanceof RecordingPath ? a : this.path;
     const rule = typeof a === "string" ? a : b;
     if (path.empty) return;
-    this.ops.push(OP.fill, ...this.st.m, ...this.paint(this.st.fill), rule === "evenodd" ? 1 : 0, ...path.encode());
+    const paint = this.paint(this.st.fill);
+    // OG23 : une peinture d'alpha nul n'enregistre rien (krilla écrirait sinon un opérateur d'opacité 0 au PDF).
+    if (paint[3] === 0) return;
+    this.ops.push(OP.fill, ...this.st.m, ...paint, rule === "evenodd" ? 1 : 0, ...path.encode());
     this.count();
   }
   stroke(p?: RecordingPath): void {
     const path = p ?? this.path;
     if (path.empty) return;
     const s = this.st;
-    this.ops.push(OP.stroke, ...s.m, ...this.paint(s.stroke), s.lineWidth, CAP[s.lineCap] ?? 0, JOIN[s.lineJoin] ?? 0, s.dash.length, ...s.dash, s.dashOffset, ...path.encode());
+    const paint = this.paint(s.stroke);
+    if (paint[3] === 0) return; // OG23 : trait transparent, aucun `S` au PDF
+    this.ops.push(OP.stroke, ...s.m, ...paint, s.lineWidth, CAP[s.lineCap] ?? 0, JOIN[s.lineJoin] ?? 0, s.dash.length, ...s.dash, s.dashOffset, ...path.encode());
     this.count();
   }
   clip(rule?: CanvasFillRule): void {

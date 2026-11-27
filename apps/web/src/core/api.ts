@@ -22,6 +22,8 @@
 
 import type { Look, LookPatch } from "./look";
 export type { Look, LookPatch } from "./look";
+import type { ArrangeHow } from "./arrange";
+export type { ArrangeHow } from "./arrange";
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -66,6 +68,9 @@ export type Command =
   | { readonly type: "DuplicatePage"; readonly page: string }
   /** Ordre des objets (décision 16) : bloc des `ids` (une même page), bas au rang `to` (0 = arrière-plan), ids gardés. */
   | { readonly type: "Restack"; readonly ids: readonly string[]; readonly to: number }
+  /** OG23 (DA-2) : aligner, répartir, retourner, tourner les `ids` (une même page) en une étape ; groupe extérieur
+   *  touché = tous ses membres ; ids vides : aucune étape ; `how` inconnu : `arrangeUnknown(how)`. */
+  | { readonly type: "Arrange"; readonly ids: readonly string[]; readonly how: ArrangeHow }
   /** OG11 : `look` écrit dans la même étape, assaini comme le cœur (`Look::sanitized`) ; nombres hors bornes : « style invalide ». */
   | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle; readonly look?: Look; readonly cell?: CellLink }
   | { readonly type: "Erase"; readonly page: string; readonly path: Float32Array; readonly radius: number; readonly mode: EraseMode }
@@ -260,7 +265,9 @@ export interface TextData {
 }
 
 /** C5 (U29, I5) : couleur rendue transparente ; `color` en `#rrggbb` minuscules ; `tolerance`, `soft` entiers de 0 à 100. */
-export interface TransparentColor { readonly color: string; readonly tolerance: number; readonly soft: number; readonly contiguous: boolean }
+/** OG23 (T10) : `x`, `y` = départ de la baguette en pixels source, les deux ou aucun, dans l'image ; avec un départ, seule
+ *  la zone jointe au point touché s'efface (`contiguous` ignoré). */
+export interface TransparentColor { readonly color: string; readonly tolerance: number; readonly soft: number; readonly contiguous: boolean; readonly x?: number; readonly y?: number }
 /** C5 (U29, I2, I4) : réglages non destructifs, champ absent = neutre. `crop` = [x, y, w, h] en pixels source ;
  *  `quarterTurns` 0 à 3, sens horaire ; `brightness`, `contrast` entiers de −100 à 100. */
 export interface ImageParams {
@@ -448,7 +455,8 @@ export interface CoreDocument {
   version(): number;
   save(now: string, appVersion: string): Uint8Array;
   saveParts(now: string, appVersion: string): readonly [Uint8Array, Uint8Array];
-  newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi;
+  /** OG23 : `constant` (`variability: "constant"`) : encre vive à épaisseur constante, comme le contour final. */
+  newStrokeBuilder(style: StrokeStyle, constant?: boolean): StrokeBuilderApi;
   free(): void;
   /** Point aimanté de la page (G6) ; null sans grille, magnétisme coupé, aucun niveau qui accroche ou page inconnue. */
   snapPoint(page: string, x: number, y: number): readonly [number, number] | null;

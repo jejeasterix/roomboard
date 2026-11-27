@@ -4,7 +4,7 @@
  * ensemble par « Valider » (une étape). Une écriture géométrique de la séance garde le brouillon ; toute autre écriture
  * (Valider, Rétablir, annuler, rétablir, ailleurs) le reprend du document. Démonté : la séance est fermée.
  */
-import { createEffect, createMemo, createSignal, on, onCleanup, Show, type Accessor, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack, type Accessor, type JSX } from "solid-js";
 import type { ImageData, ImageParams } from "../core/api";
 import { clean, flipShown, paramsOf, turnShown } from "../core/image-params";
 import type { ImageEdit } from "../engine/tools/image-edit";
@@ -14,6 +14,8 @@ import { syncValue } from "./ProfileEditor";
 export const DEFAULT_TOLERANCE = 10;
 export const DEFAULT_SOFT = 0;
 
+export type SeedMode = "seed" | "contiguous" | "global";
+
 export interface PixelDraft {
   readonly brightness: number;
   readonly contrast: number;
@@ -22,17 +24,25 @@ export interface PixelDraft {
   readonly tolerance: number;
   readonly soft: number;
   readonly contiguous: boolean;
+  /** Mode de départ affiché : « Depuis le point touché », « Depuis les bords » ou « Global » (dérivé du document). */
+  readonly mode: SeedMode;
+  /** Pixel source de départ (mode « Depuis le point touché ») ; null : départ par les bords ou global. */
+  readonly seed: { readonly x: number; readonly y: number } | null;
 }
 
 export function draftOf(i: ImageData | null): PixelDraft {
   const t = i?.transparent;
+  const seed = t?.x !== undefined && t.y !== undefined ? { x: t.x, y: t.y } : null;
+  const contiguous = t?.contiguous ?? true;
   return {
     brightness: i?.brightness ?? 0,
     contrast: i?.contrast ?? 0,
     color: t?.color ?? null,
     tolerance: t?.tolerance ?? DEFAULT_TOLERANCE,
     soft: t?.soft ?? DEFAULT_SOFT,
-    contiguous: t?.contiguous ?? true,
+    contiguous,
+    seed,
+    mode: seed !== null ? "seed" : contiguous ? "contiguous" : "global",
   };
 }
 
@@ -40,7 +50,7 @@ export function pixelParams(d: PixelDraft): ImageParams {
   return clean({
     brightness: d.brightness,
     contrast: d.contrast,
-    ...(d.color === null ? {} : { transparent: { color: d.color, tolerance: d.tolerance, soft: d.soft, contiguous: d.contiguous } }),
+    ...(d.color === null ? {} : { transparent: { color: d.color, tolerance: d.tolerance, soft: d.soft, contiguous: d.contiguous, ...(d.seed === null ? {} : { x: d.seed.x, y: d.seed.y }) } }),
   });
 }
 
@@ -53,6 +63,8 @@ export interface ImagePanelProps {
   readonly tick: Accessor<unknown>;
   readonly edit: ImageEdit;
   close(): void;
+  /** Joué une fois au montage : `crop` ouvre le rognage, `background` arme la pipette en mode « Depuis le point touché ». */
+  readonly start?: "crop" | "background";
 }
 
 export function ImagePanel(props: ImagePanelProps): JSX.Element {
@@ -61,11 +73,42 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
     props.tick();
     return props.edit.mode();
   });
-  onCleanup(() => props.edit.close());
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+    props.edit.close();
+  });
+  /**
+   * Pipette : en mode « point touché », couleur et départ, et elle reste armée (chaque toucher pose le nouveau départ,
+   * H8) jusqu'à Valider, Annuler ou un changement de mode ; sinon couleur seule (le départ est retiré), un toucher.
+   */
+  const pipette = (): void =>
+    void props.edit.pickPoint().then((r) => {
+      if (r === null || disposed) return;
+      const d = draft();
+      const seeded = d.mode === "seed";
+      setPixels({ ...d, color: r.color, seed: seeded ? { x: r.x, y: r.y } : null });
+      if (seeded) pipette();
+    });
+  /** Désarme la pipette si elle l'est (pickPoint sur une pipette armée la désarme). */
+  const disarm = (): void => {
+    if (props.edit.mode() === "pick") void props.edit.pickPoint();
+  };
+  onMount(() => {
+    if (props.start === "crop") props.edit.startCrop();
+    else if (props.start === "background") {
+      setDraft({ ...draft(), mode: "seed" });
+      pipette();
+    }
+  });
+  let seen = untrack(props.version);
   createEffect(
     on(
       props.version,
       (v) => {
+        // Le moteur publie un état à chaque pipette armée ou aperçu sans que le document change : sans nouvelle version, le brouillon (mode, départ) reste.
+        if (v === seen) return;
+        seen = v;
         if (!props.edit.keepsDraft(v)) setDraft(draftOf(props.image()));
       },
       { defer: true },
@@ -114,7 +157,7 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
             type="button"
             data-image-action="pick"
             aria-pressed={mode() === "pick"}
-            onClick={() => void props.edit.pick().then((c) => c !== null && setPixels({ ...draft(), color: c }))}
+            onClick={pipette}
           >
             Pipette
           </button>
@@ -132,20 +175,29 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
           Mode{" "}
           <select
             data-image-input="mode"
-            ref={(el) => syncValue(el, () => (draft().contiguous ? "contiguous" : "global"))}
-            onChange={(e) => setPixels({ ...draft(), contiguous: e.currentTarget.value === "contiguous" })}
+            ref={(el) => syncValue(el, () => draft().mode)}
+            onChange={(e) => {
+              const v = e.currentTarget.value as SeedMode;
+              disarm();
+              setPixels({ ...draft(), mode: v, contiguous: v !== "global", seed: v === "seed" ? draft().seed : null });
+            }}
           >
-            <option value="contiguous">Contigu</option>
+            <option value="seed">Depuis le point touché</option>
+            <option value="contiguous">Depuis les bords</option>
             <option value="global">Global</option>
           </select>
         </label>
       </fieldset>
       <div class="rb-editor-actions">
-        <button type="button" data-image-action="apply" onClick={() => props.edit.commit(pixelParams(draft()))}>Valider</button>
+        <button type="button" data-image-action="apply" onClick={() => {
+          disarm();
+          props.edit.commit(pixelParams(draft()));
+        }}>Valider</button>
         <button
           type="button"
           data-image-action="cancel"
           onClick={() => {
+            disarm();
             setDraft(draftOf(props.image()));
             props.edit.preview(null);
           }}
