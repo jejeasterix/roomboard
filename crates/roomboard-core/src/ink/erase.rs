@@ -168,34 +168,38 @@ mod tests {
         assert_eq!(pieces.len(), 2);
     }
 
-    /// OG20 : trou visible, mesuré sur le contour réel des deux morceaux (celui du rendu), le long d'un trait droit
-    /// coupé en travers à x = 50 ; il vaut le diamètre de la gomme, à toute pression et toute largeur.
+    /// Trait droit de x = 0 à 100, coupé en travers à x = 50 : trou visible entre les contours réels des deux morceaux
+    /// (ceux du rendu).
+    fn visible_hole(pressure: impl Fn(f32) -> f32, width: f32, radius: f32) -> f32 {
+        let pts: Vec<InkPoint> = (0..=200)
+            .map(|i| InkPoint {
+                x: i as f32 * 0.5,
+                y: 0.0,
+                pressure: pressure(i as f32 / 200.0),
+            })
+            .collect();
+        let pieces = erase(&pts, width, &[50.0, -40.0, 50.0, 40.0], radius).expect("touché");
+        assert_eq!(pieces.len(), 2, "largeur {width}");
+        let xs = |piece: &[InkPoint]| -> Vec<f32> {
+            outline(piece, &InkStyle { width })
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| c[0])
+                .collect()
+        };
+        let left = xs(&pieces[0]).into_iter().fold(f32::MIN, f32::max);
+        let right = xs(&pieces[1]).into_iter().fold(f32::MAX, f32::min);
+        right - left
+    }
+
+    /// OG20 : le trou visible vaut le diamètre de la gomme, à toute pression et toute largeur.
     #[test]
     fn visible_hole_matches_eraser_diameter_on_real_outline() {
         let radius = 5.0;
         for width in [2.0f32, 8.0, 24.0] {
             for pressure in [0.2f32, 0.5, 1.0] {
-                let pts: Vec<InkPoint> = (0..=200)
-                    .map(|i| InkPoint {
-                        x: i as f32 * 0.5,
-                        y: 0.0,
-                        pressure,
-                    })
-                    .collect();
-                let pieces =
-                    erase(&pts, width, &[50.0, -40.0, 50.0, 40.0], radius).expect("touché");
-                assert_eq!(pieces.len(), 2, "largeur {width}, pression {pressure}");
-                let xs = |piece: &[InkPoint]| -> Vec<f32> {
-                    outline(piece, &InkStyle { width })
-                        .as_chunks::<2>()
-                        .0
-                        .iter()
-                        .map(|c| c[0])
-                        .collect()
-                };
-                let left = xs(&pieces[0]).into_iter().fold(f32::MIN, f32::max);
-                let right = xs(&pieces[1]).into_iter().fold(f32::MAX, f32::min);
-                let hole = right - left;
+                let hole = visible_hole(|_| pressure, width, radius);
                 assert!(
                     (hole - 2.0 * radius).abs() < 0.05 * 2.0 * radius,
                     "largeur {width}, pression {pressure} : trou {hole}, gomme {}",
@@ -205,44 +209,17 @@ mod tests {
         }
     }
 
-    /// OG20 : pression qui varie le long du trait (la coupe interpole la pression) ; le trou visible garde le diamètre
-    /// de la gomme, chaque calotte prenant le rayon de la pression au point coupé.
+    /// OG20 : pression qui varie le long du trait (la coupe interpole la pression) ; chaque calotte prend le rayon de
+    /// la pression au point coupé.
     #[test]
     fn visible_hole_with_varying_pressure() {
-        let (radius, width) = (5.0, 24.0);
-        let pts: Vec<InkPoint> = (0..=200)
-            .map(|i| InkPoint {
-                x: i as f32 * 0.5,
-                y: 0.0,
-                pressure: i as f32 / 200.0,
-            })
-            .collect();
-        let pieces = erase(&pts, width, &[50.0, -40.0, 50.0, 40.0], radius).expect("touché");
-        assert_eq!(pieces.len(), 2);
-        let style = InkStyle { width };
-        let xs = |piece: &[InkPoint]| -> Vec<f32> {
-            outline(piece, &style)
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|c| c[0])
-                .collect()
-        };
-        let left = xs(&pieces[0]).into_iter().fold(f32::MIN, f32::max);
-        let right = xs(&pieces[1]).into_iter().fold(f32::MAX, f32::min);
-        assert!(
-            (right - left - 2.0 * radius).abs() < 0.05 * 2.0 * radius,
-            "trou {}",
-            right - left
-        );
+        let hole = visible_hole(|t| t, 24.0, 5.0);
+        assert!((hole - 10.0).abs() < 0.5, "trou {hole}");
     }
 
-    /// Pression invalide (négative, NaN) : lue 0,5 comme freedraw, le trait reste coupé.
+    /// Pression invalide (lue 0,5 comme freedraw) : le trait reste coupé.
     #[test]
-    fn invalid_pressure_reads_as_half() {
-        for pressure in [-1.0f32, f32::NAN] {
-            assert_eq!(outline_radius(24.0, pressure), 12.0);
-        }
+    fn invalid_pressure_still_cuts() {
         let pts: Vec<InkPoint> = line(100)
             .into_iter()
             .map(|p| InkPoint {

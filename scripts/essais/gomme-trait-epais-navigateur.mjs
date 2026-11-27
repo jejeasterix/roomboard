@@ -103,7 +103,8 @@ try {
     }
     await frames(page);
   }
-  check((await strokeCount()) === 4, `quatre traits tracés (${await strokeCount()})`);
+  const drawn = await strokeCount();
+  check(drawn === 4, `quatre traits tracés (${drawn})`);
 
   // Un seul passage de gomme, à la souris, en travers des quatre traits.
   await clickItem(page, "eraser");
@@ -116,7 +117,8 @@ try {
   await mouse("mouseReleased", XE, y1, { clickCount: 1 });
   await frames(page);
   await frames(page);
-  check((await strokeCount()) === 8, `chaque trait coupé en deux morceaux (${await strokeCount()} traits)`);
+  const cut = await strokeCount();
+  check(cut === 8, `chaque trait coupé en deux morceaux (${cut} traits)`);
 
   // Profil d'encre sur l'axe de chaque trait (px de canvas), puis épaisseur vue à x = 400.
   const rows = await page.$eval(

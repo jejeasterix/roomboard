@@ -186,6 +186,16 @@ mod tests {
         assert!(outline(&[], &InkStyle { width: 8.0 }).is_empty());
     }
 
+    /// OG20 : rayon de freedraw, pression invalide (négative, NaN) lue 0,5.
+    #[test]
+    fn outline_radius_follows_freedraw() {
+        assert_eq!(outline_radius(24.0, 1.0), 18.0);
+        assert_eq!(outline_radius(24.0, 0.5), 12.0);
+        for pressure in [-1.0f32, f32::NAN] {
+            assert_eq!(outline_radius(24.0, pressure), 12.0);
+        }
+    }
+
     #[test]
     fn single_point_gives_a_dot() {
         let o = outline(&line(1, 0.5), &InkStyle { width: 8.0 });
