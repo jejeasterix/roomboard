@@ -263,6 +263,7 @@ async function s1(browser, base, tmp) {
   await page.click(item("fit-page"));
   await settle(page);
   await openSide(page);
+  await settle(page, 400);
   await tap(page, cdp, mode("portrait"));
   await waitAttr(page, "data-page-mode", "portrait");
   await page.click(item("fit-page"));
@@ -292,6 +293,7 @@ async function s1(browser, base, tmp) {
 
 /** Boîte d'une miniature par son rang (1 à N). */
 const thumb = (page, n) => box(page, `${LIST} [data-page="${n}"]`);
+const imgWidth = async (page) => (await box(page, `${LIST} [data-page="1"] .rb-page-img`)).width;
 const menuRow = (page, key) => page.waitForSelector(`[data-side-menu] [data-menu="${key}"]`, { state: "visible", timeout: 15000 });
 const orderIs = async (page, want) => JSON.stringify(await ids(page)) === JSON.stringify(want);
 /** Profil exporté : les barres, l'export du sélecteur de profils. */
@@ -341,45 +343,52 @@ async function s2(browser, base, tmp) {
   await page.waitForFunction(() => document.querySelectorAll(".rb-pages-list [data-page-id]").length === 3, null, { timeout: 15000 });
   check((await count(page)) === 3, "appui long, Retirer : 3 pages");
   // Taille Grandes : miniatures plus larges ; recharger : même taille.
-  const wm = (await thumb(page, 1)).width;
+  const wm = await imgWidth(page);
   await tap(page, cdp, `[data-edit="page-thumb"] [data-choice="l"]`);
-  const wl = (await thumb(page, 1)).width;
+  const wl = await imgWidth(page);
   check(wl > wm && (await page.getAttribute(LIST, "data-thumb")) === "l", `taille Grandes : miniatures plus larges (${wm} → ${wl} px)`);
   await page.reload();
   await ready(page);
   await openSide(page);
-  check((await page.getAttribute(LIST, "data-thumb")) === "l" && (await thumb(page, 1)).width === wl, "recharger : même taille");
+  check((await page.getAttribute(LIST, "data-thumb")) === "l" && (await imgWidth(page)) === wl, "recharger : même taille");
   // Replier, recharger : repliée.
   await tap(page, cdp, COLLAPSE);
   await side(page, "folded");
   await page.reload();
   await ready(page);
   check((await page.getAttribute(SIDE, "data-collapsed")) === "1", "replier puis recharger : barre repliée");
-  // Éditeur de profils : À droite, Repliée décochée, Page neuve Infini.
-  await page.click(item("profiles"));
-  await page.waitForSelector("[data-profiles]", { timeout: 15000 });
-  await page.click('[data-profile-cmd="edit"]');
-  await page.waitForSelector("[data-profile-editor]", { timeout: 15000 });
+  // Éditeur de profils, sur un appareil neuf (l'état replié gardé plus haut prime sur le profil) : À droite, Repliée
+  // décochée, Page neuve Infini.
+  await ctx.close();
+  const fresh = await start(browser, base);
+  const page2 = fresh.page;
+  await page2.click(item("profiles"));
+  await page2.waitForSelector("[data-profiles]", { timeout: 15000 });
+  await page2.click('[data-profile-cmd="edit"]');
+  await page2.waitForSelector("[data-profile-editor]", { timeout: 15000 });
+  await page2.click('[data-edit="bar"] [data-choice="pages"]');
   const bar = '[data-edit-bar="pages"]';
-  await page.click(`${bar} [data-edit="dock"] [data-choice="side-end"]`);
-  await frames(page);
-  if (await page.isChecked(`${bar} [data-edit="collapsed"]`)) await page.uncheck(`${bar} [data-edit="collapsed"]`);
-  await page.click('[data-edit-section="general"] [data-edit="page-mode"] [data-choice="infinite"]');
-  await frames(page);
-  if (await page.isEnabled('button[data-edit="save"]')) await page.click('button[data-edit="save"]');
-  await settle(page);
-  await page.click('button[data-edit="close"]');
-  await page.waitForSelector("[data-profile-editor]", { state: "detached", timeout: 15000 });
-  await settle(page);
-  check((await page.getAttribute(SIDE, "data-anchor")) === "side-end" && (await page.getAttribute(SIDE, "data-collapsed")) === null, "éditeur : À droite, non repliée : l'îlot passe à droite, ouvert");
-  await clickItem(page, "page-add");
-  await waitAttr(page, "data-page-mode", "infinite");
+  await page2.waitForSelector(bar, { timeout: 15000 });
+  await page2.click(`${bar} [data-edit="anchor"] [data-choice="side-end"]`);
+  await frames(page2);
+  if (await page2.isChecked(`${bar} [data-edit="collapsed"]`)) await page2.uncheck(`${bar} [data-edit="collapsed"]`);
+  await page2.click('[data-edit-section="general"] [data-edit="page-mode"] [data-choice="infinite"]');
+  await frames(page2);
+  if (await page2.isEnabled('button[data-edit="save"]')) await page2.click('button[data-edit="save"]');
+  await settle(page2);
+  if ((await page2.locator("[data-profile-editor]").count()) > 0) await page2.click('button[data-edit="close"]');
+  await page2.waitForSelector("[data-profile-editor]", { state: "detached", timeout: 15000 });
+  await settle(page2);
+  check((await page2.getAttribute(SIDE, "data-anchor")) === "side-end" && (await page2.getAttribute(SIDE, "data-collapsed")) === null, "éditeur : À droite, non repliée : l'îlot passe à droite, ouvert");
+  await clickItem(page2, "page-add");
+  await waitAttr(page2, "data-page-mode", "infinite");
   check(true, "page ajoutée : infinie (Page neuve : Infini)");
-  const prof = await exportProfile(page, tmp, "pages.rbprofile");
+  const prof = await exportProfile(page2, tmp, "pages.rbprofile");
   const bars = (prof.toolbars ?? []).filter((x) => x.id === "pages");
   check(bars.length === 1 && bars[0].anchor === "side-end" && bars[0].collapsed === false && prof.behavior?.pageMode === "infinite", `export .rbprofile : anchor ${bars[0]?.anchor}, collapsed ${bars[0]?.collapsed}, behavior.pageMode ${prof.behavior?.pageMode}`);
   noErrors(w);
-  await ctx.close();
+  noErrors(fresh.w);
+  await fresh.ctx.close();
 }
 
 /** Haut de page (y de la caméra) sous les îlots du haut : même valeur barre latérale ouverte ou repliée. */
