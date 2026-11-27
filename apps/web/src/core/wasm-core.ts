@@ -29,7 +29,7 @@ import type {
   TextSpan,
 } from "./api";
 import { MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, UNKNOWN_BOX } from "./api";
-import { toLook } from "./look";
+import { toLook, type Look } from "./look";
 import { isAssetId } from "./asset-store";
 import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
@@ -169,6 +169,9 @@ export function toTable(v: unknown): TableData {
 /** OG11 : nombre passé au pont en `f64`. Absent ou null : `None` ; autre chose qu'un nombre : NaN, refusé par le pont
  *  (wasm-bindgen appliquerait `ToNumber`, « 45 » deviendrait 45, là où la fausse liaison refuse). */
 const num = (v: unknown): number | undefined => (v === undefined || v === null ? undefined : typeof v === "number" ? v : Number.NaN);
+/** T12 : les cinq chaînes du lot 2 de `look_of`, dans l'ordre du pont (`fillStyle`, pointes, `textAlign`, `link`). */
+type Lot2Args = [string | undefined, string | undefined, string | undefined, string | undefined, string | undefined];
+const lot2 = (l: Look | undefined): Lot2Args => [l?.fillStyle, l?.startArrowhead, l?.endArrowhead, l?.textAlign, l?.link];
 
 /** Kind connu : forme contrôlée ; kind non reconnu : UnknownElement (U3, K8) ; id et transform toujours exigés. */
 export function toElementView(v: unknown): ElementView | null {
@@ -520,7 +523,8 @@ class WasmCoreDocument implements CoreDocument {
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
       case "CommitStroke": {
         const l = cmd.look;
-        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity)));
+        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity),
+          ...lot2(l)));
       }
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
@@ -530,7 +534,7 @@ class WasmCoreDocument implements CoreDocument {
         const l = cmd.look;
         return toChange(
           this.d.add_shape(cmd.page, cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1, cmd.style.color, cmd.style.width, cmd.fill ?? undefined,
-            l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity)),
+            l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity), ...lot2(l)),
         );
       }
       case "SetText": {
@@ -539,7 +543,7 @@ class WasmCoreDocument implements CoreDocument {
         const l = cmd.look;
         return toChange(
           this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight, spansArg(cmd.spans),
-            l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity)),
+            l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity), ...lot2(l)),
         );
       }
       case "SetStyle": {
@@ -548,6 +552,9 @@ class WasmCoreDocument implements CoreDocument {
         return toChange(this.d.set_style(
           [...cmd.ids], p.color ?? undefined, num(p.width), "fill" in p, p.fill ?? undefined, "strokeStyle" in p, p.strokeStyle ?? undefined,
           num(p.roughness), "roundness" in p, p.roundness ?? undefined, num(p.opacity),
+          // T12 : paires `*_set`, valeur du lot 2.
+          "fillStyle" in p, p.fillStyle ?? undefined, "startArrowhead" in p, p.startArrowhead ?? undefined,
+          "endArrowhead" in p, p.endArrowhead ?? undefined, "textAlign" in p, p.textAlign ?? undefined, "link" in p, p.link ?? undefined,
         ));
       }
       case "Transform":
