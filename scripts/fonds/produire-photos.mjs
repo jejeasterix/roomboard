@@ -7,7 +7,7 @@
 // <id>.webp, réécrit apps/web/src/backgrounds/photos.ts (aucune provenance) et le champ `retouche` de SOURCES.json.
 // Usage : node scripts/fonds/produire-photos.mjs [--depuis <dossier déjà téléchargé>]
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,10 +44,10 @@ function edgeColor(file) {
 async function download(url, dst) {
   if (EXCLUDED.test(url)) throw new Error(`source exclue : ${url}`);
   let r;
-  for (let essai = 0; essai < 4; essai++) {
+  for (let essai = 0; essai < 8; essai++) {
     r = await fetch(url, { headers: { "user-agent": "roomboard-fonds/1" } });
     if (r.status !== 429 && r.status < 500) break;
-    await new Promise((ok) => setTimeout(ok, 5000 * (essai + 1)));
+    await new Promise((ok) => setTimeout(ok, Math.max(Number(r.headers.get("retry-after")) * 1000 || 0, 15000 * (essai + 1))));
   }
   if (!r.ok) throw new Error(`${url} : HTTP ${r.status}`);
   writeFileSync(dst, new Uint8Array(await r.arrayBuffer()));
@@ -60,13 +60,26 @@ console.log(`dossier de téléchargement : ${work}`);
 mkdirSync(join(OUT, "photos"), { recursive: true });
 mkdirSync(join(OUT, "thumbs"), { recursive: true });
 const entries = [];
+const kept = [];
 for (const p of sources.photos) {
   const raw = join(work, `${p.id}.src`);
-  if (!existsSync(raw)) await download(p.fichier, raw);
+  if (!existsSync(raw)) {
+    await download(p.fichier, raw);
+    await new Promise((ok) => setTimeout(ok, 3000));
+  }
   const photo = join(OUT, "photos", `${p.id}.webp`);
   const thumb = join(OUT, "thumbs", `${p.id}.webp`);
-  const q = encode(raw, photo, W, H, MAX, [82, 76, 70, 64, 58, 52]);
-  encode(raw, thumb, TW, TH, TMAX, [75, 68, 60, 52, 44]);
+  let q;
+  try {
+    q = encode(raw, photo, W, H, MAX, [82, 76, 70, 64, 58, 52, 46, 40]);
+    encode(raw, thumb, TW, TH, TMAX, [75, 68, 60, 52, 44, 36, 28]);
+  } catch (e) {
+    // Trop détaillée pour tenir sous le plafond à qualité acceptable (q40) : écartée du pack et de SOURCES.json.
+    for (const f of [photo, thumb]) rmSync(f, { force: true });
+    console.log(`écartée — ${p.id} (${e.message.split(" : ")[1]})`);
+    continue;
+  }
+  kept.push(p);
   p.retouche = `recadrage 16:9 centré, ${W} × ${H}, WebP q${q}, métadonnées retirées ; miniature ${TW} × ${TH}`;
   entries.push({ id: p.id, section: "images", theme: p.theme, label: p.label, keywords: p.keywords, kind: "photo", color: edgeColor(photo), grid: null, photo: { file: `photos/${p.id}.webp`, thumb: `thumbs/${p.id}.webp`, w: W, h: H } });
   console.log(`ok — ${p.id} (qualité ${q}, ${statSync(photo).size} o)`);
@@ -78,5 +91,6 @@ writeFileSync(
     `import type { PackBackground } from "./catalog";\n\n` +
     `export const PHOTOS: readonly PackBackground[] = Object.freeze(${JSON.stringify(entries, null, 2)} satisfies PackBackground[]);\n`,
 );
+sources.photos = kept;
 writeFileSync(SOURCES, `${JSON.stringify(sources, null, 2)}\n`);
 console.log(`photos.ts : ${entries.length} photos ; dossier à supprimer : ${work}`);
