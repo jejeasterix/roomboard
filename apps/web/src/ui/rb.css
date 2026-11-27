@@ -173,10 +173,33 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-bar button[aria-current="page"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
 .rb-bar button.rb-pages-count { display: inline-flex; align-items: center; gap: calc(var(--rb-gap) / 2); }
 .rb-pages-count { margin-inline: 0; padding: 0 var(--rb-pad); color: var(--rf-navy-500); font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* Liste des numéros (CL5b-8) : une seule rangée qui défile ; les actions et le compteur restent visibles. */
-.rb-pages-list { display: flex; flex: 1 1 auto; flex-wrap: nowrap; min-width: calc(3 * var(--rb-btn) + 2 * var(--rb-gap)); gap: var(--rb-gap); overflow-x: auto; }
-.rb-island .rb-pages-list { min-width: calc(3 * var(--rb-btn) + 2 * var(--rb-gap)); flex: 0 1 auto; }
-.rb-bar[data-dock="left"] .rb-pages-list, .rb-bar[data-dock="right"] .rb-pages-list { min-width: 0; flex-direction: column; overflow-x: visible; overflow-y: auto; }
+/* Barre latérale (personnalisation-1a, T10) : la barre `pages` en îlot, colonne d'actions, mode, miniatures, taille ;
+   cibles de 44 px au moins (--rb-btn-s), valeurs entières, aucun 48 px littéral. Repliée : seul l'en-tête reste visible ;
+   le reste est `hidden`, dans le DOM. Miniature : numéro à gauche, image à --rb-thumb (posé en ligne par la barre),
+   anneau violet 600 sur la page montrée ; touch-action: none pour que le doigt déplace la miniature au lieu de défiler. */
+.rb-side { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: var(--rb-gap); min-block-size: 0; }
+.rb-island > .rb-side { overflow-x: hidden; overflow-y: auto; }
+.rb-side [hidden] { display: none; }
+.rb-side-tabs { display: flex; gap: 4px; }
+.rb-side .rb-tab { block-size: auto; min-block-size: var(--rb-btn-s); padding: 0 var(--rb-pad); }
+.rb-side .rb-tab:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+.rb-side-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.rb-side-body { display: flex; flex-direction: column; gap: var(--rb-gap); min-block-size: 0; }
+.rb-side-group { display: flex; flex-direction: column; gap: 4px; }
+.rb-side-label { padding: 0 4px; font-size: 13px; font-weight: 600; color: var(--rf-text-muted-aa); }
+.rb-side .rb-radios[data-look="segment"] .rb-radio { min-block-size: var(--rb-btn-s); padding: 0 var(--rf-space-sm); gap: 4px; display: inline-flex; align-items: center; justify-content: center; }
+.rb-pages-list { --rb-thumb: 160px; display: flex; flex: 1 1 auto; flex-direction: column; gap: var(--rb-gap); min-block-size: 0; max-block-size: 480px; padding: 2px; overflow-x: hidden; overflow-y: auto; }
+.rb-side .rb-page-thumb { display: grid; grid-template-columns: 24px var(--rb-thumb); align-items: start; gap: 4px; flex: none; min-block-size: var(--rb-btn-s); padding: 4px; border-radius: var(--rf-radius-lg); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+.rb-side .rb-page-thumb[aria-current="page"] { box-shadow: inset 0 0 0 2px var(--rf-violet-600); }
+.rb-side .rb-page-thumb:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: 2px; }
+.rb-page-num { padding-block-start: 4px; font-size: 13px; font-weight: 500; color: var(--rf-gray-800); text-align: end; font-variant-numeric: tabular-nums; }
+.rb-page-img { display: block; inline-size: var(--rb-thumb); min-block-size: var(--rb-btn-s); box-sizing: border-box; overflow: hidden; background: var(--rf-white); border-radius: var(--rf-radius-sm); box-shadow: 0 0 0 1px var(--rf-gray-300); }
+.rb-page-img img { display: block; inline-size: 100%; block-size: auto; pointer-events: none; -webkit-user-drag: none; }
+.rb-side-menu { position: fixed; z-index: 30; display: grid; gap: 4px; inline-size: max-content; min-inline-size: 224px; box-sizing: border-box; padding: 8px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
+.rb-side-menu button { display: flex; align-items: center; min-block-size: var(--rb-btn-s); padding: 0 12px; border: 0; border-radius: var(--rf-radius-md); background: transparent; font-size: 16px; color: var(--rf-gray-800); text-align: start; white-space: nowrap; cursor: pointer; }
+.rb-side-menu button:disabled { color: var(--rf-text-muted-aa); cursor: default; }
+.rb-side-menu button:not(:disabled):hover { background: var(--rf-gray-50); }
+.rb-side-menu button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 /* Onglets (T101 ; design-l2 L2-17, maquette 01 .tab) : une rangée qui défile dans l'îlot des onglets ; onglets de
    48 px, montré en violet 100 / 700, point violet « modifié », Fermer 44 px, Nouvel onglet 48 px. */
 .rb-tabs { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; min-inline-size: 0; overflow-x: auto; }
