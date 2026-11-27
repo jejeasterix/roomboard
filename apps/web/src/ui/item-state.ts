@@ -23,6 +23,9 @@ export interface ToolbarView {
   readonly canRedo: boolean;
   readonly pageIndex: number;
   readonly pageCount: number;
+  /** T8 : mode lu et disposition de la page montrée ; absents : page paysage. */
+  readonly pageMode?: "page" | "infinite";
+  readonly pageLayout?: "landscape" | "portrait" | "infinite";
   /** personnalisation-1a (décision 25) : barre latérale des pages ouverte ; absent : fermée. */
   readonly sidebarOpen?: boolean;
   /** Cellule active de l'outil Tableau (C10a) ; absente ou null : aucune (PC9). */

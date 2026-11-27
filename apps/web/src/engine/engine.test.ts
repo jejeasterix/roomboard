@@ -4,7 +4,7 @@ import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, worldToScreen, type Camera } from "./camera";
-import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
+import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
@@ -536,6 +536,40 @@ describe("createEngine", () => {
     expect(engine.state()).toMatchObject({ pageMode: "page", pageLayout: "landscape" });
     engine.setPageMode("infinite");
     expect(engine.state()).toMatchObject({ pageMode: "infinite", pageLayout: "infinite" });
+  });
+
+  const keyEv = (key: string, o: Partial<KeyLike> & { repeat?: boolean } = {}) =>
+    ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...o });
+
+  it("PageDown tenu sur la dernière page : une seule page", () => {
+    const { doc, engine } = setup();
+    expect(pageShortcut(keyEv("PageDown"), engine)).toBe(true);
+    expect(pageShortcut(keyEv("PageDown", { repeat: true }), engine)).toBe(false);
+    expect(pageShortcut(keyEv("PageDown", { repeat: true }), engine)).toBe(false);
+    expect(doc.pageIds()).toHaveLength(2);
+    expect(pageShortcut(keyEv("PageUp"), engine)).toBe(true);
+    expect(pageShortcut(keyEv("PageDown", { repeat: true }), engine)).toBe(true);
+    expect(doc.pageIds()).toHaveLength(2);
+  });
+
+  it("Ctrl+M ajoute, Ctrl+Maj+D duplique, Ctrl+Maj+P ouvre la barre latérale", () => {
+    const { doc, engine } = setup();
+    const toggle = vi.fn();
+    expect(pageShortcut(keyEv("m", { ctrlKey: true }), engine, toggle)).toBe(true);
+    expect(pageShortcut(keyEv("D", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
+    expect(doc.pageIds()).toHaveLength(3);
+    expect(pageShortcut(keyEv("P", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
+    expect(toggle).toHaveBeenCalledWith("pages");
+    expect(pageShortcut(keyEv("L", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(false);
+  });
+
+  it("dans un champ de saisie, PageDown et Ctrl+M ne font rien de la page", () => {
+    const { doc, engine } = setup();
+    const input = { tagName: "INPUT" };
+    expect(pageShortcut(keyEv("PageDown", { target: input }), engine)).toBe(false);
+    expect(pageShortcut(keyEv("m", { ctrlKey: true, target: input }), engine)).toBe(false);
+    expect(pageShortcut(keyEv("PageDown", { isComposing: true }), engine)).toBe(false);
+    expect(doc.pageIds()).toHaveLength(1);
   });
 
   function editSetup() {

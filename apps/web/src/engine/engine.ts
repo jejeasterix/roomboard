@@ -11,7 +11,7 @@ import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCame
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
-import { editAction, enterAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
+import { editAction, enterAction, inEditable, isPanKey, keyAction, pageKey, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
@@ -97,6 +97,38 @@ export interface EngineDeps {
   readonly fitTop?: () => number;
   /** Disposition d'une page neuve (profil actif, `behavior.pageMode`) ; absent : paysage. */
   readonly pageMode?: () => PageLayout;
+}
+
+/**
+ * Raccourcis de page (DA9) pris avant le moteur : hors champ de saisie et hors IME (`pageKey`). Une touche tenue
+ * (`repeat`) ne crée jamais de page ni de copie (H7). Vrai si l'action a eu lieu (la page appelle preventDefault).
+ * `sidebar-layers` ne fait rien au lot 1.
+ */
+export function pageShortcut(
+  e: KeyLike & { readonly repeat?: boolean },
+  engine: Pick<Engine, "prevPage" | "nextPage" | "nextOrAdd" | "addPage" | "duplicatePage">,
+  toggleSidebar?: (tab: "pages" | "calques") => void,
+): boolean {
+  if (inEditable(e.target)) return false;
+  const k = pageKey(e);
+  if (k === null) return false;
+  const held = e.repeat === true;
+  switch (k) {
+    case "prev":
+      return engine.prevPage();
+    case "next":
+      return held ? engine.nextPage() : engine.nextOrAdd();
+    case "add":
+      return !held && engine.addPage();
+    case "duplicate":
+      return !held && engine.duplicatePage();
+    case "sidebar-pages":
+      if (toggleSidebar === undefined) return false;
+      toggleSidebar("pages");
+      return true;
+    case "sidebar-layers":
+      return false;
+  }
 }
 
 export interface OrbitOptions {

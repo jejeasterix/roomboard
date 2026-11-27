@@ -61,6 +61,8 @@ export function viewOf(s: EngineState): ToolbarView {
     canRedo: s.canRedo,
     pageIndex: s.pageIndex,
     pageCount: s.pageCount,
+    pageMode: s.pageMode,
+    pageLayout: s.pageLayout,
     textFormat: s.textFormat,
     ...(s.fillTolerance === undefined ? {} : { fillTolerance: s.fillTolerance }),
   };

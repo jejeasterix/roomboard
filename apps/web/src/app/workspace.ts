@@ -6,7 +6,7 @@
  * tenu sur le stage de chaque onglet : l'id `stage` suivant l'onglet actif (CL5b-2), `#stage` décrit l'onglet montré.
  * C13 (D5, D17) : `openBoard` ouvre un `.iwb` ou un `.ubz` dans un nouvel onglet ; `exportBoard` écrit une copie au format.
  */
-import { type CoreDocument, type CoreFactory, type LinkedAsset } from "../core/api";
+import { type CoreDocument, type CoreFactory, type LinkedAsset, type PageLayout } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { NOTHING_TO_SEND_MESSAGE, type AnnotationControl, type CapturedImage, type SendRequest, type SendResult, type SendTarget } from "../platform/annotation-port";
 import type { ContainerCodec } from "../platform/container";
@@ -87,6 +87,8 @@ export interface WorkspaceDeps {
   /** C15 (X39) : rendu 3D partagé et lecteur de ZIP pour l'import ; absent : fichiers 3D refusés comme avant. */
   readonly model3d?: Model3dDeps;
   readonly core: CoreFactory;
+  /** Disposition d'une page d'onglet neuf (profil actif, `behavior.pageMode`) ; absent : paysage. */
+  readonly pageMode?: () => PageLayout;
   readonly host: FileHost;
   /** Pour `data-fichiers`. */
   readonly kind: HostKind;
@@ -615,7 +617,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await say(TOO_MANY_TABS);
         return;
       }
-      await addTab(core.blank(), null);
+      await addTab(core.blank(deps.pageMode?.()), null);
     },
     async annotationTab() {
       const existing = tabs.list().find((t) => t.kind === "annotation");
@@ -876,7 +878,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     if (entry === undefined) return false;
     const tab = entry.session;
     if (tab.files.isDirty() && !(await ask(DISCARD_MESSAGE))) return false;
-    if (tabs.list().length === 1 && (await addTab(core.blank(), null)) === null) return false;
+    if (tabs.list().length === 1 && (await addTab(core.blank(deps.pageMode?.()), null)) === null) return false;
     if (tabs.remove(id) === null) return false;
     release(tab);
     // C11a (P13) : onglet d'annotation fermé, `annotate` détruite (sortie d'abord si active).
