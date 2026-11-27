@@ -668,7 +668,7 @@ fn stroke_prelim(
         ("points", In::Any(Any::Buffer(encode(points).into()))),
     ]);
     // OG11 (DA-5) : seulement les champs d'aspect non neutres, jamais un jeu fixe.
-    for (k, v) in look_fields(look) {
+    for (k, v) in look_fields(look, true) {
         prelim.insert(k.into(), v);
     }
     prelim
@@ -1037,7 +1037,7 @@ impl Document {
         if let Some(f) = fill {
             fields.push(("fill", In::from(f)));
         }
-        fields.extend(look_fields(look));
+        fields.extend(look_fields(look, false));
         {
             let mut txn = self.transact_local();
             elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
@@ -1178,7 +1178,7 @@ impl Document {
             ("boxHeight", In::Any(Any::from(t.box_height))),
             ("content", In::from(TextPrelim::new(t.content))),
         ];
-        fields.extend(look_fields(t.look));
+        fields.extend(look_fields(t.look, false));
         {
             let mut txn = self.transact_local();
             let el = elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());

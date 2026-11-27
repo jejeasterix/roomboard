@@ -76,22 +76,10 @@ pub(crate) struct Unit {
     pub members: Vec<Member>,
 }
 
-fn union(a: Option<Bounds>, b: &Bounds) -> Bounds {
-    match a {
-        None => *b,
-        Some(a) => Bounds {
-            x0: a.x0.min(b.x0),
-            y0: a.y0.min(b.y0),
-            x1: a.x1.max(b.x1),
-            y1: a.y1.max(b.y1),
-        },
-    }
-}
-
 fn box_of(u: &Unit) -> Option<Bounds> {
-    u.members
-        .iter()
-        .fold(None, |acc, m| Some(union(acc, &m.bounds)))
+    u.members.iter().fold(None, |acc, m| {
+        Some(acc.map_or(m.bounds, |a| a.union(m.bounds)))
+    })
 }
 
 const fn shift(dx: f64, dy: f64) -> Transform {
@@ -113,10 +101,7 @@ pub(crate) fn plan(units: &[Unit], how: ArrangeHow) -> Vec<(String, Transform)> 
     if boxes.len() != units.len() || boxes.is_empty() {
         return Vec::new();
     }
-    let sel = boxes
-        .iter()
-        .skip(1)
-        .fold(boxes[0], |a, b| union(Some(a), b));
+    let sel = boxes.iter().skip(1).fold(boxes[0], |a, b| a.union(*b));
     let (cx, cy) = ((sel.x0 + sel.x1) / 2.0, (sel.y0 + sel.y1) / 2.0);
     let mut out: Vec<(String, Transform)> = Vec::new();
     use ArrangeHow::*;
@@ -342,5 +327,45 @@ impl Document {
             ids: moved,
             ..Default::default()
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Toute variante a son nom : la liste ci-dessous est exhaustive par construction (le `match` ne compile plus si
+    /// une variante s'ajoute), et `NAMES` doit la suivre dans le même ordre, sans doublon.
+    #[test]
+    fn names_cover_every_variant() {
+        use ArrangeHow::*;
+        let all = [
+            AlignLeft,
+            AlignCenter,
+            AlignRight,
+            AlignTop,
+            AlignMiddle,
+            AlignBottom,
+            DistributeH,
+            DistributeV,
+            FlipH,
+            FlipV,
+            RotateCw,
+            RotateCcw,
+        ];
+        for h in all {
+            match h {
+                AlignLeft | AlignCenter | AlignRight | AlignTop | AlignMiddle | AlignBottom
+                | DistributeH | DistributeV | FlipH | FlipV | RotateCw | RotateCcw => {}
+            }
+        }
+        assert_eq!(NAMES.len(), all.len());
+        for (i, h) in all.iter().enumerate() {
+            assert_eq!(NAMES[i].1, *h, "variante {i}");
+        }
+        let mut names: Vec<&str> = NAMES.iter().map(|(n, _)| *n).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), NAMES.len(), "noms uniques");
     }
 }

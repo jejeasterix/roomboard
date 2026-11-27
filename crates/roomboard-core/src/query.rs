@@ -30,7 +30,7 @@ pub struct Bounds {
 }
 
 impl Bounds {
-    fn union(self, o: Bounds) -> Bounds {
+    pub(crate) fn union(self, o: Bounds) -> Bounds {
         Bounds {
             x0: self.x0.min(o.x0),
             y0: self.y0.min(o.y0),

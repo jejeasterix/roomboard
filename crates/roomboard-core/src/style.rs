@@ -10,7 +10,10 @@ use crate::element::{
     FILL_STYLES, START_ARROWHEAD_DEFAULT, STROKE_STYLES, TEXT_ALIGNS, VARIABILITY_CONSTANT,
 };
 use crate::fill::{differs, set_or_remove};
+use crate::media::MEDIA_KIND;
+use crate::model3d::MODEL3D_KIND;
 use crate::rich_text::valid_color;
+use crate::table::TABLE_KIND;
 
 /// Patch de style : `None` laisse le champ ; `Some(None)` le retire (neutre). `roughness: Some(0)` retire `roughness` et
 /// `seed` ; `opacity` dans [0, 100], arrondie, `Some(100.0)` retire `opacity`. Lot 2 (T12) : une pointe égale à son
@@ -183,7 +186,12 @@ fn writes_for(
         }
     }
     if let Some(b) = p.drag_copy {
-        if matches!(kind, "stroke" | "shape" | "text" | "image") {
+        // Décision 29 : tout objet (trait, forme, texte, image, tableau, média, objet 3D) ; jamais le remplissage de zone.
+        if matches!(kind, "stroke" | "shape" | "text" | "image")
+            || kind == TABLE_KIND
+            || kind == MEDIA_KIND
+            || kind == MODEL3D_KIND
+        {
             w.push(("dragCopy", b.then_some(In::Any(Any::Bool(true)))));
         }
     }
