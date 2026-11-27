@@ -1086,7 +1086,7 @@ async function s5tableau(browser, base, tmp) {
   const b = await selBounds(page);
   const [l, t] = await toScreen(page, [b[0], b[1]]);
   const [r, bo] = await toScreen(page, [b[2], b[3]]);
-  const from = [l + 2, (t + bo) / 2];
+  const from = [l + (r - l) / 4, t + 2]; // le bord haut, loin des poignées (celle du milieu du bord gauche prime dans sa portée)
   await touchDrag(page, cdp, from, [from[0] + 200, from[1]]);
   await waitAttr(page, "data-elements", "2");
   s = await saved(page, tmp, "s5t-b.roomboard");
