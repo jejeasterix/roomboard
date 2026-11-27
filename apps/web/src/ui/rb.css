@@ -220,6 +220,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 :is([data-profiles], [data-menu-list]) button:disabled { color: var(--rf-text-muted-aa); cursor: default; }
 :is([data-profiles], [data-menu-list]) button:disabled .rb-icon { color: var(--rf-gray-500); }
 :is([data-profiles], [data-menu-list]) button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+.rb-menu-key { margin-inline-start: auto; padding-inline-start: 16px; color: var(--rf-text-muted-aa); font-size: 0.875em; }
+@media (max-width: 599px) { .rb-menu-key { display: none; } }
 .rb-menu-blank { flex: none; inline-size: var(--rb-icon); }
 .rb-menu-sep { border-block-start: 1px solid var(--rf-gray-300); margin: 4px 0; }
 .rb-editor { display: grid; gap: var(--rb-gap); padding: var(--rb-pad); }
