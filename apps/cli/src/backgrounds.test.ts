@@ -1,7 +1,7 @@
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { beforeAll, expect, it, vi } from "vitest";
 import { backgroundCommand, resolvePack, type PackFiles } from "../../web/src/app/backgrounds-apply";
 import { loadPack } from "../../web/src/backgrounds/catalog";
@@ -46,8 +46,8 @@ it("listBackgrounds : section inconnue (ou « mine ») : usage", async () => {
 it("packDir : ROOMBOARD_BACKGROUNDS d'abord, sinon apps/web/public/backgrounds/ à côté des modules", () => {
   expect(packDir({ ROOMBOARD_BACKGROUNDS: dir }, WEB_SRC).href).toBe(pathToFileURL(`${dir}/`).href);
   const own = packDir({}, WEB_SRC);
+  expect(own.href).toBe(new URL("../public/backgrounds/", WEB_SRC).href);
   expect(own.href.endsWith("/apps/web/public/backgrounds/")).toBe(true);
-  expect(existsSync(fileURLToPath(own))).toBe(true);
 });
 it("diskPackFiles : octets du fichier du pack ; fichier absent : command « fond introuvable : … »", async () => {
   writeFileSync(join(dir, "essai.webp"), new Uint8Array([1, 2, 3]));
@@ -83,6 +83,11 @@ describeWasm("personnalisation-1b : CLI des fonds (Q32, S4)", () => {
     expect(back.state.pages.map((p: Json) => p.page.backdrop)).toEqual([null, null]);
   });
   it("roomboard backgrounds --search seyes : une ligne JSON par fond, code 0 ; argument en trop, section inconnue : code 2", async () => {
+    const help = memoryIO();
+    expect(await main(["help"], help)).toBe(0);
+    const [out] = help.json();
+    expect(out.usage).toContain("roomboard backgrounds [--search <texte>] [--section colors | lines | lessons | images]");
+    expect(JSON.stringify(out)).toContain('\\"op\\":\\"background\\"');
     const io = memoryIO();
     expect(await main(["backgrounds", "--search", "seyes"], io)).toBe(0);
     expect(io.json()[0]).toMatchObject({ id: "seyes-8mm" });
