@@ -871,6 +871,8 @@ export function createEngine(deps: EngineDeps): Engine {
     select: selectTool,
     rect: shapeTool("rect"),
     ellipse: shapeTool("ellipse"),
+    // OG12 lot 2a : outil Losange, branché par L4.
+    diamond: shapeTool("diamond"),
     line: shapeTool("line"),
     arrow: shapeTool("arrow"),
     table: tableTool,
