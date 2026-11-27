@@ -358,4 +358,16 @@ describe("rb.css (T33)", () => {
   it("OG23 T18 : la pipette du sélecteur de couleur est une cible de 44 px au moins", () => {
     expect(rule(".rb-color-picker .rb-color-pipette")).toMatch(/inline-size: max\(44px, var\(--rb-btn-size, 44px\)\);.*block-size: max\(44px, var\(--rb-btn-size, 44px\)\);/);
   });
+  it("OG23 T20 : la pipette n'a pas l'apparence native (appearance, background, border) ni la pleine largeur", () => {
+    const r = rule(".rb-color-picker .rb-color-pipette");
+    for (const d of ["appearance: none", "background: transparent", "border: 0", "border-radius: var(--rf-radius-lg)"]) expect(r, d).toContain(d);
+    expect(r).not.toMatch(/inline-size: 100%|width: 100%/);
+    expect(rule(".rb-color-picker .rb-color-pipette:hover")).toContain("background: var(--rf-gray-50)");
+  });
+  it("OG23 T20 : Transparente et pipette sur une même ligne, alignée sur la grille", () => {
+    const r = rule(".rb-color-tools");
+    expect(r).toContain("display: flex");
+    expect(r).toContain("gap: 2px");
+    expect(rule(".rb-color-transparent")).not.toContain("margin-block-end");
+  });
 });
