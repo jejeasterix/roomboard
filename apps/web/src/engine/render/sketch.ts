@@ -9,8 +9,8 @@
 import rough from "roughjs/bin/rough";
 import type { Op, OpSet, Options } from "roughjs/bin/core";
 import type { ShapeData, StrokeStyle } from "../../core/api";
-import { arrowWings } from "../../core/shapes";
-import { endArrowheadOf, fillStyleOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, type Arrowhead, type Look, type StrokeKind } from "../../core/look";
+import { arrowWings, flattenPath, lineGeomOf, linePath } from "../../core/shapes";
+import { elbowedOf, endArrowheadOf, fillStyleOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, type Arrowhead, type Look, type StrokeKind } from "../../core/look";
 
 const gen = rough.generator();
 
@@ -111,10 +111,20 @@ export function hatched(s: ShapeData, look: Look | undefined): boolean {
   return s.fill !== null && (s.shape === "rect" || s.shape === "ellipse") && fillStyleOf(look) !== "solid";
 }
 
+/** OG12 : largeur et hauteur de la boîte du chemin (points intérieurs compris) d'une ligne ou flèche à points ; sinon (w, h). */
+function pathExtent(s: ShapeData): [number, number] {
+  if (s.points === undefined || s.points.length === 0) return [s.w, s.h];
+  const pts = linePath(s.w, s.h, s.points);
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  return [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+}
+
 function keyOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number): string {
   const round = roundnessOf(look) === "round";
-  const roughness = adjustRoughness(s.shape, s.w, s.h, round, roughnessOf(look));
-  return JSON.stringify([s.shape, s.w, s.h, s.fill, style.color, style.width, strokeKindOf(look), roughness, round, seed, fillStyleOf(look), startArrowheadOf(look), endArrowheadOf(look)]);
+  const [ew, eh] = pathExtent(s);
+  const roughness = adjustRoughness(s.shape, ew, eh, round, roughnessOf(look));
+  return JSON.stringify([s.shape, s.w, s.h, s.fill, style.color, style.width, strokeKindOf(look), roughness, round, seed, fillStyleOf(look), startArrowheadOf(look), endArrowheadOf(look), s.points ?? null, elbowedOf(look)]);
 }
 
 function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key: string): SketchPlan {
@@ -122,7 +132,8 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
   const kind = strokeKindOf(look);
   const dash = dashOf(kind, w);
   const round = roundnessOf(look) === "round";
-  const roughness = adjustRoughness(s.shape, s.w, s.h, round, roughnessOf(look));
+  const [ew, eh] = pathExtent(s);
+  const roughness = adjustRoughness(s.shape, ew, eh, round, roughnessOf(look));
   const fillKind = fillStyleOf(look);
   const closed = s.shape === "rect" || s.shape === "ellipse";
   const opts: Options = {
@@ -147,12 +158,36 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
   } else if (s.shape === "ellipse") {
     add(gen.ellipse(s.w / 2, s.h / 2, s.w, s.h, opts).sets, dash);
   } else {
-    add(gen.line(0, 0, s.w, s.h, opts).sets, dash);
+    const g = lineGeomOf(s, look);
+    const pts = linePath(s.w, s.h, g.inner);
+    if (pts.length === 2) add(gen.line(0, 0, s.w, s.h, opts).sets, dash);
+    else if (g.curve) add(gen.curve(pts.map((p) => [p[0], p[1]] as [number, number]), opts).sets, dash);
+    else add(gen.linearPath(pts.map((p) => [p[0], p[1]] as [number, number]), opts).sets, dash);
     if (s.shape === "arrow") {
+      const flat = flattenPath(pts, g.curve);
+      const last = flat[flat.length - 1]!;
+      const prev = flat[flat.length - 2]!;
+      const first = flat[0]!;
+      const second = flat[1]!;
       const wd = wingDashOf(kind, w);
       const wing: Options = { ...opts, strokeLineDash: wd, roughness: Math.min(1, roughness) };
       const addHead = (k: Arrowhead, tx: number, ty: number, fx: number, fy: number): void => {
-        const head = k === "none" ? null : headWings(tx, ty, fx, fy, w);
+        if (k === "none") return;
+        if (k === "bar" || k === "circle" || k === "circle_outline") {
+          const d = Math.hypot(tx - fx, ty - fy) || 1;
+          if (k === "bar") {
+            const l = Math.max(12, 3 * w) / 2;
+            const nx = -(ty - fy) / d;
+            const ny = (tx - fx) / d;
+            add(gen.line(tx + nx * l, ty + ny * l, tx - nx * l, ty - ny * l, wing).sets, wd);
+          } else {
+            const r = Math.max(4, 1.5 * w);
+            const circle: Options = k === "circle" ? { ...wing, fill: style.color, fillStyle: "solid" } : wing;
+            add(gen.circle(tx - ((tx - fx) / d) * r, ty - ((ty - fy) / d) * r, 2 * r, circle).sets, wd);
+          }
+          return;
+        }
+        const head = headWings(tx, ty, fx, fy, w);
         if (!head) return;
         if (k === "arrow") {
           add(gen.line(head[0], head[1], tx, ty, wing).sets, wd);
@@ -163,8 +198,8 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
           add(gen.polygon(poly, fillOpts).sets, wd);
         }
       };
-      addHead(endArrowheadOf(look), s.w, s.h, 0, 0);
-      addHead(startArrowheadOf(look), 0, 0, s.w, s.h);
+      addHead(endArrowheadOf(look), last[0], last[1], prev[0], prev[1]);
+      addHead(startArrowheadOf(look), first[0], first[1], second[0], second[1]);
     }
   }
   return { key, parts };

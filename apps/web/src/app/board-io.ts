@@ -8,7 +8,7 @@
  */
 import { DEFAULT_BACKGROUND, PAGE_WIDTH, type AssetRef, type Change, type Command, type CoreDocument, type CoreFactory, type ElementView, type Matrix, type TextSpan } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
-import { applyMatrix, composeMatrix } from "../core/shapes";
+import { applyMatrix, composeMatrix, flattenPath, isSegment, lineGeomOf, linePath } from "../core/shapes";
 import { encodeBoardList, type BoardListData, type BoardListPage, type BoardObject } from "../platform/board-list";
 import { normalBoardPath, type BoardDialect, type BoardPart, type BoardReadOptions, type BoardSourceFormat } from "../platform/board-reader";
 import type { ImageKind } from "../platform/image-decode";
@@ -264,6 +264,7 @@ const EXPORT_LABELS: ReadonlyArray<readonly [string, string, string]> = [
   ["backdrop", "fond PDF non exporté", "fonds PDF non exportés"],
   ["params", "réglage d'image non exporté (image d'origine écrite)", "réglages d'image non exportés (images d'origine écrites)"],
   ["arrow", "flèche écrite en ligne (.ubz)", "flèches écrites en lignes (.ubz)"],
+  ["bent", "flèche à plusieurs points écrite sans pointe", "flèches à plusieurs points écrites sans pointe"],
   ["outside", "objet hors du cadre (coordonnées négatives ou au-delà de 1 920)", "objets hors du cadre (coordonnées négatives ou au-delà de 1 920)"],
 ];
 const EXT_OF_MIME: Readonly<Record<string, string>> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/bmp": "bmp", "image/svg+xml": "svg" };
@@ -287,9 +288,17 @@ function objectOf(
       }
       return { kind: "stroke", m, color: el.style.color, width: el.style.width, points: Array.from(pts) };
     }
-    case "shape":
+    case "shape": {
+      const g = lineGeomOf(el.shape, el.look);
+      // Une courbe à deux points est droite : seuls les points intérieurs font une polyligne.
+      if (isSegment(el.shape.shape) && g.inner.length > 0) {
+        const flat = flattenPath(linePath(el.shape.w, el.shape.h, g.inner), g.curve);
+        if (el.shape.shape === "arrow") add("bent");
+        return { kind: "stroke", m, color: el.style.color, width: el.style.width, points: flat.flatMap(([x, y]) => [x, y, 0.5]) };
+      }
       if (format === "ubz" && el.shape.shape === "arrow") add("arrow");
       return { kind: "shape", shape: el.shape.shape, m, x0: 0, y0: 0, x1: el.shape.w, y1: el.shape.h, color: el.style.color, width: el.style.width, fill: el.shape.fill };
+    }
     case "text":
       return { kind: "text", m, x: 0, y: 0, boxWidth: el.text.boxWidth, boxHeight: el.text.boxHeight, size: el.text.size, color: el.style.color, spans: el.text.spans };
     case "image": {

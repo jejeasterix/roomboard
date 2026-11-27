@@ -149,4 +149,32 @@ describe("sketch lot 2 : hachures et pointes", () => {
     expect(none.length).toBeLessThan(def.length);
     expect(both.length).toBeGreaterThan(def.length);
   });
+
+  it("point intérieur déplacé : tracé roughjs changé", () => {
+    const memo = { id: "l", cache: new Map<string, SketchPlan>() };
+    const line = { shape: "line" as const, w: 200, h: 0, fill: null };
+    sketchShape(ctx(rec()), { ...line, points: [100, -50] }, pen, { roughness: 1, seed: 3 }, 3, memo);
+    const before = memo.cache.get("l")!;
+    sketchShape(ctx(rec()), { ...line, points: [100, -60] }, pen, { roughness: 1, seed: 3 }, 3, memo);
+    const after = memo.cache.get("l")!;
+    expect(after.key).not.toBe(before.key);
+    expect(after).not.toBe(before);
+  });
+
+  it("même ligne sans points : même clé qu'avant OG12", () => {
+    const memo = { id: "l", cache: new Map<string, SketchPlan>() };
+    sketchShape(ctx(rec()), { shape: "line", w: 200, h: 0, fill: null }, pen, { roughness: 1 }, 3, memo);
+    const key = memo.cache.get("l")!.key;
+    // Chaîne d'avant OG12 ; seuls `points` (absent) et `elbowed` (faux) s'y ajoutent à la fin.
+    expect(key).toBe('["line",200,0,null,"#000000",4,"solid",1,false,3,"solid","none","arrow",null,false]');
+  });
+
+  it("polyligne et courbe : le tracé passe par les points, les pointes suivent les segments d'extrémité", () => {
+    const a = rec();
+    sketchShape(ctx(a), { shape: "arrow", w: 100, h: 0, fill: null, points: [50, -80] }, pen, { roughness: 1, startArrowhead: "bar", endArrowhead: "circle" }, 5);
+    expect(ops(a).length).toBeGreaterThan(0);
+    const b = rec();
+    sketchShape(ctx(b), { shape: "arrow", w: 100, h: 0, fill: null, points: [50, -80] }, pen, { roughness: 1, roundness: "round", startArrowhead: "circle_outline", endArrowhead: "bar" }, 5);
+    expect(ops(b)).not.toEqual(ops(a));
+  });
 });
