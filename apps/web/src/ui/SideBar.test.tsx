@@ -153,11 +153,10 @@ describe("SideBar (T10)", () => {
     stage.tabIndex = -1;
     document.body.append(stage);
     const { thumbs, pages } = setup();
-    document.body.append(...[]);
     const [a, b] = thumbs();
     a!.focus();
     const seen = vi.fn();
-    document.addEventListener("keydown", seen);
+    window.addEventListener("keydown", seen);
     fireEvent.keyDown(a!, { key: "ArrowDown", ctrlKey: true });
     expect(pages.move).toHaveBeenCalledWith("a", 1);
     fireEvent.keyDown(a!, { key: "ArrowDown" });
@@ -169,7 +168,7 @@ describe("SideBar (T10)", () => {
     expect(seen.mock.calls.some((c) => (c[0] as KeyboardEvent).key === "Delete")).toBe(false);
     fireEvent.keyDown(b!, { key: "Escape" });
     expect(thumbs().includes(document.activeElement as HTMLButtonElement)).toBe(false);
-    document.removeEventListener("keydown", seen);
+    window.removeEventListener("keydown", seen);
   });
 
   it("segments Mode : portrait appelle setLayout ; PDF fixé : infobulle « cadre fixé par le fond PDF »", () => {
