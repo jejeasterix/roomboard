@@ -17,9 +17,9 @@ use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 use crate::element::ImageView;
 use crate::element::{
     backdrop_view, finite_positive, look_view, out_f64, out_string, out_transform, read_backdrop,
-    read_group, read_image, read_style, read_unknown, unknown_view, ElementView, FillView,
-    PageLayout, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH,
-    INFINITE_MODE, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
+    read_cell_link, read_group, read_image, read_style, read_unknown, unknown_view, ElementView,
+    FillView, PageLayout, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND,
+    FIT_WIDTH, INFINITE_MODE, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
@@ -373,6 +373,15 @@ impl Document {
         let found = self.find_element(&txn, id)?;
         let e = &found.element;
         let group = read_group(&txn, e);
+        // personnalisation-3 (D1, D36) : lien publié seulement vers une case existante, jamais sur un tableau (`kind`
+        // brut : un tableau illisible vu en `unknown` ne publie rien non plus) ; la valeur reste dans le document.
+        let cell = read_cell_link(&txn, e).filter(|l| {
+            out_string(e.get(&txn, "kind")).as_deref() != Some(crate::table::TABLE_KIND)
+                && self
+                    .find_element(&txn, &l[0])
+                    .and_then(|f| crate::table::read_raw(&txn, &f.element))
+                    .is_some_and(|raw| raw.ranks((l[1].as_str(), l[2].as_str())).is_some())
+        });
         let view = match out_string(e.get(&txn, "kind")).as_deref() {
             Some("stroke") => Some(ElementView {
                 style: Some(read_style(&txn, e)?),
@@ -494,7 +503,7 @@ impl Document {
                 })
             }
         };
-        view.map(|v| ElementView { group, ..v })
+        view.map(|v| ElementView { group, cell, ..v })
     }
 
     pub fn schema(&self) -> Option<f64> {

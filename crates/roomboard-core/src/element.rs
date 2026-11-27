@@ -193,6 +193,10 @@ pub struct ElementView {
     /// Chemin de groupes (C3, Z1), du plus extérieur au plus intérieur ; absent sans groupe lisible.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<Vec<String>>,
+    /// Case qui loge l'objet (personnalisation-3, D1) : `[tableId, rowId, colId]` ; absent sans lien lisible, sans case
+    /// existante, et sur un tableau (D36).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<[String; 3]>,
     /// Aspect facultatif (OG11) de `stroke`, `shape`, `text` et `image` ; absent (omis du JSON) quand il est neutre.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub look: Option<Look>,
@@ -215,6 +219,7 @@ impl ElementView {
             model3d: None,
             fill: None,
             group: None,
+            cell: None,
             look: None,
         }
     }
@@ -322,6 +327,34 @@ pub(crate) fn read_group<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<Vec<String>>
 pub(crate) fn group_to_any(path: &[String]) -> Any {
     Any::Array(
         path.iter()
+            .map(|s| Any::String(s.as_str().into()))
+            .collect(),
+    )
+}
+
+/// Lien de case (personnalisation-3, D1) : `[tableId, rowId, colId]`, trois chaînes non vides. Absent ou mal formé =
+/// objet libre ; la valeur reste telle quelle dans le document (U3, jamais réécrite à la lecture).
+pub(crate) fn read_cell_link<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<[String; 3]> {
+    let Some(Out::Any(Any::Array(items))) = e.get(txn, "cell") else {
+        return None;
+    };
+    if items.len() != 3 {
+        return None;
+    }
+    let mut out: [String; 3] = Default::default();
+    for (slot, a) in out.iter_mut().zip(items.iter()) {
+        match a {
+            Any::String(s) if !s.is_empty() => *slot = s.to_string(),
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
+/// Valeur écrite du champ `cell` : `Any::Array` de trois chaînes, remplacé en bloc (U3, jamais `Any::Map`).
+pub(crate) fn cell_link_to_any(link: &[String; 3]) -> Any {
+    Any::Array(
+        link.iter()
             .map(|s| Any::String(s.as_str().into()))
             .collect(),
     )

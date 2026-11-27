@@ -240,6 +240,21 @@ pub enum Command {
         color: String,
         size: f64,
     },
+    /// personnalisation-3 (D3) : tailles, suivi des autres objets liés, `matrix` composée sur `ids`, `cell` posé (`Some`)
+    /// ou retiré (`None`) ; refus `BadTable` si `ids` contient un tableau ou si la case visée est ombrée (D35, D36) ; une
+    /// étape.
+    PlaceInCell {
+        ids: Vec<String>,
+        matrix: Transform,
+        cell: Option<[String; 3]>,
+        sizes: Vec<crate::table_links::LineSize>,
+    },
+    /// personnalisation-3 (D4) : tailles par id de ligne et de colonne, objets liés suivis ; une étape.
+    SetTableLineSizes {
+        id: String,
+        cols: Vec<(String, f64)>,
+        rows: Vec<(String, f64)>,
+    },
     /// Pot (C6a, D12, DA1) : contour (`color`), intérieur (`fill`) ou fond de la page (`background`) ; `None` = « Aucune »
     /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38). C6b : image
     /// (nouvel asset, `sourceAsset`, B2-B4).
@@ -701,7 +716,11 @@ struct Target {
 
 impl Document {
     /// Éléments trouvés pour des ids dédoublonnés (ordre des ids) ; ids inconnus ignorés.
-    fn find_unique<T: ReadTxn>(&self, txn: &T, ids: &[String]) -> Vec<(String, FoundElement)> {
+    pub(crate) fn find_unique<T: ReadTxn>(
+        &self,
+        txn: &T,
+        ids: &[String],
+    ) -> Vec<(String, FoundElement)> {
         let unique: BTreeSet<&String> = ids.iter().collect();
         unique
             .into_iter()
@@ -881,6 +900,15 @@ impl Document {
                 (to.0.as_str(), to.1.as_str()),
                 shade.as_deref(),
             ),
+            Command::PlaceInCell {
+                ids,
+                matrix,
+                cell,
+                sizes,
+            } => self.cmd_place_in_cell(&ids, &matrix, cell.as_ref(), &sizes),
+            Command::SetTableLineSizes { id, cols, rows } => {
+                self.cmd_set_table_line_sizes(&id, &cols, &rows)
+            }
             Command::ImportTable {
                 page,
                 matrix,

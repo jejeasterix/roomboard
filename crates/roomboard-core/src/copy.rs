@@ -1,7 +1,8 @@
 //! Recopie profonde (C3, DAZ1, DAZ2) : une seule routine, bâtie sur `AsPrelim` de yrs (copie des `Y.Map`, `Y.Array`,
 //! `Y.Text` avec attributs de plage et embeds), sert l'extraction d'une sélection, l'insertion d'un fragment et
 //! l'insertion des pages d'un document. Chaque élément garde tous ses champs (types inconnus compris, U3) ; seuls
-//! `id`, `group` (renuméroté par une table commune à l'insertion) et la translation de `transform` sont réécrits.
+//! `id`, `group` (renuméroté par une table commune à l'insertion) et la translation de `transform` sont réécrits ;
+//! `cell` (personnalisation-3) est retiré : une copie est libre.
 //! Aucune lecture du `kind`.
 //!
 //! Jamais l'état d'un document appliqué comme mise à jour Yrs sur la cible (U9) : la cible garderait les ids et
@@ -75,6 +76,8 @@ pub(crate) fn copy_elements<T: ReadTxn>(
         if let Some(g) = prelim.get("group").and_then(|g| renumber(g, ids)) {
             prelim.insert("group".into(), g);
         }
+        // personnalisation-3 : une copie est libre, jamais liée au tableau d'origine (renumérotation : T5).
+        prelim.remove("cell");
         // Transformation illisible : gardée telle quelle.
         if dx != 0.0 || dy != 0.0 {
             if let Some(mut t) = out_transform(e.get(src, "transform")) {

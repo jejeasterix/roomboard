@@ -1,3 +1,356 @@
+//! Objets logés dans une case (personnalisation-3, DA1, DA2) : lien `cell = [tableId, rowId, colId]` sur l'élément ; la
+//! page calcule tailles et matrice, le cœur les écrit (`PlaceInCell`, `SetTableLineSizes`) et fait suivre les objets
+//! liés quand une ligne ou une colonne bouge (`follow_in`), dans la transaction de la commande : une étape. Le lien vise
+//! des ids de ligne et de colonne, jamais des rangs : une ligne insérée avant ne change pas la case.
+use std::collections::{HashMap, HashSet};
+
+use yrs::{Any, Array, In, Map, MapRef, Out, ReadTxn, TransactionMut};
+
+use crate::commands::{valid_matrix, Change, CommandError};
+use crate::document::Document;
+use crate::element::{
+    cell_link_to_any, compose, finite_positive, fits_f32, out_string, out_transform,
+    read_cell_link, transform_to_any, Transform, IDENTITY,
+};
+use crate::table::{merges_of, read_cell, read_raw, Line, RawTable, TableAxis, TABLE_KIND};
+
+/// Taille d'une ligne ou d'une colonne écrite par `PlaceInCell` (D3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LineSize {
+    pub table: String,
+    pub axis: TableAxis,
+    pub line: String,
+    pub size: f64,
+}
+
+/// Décalage de chaque ligne et colonne lisible depuis le coin du tableau (repère local), par id.
+pub(crate) struct Offsets {
+    pub cols: HashMap<String, f64>,
+    pub rows: HashMap<String, f64>,
+}
+
+fn run(lines: &[Line]) -> HashMap<String, f64> {
+    let mut acc = 0.0;
+    let mut out = HashMap::with_capacity(lines.len());
+    for l in lines {
+        out.insert(l.id.clone(), acc);
+        acc += l.size;
+    }
+    out
+}
+
+pub(crate) fn offsets(raw: &RawTable) -> Offsets {
+    Offsets {
+        cols: run(&raw.cols),
+        rows: run(&raw.rows),
+    }
+}
+
+fn lines_of(raw: &RawTable, axis: TableAxis) -> (&[Line], &'static str) {
+    match axis {
+        TableAxis::Row => (&raw.rows, "height"),
+        TableAxis::Col => (&raw.cols, "width"),
+    }
+}
+
+/// Tailles valides : chaque ligne existe, taille finie > 0, total de chaque axe borné en f32 (même garde que T15).
+pub(crate) fn line_sizes_ok(raw: &RawTable, sizes: &[(TableAxis, String, f64)]) -> bool {
+    let known = sizes
+        .iter()
+        .all(|(a, id, s)| finite_positive(*s) && lines_of(raw, *a).0.iter().any(|l| &l.id == id));
+    let total = |axis: TableAxis| -> f64 {
+        lines_of(raw, axis)
+            .0
+            .iter()
+            .map(|l| {
+                sizes
+                    .iter()
+                    .rev()
+                    .find(|(a, id, _)| *a == axis && *id == l.id)
+                    .map_or(l.size, |(_, _, s)| *s)
+            })
+            .sum()
+    };
+    known && fits_f32(&[total(TableAxis::Row), total(TableAxis::Col)])
+}
+
+/// Vrai si chaque taille demandée vaut déjà la taille lue.
+pub(crate) fn line_sizes_same(raw: &RawTable, sizes: &[(TableAxis, String, f64)]) -> bool {
+    sizes.iter().all(|(a, id, s)| {
+        lines_of(raw, *a)
+            .0
+            .iter()
+            .any(|l| &l.id == id && l.size == *s)
+    })
+}
+
+/// Écrit les tailles qui changent (contrôlées avant par `line_sizes_ok`), dans `Line.map`.
+pub(crate) fn write_line_sizes(
+    txn: &mut TransactionMut,
+    raw: &RawTable,
+    sizes: &[(TableAxis, String, f64)],
+) {
+    for (axis, id, size) in sizes {
+        let (lines, key) = lines_of(raw, *axis);
+        if let Some(l) = lines.iter().find(|l| &l.id == id && l.size != *size) {
+            l.map.insert(txn, key, In::Any(Any::from(*size)));
+        }
+    }
+}
+
+/// Rectangle local `(x0, y0, x1, y1)` de la case `row`, `col` (celui de sa zone si elle en couvre une).
+#[allow(dead_code)] // lu par T1b (sortie de case par `Transform`, D6)
+pub(crate) fn cell_rect<T: ReadTxn>(
+    raw: &RawTable,
+    txn: &T,
+    row: &str,
+    col: &str,
+) -> Option<(f64, f64, f64, f64)> {
+    let (r, c) = raw.ranks((row, col))?;
+    let (r0, c0, r1, c1) = merges_of(raw, txn)
+        .into_iter()
+        .find(|m| m.r0 <= r && r <= m.r1 && m.c0 <= c && c <= m.c1)
+        .map_or((r, c, r, c), |m| (m.r0, m.c0, m.r1, m.c1));
+    let at = |lines: &[Line], i: usize| -> f64 { lines[..i].iter().map(|l| l.size).sum() };
+    Some((
+        at(&raw.cols, c0),
+        at(&raw.rows, r0),
+        at(&raw.cols, c1 + 1),
+        at(&raw.rows, r1 + 1),
+    ))
+}
+
+/// Tailles d'un tableau de `PlaceInCell` : id, `Y.Map`, lecture brute, tailles demandées.
+type TableSizes = (String, MapRef, RawTable, Vec<(TableAxis, String, f64)>);
+
+impl Document {
+    /// Suivi (D5) dans la transaction ouverte : chaque objet lié au tableau `table_id`, hors `skip`, est translaté du
+    /// déplacement du coin de sa case, lu par ids (partie linéaire de la matrice du tableau) ; sa ligne ou sa colonne a
+    /// disparu : lien retiré, objet laissé en place (H22). Rend les ids touchés, dans l'ordre de la pile.
+    pub(crate) fn follow_in(
+        &self,
+        txn: &mut TransactionMut,
+        page: &str,
+        table: &MapRef,
+        table_id: &str,
+        before: &Offsets,
+        skip: &HashSet<String>,
+    ) -> Vec<String> {
+        let Some(after_raw) = read_raw(&*txn, table) else {
+            return Vec::new();
+        };
+        let after = offsets(&after_raw);
+        let [a, b, c, d, _, _] = after_raw.transform;
+        let Some(elements) = self.page_elements(&*txn, page) else {
+            return Vec::new();
+        };
+        let linked: Vec<(MapRef, String, [String; 3], Option<Transform>)> = elements
+            .iter(&*txn)
+            .filter_map(|o| {
+                let Out::YMap(m) = o else { return None };
+                let link = read_cell_link(&*txn, &m)?;
+                let id = out_string(m.get(&*txn, "id"))?;
+                let is_table = out_string(m.get(&*txn, "kind")).as_deref() == Some(TABLE_KIND);
+                if link[0] != table_id || skip.contains(&id) || is_table {
+                    return None;
+                }
+                let t = out_transform(m.get(&*txn, "transform"));
+                Some((m, id, link, t))
+            })
+            .collect();
+        let mut touched = Vec::new();
+        for (m, id, link, t) in linked {
+            // Lien déjà sans case avant la commande (D1) : laissé tel quel.
+            let (Some(c0), Some(r0)) = (before.cols.get(&link[2]), before.rows.get(&link[1]))
+            else {
+                continue;
+            };
+            match (after.cols.get(&link[2]), after.rows.get(&link[1])) {
+                (Some(c1), Some(r1)) => {
+                    let (dx, dy) = (c1 - c0, r1 - r0);
+                    let Some(mut t) = t else { continue };
+                    if dx == 0.0 && dy == 0.0 {
+                        continue;
+                    }
+                    t[4] += a * dx + c * dy;
+                    t[5] += b * dx + d * dy;
+                    m.insert(txn, "transform", transform_to_any(&t));
+                    touched.push(id);
+                }
+                _ => {
+                    m.remove(txn, "cell");
+                    touched.push(id);
+                }
+            }
+        }
+        touched
+    }
+
+    /// Changement d'une commande de tableau : le tableau, puis les objets suivis (ordre de la pile).
+    pub(crate) fn table_done_with(&mut self, page: String, id: &str, moved: Vec<String>) -> Change {
+        let mut ids = vec![id.to_string()];
+        ids.extend(moved.into_iter().filter(|m| m != id));
+        self.done(Change {
+            pages: vec![page],
+            ids,
+            ..Default::default()
+        })
+    }
+
+    /// `SetTableLineSizes` (D4) : tailles par id, objets liés suivis, une étape ; mêmes tailles : aucune étape.
+    pub(crate) fn cmd_set_table_line_sizes(
+        &mut self,
+        id: &str,
+        cols: &[(String, f64)],
+        rows: &[(String, f64)],
+    ) -> Result<Change, CommandError> {
+        let (page, e, raw) = self.table_of(id)?;
+        let sizes: Vec<(TableAxis, String, f64)> = cols
+            .iter()
+            .map(|(l, s)| (TableAxis::Col, l.clone(), *s))
+            .chain(rows.iter().map(|(l, s)| (TableAxis::Row, l.clone(), *s)))
+            .collect();
+        if !line_sizes_ok(&raw, &sizes) {
+            return Err(CommandError::BadTable);
+        }
+        if line_sizes_same(&raw, &sizes) {
+            return Ok(self.unchanged());
+        }
+        let before = offsets(&raw);
+        let moved = {
+            let mut txn = self.transact_local();
+            write_line_sizes(&mut txn, &raw, &sizes);
+            self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
+        };
+        Ok(self.table_done_with(page, id, moved))
+    }
+
+    /// `PlaceInCell` (D3) : refus dans l'ordre du plan (T1a) ; puis une transaction : tailles et suivi des autres objets
+    /// liés, matrice composée sur `ids`, `cell` posé ou retiré.
+    pub(crate) fn cmd_place_in_cell(
+        &mut self,
+        ids: &[String],
+        m: &Transform,
+        cell: Option<&[String; 3]>,
+        sizes: &[LineSize],
+    ) -> Result<Change, CommandError> {
+        // 1. Matrice invalide.
+        if !valid_matrix(m) {
+            return Err(CommandError::BadMatrix);
+        }
+        // 2. Un tableau parmi les ids (D36).
+        let (found, same_links) = {
+            let txn = self.read();
+            let found = self.find_unique(&txn, ids);
+            if found.iter().any(|(_, f)| {
+                out_string(f.element.get(&txn, "kind")).as_deref() == Some(TABLE_KIND)
+            }) {
+                return Err(CommandError::BadTable);
+            }
+            let same = found
+                .iter()
+                .all(|(_, f)| read_cell_link(&txn, &f.element).as_ref() == cell);
+            (found, same)
+        };
+        // 3. Aucun id trouvé : aucune étape. 4. Plusieurs pages.
+        let Some(page) = found.first().map(|(_, f)| f.page_id.clone()) else {
+            return Ok(self.unchanged());
+        };
+        if found.iter().any(|(_, f)| f.page_id != page) {
+            return Err(CommandError::BadTable);
+        }
+        // 5. Case visée : tableau connu, même page, ligne et colonne connues, case sans `shade` (D35).
+        if let Some(l) = cell {
+            let (tpage, _, raw) = self.table_of(&l[0])?;
+            if tpage != page {
+                return Err(CommandError::BadTable);
+            }
+            raw.ranks((l[1].as_str(), l[2].as_str()))
+                .ok_or(CommandError::BadTable)?;
+            let shaded = {
+                let txn = self.read();
+                read_cell(&txn, raw.cells.as_ref(), &l[1], &l[2]).is_some_and(|x| x.shade.is_some())
+            };
+            if shaded {
+                return Err(CommandError::BadTable);
+            }
+        }
+        // 6. Tableaux des tailles, dans l'ordre d'apparition.
+        let mut tables: Vec<TableSizes> = Vec::new();
+        for s in sizes {
+            if !tables.iter().any(|t| t.0 == s.table) {
+                let (tpage, e, raw) = self.table_of(&s.table)?;
+                if tpage != page {
+                    return Err(CommandError::BadTable);
+                }
+                tables.push((s.table.clone(), e, raw, Vec::new()));
+            }
+            if let Some(t) = tables.iter_mut().find(|t| t.0 == s.table) {
+                t.3.push((s.axis, s.line.clone(), s.size));
+            }
+        }
+        if !tables
+            .iter()
+            .all(|(_, _, raw, list)| line_sizes_ok(raw, list))
+        {
+            return Err(CommandError::BadTable);
+        }
+        // 7. Matrice composée invalide.
+        let composed: Vec<Transform> = {
+            let txn = self.read();
+            found
+                .iter()
+                .map(|(_, f)| {
+                    out_transform(f.element.get(&txn, "transform")).map_or(*m, |t| compose(m, &t))
+                })
+                .collect()
+        };
+        if !composed.iter().all(valid_matrix) {
+            return Err(CommandError::BadMatrix);
+        }
+        // 8. Rien ne change : aucune étape.
+        if *m == IDENTITY
+            && same_links
+            && tables
+                .iter()
+                .all(|(_, _, raw, list)| line_sizes_same(raw, list))
+        {
+            return Ok(self.unchanged());
+        }
+        let skip: HashSet<String> = found.iter().map(|(id, _)| id.clone()).collect();
+        let mut touched: Vec<String> = skip.iter().cloned().collect();
+        {
+            let mut txn = self.transact_local();
+            for (tid, e, raw, list) in &tables {
+                let before = offsets(raw);
+                write_line_sizes(&mut txn, raw, list);
+                touched.push(tid.clone());
+                touched.extend(self.follow_in(&mut txn, &page, e, tid, &before, &skip));
+            }
+            for ((_, f), c) in found.iter().zip(&composed) {
+                if *m != IDENTITY {
+                    f.element.insert(&mut txn, "transform", transform_to_any(c));
+                }
+                match cell {
+                    Some(l) => {
+                        f.element.insert(&mut txn, "cell", cell_link_to_any(l));
+                    }
+                    None => {
+                        f.element.remove(&mut txn, "cell");
+                    }
+                }
+            }
+        }
+        touched.sort();
+        touched.dedup();
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: touched,
+            ..Default::default()
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -101,7 +454,10 @@ mod tests {
         let c = place11(&mut d, &t, &o);
         let mut want = vec![t.clone(), o.clone()];
         want.sort();
-        assert_eq!(c.ids, want, "ids triés : objet placé et tableau des tailles");
+        assert_eq!(
+            c.ids, want,
+            "ids triés : objet placé et tableau des tailles"
+        );
         let v = view(&d, &t);
         assert_eq!(
             v.cols.iter().map(|c| c.width).collect::<Vec<_>>(),
@@ -179,7 +535,11 @@ mod tests {
             .expect("ligne");
         assert_eq!(tx(&d, &o)[5], y + 64.0);
         assert_eq!(c.ids, vec![t.clone(), o.clone()]);
-        assert_eq!(d.element(&o).expect("o").cell, Some(linked.clone()), "lien par ids");
+        assert_eq!(
+            d.element(&o).expect("o").cell,
+            Some(linked.clone()),
+            "lien par ids"
+        );
         assert_eq!(link(&d, &t, 2, 1), linked, "la case a glissé au rang 2");
         assert!(d.undo());
         assert_eq!(view(&d, &t).rows.len(), 3, "un seul Ctrl+Z retire la ligne");
@@ -442,6 +802,10 @@ mod tests {
             .filter_map(|id| d.element(id).and_then(|v| v.cell))
             .collect();
         assert!(linked.iter().all(|l| l[0] != t));
-        assert_eq!(raw_link(&d, &o), Some(link(&d, &t, 1, 1)), "l'original garde son lien");
+        assert_eq!(
+            raw_link(&d, &o),
+            Some(link(&d, &t, 1, 1)),
+            "l'original garde son lien"
+        );
     }
 }
