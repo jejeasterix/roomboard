@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, sheetLane, tabsWidth,
+  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, placeOptions, sheetLane, tabsWidth,
   type Corners,
 } from "./island-place";
 
@@ -118,5 +118,15 @@ describe("design-l2 T11 : #etat dans la rangée du haut", () => {
     expect(tabsWidth(MID, 80, 108, null, 100)).toBe(1280 - 16 - 108 - 8 - 80 - 100 - 8);
     expect(tabsWidth(MID, 80, 108, { x: 360, y: 16 }, 0)).toBe(360 - 8 - 80);
     expect(tabsWidth(MID, 80, 108, { x: 360, y: 16 }, 1000)).toBe(144);
+  });
+});
+
+describe("island-place : panneau d'options (OG11, T10)", () => {
+  it("à gauche sous la rangée du haut ; décalé par la barre latérale quand elle existe", () => {
+    expect(placeOptions(MID, null, 64)).toEqual({ x: 16, y: 72 });
+    expect(placeOptions(MID, { w: 80, h: 900 }, 64)).toEqual({ x: 88, y: 72 });
+  });
+  it("y reste dans la zone", () => {
+    expect(placeOptions({ w: 1280, h: 100 }, null, 400).y).toBe(84);
   });
 });
