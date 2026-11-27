@@ -1881,7 +1881,8 @@ mod tests {
             y1: 1_000_607.0,
         };
         assert_eq!(
-            d.grid_lines_of(&p, &g, far, 0.0, 0.0).map(|l| l.levels.len()),
+            d.grid_lines_of(&p, &g, far, 0.0, 0.0)
+                .map(|l| l.levels.len()),
             Some(0),
             "rien sous le cadre"
         );
@@ -1932,7 +1933,8 @@ mod tests {
     /// `pageFrame` ; lignes jusqu'à 2715, aucune au-delà.
     #[test]
     fn grid_clip_pdf_backdrop_extends_frame() {
-        let d = Document::from_pdf_pages(&pdf_asset(), &[(1920.0, 2715.0)], None).expect("document");
+        let d =
+            Document::from_pdf_pages(&pdf_asset(), &[(1920.0, 2715.0)], None).expect("document");
         let p = d.page_ids()[0].clone();
         let r = Bounds {
             x0: 0.0,
@@ -1940,7 +1942,10 @@ mod tests {
             x1: 1920.0,
             y1: 5000.0,
         };
-        let (_, h, b) = grid_xy(&d.grid_lines_of(&p, &squares_grid(15.0), r, 0.0, 0.0).expect("visible"));
+        let (_, h, b) = grid_xy(
+            &d.grid_lines_of(&p, &squares_grid(15.0), r, 0.0, 0.0)
+                .expect("visible"),
+        );
         assert_eq!(h.last(), Some(&2715.0));
         assert_eq!(b.y1, 2715.0);
     }

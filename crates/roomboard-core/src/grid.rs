@@ -226,7 +226,9 @@ fn snap_axis(v: f64, origin: f64, step: f64, lo: Option<f64>, hi: Option<f64>) -
 /// `[lo, hi]` seules quand ils sont donnés (cadre de la page, T7), toutes en Infini.
 fn snap_staff(y: f64, oy: f64, sy: f64, lo: Option<f64>, hi: Option<f64>) -> Option<f64> {
     let period = 10.0 * sy;
-    let first = lo.map_or(f64::NEG_INFINITY, |l| ((l - oy - 4.0 * sy) / period - EPS).ceil());
+    let first = lo.map_or(f64::NEG_INFINITY, |l| {
+        ((l - oy - 4.0 * sy) / period - EPS).ceil()
+    });
     let last = hi.map_or(f64::INFINITY, |h| ((h - oy) / period + EPS).floor());
     if first.is_nan() || last.is_nan() || first > last {
         return None;
@@ -291,10 +293,7 @@ fn snap_level(l: &GridLevelView, clip: Option<Bounds>, (x, y): (f64, f64)) -> Op
     let (x0, x1) = (clip.map(|k| k.x0), clip.map(|k| k.x1));
     let (y0, y1) = (clip.map(|k| k.y0), clip.map(|k| k.y1));
     match l.kind.as_str() {
-        "squares" | "dots" => Some((
-            snap_axis(x, ox, sx, x0, x1)?,
-            snap_axis(y, oy, sy, y0, y1)?,
-        )),
+        "squares" | "dots" => Some((snap_axis(x, ox, sx, x0, x1)?, snap_axis(y, oy, sy, y0, y1)?)),
         "lines" => Some((x, snap_axis(y, oy, sy, y0, y1)?)),
         "seyes" => Some((
             snap_axis(x, ox, sx, x0, x1)?,
@@ -331,7 +330,12 @@ pub fn snap_point(g: &GridView, clip: Option<Bounds>, p: (f64, f64)) -> Option<(
 /// point aimanté `q` est le plus proche (le premier à égalité) et le déplacement rendu est `q − candidat d'origine`,
 /// chaque composante sous `DELTA_EPS` ramenée à 0 : exactement nul quand l'élément revient à sa place, même si ses
 /// coins portent un résidu d'arrondi ; brut sans accroche.
-pub fn snap_delta(g: &GridView, clip: Option<Bounds>, b: Bounds, (dx, dy): (f64, f64)) -> (f64, f64) {
+pub fn snap_delta(
+    g: &GridView,
+    clip: Option<Bounds>,
+    b: Bounds,
+    (dx, dy): (f64, f64),
+) -> (f64, f64) {
     let (cx, cy) = ((b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0);
     let mut best: Option<((f64, f64), f64)> = None;
     for (x, y) in [
@@ -795,7 +799,11 @@ mod tests {
     fn grid_squares_and_dots_snap_to_the_nearest_crossing() {
         for kind in ["squares", "dots"] {
             let g = grid(vec![level(kind, 40.0, 40.0)]);
-            assert_eq!(snap_point(&g, PAGE, (13.0, 17.0)), Some((0.0, 0.0)), "{kind}");
+            assert_eq!(
+                snap_point(&g, PAGE, (13.0, 17.0)),
+                Some((0.0, 0.0)),
+                "{kind}"
+            );
             assert_eq!(
                 snap_point(&g, PAGE, (118.0, 97.0)),
                 Some((120.0, 80.0)),
@@ -820,7 +828,14 @@ mod tests {
             Some((1893.0, 13.0))
         );
         assert_eq!(
-            snap_point(&shifted, Some(Bounds { x1: 5.0, ..PAGE.unwrap() }), (3.0, 3.0)),
+            snap_point(
+                &shifted,
+                Some(Bounds {
+                    x1: 5.0,
+                    ..PAGE.unwrap()
+                }),
+                (3.0, 3.0)
+            ),
             None,
             "aucune verticale dans une page de 5 de large"
         );
@@ -837,8 +852,14 @@ mod tests {
         );
         let music = grid(vec![level("music", 7.0, 12.0)]);
         assert_eq!(snap_point(&music, PAGE, (500.0, 70.0)), Some((500.0, 48.0)));
-        assert_eq!(snap_point(&music, PAGE, (500.0, 100.0)), Some((500.0, 120.0)));
-        assert_eq!(snap_point(&music, PAGE, (500.0, -300.0)), Some((500.0, 0.0)));
+        assert_eq!(
+            snap_point(&music, PAGE, (500.0, 100.0)),
+            Some((500.0, 120.0))
+        );
+        assert_eq!(
+            snap_point(&music, PAGE, (500.0, -300.0)),
+            Some((500.0, 0.0))
+        );
         let seyes = grid(vec![level("seyes", 30.24, 30.24)]);
         let q = snap_point(&seyes, PAGE, (40.0, 9.0)).expect("seyes");
         assert!(close(q, (30.24, 7.56)), "{q:?}");
@@ -1176,8 +1197,14 @@ mod tests {
             x1: 200.0,
             y1: 200.0,
         };
-        let iso =
-            lines(&grid(vec![level("isometric", 40.0, 40.0)]), PAGE, r, 1.0, 1.0).expect("visible");
+        let iso = lines(
+            &grid(vec![level("isometric", 40.0, 40.0)]),
+            PAGE,
+            r,
+            1.0,
+            1.0,
+        )
+        .expect("visible");
         let s = &iso.levels[0].segments;
         assert_eq!(segs(&iso.levels[0]).0.len(), 6);
         assert!(s.iter().all(|c| (-1e-9..=200.0 + 1e-9).contains(c)));
@@ -1200,14 +1227,26 @@ mod tests {
             x1: W,
             y1: 239.0,
         };
-        let music =
-            lines(&grid(vec![level("music", 7.0, 12.0)]), PAGE, staves, 4.0, 8.0).expect("visible");
+        let music = lines(
+            &grid(vec![level("music", 7.0, 12.0)]),
+            PAGE,
+            staves,
+            4.0,
+            8.0,
+        )
+        .expect("visible");
         assert_eq!(
             segs(&music.levels[0]).1,
             vec![0.0, 12.0, 24.0, 36.0, 48.0, 120.0, 132.0, 144.0, 156.0, 168.0]
         );
-        let only_h =
-            lines(&grid(vec![level("lines", 40.0, 40.0)]), PAGE, staves, 4.0, 8.0).expect("visible");
+        let only_h = lines(
+            &grid(vec![level("lines", 40.0, 40.0)]),
+            PAGE,
+            staves,
+            4.0,
+            8.0,
+        )
+        .expect("visible");
         assert!(segs(&only_h.levels[0]).0.is_empty());
     }
 
@@ -1468,14 +1507,26 @@ mod tests {
     #[test]
     fn grid_clip_staff_and_lattice_snap_follow_the_frame() {
         let music = grid(vec![level("music", 7.0, 12.0)]);
-        assert_eq!(snap_point(&music, PAGE, (500.0, 5000.0)), Some((500.0, 1080.0)));
-        assert_eq!(snap_point(&music, None, (500.0, 5000.0)), Some((500.0, 4968.0)));
-        assert_eq!(snap_point(&music, None, (500.0, -300.0)), Some((500.0, -312.0)));
+        assert_eq!(
+            snap_point(&music, PAGE, (500.0, 5000.0)),
+            Some((500.0, 1080.0))
+        );
+        assert_eq!(
+            snap_point(&music, None, (500.0, 5000.0)),
+            Some((500.0, 4968.0))
+        );
+        assert_eq!(
+            snap_point(&music, None, (500.0, -300.0)),
+            Some((500.0, -312.0))
+        );
         let iso = grid(vec![level("isometric", 40.0, 40.0)]);
         let q = snap_point(&iso, PAGE, (100.0, 5000.0)).expect("iso");
         assert!(q.1 <= H && q.1 > H - 40.0, "{q:?}");
         let q = snap_point(&iso, None, (-500.0, -500.0)).expect("iso");
-        assert!(q.0 < 0.0 && q.1 < 0.0 && dist2(q, (-500.0, -500.0)) < 40.0 * 40.0, "{q:?}");
+        assert!(
+            q.0 < 0.0 && q.1 < 0.0 && dist2(q, (-500.0, -500.0)) < 40.0 * 40.0,
+            "{q:?}"
+        );
         let q = snap_point(&iso, None, (100.0, 5000.0)).expect("iso");
         assert!(dist2(q, (100.0, 5000.0)) < 40.0 * 40.0, "{q:?}");
     }
