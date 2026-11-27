@@ -495,7 +495,7 @@ try {
     const rendu = rang(3, a) < rang(3, b) && rang(3, b) < rang(3, c);
     verifie("personnalisation-2 : Restack puis undo, une étape", s.code === 0 && s.lignes[0].change.ids[0] === a && devant && rendu, s.brut);
     const refus = cli(["run", f, "--ops", "-"], `${JSON.stringify({ type: "Restack", ids: [a], to: 3 })}\n`);
-    verifie("personnalisation-2 : Restack hors bornes refusé (code 1)", refus.code === 1 && refus.brut.includes("ordre invalide"), refus.brut);
+    verifie("personnalisation-2 : Restack hors bornes refusé (code 1)", refus.code === 1 && refus.brut.includes("rang de page hors bornes"), refus.brut);
     console.log("personnalisation-2 : Restack puis undo");
   }
 

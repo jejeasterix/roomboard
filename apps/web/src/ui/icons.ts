@@ -124,9 +124,7 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "sloppiness-2": [["path", { d: "M4 15c2-6 4-7 5-4s2 4 4 1 3-5 4-2 2 4 3 5" }]],
   "corner-sharp": [["path", { d: "M6 18V6h12" }]],
   "corner-round": [["path", { d: "M6 18v-6a6 6 0 0 1 6-6h6" }]],
-  // OG11 lot 2 (T15) : Lucide @7981a0798a, ISC (arrow-up-to-line, arrow-down-to-line, chevron-up, chevron-down, align-left, align-center, align-right).
-  "arrow-up-to-line": [["path", { d: "M5 3h14" }], ["path", { d: "m18 13-6-6-6 6" }], ["path", { d: "M12 7v14" }]],
-  "arrow-down-to-line": [["path", { d: "M12 17V3" }], ["path", { d: "m6 11 6 6 6-6" }], ["path", { d: "M19 21H5" }]],
+  // OG11 lot 2 (T15) : Lucide @7981a0798a, ISC (chevron-up, chevron-down, align-left, align-center, align-right).
   "chevron-up": [["path", { d: "m18 15-6-6-6 6" }]],
   "chevron-down": [["path", { d: "m6 9 6 6 6-6" }]],
   "align-left": [["path", { d: "M21 5H3" }], ["path", { d: "M15 12H3" }], ["path", { d: "M17 19H3" }]],

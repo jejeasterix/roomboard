@@ -230,10 +230,6 @@ export interface Engine {
   deleteSelection(): boolean;
   /** OG11 (Ctrl+D) : copie de la sélection décalée de +10/+10, sélectionnée ; une étape ; faux sans sélection. */
   duplicateSelection(): boolean;
-  /** Lot 2 (T15, Disposition) : déplace la sélection dans l'ordre de la page, un `Restack`, une étape ; faux sans sélection
-   *  ou si l'ordre ne change pas. Le bloc garde son ordre relatif. */
-  bringForward(): boolean;
-  sendBackward(): boolean;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
    *  invalide est ignorée. */
   setFillColor(color: string | null): void;
@@ -732,22 +728,6 @@ export function createEngine(deps: EngineDeps): Engine {
     },
   };
 
-  /** Lot 2 (T15) : un `Restack` de la sélection ; `to` = rang du bas du bloc, calculé sur l'ordre de la page. */
-  function restackSelection(how: "forward" | "backward"): boolean {
-    const sel = selectTool.selection();
-    if (sel.length === 0) return false;
-    const order = doc.elementIds(pageId);
-    const ranks = sel.map((id) => order.indexOf(id)).filter((r) => r >= 0).sort((a, b) => a - b);
-    const k = ranks.length;
-    if (k === 0) return false;
-    const low = ranks[0]!;
-    const high = ranks[k - 1]!;
-    // Rang du bas du bloc : en avant, d'un rang au-dessus du dernier objet voisin ; en arrière, d'un rang sous le premier.
-    const to = how === "forward" ? Math.min(high - (k - 1) + 1, order.length - k) : Math.max(low - 1, 0);
-    const change = run({ type: "Restack", ids: [...sel], to });
-    return change !== null && change.ids.length > 0;
-  }
-
   /** Champs du style courant en commande SetStyle (noms du cœur ; neutre = champ retiré). */
   function patchOf(p: Partial<ItemStyle>): LookPatch {
     return {
@@ -820,8 +800,6 @@ export function createEngine(deps: EngineDeps): Engine {
       engine.deleteElements(sel);
       return true;
     },
-    bringForward: () => restackSelection("forward"),
-    sendBackward: () => restackSelection("backward"),
     duplicateSelection() {
       const sel = selectTool.selection();
       if (sel.length === 0) return false;

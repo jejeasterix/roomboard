@@ -216,13 +216,7 @@ export type Command =
    *  son groupe extérieur ; ids = éléments écrits, triés. */
   | { readonly type: "Group"; readonly ids: readonly string[] }
   /** C3 (Z1) : retire le niveau extérieur des ids groupés ; aucun : aucune étape. */
-  | { readonly type: "Ungroup"; readonly ids: readonly string[] }
-  /** OG11 (DA-2) : le bloc `ids` d'une même page, dans son ordre relatif, posé au rang `to` (rang du bas du bloc :
-   *  0 = arrière-plan, `n - k` = premier plan) ; une étape ; même ordre : aucune ; sinon `BAD_ORDER_MESSAGE`. */
-  | { readonly type: "Restack"; readonly ids: readonly string[]; readonly to: number };
-
-/** Message du cœur pour `CommandError::BadOrder` (page mêlée, id inconnu, rang hors bornes). */
-export const BAD_ORDER_MESSAGE = "ordre invalide";
+  | { readonly type: "Ungroup"; readonly ids: readonly string[] };
 
 export interface ShapeData { readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null }
 export interface TextData {

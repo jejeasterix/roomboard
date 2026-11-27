@@ -35,7 +35,6 @@ import { isAssetId } from "./asset-store";
 import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
 import { isShapeKind } from "./shapes";
-import { BAD_ORDER_MESSAGE } from "./api";
 
 export type WasmModule = Pick<typeof Wasm, "Document" | "StrokeBuilder" | "version">;
 
@@ -530,7 +529,11 @@ class WasmCoreDocument implements CoreDocument {
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));
       case "MovePage": return toChange(this.d.move_page(cmd.page, cmd.to));
       case "DuplicatePage": return toChange(this.d.duplicate_page(cmd.page));
-      case "Restack": return toChange(this.d.restack([...cmd.ids], cmd.to));
+      case "Restack":
+        // u32 côté pont (wasm-bindgen tronquerait sans erreur : 0,5 → 0, 2³² + 1 → 1) : rang non entier ou hors u32
+        // refusé ici, avec le message de `BadIndex`, comme le faux cœur.
+        if (!Number.isInteger(cmd.to) || cmd.to < 0 || cmd.to > 0xffffffff) throw new Error("rang de page hors bornes");
+        return toChange(this.d.restack([...cmd.ids], cmd.to));
       case "CommitStroke": {
         const l = cmd.look;
         return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity),
@@ -538,11 +541,6 @@ class WasmCoreDocument implements CoreDocument {
       }
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
-      case "Restack": {
-        // u32 côté pont (wasm-bindgen tronquerait sans erreur) : le rang se contrôle ici, avant l'appel.
-        if (!Number.isInteger(cmd.to) || cmd.to < 0 || cmd.to > 0xffffffff) throw new Error(BAD_ORDER_MESSAGE);
-        return toChange(this.d.restack([...cmd.ids], cmd.to));
-      }
       case "Group": return toChange(this.d.group([...cmd.ids]));
       case "Ungroup": return toChange(this.d.ungroup([...cmd.ids]));
       case "AddShape": {

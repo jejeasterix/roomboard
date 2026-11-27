@@ -91,10 +91,11 @@ const HEADS: readonly RadioOption<Arrowhead>[] = [
 const FONT_OPTIONS: readonly RadioOption<string>[] = FONTS.map((f) => ({ value: f.value, label: f.label }));
 const SIZE_OPTIONS: readonly RadioOption<string>[] = TEXT_SIZES.map((n) => ({ value: String(n), label: String(n) }));
 const LAYERS = [
-  { value: "front", label: "Premier plan", icon: "arrow-up-to-line", act: (e: Engine) => e.bringToFront() },
-  { value: "forward", label: "Avancer", icon: "chevron-up", act: (e: Engine) => e.bringForward() },
-  { value: "backward", label: "Reculer", icon: "chevron-down", act: (e: Engine) => e.sendBackward() },
-  { value: "back", label: "Arrière-plan", icon: "arrow-down-to-line", act: (e: Engine) => e.sendToBack() },
+  // Les fonctions d'ordre d'OG4 (une `Restack` chacune, groupes entiers) et ses icônes Premier plan / Arrière-plan.
+  { value: "front", label: "Premier plan", icon: "bring-to-front", act: (e: Engine) => e.bringToFront() },
+  { value: "forward", label: "Avancer", icon: "chevron-up", act: (e: Engine) => e.reorder("up") },
+  { value: "backward", label: "Reculer", icon: "chevron-down", act: (e: Engine) => e.reorder("down") },
+  { value: "back", label: "Arrière-plan", icon: "send-to-back", act: (e: Engine) => e.sendToBack() },
 ] as const;
 const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({ value: w.value, label: w.label }));
 

@@ -604,8 +604,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   noms Lucide : `layers` (onglet Calques), `bring-to-front` (Premier plan), `send-to-back` (Arrière-plan).
 - Lues dans Lucide au même commit par `gh api` (personnalisation 1b), noms Lucide : `wallpaper` (bouton « Fonds »),
   `search` et `image-plus` (fenêtre des fonds).
-- Panneau d'options lot 2 (OG11), lus au même commit, noms Lucide : `arrow-up-to-line`, `arrow-down-to-line`, `chevron-up`,
-  `chevron-down`, `align-left`, `align-center`, `align-right`. Dessinées pour RoomBoard (grille de 24, trait 1,5) :
+- Panneau d'options lot 2 (OG11), lus au même commit, noms Lucide : `chevron-up`, `chevron-down` (Avancer, Reculer ; Premier plan et Arrière-plan
+  reprennent `bring-to-front` et `send-to-back` d'OG4), `align-left`, `align-center`, `align-right`. Dessinées pour RoomBoard (grille de 24, trait 1,5) :
   `fill-solid`, `fill-hachure`, `fill-cross`, `head-none`, `head-arrow`, `head-triangle`, `head-triangle-outline`.
 
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
