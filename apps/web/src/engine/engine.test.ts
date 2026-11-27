@@ -2643,7 +2643,7 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
       return v?.kind === "shape" ? worldPoints(v) : [];
     };
     const tap = (pointerId: number, x: number, y: number, t = 0): void => {
-      engine.sink.begin(pointerId, engine.tool(), [{ ...sample, x, y, t }]);
+      engine.sink.begin(pointerId, "select", [{ ...sample, x, y, t }]);
       engine.sink.close(pointerId, "end");
     };
     return { doc, frames, renderer, engine, page, rect, line, ctx, sel, pointsOf, tap };

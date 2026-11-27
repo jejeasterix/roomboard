@@ -1437,7 +1437,7 @@ export function createEngine(deps: EngineDeps): Engine {
       touchShift = held;
     },
     hover(x, y) {
-      tools[tool].hover?.(x, y);
+      if (tool !== "hand") tools[tool].hover?.(x, y);
       loop.start();
     },
     itemStyle: () => item,
