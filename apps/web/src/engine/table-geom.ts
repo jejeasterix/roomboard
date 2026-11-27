@@ -24,7 +24,9 @@ export const TABLE_SHADE_HATCH_WIDTH = 2;
 export const TABLE_SHADE_HATCH_STEP = 16;
 
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
+/** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
+export const TABLE_HEADER_FILL = "#E0E0E8";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -44,6 +46,8 @@ export interface TableCellState {
   /** Zone fusionnée de la cellule active (F16) ; null ou absente hors zone. */
   readonly zone?: Range | null;
   readonly shaded?: boolean;
+  /** personnalisation-3 (D17) : la ligne 0 est un en-tête, `#stage[data-table-header]`. */
+  readonly header?: boolean;
   /** personnalisation-3 : nombre d'objets logés dans ce tableau (`cell[0]`), `#stage[data-table-linked]`. */
   readonly linked?: number;
 }

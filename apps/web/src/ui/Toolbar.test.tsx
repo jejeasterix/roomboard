@@ -245,7 +245,7 @@ describe("Toolbar — rangée du tableau (C10a, T10)", () => {
     const { container, setV } = setup();
     expect(container.querySelector("[data-table-sep]")).toBeNull();
     setV({ ...VIEW, tool: "table", tableCell: CELL });
-    expect(actionIds(container)).toEqual(["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform", "table-merge", "table-split", "table-shade", "table-unshade"]);
+    expect(actionIds(container)).toEqual(["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform", "table-merge", "table-split", "table-shade", "table-unshade", "table-header"]);
     expect(container.querySelector('[data-table-action="table-row-insert"]')!.textContent).toBe("+ Ligne");
     expect([...container.querySelectorAll("button[data-table-fill]")].map((b) => b.textContent)).toEqual(["Aucun", "Jaune", "Vert", "Bleu", "Rose", "Gris"]);
     expect(container.querySelector("button[data-table-action][data-item]")).toBeNull();
@@ -446,7 +446,7 @@ describe("Toolbar — icônes (design-l1, S3, S4)", () => {
     const { container, setV } = setup();
     setV({ ...VIEW, tool: "table", tableCell: { id: "t", row: 0, col: 0, rows: 3, cols: 4 } });
     expect([...container.querySelectorAll("[data-table-action] svg.rb-icon")].map((s) => s.getAttribute("data-icon"))).toEqual([
-      "between-horizontal-start", "between-vertical-start", "row-remove", "col-remove", "columns-3", "table-cells-merge", "table-cells-split", "droplet", "droplet-off",
+      "between-horizontal-start", "between-vertical-start", "row-remove", "col-remove", "columns-3", "table-cells-merge", "table-cells-split", "droplet", "droplet-off", "rows-2",
     ]);
     for (const f of container.querySelectorAll("button[data-table-fill]")) {
       expect(f.hasAttribute("title")).toBe(false);

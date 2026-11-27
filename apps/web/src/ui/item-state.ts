@@ -103,6 +103,7 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   "table-merge": (v) => ({ disabled: cells(v.tableCell?.range) < 2 }),
   "table-split": (v) => ({ disabled: v.tableCell?.merged !== true || cells(v.tableCell.range) > 0 }),
   "table-shade": (v) => ({ disabled: !v.tableCell }),
+  "table-header": (v) => ({ disabled: !v.tableCell }),
   "table-unshade": (v) => ({ disabled: v.tableCell?.shaded !== true }),
 };
 

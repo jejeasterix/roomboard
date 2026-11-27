@@ -37,6 +37,7 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("cell-place", "Tableau", "Loger la sélection dans la case", "Alt+Entrée"),
   s("table-fit", "Tableau", "Agrandir ou rétrécir pour les objets", "Alt+F"),
   s("cell-image", "Tableau", "Mettre l'image logée en fond", "Alt+I"),
+  s("table-header", "Tableau", "Basculer l'en-tête", "Alt+E"),
   s("table-col-wider", "Tableau", "Élargir la colonne", "Alt+→"),
   s("table-col-narrower", "Tableau", "Rétrécir la colonne", "Alt+←"),
   s("table-row-taller", "Tableau", "Agrandir la ligne", "Alt+↓"),

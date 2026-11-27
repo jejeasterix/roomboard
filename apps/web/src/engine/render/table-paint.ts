@@ -12,6 +12,8 @@ import {
   cellOf,
   cellRect,
   mergeRanges,
+  rangeRect,
+  TABLE_HEADER_FILL,
   TABLE_LINE_WIDTH,
   TABLE_SHADE_HATCH,
   TABLE_SHADE_HATCH_STEP,
@@ -96,6 +98,8 @@ function paintCellImage(ctx: CanvasRenderingContext2D, b: Bounds, asset: string,
 
 export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData, images: ImageSource | null = null): void {
   const zones = mergeRanges(t);
+  // personnalisation-3 (D17) : fond d'en-tête sous les remplissages de case (un remplissage passe au-dessus).
+  if (t.header === true && t.rows.length > 0 && t.cols.length > 0) fillBox(ctx, rangeRect(t, { r0: 0, c0: 0, r1: 0, c1: t.cols.length - 1 }), TABLE_HEADER_FILL);
   for (const cell of t.cells) {
     if (cell.fill === null) continue;
     const at = visibleCell(t, zones, cell);
@@ -160,7 +164,7 @@ export function cellTextBoxes(t: TableData): CellTextBox[] {
     if (cell.text === "" || cell.shade !== null) continue;
     const at = visibleCell(t, zones, cell);
     if (at === null) continue;
-    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: cell.spans });
+    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: t.header === true && at.row === 0 ? cell.spans.map((s) => ({ text: s.text, attrs: { ...s.attrs, bold: true as const } })) : cell.spans });
   }
   return out;
 }

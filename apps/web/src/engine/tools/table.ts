@@ -121,7 +121,9 @@ const HOLD_SLOP = 8;
 /** Bord de case sous lequel la poignée n'est ni dessinée ni prise (px écran). */
 const GRIP_MIN_PX = 24;
 
-export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu, cellDrop?: Pick<CellDrop, "place">): TableTool {
+export const SHADE_REFUSED = "Retirez d'abord les objets de la case.";
+
+export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu, cellDrop?: Pick<CellDrop, "place">, notify?: (text: string) => void): TableTool {
   let active: CellRef | null = null;
   /** Autre coin de la plage (F14), dans le tableau de `active` ; null : aucune plage. */
   let corner: CellRef | null = null;
@@ -393,7 +395,18 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   /** Ombrer ou retirer l'ombrage (F9) sur la plage, sinon la zone active. */
   const shadeOver = (at: Located, span: Range, shade: string | null): void => {
     const corners = cornersOf(at.table, span);
-    if (corners !== null) ctx.run({ type: "SetTableShade", id: at.ref.id, ...corners, shade });
+    if (corners === null) return;
+    // D35 : l'ombrage ne couvre pas un objet logé ; Ombrer est refusé avec un message.
+    if (shade !== null) {
+      const rows = new Set(at.table.rows.slice(span.r0, span.r1 + 1).map((r) => r.id));
+      const cols = new Set(at.table.cols.slice(span.c0, span.c1 + 1).map((c) => c.id));
+      const busy = linkedIn(ctx.doc, ctx.page(), at.ref.id).some((v) => v.cell !== undefined && rows.has(v.cell[1]) && cols.has(v.cell[2]));
+      if (busy) {
+        notify?.(SHADE_REFUSED);
+        return;
+      }
+    }
+    ctx.run({ type: "SetTableShade", id: at.ref.id, ...corners, shade });
   };
 
   /** Avant une action de la rangée : valide la saisie ouverte ; pendant une composition, rien (la touche appartient à
@@ -437,6 +450,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         },
       });
     }
+    items.push({ id: "header", label: at.table.header === true ? "Retirer l'en-tête" : "En-tête", run: () => api.act("header-toggle") });
     menu.open(p.sx, p.sy, items);
   };
 
@@ -582,7 +596,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const zone = mergeAt(t, at.cell);
       // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
       const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked };
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true };
     },
     act(a) {
       if (!settle()) return;
@@ -619,6 +633,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           break;
         case "unshade":
           shadeOver(at, span, null);
+          break;
+        case "header-toggle":
+          ctx.run({ type: "SetTableOptions", id: ref.id, header: t.header !== true });
           break;
         case "fit-toggle":
           ctx.run({ type: "SetTableOptions", id: ref.id, fit: t.fit === "shrink" ? "grow" : "shrink" });

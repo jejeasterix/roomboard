@@ -86,12 +86,13 @@ export function cellKey(e: KeyLike): CellKey | null {
   return null;
 }
 
-export type TableKey = "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
+export type TableKey = "header-toggle" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
 /** personnalisation-3 (H12) : touches de l'outil Tableau : Alt+→ ← largeur ± 8, Alt+↓ ↑ hauteur ± 8 (Ctrl+Alt+flèche est pris par le système : bureau, rotation d'écran ; Ctrl+flèche = ordre, Alt+Maj+flèche = objet relié, OG12) ; hors champ,
  *  hors IME, sans Ctrl, Cmd ni Maj. Le moteur la prend avec l'outil Tableau et une case active, et la page appelle preventDefault (Alt+← = page précédente). */
 export function tableKey(e: KeyLike): TableKey | null {
   if (e.isComposing || e.metaKey || inEditable(e.target)) return null;
   if (!e.altKey || e.ctrlKey || e.shiftKey) return null;
+  if (e.code === "KeyE") return "header-toggle";
   if (e.key === "ArrowRight") return "col-wider";
   if (e.key === "ArrowLeft") return "col-narrower";
   if (e.key === "ArrowDown") return "row-taller";

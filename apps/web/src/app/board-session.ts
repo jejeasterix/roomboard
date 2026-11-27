@@ -61,6 +61,7 @@ import { stageTags } from "./stage-tags";
 import { createEraserRing } from "./eraser-ring";
 import { watchDpr } from "./mesure-outils";
 import { createCellMenu } from "../ui/cell-menu";
+import { showToast } from "../ui/toast";
 import { createTablePicker } from "./table-picker";
 import { createTextEditor, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
 
@@ -389,7 +390,7 @@ async function buildBoardSession(
         return textTool;
       },
       table: (ctx, style) => {
-        tableTool = createTableTool(ctx, editor, picker, style, measure, cellMenu, cellDrop(ctx));
+        tableTool = createTableTool(ctx, editor, picker, style, measure, cellMenu, cellDrop(ctx), (text) => showToast({ text }));
         return tableTool;
       },
       fill: (ctx, color, tolerance) => createFillTool(ctx, color, measure, { tolerance, submit: (r, run) => fillQueue.submit(r, zoneMarks.timed(run)) }),
@@ -772,6 +773,7 @@ async function buildBoardSession(
     stage.dataset["tool"] = tags.tool;
     stage.dataset["table"] = tags.table;
     stage.dataset["tableLinked"] = tags.tableLinked;
+    stage.dataset["tableHeader"] = tags.tableHeader;
     stage.dataset["tableMerges"] = tags.tableMerges;
     stage.dataset["tableShades"] = tags.tableShades;
     stage.dataset["units"] = tags.units;
