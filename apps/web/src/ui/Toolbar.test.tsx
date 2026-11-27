@@ -53,7 +53,10 @@ describe("Toolbar", () => {
     const { container, setV } = setup();
     expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
     setV({ ...VIEW, tool: "select" });
-    expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(6);
+    // T16 : six actions de C3, puis Premier plan et Arrière-plan (lot 2, table 2 bis du cadrage personnalisation-1a)
+    const ids = [...container.querySelectorAll("[data-selection-action]")].map((b) => b.getAttribute("data-selection-action"));
+    expect(ids).toHaveLength(8);
+    expect(ids.slice(-3)).toEqual(["layer-front", "layer-back", "image"]);
   });
   it("defaut : un bouton par élément visible, dans l'ordre", () => {
     const { container } = setup();
@@ -511,7 +514,7 @@ describe("Toolbar — barre d'annotation (design-l4)", () => {
     const ann = setup({ ...mkBar([tool("pen")]), role: "annotation" }, NO_CAPS, "m", PEN);
     expect(ann.container.querySelectorAll("button[data-preset]")).toHaveLength(3);
     ann.setV({ ...VIEW, tool: "select" });
-    expect(ann.container.querySelectorAll("[data-selection-action]")).toHaveLength(6);
+    expect(ann.container.querySelectorAll("[data-selection-action]")).toHaveLength(8);
     cleanup();
     const other = setup({ ...mkBar([tool("pen")]), role: "autre" }, NO_CAPS, "m", PEN);
     expect(other.container.querySelectorAll("button[data-preset]")).toHaveLength(0);

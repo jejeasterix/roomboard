@@ -74,7 +74,7 @@ afterEach(() => {
 describe("SideBar (T10)", () => {
   it("repliée : onglet Pages visible, page-add dans le DOM mais caché ; aucun onglet Calques", () => {
     const { container } = setup({ collapsed: true });
-    const tab = container.querySelector('[role="tablist"] [role="tab"][data-tab="pages"]')!;
+    const tab = container.querySelector('[role="tablist"] [role="tab"][data-side-tab="pages"]')!;
     expect(tab.textContent).toContain("Pages");
     expect(tab.querySelector('[data-icon="panel-left"]')).not.toBeNull();
     expect(tab.closest("[hidden]")).toBeNull();
@@ -82,7 +82,9 @@ describe("SideBar (T10)", () => {
     expect(add.closest("[hidden]")).not.toBeNull();
     expect(container.querySelector(".rb-pages-list")!.closest("[hidden]")).not.toBeNull();
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
-    expect(container.querySelector('[data-tab="calques"]')).toBeNull();
+    expect(container.querySelector('[data-side-tab="calques"]')).toBeNull();
+    // T16 : l'onglet latéral n'est pas un onglet de carnet (`[data-tab]` reste aux onglets de TabsBar).
+    expect(container.querySelector("[data-tab]")).toBeNull();
     expect(container.querySelector('[data-toolbar="pages"]')).not.toBeNull();
     // la rangée d'actions n'a ni Précédente, ni numéro, ni Suivante (elles sont dans la barre d'outils)
     for (const id of ["page-prev", "page-number", "page-next"]) expect(container.querySelector(`[data-item="${id}"]`), id).toBeNull();
@@ -234,7 +236,7 @@ describe("SideBar — onglet Calques (T14)", () => {
     const list = r.container.querySelector<HTMLElement>(".rb-layers-list")!;
     Object.defineProperty(list, "scrollTop", { get: () => 0, set: () => undefined });
     list.getBoundingClientRect = () => new DOMRect(0, 0, 160, 4 * ROW);
-    const tab = (): HTMLElement => r.container.querySelector<HTMLElement>('[data-tab="calques"]')!;
+    const tab = (): HTMLElement => r.container.querySelector<HTMLElement>('[data-side-tab="calques"]')!;
     /** Montre l'onglet, puis pose les rectangles que happy-dom ne calcule pas (ligne i : [i × 100, i × 100 + 100[). */
     const open = (): void => {
       fireEvent.click(tab());
@@ -253,11 +255,11 @@ describe("SideBar — onglet Calques (T14)", () => {
     expect(tab().textContent).toContain("Calques");
     expect(tab().querySelector('[data-icon="layers"]')).not.toBeNull();
     expect(tab().getAttribute("aria-selected")).toBe("false");
-    expect(container.querySelector('[data-tab="pages"]')!.getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector('[data-side-tab="pages"]')!.getAttribute("aria-selected")).toBe("true");
     expect(container.querySelector(".rb-layers-list")!.closest("[hidden]")).not.toBeNull();
     fireEvent.click(tab());
     expect(tab().getAttribute("aria-selected")).toBe("true");
-    expect(container.querySelector('[data-tab="pages"]')!.getAttribute("aria-selected")).toBe("false");
+    expect(container.querySelector('[data-side-tab="pages"]')!.getAttribute("aria-selected")).toBe("false");
     expect(container.querySelector(".rb-layers-list")!.closest("[hidden]")).toBeNull();
     expect(container.querySelector(".rb-pages-list")!.closest("[hidden]")).not.toBeNull();
     expect(store.setSidebar).toHaveBeenLastCalledWith({ tab: "calques", thumb: "m" });

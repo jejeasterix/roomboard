@@ -522,6 +522,8 @@ export function App(props: AppProps): JSX.Element {
   const barOf = (bar: Bar, collapsed?: Accessor<boolean>): JSX.Element =>
     Object.hasOwn(BY_ROLE, bar.role) ? BY_ROLE[bar.role]!(bar, collapsed) : toolbarOf(bar, collapsed);
   /** design-l2 : ce qui change la largeur d'un îlot centré (pages) ou sa rangée contextuelle (outil) : remesure. */
+  /** T16 (design-l4) : haut des panneaux passagers (`--rb-pop-top` de rb.css), sous l'îlot d'outils descendu. */
+  const [popTop, setPopTop] = createSignal(88);
   const islandWatch = createMemo(() => `${state().pageCount}|${state().tool}|${state().pageLayout}`);
 
   return (
@@ -529,7 +531,7 @@ export function App(props: AppProps): JSX.Element {
       class="rb-layout"
       data-mode={annotating() ? "annotation" : "board"}
       data-panneau={panel() === "editor" ? "profils" : undefined}
-      style={{ "grid-template-areas": grid().areas, "grid-template-columns": grid().columns, "grid-template-rows": grid().rows }}
+      style={{ "grid-template-areas": grid().areas, "grid-template-columns": grid().columns, "grid-template-rows": grid().rows, "--rb-pop-top": `${popTop()}px` }}
     >
       <For each={shownDocked()}>{(bar) => <div class="rb-slot" style={{ "grid-area": bar.id }}>{barOf(bar)}</div>}</For>
       {props.stages}
@@ -554,6 +556,7 @@ export function App(props: AppProps): JSX.Element {
         size={size}
         sheetOpen={() => panel() === "editor"}
         watch={islandWatch}
+        onTopFree={setPopTop}
       />
       <Toasts />
       <Show when={selectedMedia()}>

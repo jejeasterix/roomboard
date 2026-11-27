@@ -244,10 +244,10 @@ describe("Island (design-l2 L2-7 à L2-16)", () => {
 });
 
 describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
-  function layer(bars: readonly Bar[]) {
+  function layer(bars: readonly Bar[], onTopFree?: (y: number) => void) {
     const rendered = vi.fn((b: Bar, c: Accessor<boolean>) => <div data-toolbar={b.id} data-c={c() ? "1" : "0"} />);
     const r = render(() => (
-      <IslandLayer bars={() => bars} render={rendered} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} />
+      <IslandLayer bars={() => bars} render={rendered} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} {...(onTopFree !== undefined ? { onTopFree } : {})} />
     ));
     const ids = (sel: string): (string | null)[] => [...r.container.querySelectorAll(sel)].map((e) => e.getAttribute("data-island"));
     return { ...r, rendered, ids };
@@ -288,6 +288,38 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
       const el = container.querySelector<HTMLElement>(`[data-island="${id}"]`)!;
       expect([el.style.left, el.style.top].every((v) => /^\d+px$/.test(v)), id).toBe(true);
       expect(el.style.transform, id).toBe("");
+    }
+  });
+
+  it("T16 (discrimine) : calque 1280 × 900 : la barre latérale passe sous l'outil descendu qui la surplombe, jamais sur lui", async () => {
+    // Rangée du haut de `defaut` : menu 56, coins de 56 de haut, panneaux 108 ; outils de 940 px : place symétrique 816, il
+    // descend sur la voie suivante (x 170, y 80). Pages dépliée : 260 px (x 16–276), repliée : bande de 52 px (x 16–68).
+    const box = (w: number, h: number): DOMRect => ({ x: 0, y: 0, left: 0, top: 0, width: w, height: h, right: w, bottom: h, toJSON: () => ({}) }) as DOMRect;
+    const real = Element.prototype.getBoundingClientRect;
+    const at = (folded: boolean) => (el: Element): DOMRect => {
+      if (el.classList.contains("rb-islands")) return box(1280, 900);
+      if (el.classList.contains("rb-corner-menu")) return box(56, 56);
+      if (el.matches('.rb-corner[data-corner="top-start"]')) return box(56 + 8 + 144, 56);
+      if (el.matches('.rb-corner[data-corner="top-end"]')) return box(108, 56);
+      if (el.matches('.rb-island[data-island="outils"]')) return box(940, 56);
+      if (el.matches('.rb-island[data-island="pages"]')) return folded ? box(52, 160) : box(260, 600);
+      return real.call(el);
+    };
+    for (const folded of [false, true]) {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+        return at(folded)(this);
+      });
+      const onTopFree = vi.fn();
+      const { container, unmount } = layer([bar("menu", "menu"), bar("outils", "tools"), bar("panneaux", "panels"), bar("pages", "pages", folded)], onTopFree);
+      await Promise.resolve();
+      // T16 (design-l4) : les panneaux passagers se posent 16 px sous l'outil descendu (bas à 136), pas à 88 sur lui
+      expect(onTopFree).toHaveBeenLastCalledWith(136 + 16);
+      const tools = container.querySelector<HTMLElement>('[data-island="outils"]')!;
+      const pages = container.querySelector<HTMLElement>('[data-island="pages"]')!;
+      expect(pos(tools)).toEqual(["170px", "80px"]);
+      expect(pos(pages), folded ? "repliée" : "dépliée").toEqual(folded ? ["16px", "80px"] : ["16px", "144px"]);
+      unmount();
+      vi.restoreAllMocks();
     }
   });
 

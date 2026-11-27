@@ -14,7 +14,11 @@ export interface Box { readonly w: number; readonly h: number }
  *  rangée des coins (`band`, 0 sans coin). En haut, `start` compte l'îlot des onglets à sa largeur minimale, puis
  *  `#etat` non vide et son écart (T11). `foot` : hauteur de la rangée du bas (0 ou absent sans coin), que la voie
  *  latérale laisse libre (personnalisation-1a). */
-export interface Corners { readonly start: number; readonly end: number; readonly band: number; readonly foot?: number }
+export interface Corners { readonly start: number; readonly end: number; readonly band: number; readonly foot?: number; readonly above?: readonly Rect[] }
+/** Rectangle d'un îlot, px de la case. `Corners.above` (voie latérale seulement, T16) : îlots de la rangée du haut posés
+ *  hors des coins (l'îlot d'outils, sur la rangée ou descendu sur la voie suivante), que la voie passe dessous quand ils
+ *  la surplombent. */
+export interface Rect { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 /** `maxHeight` : voie latérale seulement (`side-*`), hauteur disponible entre les rangées du haut et du bas. */
 export interface Lane { readonly x: number; readonly y: number; readonly maxWidth: number; readonly maxHeight?: number }
 
@@ -83,12 +87,24 @@ export function laneOf(anchor: Anchor, size: Box, area: Box, corners: Corners): 
   const w = Math.min(size.w, full);
   if (anchor === "side-start" || anchor === "side-end") {
     const foot = corners.foot ?? 0;
-    const y = EDGE + (corners.band > 0 ? corners.band + GAP : 0);
-    const x = anchor === "side-end" ? area.w - EDGE - w : EDGE;
-    return { x: Math.round(x), y, maxWidth: full, maxHeight: Math.max(0, area.h - EDGE - (foot > 0 ? foot + GAP : 0) - y) };
+    const x = Math.round(anchor === "side-end" ? area.w - EDGE - w : EDGE);
+    const y = belowAbove(x, w, EDGE + (corners.band > 0 ? corners.band + GAP : 0), corners.above ?? []);
+    return { x, y, maxWidth: full, maxHeight: Math.max(0, Math.floor(area.h - EDGE - (foot > 0 ? foot + GAP : 0) - y)) };
   }
   const x = anchor === "top-end" ? area.w - EDGE - w : EDGE;
   return { x: Math.round(x), y: Math.max(0, Math.round(top ? EDGE : area.h - EDGE - size.h)), maxWidth: full };
+}
+
+/** T16 : haut de la voie latérale (abscisses `x` à `x + w`), sous la rangée des coins (`y0`) puis sous chaque îlot de
+ *  `above` qui la surplombe (il la croise en abscisse et son haut n'est pas plus bas que celui de la voie), avec l'écart ;
+ *  arrondi au pixel supérieur. Un îlot posé plus bas que la voie ne la repousse pas (îlot déplacé : choix de l'utilisateur). */
+function belowAbove(x: number, w: number, y0: number, above: readonly Rect[]): number {
+  let y = y0;
+  for (const r of [...above].sort((a, b) => a.y - b.y)) {
+    if (r.w <= 0 || r.h <= 0 || r.x >= x + w || r.x + r.w <= x || r.y > y) continue;
+    y = Math.max(y, Math.ceil(r.y + r.h + GAP));
+  }
+  return y;
 }
 
 /** Position affichée (L2-9, L2-11) : sans position enregistrée, celle de la voie ; sinon la position, l'îlot entier

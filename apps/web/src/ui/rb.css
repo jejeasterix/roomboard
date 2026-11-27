@@ -143,10 +143,11 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-toast-ok { display: grid; place-items: center; flex: none; inline-size: 32px; block-size: 32px; border-radius: 50%; background: var(--rf-success); color: var(--rf-white); }
 .rb-toast b { font-weight: 600; color: var(--rf-violet-700); }
 /* design-l2 (L2-15, D-DS2) : panneaux passagers en îlot (rayon 12, filet, ombre) ; Réglages et Grille sous la rangée
-   du haut (88 px), à gauche ; Image à droite (C5, I26, inchangé). */
-.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: calc(100% - 32px); max-height: calc(100% - 104px); overflow: auto; background: var(--rf-white); border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); margin: 88px 0 0 16px; }
+   du haut (88 px), à gauche ; Image à droite (C5, I26, inchangé). T16 : 16 px sous l'îlot d'outils quand il descend sur
+   la voie suivante (--rb-pop-top, posé par App depuis IslandLayer ; 88 px sinon). */
+.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: calc(100% - 32px); max-height: calc(100% - var(--rb-pop-top, 88px) - 16px); overflow: auto; background: var(--rf-white); border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); margin: var(--rb-pop-top, 88px) 0 0 16px; }
 /* Panneau de l'image (C5, I26) : calé à droite, l'image déposée au centre ou à gauche reste visible. */
-.rb-popover[data-panel="image"] { justify-self: end; margin: 88px 16px 0 0; }
+.rb-popover[data-panel="image"] { justify-self: end; margin: var(--rb-pop-top, 88px) 16px 0 0; }
 /* Panneau de la bibliothèque (C4, D15) : recouvre la scène sur toute sa hauteur, calé à droite. */
 .rb-popover[data-panel="library"] { justify-self: end; align-self: stretch; width: min(360px, 40vw); max-width: 100%; max-height: 100%; margin: 0; border-radius: 0; }
 .rb-library { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
@@ -226,6 +227,15 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 /* Onglet de la barre latérale (T10), après les règles d'onglet qu'il reprend. */
 .rb-side .rb-tab { block-size: auto; min-block-size: var(--rb-btn-s); padding: 0 var(--rb-pad); }
 .rb-side .rb-tab:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+/* Îlot latéral (T16) : en colonne, comme un volet : poignée en tête (24 px de haut), barre, Replier en pied, sur toute la
+   largeur. Replié : bande d'un bouton de large (--rb-btn de la barre, px entiers), onglets en icônes empilés puis Déplier,
+   comme le volet replié des miniatures de PowerPoint ; le titre de l'onglet reste lu (masqué comme .rb-sr). */
+.rb-island[data-anchor^="side-"] { flex-direction: column; align-items: stretch; }
+.rb-island[data-anchor^="side-"] > .rb-island-chrome { inline-size: auto; block-size: var(--rb-btn-s); }
+.rb-island[data-anchor^="side-"] > .rb-island-chrome[data-island-grip] { block-size: 24px; }
+.rb-island[data-anchor^="side-"][data-collapsed="1"] .rb-side-tabs { flex-direction: column; }
+.rb-island[data-anchor^="side-"][data-collapsed="1"] .rb-side .rb-tab { inline-size: var(--rb-btn); block-size: var(--rb-btn); min-block-size: 0; justify-content: center; gap: 0; padding: 0; }
+.rb-island[data-anchor^="side-"][data-collapsed="1"] .rb-side .rb-tab-title { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* Rangée des préréglages (C1, P18) : en fin de barre d'outils, pour l'outil actif ; pastille + libellé, sans état enfoncé. */
 .rb-preset { display: inline-flex; align-items: center; gap: var(--rb-gap); }

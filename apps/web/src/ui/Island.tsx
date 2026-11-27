@@ -332,6 +332,9 @@ export interface IslandLayerProps {
   /** L2-16 : panneau des profils ouvert. */
   readonly sheetOpen: Accessor<boolean>;
   readonly watch?: Accessor<unknown>;
+  /** T16 (design-l4) : haut libre des panneaux passagers, px de la case : 16 px sous la rangée des coins et sous l'îlot
+   *  d'outils qu'elle place (sur la rangée ou descendu sur la voie suivante ; déplacé : non compté). */
+  onTopFree?(y: number): void;
 }
 
 /** Largeur du panneau des profils, lue dans `--rb-sheet-w` (rb.css) ; illisible : `SHEET_W`. */
@@ -372,8 +375,19 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     band: Math.max(startBox().h, endBox().h),
   }));
   const bottomCorners = createMemo((): Corners => ({ start: bottomBox().w, end: 0, band: bottomBox().h }));
-  const sideCorners = createMemo((): Corners => ({ start: 0, end: 0, band: topCorners().band, foot: bottomBox().h }));
+  /** T16 : la voie latérale passe aussi sous l'îlot d'outils qui la surplombe (descendu sur la voie suivante, ou dans la
+   *  place du panneau des profils), jamais sous la seule rangée des coins. */
+  const sideCorners = createMemo((): Corners => {
+    const t = tools();
+    return { start: 0, end: 0, band: topCorners().band, foot: bottomBox().h, above: t === null ? [] : [{ x: t.x, y: t.y, w: t.w, h: t.h }] };
+  });
   const sheet = createMemo((): Lane | null => (props.sheetOpen() ? sheetLane(area(), sheetWidth(), topCorners().band, BUTTON_PX[props.size()]) : null));
+  const topFree = createMemo(() => {
+    const t = tools();
+    const row = EDGE + topCorners().band;
+    return (t === null || t.moved ? row : Math.max(row, t.y + t.h)) + EDGE;
+  });
+  createEffect(() => props.onTopFree?.(topFree()));
   const tabsMax = createMemo(() => {
     const t = tools();
     return tabsWidth(area(), startX(), endBox().w, t === null || t.moved ? null : { x: t.x, y: t.y }, statusW());

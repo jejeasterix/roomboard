@@ -447,16 +447,16 @@ describe("App (T95)", () => {
 
   it("onglets : la barre des onglets suit le workspace (ajout, actif, modifié)", () => {
     const { container, workspace } = renderApp();
-    expect(container.querySelectorAll("[data-tabs] [data-tab]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-tab]")).toHaveLength(1);
     const second = fakeTab("B.roomboard");
     workspace.tabs.add("board", second.session, true);
-    const tabs = [...container.querySelectorAll<HTMLElement>("[data-tabs] [data-tab]")];
+    const tabs = [...container.querySelectorAll<HTMLElement>("[data-tab]")];
     expect(tabs).toHaveLength(2);
     expect(tabs[1]!.textContent).toContain("B.roomboard");
     expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
     expect(tabs[0]!.getAttribute("aria-selected")).toBe("false");
     second.setDirty(true);
-    expect(container.querySelectorAll("[data-tabs] [data-tab]")[1]!.querySelector(".rb-tab-dirty")).not.toBeNull();
+    expect(container.querySelectorAll("[data-tab]")[1]!.querySelector(".rb-tab-dirty")).not.toBeNull();
   });
 
   it("l'erreur du moteur s'affiche dans #etat", () => {
