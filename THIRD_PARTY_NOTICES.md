@@ -531,6 +531,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   `down` (Lucide `chevron-down`).
 - Reprises de la maquette `docs/design/maquettes/01-tableau.html` (design L2, tracés Lucide au même commit), noms
   RoomBoard : `menu` (Lucide `menu`), `collapse` (Lucide `chevron-up`).
+- Lues dans Lucide au même commit par `gh api` (personnalisation 1b), noms Lucide : `wallpaper` (bouton « Fonds »),
+  `search` et `image-plus` (fenêtre des fonds).
 
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :
@@ -580,6 +582,20 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Pack de fonds (images CC0), personnalisation 1b
+
+Photos du pack de fonds (`apps/web/public/backgrounds/photos/`, miniatures dans `apps/web/public/backgrounds/thumbs/`) :
+toutes sous CC0 1.0 (dédicace au domaine public), aucune obligation d'attribution. La licence de chaque image a été lue
+sur sa page source, jamais déduite du site ; page, fichier d'origine, auteur, texte de licence lu et date de lecture de
+chacune sont dans `apps/web/backgrounds/SOURCES.json`, hors de l'application construite.
+
+Sources retenues : Poly Haven (polyhaven.com, textures), Wikimedia Commons (fichiers au modèle CC0).
+
+Retouche : recadrage 16:9 centré, 2560 × 1440, WebP, métadonnées EXIF et XMP retirées ; miniatures 480 × 270.
+
+Fonds dessinés (couleurs, dégradés, lignes et grilles, modèles de cours) : écrits pour RoomBoard
+(`apps/web/src/backgrounds/`), aucune source extérieure.
 
 ## Icône de l'application (design L5)
 
