@@ -31,7 +31,7 @@ const BY_TOOL: Readonly<Partial<Record<string, readonly OptionKey[]>>> = {
   text: ["strokeColor", "font", "fontSize", "textAlign", "opacity"],
 };
 /** OG12 lot 2a : ligne fermée (`polygon: true`), options d'une forme sans Angles. */
-const POLYGON: readonly OptionKey[] = ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity"];
+const POLYGON: readonly OptionKey[] = BY_TOOL["diamond"]!;
 const BY_KIND: Readonly<Record<string, (e: ElementView) => readonly OptionKey[]>> = {
   stroke: () => BY_TOOL["pen"]!,
   shape: (e) => (e.kind === "shape" ? (isClosedShape(e.shape) ? POLYGON : BY_TOOL[e.shape.shape] ?? []) : []),

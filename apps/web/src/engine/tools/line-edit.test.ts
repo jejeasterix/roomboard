@@ -23,7 +23,7 @@ function setup(opts: { zoom?: number; touch?: boolean; inner?: number[]; start?:
     if (opts.closed) {
       const c = opts.closed;
       const last = c[c.length - 1]!;
-      return { ...v, shape: { ...v.shape, w: last[0], h: last[1], points: c.slice(1, -1).flat(), polygon: true } } as ShapeElement;
+      return { ...v, shape: { ...v.shape, w: last[0], h: last[1], points: c.slice(1, -1).flat(), polygon: true, fill: "#ff0000" } } as ShapeElement;
     }
     return { ...v, shape: { ...v.shape, points: opts.inner ?? [], start: opts.start ?? undefined } } as ShapeElement;
   };
@@ -185,6 +185,12 @@ describe("Modifier les points : ligne fermée (OG12 lot 2a)", () => {
     o.editor.begin(1, [at(100, 0)]);
     o.editor.extend(1, [at(100, 40)], []);
     expect(o.editor.live().overlay?.shapes[0]?.polygon).toBeUndefined();
+  });
+  it("aperçu d'une ligne fermée : le fond est gardé (C4b)", () => {
+    const { editor } = setup({ closed: SQ });
+    editor.begin(1, [at(100, 50)]);
+    editor.extend(1, [at(150, 50)], []);
+    expect(editor.live().overlay?.shapes[0]?.fill).toBe("#ff0000");
   });
   it("un sommet tiré près d'un objet ne se lie pas", () => {
     const a = setup({ closed: SQ });

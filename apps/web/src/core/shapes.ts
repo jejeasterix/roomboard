@@ -65,8 +65,10 @@ export const isShapeKind = (s: string): s is ShapeKind => (SHAPE_KINDS as readon
 export const isSegment = (k: ShapeKind): boolean => k === "line" || k === "arrow";
 /** OG12 lot 2a : ligne fermée (`polygon: true` sur une ligne). */
 export const isClosedShape = (v: ShapeData): boolean => v.shape === "line" && v.polygon === true;
-/** OG12 lot 2a : formes convertibles en ligne fermée par `ShapeToPolygon`. */
-export const isPointsShape = (k: ShapeKind): boolean => k === "rect" || k === "ellipse" || k === "diamond";
+/** OG12 lot 2a : formes à boîte (rectangle, ellipse, losange), convertibles en ligne fermée par `ShapeToPolygon`. */
+export const isBoxShape = (k: ShapeKind): boolean => k === "rect" || k === "ellipse" || k === "diamond";
+/** OG12 lot 2a : formes à fond : rectangle, ellipse, losange et ligne fermée. */
+export const isFillable = (s: ShapeData): boolean => isBoxShape(s.shape) || isClosedShape(s);
 export const IDENTITY_MATRIX: Matrix = [1, 0, 0, 1, 0, 0];
 export const translateMatrix = (dx: number, dy: number): Matrix => [1, 0, 0, 1, dx, dy];
 export const isIdentity = (m: Matrix): boolean =>

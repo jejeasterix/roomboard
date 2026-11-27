@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anchorPoint, ANCHOR_RATIOS, isClosedShape, isPointsShape, applyMatrix, arrowWings, bandPolygonForTest, boxPolygon, composeMatrix, CURVE_STEPS, ELLIPSE_VERTICES, flattenPath, invertMatrix, isShapeKind, linePath, normalizeShape, shapePolygon } from "./shapes";
+import { anchorPoint, ANCHOR_RATIOS, isClosedShape, isBoxShape, applyMatrix, arrowWings, bandPolygonForTest, boxPolygon, composeMatrix, CURVE_STEPS, ELLIPSE_VERTICES, flattenPath, invertMatrix, isShapeKind, linePath, normalizeShape, shapePolygon } from "./shapes";
 
 describe("shapes (miroir de shape.rs)", () => {
   it("normalizeShape : rectangle et ellipse au coin haut-gauche, tailles positives", () => {
@@ -144,9 +144,9 @@ describe("OG12 lot 2a : losange et ligne fermée (miroir de shape.rs)", () => {
     expect([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map((v) => Math.round(v * 1e6) / 1e6)).toEqual([-1, -1, 101, 51]);
     expect(p).toHaveLength(8);
   });
-  it("isClosedShape, isPointsShape", () => {
+  it("isClosedShape, isBoxShape", () => {
     expect(isClosedShape({ shape: "line", w: 0, h: 50, fill: null, polygon: true })).toBe(true);
     expect(isClosedShape({ shape: "line", w: 0, h: 50, fill: null })).toBe(false);
-    expect(["rect", "ellipse", "diamond", "line", "arrow"].map((k) => isPointsShape(k as never))).toEqual([true, true, true, false, false]);
+    expect(["rect", "ellipse", "diamond", "line", "arrow"].map((k) => isBoxShape(k as never))).toEqual([true, true, true, false, false]);
   });
 });

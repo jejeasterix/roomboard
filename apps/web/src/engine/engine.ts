@@ -16,7 +16,7 @@ import { stepTarget, wholeUnits } from "../app/layer-list";
 import { arrowMoveKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
-import { isPointsShape, isSegment } from "../core/shapes";
+import { isBoxShape, isSegment } from "../core/shapes";
 import { createLineEditor, type LineEditor } from "./tools/line-edit";
 import { linkedCopy } from "./tools/line-points";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -628,12 +628,8 @@ export function createEngine(deps: EngineDeps): Engine {
   function enterLineEdit(id: string): boolean {
     let v = doc.element(id);
     if (!doc.elementIds(pageId).includes(id)) return false;
-    if (v?.kind === "shape" && isPointsShape(v.shape.shape)) {
-      try {
-        doc.apply({ type: "ShapeToPolygon", id });
-      } catch {
-        return false;
-      }
+    if (v?.kind === "shape" && isBoxShape(v.shape.shape)) {
+      if (run({ type: "ShapeToPolygon", id }) === null) return false;
       v = doc.element(id);
     }
     if (v?.kind !== "shape" || !isSegment(v.shape.shape) || elbowedOf(v.look)) return false;
@@ -1564,7 +1560,7 @@ export function createEngine(deps: EngineDeps): Engine {
       const sel = selectTool.selection();
       const id = sel.length === 1 ? sel[0]! : null;
       const v = id === null ? null : doc.element(id);
-      if (id === null || v?.kind !== "shape" || !isPointsShape(v.shape.shape)) return false;
+      if (id === null || v?.kind !== "shape" || !isBoxShape(v.shape.shape)) return false;
       const change = run({ type: "AddLinked", id, dir });
       if (change === null) return false;
       const copy = linkedCopy(doc, change.ids, id);
