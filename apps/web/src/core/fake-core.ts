@@ -186,6 +186,9 @@ interface FakeTable {
   readonly rows: readonly TableRow[];
   /** Clé `<rowId>:<colId>`. */
   readonly cells: ReadonlyMap<string, FakeCell>;
+  /** personnalisation-3 (T7) : "shrink" seulement ; `header` vrai seulement. */
+  readonly fit?: "shrink";
+  readonly header?: boolean;
 }
 /** `grid` : valeur brute lue ou écrite (G13), null sans grille ; vue par `gridView`. `mode` : valeur brute (null absent,
  *  inconnue gardée, U3) ; `height` : hauteur lue (PAGE_HEIGHT si illisible). */
@@ -435,7 +438,16 @@ function tableView(t: FakeTable): TableData {
     }
   }
   const merges = mergesOf(t).map((m) => ({ row: rowId(t, m.r0), col: colId(t, m.c0), rows: m.r1 - m.r0 + 1, cols: m.c1 - m.c0 + 1 }));
-  return { color: t.color, size: t.size, cols: t.cols, rows: t.rows, cells, merges };
+  return {
+    color: t.color,
+    size: t.size,
+    cols: t.cols,
+    rows: t.rows,
+    cells,
+    merges,
+    ...(t.fit === "shrink" ? { fit: "shrink" as const } : {}),
+    ...(t.header === true ? { header: true } : {}),
+  };
 }
 /** Écrite seulement si absente (K3). */
 const putMeta = (assets: Map<string, unknown>, a: AssetRef, linked: string | null = null): void => {
@@ -1197,6 +1209,16 @@ class FakeDocument implements CoreDocument {
         if (next === null) throw new Error(MESSAGES.badTable);
         if (sameLines(t, next)) return this.unchanged();
         return this.writeTable(found, cmd.id, next);
+      }
+      case "SetTableOptions": {
+        // personnalisation-3 (T7), comme `cmd_set_table_options` : `fit` contrôlé, seulement ce qui change, sinon aucune étape.
+        const { found, t } = this.tableOf(cmd.id);
+        if (cmd.fit !== undefined && cmd.fit !== "grow" && cmd.fit !== "shrink") throw new Error(MESSAGES.badTable);
+        const fit = cmd.fit === undefined ? t.fit : cmd.fit === "shrink" ? ("shrink" as const) : undefined;
+        const header = cmd.header === undefined ? t.header : cmd.header ? true : undefined;
+        if (fit === t.fit && header === t.header) return this.unchanged();
+        const { fit: _f, header: _h, ...rest } = t;
+        return this.writeTable(found, cmd.id, { ...rest, ...(fit ? { fit } : {}), ...(header ? { header } : {}) });
       }
       case "PlaceInCell": {
         // personnalisation-3 (D3), refus dans l'ordre de `cmd_place_in_cell` (section T1a) : 1 matrice, 2 tableau parmi les
@@ -2296,6 +2318,8 @@ function loadTable(v: unknown): FakeTable | null {
     cols,
     rows,
     cells,
+    ...(v["fit"] === "shrink" ? { fit: "shrink" as const } : {}),
+    ...(v["header"] === true ? { header: true } : {}),
   };
 }
 

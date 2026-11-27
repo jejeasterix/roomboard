@@ -311,6 +311,46 @@ impl Document {
         Ok(self.table_done_with(page, id, moved))
     }
 
+    /// `SetTableOptions` (T7) : `fit` et `header`, seulement ce qui change ; une étape ; rien ne change : aucune étape.
+    pub(crate) fn cmd_set_table_options(
+        &mut self,
+        id: &str,
+        fit: Option<&str>,
+        header: Option<bool>,
+    ) -> Result<Change, CommandError> {
+        let (page, e, raw) = self.table_of(id)?;
+        if !matches!(fit, None | Some("grow" | "shrink")) {
+            return Err(CommandError::BadTable);
+        }
+        let shrink = fit.map(|f| f == "shrink").filter(|s| *s != raw.fit.is_some());
+        let head = header.filter(|h| *h != raw.header);
+        if shrink.is_none() && head.is_none() {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            match shrink {
+                Some(true) => {
+                    e.insert(&mut txn, "fit", "shrink");
+                }
+                Some(false) => {
+                    e.remove(&mut txn, "fit");
+                }
+                None => {}
+            }
+            match head {
+                Some(true) => {
+                    e.insert(&mut txn, "header", true);
+                }
+                Some(false) => {
+                    e.remove(&mut txn, "header");
+                }
+                None => {}
+            }
+        }
+        Ok(self.table_done_with(page, id, Vec::new()))
+    }
+
     /// T5 : retire les éléments `ids` placés sous le tableau `table` de `page` et les réinsère juste au-dessus de lui,
     /// dans l'ordre de la pile (`reinsert_kept`, même transaction : une étape).
     fn lift_above(&self, txn: &mut TransactionMut, page: &str, table: &str, ids: &HashSet<String>) {
@@ -743,6 +783,23 @@ mod tests {
     }
 
     // D4 : tailles ligne par ligne, suivi, une étape ; id inconnu refusé ; mêmes tailles : aucune étape.
+    #[test]
+    fn set_table_options_writes_fit_and_header() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        d.apply(Command::SetTableOptions { id: t.clone(), fit: Some("shrink".into()), header: Some(true) }).expect("options");
+        assert_eq!(view(&d, &t).fit.as_deref(), Some("shrink"));
+        assert!(view(&d, &t).header);
+        let v = d.version();
+        d.apply(Command::SetTableOptions { id: t.clone(), fit: Some("shrink".into()), header: None }).expect("même");
+        assert_eq!(d.version(), v);
+        assert_eq!(d.apply(Command::SetTableOptions { id: t.clone(), fit: Some("zz".into()), header: None }), Err(CommandError::BadTable));
+        d.apply(Command::SetTableOptions { id: t.clone(), fit: Some("grow".into()), header: Some(false) }).expect("retour");
+        assert_eq!(view(&d, &t).fit, None);
+        assert!(!view(&d, &t).header);
+    }
+
     #[test]
     fn set_table_line_sizes_writes_and_follows() {
         let mut d = Document::blank();

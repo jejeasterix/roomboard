@@ -127,6 +127,9 @@ const toU32 = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 0xff
 export function toTable(v: unknown): TableData {
   if (!isRecord(v)) throw new Error(ELEMENT);
   const { color, size, cols, rows, cells, merges } = v;
+  // personnalisation-3 (T7) : `fit` ("shrink" seulement) et `header` (vrai seulement), absents sinon.
+  const fit = v["fit"] === "shrink" ? { fit: "shrink" as const } : {};
+  const header = v["header"] === true ? { header: true } : {};
   if (
     typeof color !== "string" || typeof size !== "number" || !Array.isArray(cols) || !Array.isArray(rows) || !Array.isArray(cells) ||
     !Array.isArray(merges)
@@ -139,6 +142,8 @@ export function toTable(v: unknown): TableData {
   };
   const extent = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && x >= 1;
   return {
+    ...fit,
+    ...header,
     color,
     size,
     cols: cols.map((c: unknown) => {
@@ -677,6 +682,8 @@ class WasmCoreDocument implements CoreDocument {
             new Float64Array(cmd.rows.map((r) => r[1])),
           ),
         );
+      case "SetTableOptions":
+        return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header));
       case "ImportTable":
         return toChange(
           this.d.import_table(

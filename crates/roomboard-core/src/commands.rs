@@ -255,6 +255,13 @@ pub enum Command {
         cols: Vec<(String, f64)>,
         rows: Vec<(String, f64)>,
     },
+    /// personnalisation-3 (T7) : `fit` `"shrink"` écrit, `"grow"` retire ; `header` `true` écrit, `false` retire ; autre
+    /// `fit` : `BadTable` ; rien ne change : aucune étape.
+    SetTableOptions {
+        id: String,
+        fit: Option<String>,
+        header: Option<bool>,
+    },
     /// Pot (C6a, D12, DA1) : contour (`color`), intérieur (`fill`) ou fond de la page (`background`) ; `None` = « Aucune »
     /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38). C6b : image
     /// (nouvel asset, `sourceAsset`, B2-B4).
@@ -910,6 +917,9 @@ impl Document {
             } => self.cmd_place_in_cell(&ids, &matrix, cell.as_ref(), &sizes),
             Command::SetTableLineSizes { id, cols, rows } => {
                 self.cmd_set_table_line_sizes(&id, &cols, &rows)
+            }
+            Command::SetTableOptions { id, fit, header } => {
+                self.cmd_set_table_options(&id, fit.as_deref(), header)
             }
             Command::ImportTable {
                 page,

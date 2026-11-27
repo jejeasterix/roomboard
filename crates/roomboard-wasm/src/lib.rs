@@ -1205,6 +1205,20 @@ impl Document {
         )
     }
 
+    /// personnalisation-3 (T7) : `fit` (`"grow"` ou `"shrink"`) et `header`, seulement ce qui est donné.
+    pub fn set_table_options(
+        &mut self,
+        id: &str,
+        fit: Option<String>,
+        header: Option<bool>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_options_inner(id, fit, header)
+                .map_err(cmd_err)?,
+        )
+    }
+
     /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
     #[allow(clippy::too_many_arguments)]
     pub fn import_table(
@@ -2178,6 +2192,19 @@ impl Document {
                 .cloned()
                 .zip(row_heights.iter().copied())
                 .collect(),
+        })
+    }
+
+    pub fn set_table_options_inner(
+        &mut self,
+        id: &str,
+        fit: Option<String>,
+        header: Option<bool>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetTableOptions {
+            id: id.to_string(),
+            fit,
+            header,
         })
     }
 

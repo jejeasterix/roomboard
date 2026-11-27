@@ -69,6 +69,12 @@ pub struct TableView {
     pub rows: Vec<TableRowView>,
     pub cells: Vec<TableCellView>,
     pub merges: Vec<TableMergeView>,
+    /// personnalisation-3 (T7) : `"shrink"` seulement (absent = « agrandir »).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fit: Option<String>,
+    /// personnalisation-3 (T7) : en-tête de tableau (dessin : lot B) ; omis si faux.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub header: bool,
 }
 
 /// Ligne ou colonne lisible : id, taille, son `Y.Map` et son rang brut dans le `Y.Array` (entrées illisibles
@@ -90,6 +96,8 @@ pub(crate) struct RawTable {
     pub cells: Option<MapRef>,
     pub cols: Vec<Line>,
     pub rows: Vec<Line>,
+    pub fit: Option<String>,
+    pub header: bool,
 }
 
 /// Cellule lue ; `text` : son `Y.Text` s'il en est un (le `span` se lit par `read_cell_span`, F1).
@@ -167,6 +175,8 @@ pub(crate) fn read_raw<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<RawTable> {
         cells,
         cols,
         rows,
+        fit: out_string(e.get(txn, "fit")).filter(|f| f == "shrink"),
+        header: matches!(e.get(txn, "header"), Some(Out::Any(Any::Bool(true)))),
     })
 }
 
@@ -337,6 +347,8 @@ impl RawTable {
             })
             .collect();
         TableView {
+            fit: self.fit.clone(),
+            header: self.header,
             color: self.color.clone(),
             size: self.size,
             cols: self

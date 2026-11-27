@@ -194,6 +194,8 @@ export type Command =
   | { readonly type: "PlaceInCell"; readonly ids: readonly string[]; readonly matrix: Matrix; readonly cell: CellLink | null; readonly sizes: readonly LineSize[] }
   /** personnalisation-3 (D4) : tailles par id, objets liés suivis ; une étape. */
   | { readonly type: "SetTableLineSizes"; readonly id: string; readonly cols: readonly (readonly [string, number])[]; readonly rows: readonly (readonly [string, number])[] }
+  /** personnalisation-3 (T7) : `fit` "shrink" écrit, "grow" retire ; `header` true écrit, false retire ; une étape. */
+  | { readonly type: "SetTableOptions"; readonly id: string; readonly fit?: "grow" | "shrink"; readonly header?: boolean }
   /** C10b (F18) : tableau rempli ; cells = rows × cols textes en rangées ; merges = [ligne, colonne, lignes, colonnes]. */
   | {
       readonly type: "ImportTable";
@@ -313,6 +315,10 @@ export interface TableData {
   readonly rows: readonly TableRow[];
   readonly cells: readonly TableCell[];
   readonly merges: readonly TableMerge[];
+  /** personnalisation-3 (T7) : "shrink" seulement (absent = agrandir). */
+  readonly fit?: "shrink";
+  /** personnalisation-3 (T7) : en-tête (dessin : lot B) ; absent = faux. */
+  readonly header?: boolean;
 }
 
 interface ElementBase {

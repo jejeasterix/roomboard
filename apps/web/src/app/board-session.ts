@@ -57,6 +57,7 @@ import { createFillQueue } from "./image-fill";
 import { createZoneMarks } from "./zone-marks";
 import { stageTags } from "./stage-tags";
 import { watchDpr } from "./mesure-outils";
+import { createCellMenu } from "../ui/cell-menu";
 import { createTablePicker } from "./table-picker";
 import { createTextEditor, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
 
@@ -341,7 +342,9 @@ async function buildBoardSession(
   let activeTool = (): string => "";
   const editor = createTextEditor(container, (): TextEditorEvents | null => (activeTool() === "table" ? tableTool : textTool));
   const picker = createTablePicker(container);
+  const cellMenu = createCellMenu(container);
   undo.push(() => picker.element.remove());
+  undo.push(() => cellMenu.element.remove());
   editor.element.removeAttribute("id");
   undo.push(() => editor.element.remove());
   undo.push(() => choice.release());
@@ -376,7 +379,7 @@ async function buildBoardSession(
         return textTool;
       },
       table: (ctx, style) => {
-        tableTool = createTableTool(ctx, editor, picker, style, measure);
+        tableTool = createTableTool(ctx, editor, picker, style, measure, cellMenu);
         return tableTool;
       },
       fill: (ctx, color, tolerance) => createFillTool(ctx, color, measure, { tolerance, submit: (r, run) => fillQueue.submit(r, zoneMarks.timed(run)) }),
@@ -851,6 +854,7 @@ async function buildBoardSession(
       doc.free();
       stage.remove();
       picker.element.remove();
+      cellMenu.element.remove();
       editor.element.remove();
     },
   };

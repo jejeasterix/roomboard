@@ -859,6 +859,11 @@ export function createEngine(deps: EngineDeps): Engine {
       const ck = cellKey(e);
       // personnalisation-3 (H12) : la touche passe s'il n'y a rien à loger ou à sortir.
       if ((ck === "place" || ck === "unplace") && tool === "select" && selectTool.placeInCell?.(ck === "unplace") === true) return true;
+      // personnalisation-3 (T7) : Alt+F en outil Tableau bascule « rétrécir » ; sans cellule active la touche passe.
+      if (ck === "fit" && tool === "table" && tableTool.cell() !== null) {
+        tableTool.act("fit-toggle");
+        return true;
+      }
       const order = orderKey(e);
       if (order !== null) {
         // Lot 2 : Ctrl+↑ ↓ un rang, Ctrl+Maj+↑ ↓ extrémités ; pris seulement avec une sélection (sinon la touche passe).

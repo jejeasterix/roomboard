@@ -21,6 +21,7 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   // OG19 (H1-11) : actions de la barre d'outils ; l'id est celui de l'action, l'infobulle de son bouton le montre.
   s("backgrounds", "Vue", "Fonds", "Ctrl+Maj+F"),
   s("cell-place", "Tableau", "Loger la sélection dans la case", "Alt+Entrée"),
+  s("table-fit", "Tableau", "Agrandir ou rétrécir pour les objets", "Alt+F"),
   s("cell-unplace", "Tableau", "Sortir la sélection de sa case", "Alt+Maj+Entrée"),
   s("page-prev", "Pages", "Page précédente", "Pg préc"),
   s("page-next", "Pages", "Page suivante", "Pg suiv"),

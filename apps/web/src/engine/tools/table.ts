@@ -14,6 +14,7 @@ import { TABLE_MAX_LINES } from "../../core/api";
 import { sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { composeMatrix, translateMatrix } from "../../core/shapes";
+import type { CellMenu } from "../../ui/cell-menu";
 import { screenToWorld } from "../camera";
 import { EMPTY_OVERLAY } from "../render/overlay";
 import {
@@ -80,9 +81,18 @@ interface Press {
   readonly id: string;
   readonly start: Cell;
   moved: boolean;
+  /** Appui long (T7) : point écran de départ, minuterie, menu ouvert (le relâché n'ouvre alors aucune saisie). */
+  readonly sx: number;
+  readonly sy: number;
+  hold: ReturnType<typeof setTimeout> | null;
+  held: boolean;
 }
 
-export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure): TableTool {
+/** Appui long (G8) : durée et mouvement toléré en px écran. */
+const HOLD_MS = 500;
+const HOLD_SLOP = 8;
+
+export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu): TableTool {
   let active: CellRef | null = null;
   /** Autre coin de la plage (F14), dans le tableau de `active` ; null : aucune plage. */
   let corner: CellRef | null = null;
@@ -90,6 +100,10 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   /** Pointeur dont l'appui a seulement validé la saisie ou fermé la grille : ni plage, ni ouverture au relâché. */
   let swallowed: number | null = null;
   let opened: Opened | null = null;
+  const stopHold = (p: Press | null): void => {
+    if (p?.hold != null) clearTimeout(p.hold);
+    if (p !== null) p.hold = null;
+  };
   let live: LivePart = NO_LIVE;
   const gate = createCommitGate(() => commit(), () => opened !== null);
 
@@ -274,7 +288,18 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     return true;
   };
 
-  return {
+  /** Appui long (T7) : la cellule appuyée est active ; le menu propose Rétrécir (ou Agrandir). */
+  const openMenu = (p: Press): void => {
+    p.hold = null;
+    if (press !== p || menu === undefined) return;
+    const at = locate(active);
+    if (at === null) return;
+    p.held = true;
+    const shrink = at.table.fit === "shrink";
+    menu.open(p.sx, p.sy, [{ id: "fit", label: shrink ? "Agrandir" : "Rétrécir", run: () => api.act("fit-toggle") }]);
+  };
+
+  const api: TableTool = {
     begin(pointerId, samples) {
       const s = samples[0];
       if (!s) return;
@@ -304,7 +329,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           return;
         }
         setActive(ref);
-        press = { pointerId, id: hit.id, start: hit.cell, moved: false };
+        const p: Press = { pointerId, id: hit.id, start: hit.cell, moved: false, sx: s.x, sy: s.y, hold: null, held: false };
+        press = p;
+        if (menu !== undefined) p.hold = setTimeout(() => openMenu(p), HOLD_MS);
         return;
       }
       picker.open({ x: s.x, y: s.y }, (cols, rows) => create(x, y, cols, rows));
@@ -313,6 +340,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const p = press;
       const s = samples[samples.length - 1];
       if (p === null || p.pointerId !== pointerId || !s) return;
+      if (Math.hypot(s.x - p.sx, s.y - p.sy) > HOLD_SLOP) stopHold(p);
       const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
       const hit = tableAt(ctx.doc, ctx.page(), x, y);
       if (hit === null || hit.id !== p.id) return;
@@ -333,8 +361,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const p = press;
       if (p === null || p.pointerId !== pointerId) return;
       press = null;
-      // F14 : sans changement de cellule, le clic ouvre la saisie au relâché.
-      if (how === "end" && !p.moved) openActive();
+      stopHold(p);
+      // F14 : sans changement de cellule, le clic ouvre la saisie au relâché (sauf après l'appui long : le menu est ouvert).
+      if (how === "end" && !p.moved && !p.held) openActive();
       // Geste interrompu (abort, cancel) après un glisser : la plage posée par `extend` est retirée, sinon le prochain
       // « Ombrer » ou « − Ligne » s'y appliquerait.
       if (how !== "end" && p.moved) setCorner(null);
@@ -342,6 +371,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     live: () => live,
     active: () => false,
     leave() {
+      stopHold(press);
+      menu?.close();
       gate.request();
       picker.close();
       press = null;
@@ -399,6 +430,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           break;
         case "unshade":
           shadeOver(at, span, null);
+          break;
+        case "fit-toggle":
+          ctx.run({ type: "SetTableOptions", id: ref.id, fit: t.fit === "shrink" ? "grow" : "shrink" });
           break;
         default:
           // Contrôle d'exhaustivité : une action ajoutée à `TableAction` sans cas ici ne compile pas.
@@ -493,4 +527,5 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       ctx.stateChanged?.();
     },
   };
+  return api;
 }

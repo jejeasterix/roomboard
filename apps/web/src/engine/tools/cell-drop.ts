@@ -9,7 +9,7 @@
 import type { Bounds, CellLink, Command, ElementView, LineSize, Matrix, TableElement } from "../../core/api";
 import { applyMatrix, invertMatrix } from "../../core/shapes";
 import type { GroupedView } from "../groups";
-import { cellContent, cellRect, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
+import { cellContent, cellInnerBox, cellRect, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { transformBounds, translateMatrix } from "./handles";
 import type { ToolContext } from "./tool";
@@ -147,6 +147,15 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
       const lb = b === null ? null : localBox(hit.transform, b);
       return lb === null ? [] : [{ row: v.cell[1], col: v.cell[2], w: lb.x1 - lb.x0, h: lb.y1 - lb.y0 }];
     });
+    const corner = cellRect(hit.table, hit.cell);
+    const [tx, ty] = applyMatrix(hit.transform, corner.x0 + TABLE_PADDING, corner.y0 + TABLE_PADDING);
+    // T7 (S2) : mode rétrécir : la case ne change pas ; l'objet est réduit (échelle uniforme, jamais agrandi) à la boîte
+    // intérieure de la case et posé à son coin haut-gauche. Tableau tourné : hors périmètre (cadrage § 7).
+    if (hit.table.fit === "shrink") {
+      const inner = cellInnerBox(hit.table, hit.cell);
+      const k = Math.min(1, inner.w / mine.w, inner.h / mine.h);
+      return { type: "PlaceInCell", ids: [...selection], matrix: [k, 0, 0, k, tx - k * box.x0, ty - k * box.y0], cell: link, sizes: left };
+    }
     const widths = hit.table.cols.map((c) => c.width);
     const req = requiredSizes(hit.table, [...others, mine], widths, measure);
     const grow: LineSize[] = [];
@@ -156,8 +165,6 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     if (needH > r.height) grow.push([hit.id, "row", r.id, needH]);
     // Une ligne ou colonne n'est citée qu'une fois : la case visée garde le dernier mot.
     const sizes = [...left.filter((z) => !grow.some((g) => g[0] === z[0] && g[1] === z[1] && g[2] === z[2])), ...grow];
-    const corner = cellRect(hit.table, hit.cell);
-    const [tx, ty] = applyMatrix(hit.transform, corner.x0 + TABLE_PADDING, corner.y0 + TABLE_PADDING);
     return { type: "PlaceInCell", ids: [...selection], matrix: translateMatrix(tx - box.x0, ty - box.y0), cell: link, sizes };
   };
 

@@ -269,6 +269,13 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-table-picker input { inline-size: 4em; min-block-size: var(--rb-btn-m); }
 .rb-table-picker form button { min-block-size: var(--rb-btn-m); padding: 0 var(--rb-pad); }
 
+/* Menu de case (personnalisation-3 T7) : îlot posé au point de l'appui long, entrées de 44 px au moins, traits fins. */
+.rb-cell-menu { position: absolute; z-index: 4; display: grid; gap: 2px; padding: 4px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); }
+.rb-cell-menu[hidden] { display: none; }
+.rb-cell-menu button { display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; text-align: start; cursor: pointer; }
+.rb-cell-menu button:hover { background: var(--rf-gray-50); }
+.rb-cell-menu button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+
 /* Menu des profils et éditeur (C1, P20, P22) : cibles d'au moins --rb-btn-m, libellés en clair, éléments inconnus grisés. */
 /* design-l3 (L3-22) : menu Profil en îlot, lignes de 48 px icône + texte (D-DS1), profil actif en violet 700. */
 .rb-popover[data-panel="menu-profils"] { justify-self: end; margin: 88px 16px 0 0; border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
