@@ -4245,6 +4245,17 @@ describe.each(factories)("contrat Restack : $name", ({ f }) => {
     d.free();
   });
 
+  it("MovePage : rang non entier ou hors u32 refusé comme par le faux cœur, rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    rect(d, p, 0);
+    d.apply({ type: "AddPage", after: null });
+    for (const to of [0.5, -1, 2, 2 ** 32 + 1, Number.NaN]) {
+      unchanged(d, () => expect(messageOf(() => d.apply({ type: "MovePage", page: p, to })), String(to)).toBe("rang de page hors bornes"));
+    }
+    d.free();
+  });
+
   it("Restack : refus d'OG4 (rang hors bornes ou non entier, bloc vide : BadIndex ; id inconnu : UnknownElement ; page mêlée : MixedPages), rien d'écrit", () => {
     const d = f.blank();
     const p = first(d);

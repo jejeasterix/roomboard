@@ -50,13 +50,18 @@ fn restack_keeps_ids_and_fields() {
                 width: 2.0,
             },
             fill: Some("#ffc9c9".into()),
-            look: Look::default(),
+            look: Look {
+                fill_style: Some("hachure".into()),
+                link: Some("https://example.org".into()),
+                ..Look::default()
+            },
         })
         .unwrap()
         .ids[0]
         .clone();
     let b = add(&mut d);
     let view = format!("{:?}", d.element(&a));
+    assert!(view.contains("hachure") && view.contains("https://example.org"), "{view}");
     d.apply(Command::Restack {
         ids: vec![a.clone()],
         to: 1,
