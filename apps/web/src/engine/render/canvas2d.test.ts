@@ -9,7 +9,8 @@ import { orientMatrix } from "../../core/image-params";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, HANDLE_FILL, MODEL3D_CARD_LABEL, paintShape, PLACEHOLDER_FILL, SELECTION_COLOR, traceRings, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, arrowhead, paintText, HANDLE_FILL, MODEL3D_CARD_LABEL, paintShape, PLACEHOLDER_FILL, SELECTION_COLOR, traceRings, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import type { RichLine } from "../text-layout";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import type { ImageSource } from "./image-cache";
@@ -1591,5 +1592,66 @@ describe("OG11 (T8) — tirets, alpha, angles, roughjs", () => {
     expect(style.opacity).toBe("");
     r.drawLive({ strokes: [{ outline: square, color: "#1e40af" }], erasers: [], opacity: 100 } as never, IDENTITY);
     expect(style.opacity).toBe("");
+  });
+});
+
+describe("pointes, hachures et alignement (OG11, lot 2)", () => {
+  const pen = { color: "#112233", width: 4 };
+  const arrow = { shape: "arrow" as const, w: 100, h: 0, fill: null };
+  const paint = (look: Parameters<typeof paintShape>[3], s: Parameters<typeof paintShape>[1] = arrow): FakeCtx => {
+    const c = new FakeCtx();
+    paintShape(asCtx(c), s, pen, look);
+    return c;
+  };
+  const count = (c: FakeCtx, name: string): number => c.log.filter((l) => l.startsWith(name)).length;
+
+  it("pointe aucune : le fût seul", () => {
+    const c = paint({ endArrowhead: "none" });
+    expect(c.path).toEqual([["M", 0, 0], ["L", 100, 0]]);
+    expect(count(c, "stroke")).toBe(1);
+  });
+  it("pointe flèche par défaut : inchangée (un seul tracé fût + ailes)", () => {
+    const c = paint(undefined);
+    expect(count(c, "stroke")).toBe(1);
+    expect(c.path.length).toBe(5);
+  });
+  it("pointe triangle pleine", () => {
+    const c = paint({ endArrowhead: "triangle" });
+    expect(c.log.some((l) => l.startsWith("fill "))).toBe(true);
+    expect(c.log).toContain("closePath");
+  });
+  it("pointe triangle creux : fermé, sans remplissage", () => {
+    const c = paint({ endArrowhead: "triangle_outline" });
+    expect(c.log).toContain("closePath");
+    expect(count(c, "fill")).toBe(0);
+  });
+  it("pointes aux deux bouts : ailes aussi côté départ", () => {
+    const c = new FakeCtx();
+    arrowhead(asCtx(c), "arrow", 0, 0, 100, 0, 4);
+    const [, w1, w2] = [c.path[0], c.path[0], c.path[2]];
+    expect(c.path[1]).toEqual(["L", 0, 0]);
+    expect((w1 as [string, number, number])[1]).toBeGreaterThan(0);
+    expect((w2 as [string, number, number])[1]).toBeGreaterThan(0);
+    const both = paint({ startArrowhead: "triangle", endArrowhead: "triangle" });
+    expect(count(both, "fill ")).toBe(2);
+  });
+  it("hachures en Architecte : un fond avec fillStyle passe par roughjs (traits fins, pas de rect net)", () => {
+    const c = new FakeCtx();
+    (c as unknown as { bezierCurveTo: () => void }).bezierCurveTo = () => c.log.push("bezierCurveTo");
+    paintShape(asCtx(c), { shape: "rect", w: 100, h: 50, fill: "#fef08a" }, pen, { fillStyle: "hachure" });
+    expect(count(c, "rect")).toBe(0);
+    expect(c.log.some((l) => l.startsWith("stroke #fef08a 2"))).toBe(true);
+  });
+  it("texte centré", () => {
+    const c = new FakeCtx();
+    const line: RichLine = { top: 0, height: 45, size: 36, segments: [{ text: "Bonjour", x: 0, width: 70, style: { size: 36, bold: false, italic: false, underline: false, font: null, color: null } }] };
+    paintText(asCtx(c), [line], "#000000", 200, "center");
+    expect(c.texts[0]?.x).toBe(65);
+    const r = new FakeCtx();
+    paintText(asCtx(r), [line], "#000000", 200, "right");
+    expect(r.texts[0]?.x).toBe(130);
+    const l = new FakeCtx();
+    paintText(asCtx(l), [line], "#000000");
+    expect(l.texts[0]?.x).toBe(0);
   });
 });
