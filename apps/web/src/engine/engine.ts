@@ -367,9 +367,10 @@ export function createEngine(deps: EngineDeps): Engine {
   // décision 10 : page plus haute que large (portrait choisi) = portrait. Le cadre d'un fond PDF A4 ne le décide pas.
   const fitLayout = (view: FrameSource): FrameLayout => (pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape");
   /** « Ajuster la page » : selon la disposition de la page montrée ; en Infini, contenu ∪ fond. */
+  const fitTop = (): number => deps.fitTop?.() ?? 16;
   const fit = (w: number, h: number): Camera => {
     const view = doc.page(pageId);
-    const top = deps.fitTop?.() ?? 16;
+    const top = fitTop();
     if (view === null) return fitFor("landscape", w, h, null, null, top);
     // décision 10 : Infini = contenu ∪ fond ; sinon largeur (OG24 : le portrait aussi, il défile).
     const layout = fitLayout(view);
@@ -404,7 +405,7 @@ export function createEngine(deps: EngineDeps): Engine {
     const view = doc.page(pageId);
     const frame = view === null || fitLayout(view) !== "portrait" ? null : pageFrame(view);
     if (frame === null || !(viewH > 0)) return null;
-    const top = deps.fitTop?.() ?? 16;
+    const top = fitTop();
     const bounds = scrollBounds(camera, frame, viewH, top, SCROLL_BOTTOM);
     return bounds === null ? null : { bounds, top, height: (frame.y1 - frame.y0) * camera.zoom };
   };

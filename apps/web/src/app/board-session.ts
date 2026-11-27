@@ -345,22 +345,21 @@ async function buildBoardSession(
   editor.element.removeAttribute("id");
   undo.push(() => editor.element.remove());
   undo.push(() => choice.release());
-  // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
-  // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien. OG24 : l'ascenseur part de là.
-  const fitTop = (): number =>
-    topBelowIslands(
-      stage.getBoundingClientRect(),
-      [...stage.ownerDocument.querySelectorAll(".rb-island:not([data-options])")].map((e) => {
-        const r = e.getBoundingClientRect();
-        return { top: r.top, bottom: r.bottom, side: e.matches('[data-anchor^="side-"]') };
-      }),
-      GAP,
-    );
   const engine = createEngine({
     doc,
     ...(shared.pageMode === undefined ? {} : { pageMode: shared.pageMode }),
     renderer: choice.renderer,
-    fitTop,
+    // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
+    // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien.
+    fitTop: () =>
+      topBelowIslands(
+        stage.getBoundingClientRect(),
+        [...stage.ownerDocument.querySelectorAll(".rb-island:not([data-options])")].map((e) => {
+          const r = e.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom, side: e.matches('[data-anchor^="side-"]') };
+        }),
+        GAP,
+      ),
     images,
     frames: {
       requestFrame: (cb) => requestAnimationFrame(cb),
@@ -464,7 +463,7 @@ async function buildBoardSession(
   // Taille CSS de la case (le rendu Canvas 2D la retient, page infinie) et devicePixelRatio suivis : l'encre reste sous
   // la pointe. Jamais la taille de la fenêtre.
   // OG24 : l'ascenseur d'une page portrait suit la caméra, la page montrée, son mode et la taille de la vue.
-  const scrollbar = createPageScrollbar(stage, engine);
+  const scrollbar = createPageScrollbar(stage, engine, () => sampler.penInContact());
   undo.push(() => scrollbar.element.remove());
   const fit = (): void => {
     engine.resize(stage.clientWidth, stage.clientHeight, window.devicePixelRatio || 1);
@@ -744,8 +743,14 @@ async function buildBoardSession(
     stage.dataset["zoneMs"] = tags.zoneMs;
     stage.dataset["zoneCells"] = tags.zoneCells;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
-    scrollbar.update();
+    // OG24 : page montrée ou disposition changée (Ctrl+Z d'un mode) ; la caméra, elle, passe par onCamera.
+    const shown = `${s.page}|${s.pageLayout}`;
+    if (shown !== scrollShown) {
+      scrollShown = shown;
+      scrollbar.update();
+    }
   };
+  let scrollShown = "";
   mark(engine.state());
   const offState = engine.onState(mark);
   remark = () => mark(engine.state());

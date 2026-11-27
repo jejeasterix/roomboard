@@ -110,7 +110,7 @@ export interface ScrollBounds {
   readonly min: number;
   readonly max: number;
 }
-export function scrollBounds(c: Camera, frame: PageRect, viewH: number, top: number, bottom = 16): ScrollBounds | null {
+export function scrollBounds(c: Camera, frame: PageRect, viewH: number, top: number, bottom: number): ScrollBounds | null {
   const max = top - frame.y0 * c.zoom;
   const min = viewH - bottom - frame.y1 * c.zoom;
   return min < max ? { min, max } : null;

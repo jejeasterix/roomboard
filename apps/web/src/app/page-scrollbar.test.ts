@@ -14,13 +14,17 @@ function setup(scroll: PageScroll | null = { at: 0, visible: 0.25, top: 120, spa
       return true;
     }),
   };
-  const bar = createPageScrollbar(stage, engine);
+  let pen = false;
+  const bar = createPageScrollbar(stage, engine, () => pen);
   const el = bar.element;
   const thumb = el.firstElementChild as HTMLElement;
   const set = (n: PageScroll | null): void => {
     s = n;
   };
-  return { stage, el, thumb, engine, bar, set };
+  const setPen = (v: boolean): void => {
+    pen = v;
+  };
+  return { stage, el, thumb, engine, bar, set, setPen };
 }
 
 const pointer = (type: string, clientY: number, o: PointerEventInit = {}): PointerEvent =>
@@ -38,7 +42,7 @@ describe("ascenseur du portrait (OG24)", () => {
     expect(el.hidden).toBe(false);
     expect(el.getAttribute("role")).toBe("scrollbar");
     expect(el.style.top).toBe("120px");
-    expect(el.style.bottom).toBe("16px");
+    expect(el.style.height).toBe("600px");
     expect(thumb.style.height).toBe("150px");
     expect(el.getAttribute("aria-valuenow")).toBe("0");
     set({ at: 0.5, visible: 0.25, top: 120, span: 600 });
@@ -76,16 +80,16 @@ describe("ascenseur du portrait (OG24)", () => {
     expect(engine.scrollPageTo).not.toHaveBeenCalled();
   });
   it("rejet de paume (D18) : un toucher pendant qu'un stylet touche la scène passe à la scène", () => {
-    const { stage, thumb, engine, bar } = setup();
+    const { stage, thumb, engine, bar, setPen } = setup();
     bar.update();
-    stage.dispatchEvent(pointer("pointerdown", 300, { pointerType: "pen", pointerId: 7 }));
+    setPen(true);
     const seen = vi.fn();
     stage.addEventListener("pointerdown", seen);
     thumb.dispatchEvent(pointer("pointerdown", 170));
     thumb.dispatchEvent(pointer("pointermove", 400));
     expect(seen).toHaveBeenCalledTimes(1);
     expect(engine.scrollPageTo).not.toHaveBeenCalled();
-    stage.dispatchEvent(pointer("pointerup", 300, { pointerType: "pen", pointerId: 7 }));
+    setPen(false);
     thumb.dispatchEvent(pointer("pointerdown", 170, { pointerId: 3 }));
     thumb.dispatchEvent(pointer("pointermove", 170 + 225, { pointerId: 3 }));
     expect(engine.scrollPageTo).toHaveBeenLastCalledWith(0.5);
