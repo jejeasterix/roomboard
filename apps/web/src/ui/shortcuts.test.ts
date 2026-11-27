@@ -28,7 +28,7 @@ describe("shortcuts", () => {
       else if (by === "key") expect(keyAction(e), s.id).toBe(value);
       else if (by === "object") expect(objectKey(e), s.id).toBe(value);
       else if (by === "edit") expect(editAction(e), s.id).toBe(value);
-      else if (by === "pan") expect(isPanKey(press("Espace")), s.id).toBe(true);
+      else if (by === "pan") expect(isPanKey(press(s.keys.split(/[ ,]/)[0]!)), s.id).toBe(true);
       else {
         // Copier, couper, coller (événements natifs) et Ctrl+B (rich-edit) : aucun reconnaisseur ne les vole.
         expect(e.key, s.id).toBe(value);

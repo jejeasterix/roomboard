@@ -108,7 +108,12 @@ export function nudge(at: Point, key: string, big: boolean): Point | null {
   return { x: at.x + dx * step, y: at.y + dy * step };
 }
 
-/** OG11 : coin haut-gauche du panneau d'options, sous la rangée du haut (`tops` = sa hauteur), à droite de la barre
+/** OG11 : bas de la rangée du haut (îlots posés à `EDGE`, hauts de `btn` + 8) pour la taille de bouton `btn` du profil. */
+export function topRowBottom(btn: number): number {
+  return EDGE + btn + 8;
+}
+
+/** OG11 : coin haut-gauche du panneau d'options, sous la rangée du haut (`tops` = son bas, `topRowBottom`), à droite de la barre
  *  latérale quand elle existe (`sideStart`, relative au bord gauche de la zone) ; y borné pour rester dans la zone. */
 export function placeOptions(area: Box, sideStart: Box | null, tops: number): Point {
   return { x: sideStart ? sideStart.w + GAP : EDGE, y: Math.min(tops + GAP, Math.max(EDGE, area.h - EDGE)) };

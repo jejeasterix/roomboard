@@ -278,8 +278,30 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
     e.stopPropagation();
   });
   // Perte du focus : l'outil valide, ou attend compositionend si une composition est en cours (CL4-3).
-  zone.addEventListener("blur", () => {
-    if (opened) events()?.requestCommit();
+  // Le panneau d'options (`[data-options]`) n'est pas une sortie : toucher sa réglette garde la saisie, et le focus
+  // revient ici après le `change`. Tout autre focus valide comme avant.
+  zone.addEventListener("blur", (e: FocusEvent) => {
+    if (!opened) return;
+    const to = e.relatedTarget instanceof Element ? e.relatedTarget : null;
+    const panel = to?.closest("[data-options]") ?? null;
+    if (panel === null) {
+      events()?.requestCommit();
+      return;
+    }
+    const back = (): void => {
+      panel.removeEventListener("change", back);
+      panel.removeEventListener("focusout", leave);
+      if (opened) zone.focus();
+    };
+    const leave = (f: Event): void => {
+      const next = (f as FocusEvent).relatedTarget;
+      if (next instanceof Node && panel.contains(next)) return;
+      panel.removeEventListener("change", back);
+      panel.removeEventListener("focusout", leave);
+      if (opened && next !== zone) events()?.requestCommit();
+    };
+    panel.addEventListener("change", back);
+    panel.addEventListener("focusout", leave);
   });
   parent.append(zone);
 

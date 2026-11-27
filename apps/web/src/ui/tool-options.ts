@@ -25,6 +25,11 @@ const BY_KIND: Readonly<Record<string, (e: ElementView) => readonly OptionKey[]>
 function byElement(e: ElementView): readonly OptionKey[] {
   return Object.hasOwn(BY_KIND, e.kind) ? BY_KIND[e.kind]!(e) : [];
 }
+/** Vrai si l'option `key` s'applique à l'élément `e` (même table que les sections) : sert à ignorer, dans le calcul
+ *  d'une valeur mixte, les éléments qui n'ont pas la propriété (un trait de stylo n'a ni tirets ni fond). */
+export function appliesTo(key: OptionKey, e: ElementView): boolean {
+  return byElement(e).includes(key);
+}
 export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _editing: boolean): readonly OptionKey[] {
   const on = new Set<OptionKey>(BY_TOOL[tool] ?? []);
   for (const t of targets) for (const k of byElement(t)) on.add(k);
@@ -50,18 +55,33 @@ export const WIDTHS = [
   { value: "4", label: "Moyen" },
   { value: "8", label: "Épais" },
 ] as const;
+/** Pastille de couleur : valeur (`null` = transparent) et nom lisible (infobulle, `aria-label`). */
+export interface Pick {
+  readonly color: string | null;
+  readonly label: string;
+}
+const COLOR_NAMES: Readonly<Record<string, string>> = {
+  "#000000": "Noir", "#dc2626": "Rouge", "#1d4ed8": "Bleu", "#15803d": "Vert", "#facc15": "Jaune",
+};
+export const colorName = (c: string): string => (Object.hasOwn(COLOR_NAMES, c.toLowerCase()) ? COLOR_NAMES[c.toLowerCase()]! : c);
 export const FALLBACK_STROKES: readonly string[] = ["#000000", "#dc2626", "#1d4ed8", "#15803d", "#facc15"];
 const PICKS = 5; // COLOR_TOP_PICKS_SLOTS (Excalidraw colors.ts:236)
-export function strokePicks(presets: Profile["presets"], tool: ToolChoice): readonly string[] {
+export function strokePicks(presets: Profile["presets"], tool: ToolChoice): readonly Pick[] {
   const out: string[] = [];
   const add = (c: string | undefined): void => { if (c && !out.includes(c) && out.length < PICKS) out.push(c); };
   for (const p of presetsOf(presets, tool as never)) add(p.color);
   for (const p of presetsOf(presets, "pen" as never)) add(p.color);
   for (const c of FALLBACK_STROKES) add(c);
-  return out;
+  return out.map((color) => ({ color, label: colorName(color) }));
 }
-export function backgroundPicks(): readonly (string | null)[] {
-  return [null, ...["jaune", "vert", "bleu", "rose"].map((id) => TABLE_FILLS.find((f) => f.id === id)?.color ?? null)];
+export function backgroundPicks(): readonly Pick[] {
+  return [
+    { color: null, label: "Transparent" },
+    ...["jaune", "vert", "bleu", "rose"].map((id): Pick => {
+      const f = TABLE_FILLS.find((x) => x.id === id);
+      return { color: f?.color ?? null, label: f?.label ?? id };
+    }),
+  ];
 }
 const DRAW = new Set(["pen", "rect", "ellipse", "line", "arrow", "text"]);
 export function showsPanel(tool: ToolChoice, selection: number, annotating: boolean): boolean {

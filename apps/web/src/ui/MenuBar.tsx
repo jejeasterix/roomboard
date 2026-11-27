@@ -45,11 +45,18 @@ export interface MenuBarProps {
   readonly host: Pick<ToolbarHost, "setTool" | "runAction">;
 }
 
+/** Raccourci au format de `aria-keyshortcuts` (« Control+N ») depuis le texte affiché hors Mac (« Ctrl+N »). */
+function ariaKeys(id: string): string | undefined {
+  const t = shortcutText(id, false);
+  if (t === null) return undefined;
+  return t.replace("Ctrl", "Control").replace("Maj", "Shift").replace("Espace", "Space").replace("Suppr", "Delete").replace("Échap", "Escape");
+}
+
 function Row(props: { item: ToolItem; view: Accessor<ToolbarView>; shortcut: string | null; press: () => void }): JSX.Element {
   const st = createMemo(() => itemState(props.item, props.view()));
   const icon = (): string | null => iconFor(props.item, st().icon);
   return (
-    <button type="button" role="menuitem" data-item={props.item.id} disabled={st().disabled} onClick={() => props.press()}>
+    <button type="button" role="menuitem" data-item={props.item.id} aria-keyshortcuts={ariaKeys(props.item.id)} disabled={st().disabled} onClick={() => props.press()}>
       <Show when={icon()} fallback={<span class="rb-menu-blank" aria-hidden="true" />}>
         {(name) => <Icon name={name()} />}
       </Show>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, placeOptions, sheetLane, tabsWidth,
+  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, placeOptions, sheetLane, tabsWidth, topRowBottom,
   type Corners,
 } from "./island-place";
 
@@ -125,6 +125,15 @@ describe("island-place : panneau d'options (OG11, T10)", () => {
   it("à gauche sous la rangée du haut ; décalé par la barre latérale quand elle existe", () => {
     expect(placeOptions(MID, null, 64)).toEqual({ x: 16, y: 72 });
     expect(placeOptions(MID, { w: 80, h: 900 }, 64)).toEqual({ x: 88, y: 72 });
+    expect(topRowBottom(44)).toBe(16 + 44 + 8);
+  });
+  it("sous la rangée du haut : haut du panneau >= bas de l'îlot ☰ + GAP, en S, M, L", () => {
+    for (const size of ["s", "m", "l"] as const) {
+      const btn = BUTTON_PX[size];
+      const menuBottom = EDGE + btn + 8; // îlot ☰ posé à EDGE, haut de btn + 8
+      const y = placeOptions({ w: 1280, h: 800 }, null, topRowBottom(btn)).y;
+      expect(y, size).toBeGreaterThanOrEqual(menuBottom + GAP);
+    }
   });
   it("y reste dans la zone", () => {
     expect(placeOptions({ w: 1280, h: 100 }, null, 400).y).toBe(84);

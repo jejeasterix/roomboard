@@ -4,18 +4,20 @@
  * RoomBoard : îlot, jetons `--rf-*`, icônes de `icons.ts`. Cibles = taille du profil (`--rb-btn-size`), pointeur d'abord.
  * Comportement copié d'Excalidraw (packages/excalidraw/components/Actions.tsx), Copyright (c) 2020 Excalidraw, licence MIT.
  */
-import { For, Show, createEffect, createMemo, createSignal, on, type Accessor, type JSX } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type Accessor, type JSX } from "solid-js";
 import type { ElementView } from "../core/api";
 import { opacityOf, roughnessOf, roundnessOf, strokeKindOf, type StrokeKind } from "../core/look";
 import type { DeviceSettings } from "../device-settings";
 import type { Engine, EngineState } from "../engine/engine";
-import type { ItemStyle } from "../engine/item-style";
+import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../engine/item-style";
 import type { ButtonSize, Profile } from "../toolbar";
-import { IconButton } from "./IconButton";
-import { BUTTON_PX, placeOptions, type Box } from "./island-place";
+import { observeBox } from "./Island";
+import { IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
+import { createTip } from "./tooltip";
+import { BUTTON_PX, placeOptions, topRowBottom, type Box } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import {
-  OPTION_ORDER, WIDTHS, backgroundPicks, formValue, sectionsFor, showsPanel, strokePicks, type OptionKey,
+  WIDTHS, appliesTo, backgroundPicks, formValue, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
 } from "./tool-options";
 
 export interface OptionsPanelProps {
@@ -43,7 +45,7 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   actions: "Actions",
 };
 const STROKES: readonly RadioOption<StrokeKind>[] = [
-  { value: "solid", label: "Continu", icon: "stroke-solid" },
+  { value: "solid", label: "Plein", icon: "stroke-solid" },
   { value: "dashed", label: "Tirets", icon: "stroke-dashed" },
   { value: "dotted", label: "Pointillés", icon: "stroke-dotted" },
 ];
@@ -53,7 +55,7 @@ const ROUGH: readonly RadioOption<"0" | "1" | "2">[] = [
   { value: "2", label: "Caricaturiste", icon: "sloppiness-2" },
 ];
 const CORNERS: readonly RadioOption<"sharp" | "round">[] = [
-  { value: "sharp", label: "Angles vifs", icon: "corner-sharp" },
+  { value: "sharp", label: "Droits", icon: "corner-sharp" },
   { value: "round", label: "Angles arrondis", icon: "corner-round" },
 ];
 const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({ value: w.value, label: w.label }));
@@ -79,7 +81,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     props.settings.setIsland(props.profileId(), "options", { at: null, collapsed: next });
     setCollapsed(next);
   };
-  const cur = (): ItemStyle => props.state().itemStyle ?? ({ color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100 } as ItemStyle);
+  const cur = (): ItemStyle => props.state().itemStyle ?? DEFAULT_ITEM_STYLE;
   const write = (patch: Partial<ItemStyle>): void => props.engine().setItemStyle(patch);
   const btn = (): number => BUTTON_PX[props.size()];
 
@@ -106,75 +108,100 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const value = (k: OptionKey): unknown => {
     const read = readers[k];
     if (read === undefined) return undefined;
+    // Une cible à qui l'option ne s'applique pas (trait de stylo sans tirets, ligne sans fond) ne compte pas.
+    const own = (e: ElementView): unknown => (appliesTo(k, e) ? read(e) : undefined);
     // Un `null` légitime (fond transparent) se lit comme `"transparent"` pour rester distinct de « mixte ».
     const tr = (v: unknown): unknown => (v === null ? "transparent" : v);
-    return formValue(targets(), (e) => tr(read(e)) as never, tr(fallback(k)) as never);
+    return formValue(targets(), (e) => tr(own(e)) as never, tr(fallback(k)) as never);
   };
   const mixed = (k: OptionKey): boolean => readers[k] !== undefined && targets().length > 1 && value(k) === null;
-  const pos = (): { x: number; y: number } => placeOptions({ w: 0, h: Number.MAX_SAFE_INTEGER }, props.sideStart(), btn() + 8);
+  // Aire réelle : celle du parent positionné, mesurée comme `IslandLayer` ; non mesurée (h = 0) : aucune borne.
+  const [area, setArea] = createSignal<Box>({ w: 0, h: 0 }, { equals: (a, b) => a.w === b.w && a.h === b.h });
+  let root: HTMLElement | undefined;
+  onMount(() => {
+    const host = root?.offsetParent ?? root?.parentElement;
+    if (host) onCleanup(observeBox(host, setArea, Math.floor));
+  });
+  const pos = (): { x: number; y: number } =>
+    placeOptions(area().h > 0 ? area() : { w: 0, h: Number.MAX_SAFE_INTEGER }, props.sideStart(), topRowBottom(btn()));
 
-  const swatch = (k: "strokeColor" | "background", color: string | null, apply: () => void): JSX.Element => {
-    const id = color ?? "transparent";
+  const swatch = (k: "strokeColor" | "background", pick: Pick, apply: () => void): JSX.Element => {
+    const id = pick.color ?? "transparent";
+    const tip = createTip();
+    let button: HTMLButtonElement | undefined;
     return (
-      <button
-        type="button"
-        class="rb-pick"
-        data-transparent={color === null ? "" : undefined}
-        data-option-value={id}
-        aria-label={color ?? "Transparent"}
-        aria-pressed={value(k) === id}
-        onPointerDown={keep}
-        onMouseDown={keep}
-        onClick={apply}
-      >
-        <span class="rb-pick-dot" style={color !== null ? { background: color } : undefined} />
-      </button>
+      <>
+        <button
+          ref={button}
+          type="button"
+          class="rb-pick"
+          data-transparent={pick.color === null ? "" : undefined}
+          data-option-value={id}
+          aria-label={pick.label}
+          aria-pressed={value(k) === id}
+          {...tipPointerHandlers(tip)}
+          onPointerDown={(e) => { keep(e); tip.down(e.pointerType); }}
+          onMouseDown={keep}
+          onClick={apply}
+        >
+          <span class="rb-pick-dot" style={pick.color !== null ? { background: pick.color } : undefined} />
+        </button>
+        <TipBubble tip={tip} label={pick.label} anchor={() => button!} />
+      </>
     );
   };
 
-  const colors = (k: "strokeColor" | "background", picks: readonly (string | null)[], make: (c: string | null) => Partial<ItemStyle>): JSX.Element => (
-    <div class="rb-pick-row"><For each={picks}>{(c) => swatch(k, c, () => write(make(c)))}</For></div>
+  const colors = (k: "strokeColor" | "background", picks: Accessor<readonly Pick[]>, make: (c: string | null) => Partial<ItemStyle>): JSX.Element => (
+    <div class="rb-pick-row"><For each={picks()}>{(p) => swatch(k, p, () => write(make(p.color)))}</For></div>
   );
+  // Les corps ne lisent rien hors d'un getter de prop ou d'un memo : un `emit` du moteur ne les reconstruit pas,
+  // le focus clavier reste dans la section.
+  const strokeChoices = createMemo(() => strokePicks(props.presets(), props.state().tool));
+  const widthValue = (): "2" | "4" | "8" | null => {
+    const v = value("strokeWidth");
+    return typeof v === "number" && [2, 4, 8].includes(v) ? (String(v) as "2" | "4" | "8") : null;
+  };
+  const roughValue = (): "0" | "1" | "2" | null => {
+    const v = value("roughness");
+    return typeof v === "number" ? (String(v) as "0" | "1" | "2") : null;
+  };
+  const opacityValue = (): number | null => {
+    const v = value("opacity");
+    return typeof v === "number" ? v : null;
+  };
   const bodies: Readonly<Record<OptionKey, () => JSX.Element>> = {
-    strokeColor: () => colors("strokeColor", strokePicks(props.presets(), props.state().tool), (c) => ({ color: c ?? "#000000" })),
-    background: () => colors("background", backgroundPicks(), (c) => ({ background: c })),
-    strokeWidth: () => {
-      const v = value("strokeWidth");
-      return <RadioChoices name="strokeWidth" label={LABEL.strokeWidth} look="segment" options={WIDTH_OPTIONS} valueAttr="data-option-value"
-        value={typeof v === "number" && [2, 4, 8].includes(v) ? (String(v) as "2" | "4" | "8") : null}
-        choose={(w) => write({ width: Number(w) })} />;
-    },
+    strokeColor: () => colors("strokeColor", strokeChoices, (c) => ({ color: c ?? "#000000" })),
+    background: () => colors("background", backgroundPicks, (c) => ({ background: c })),
+    strokeWidth: () => (
+      <RadioChoices name="strokeWidth" label={LABEL.strokeWidth} look="segment" options={WIDTH_OPTIONS} valueAttr="data-option-value"
+        value={widthValue()} choose={(w) => write({ width: Number(w) })} />
+    ),
     strokeStyle: () => (
       <RadioChoices name="strokeStyle" label={LABEL.strokeStyle} look="segment" options={STROKES} valueAttr="data-option-value"
         value={(value("strokeStyle") as StrokeKind | null) ?? null} choose={(s) => write({ strokeStyle: s })} />
     ),
-    roughness: () => {
-      const v = value("roughness");
-      return <RadioChoices name="roughness" label={LABEL.roughness} look="segment" options={ROUGH} valueAttr="data-option-value"
-        value={typeof v === "number" ? (String(v) as "0" | "1" | "2") : null}
-        choose={(r) => write({ roughness: Number(r) as 0 | 1 | 2 })} />;
-    },
+    roughness: () => (
+      <RadioChoices name="roughness" label={LABEL.roughness} look="segment" options={ROUGH} valueAttr="data-option-value"
+        value={roughValue()} choose={(r) => write({ roughness: Number(r) as 0 | 1 | 2 })} />
+    ),
     roundness: () => (
       <RadioChoices name="roundness" label={LABEL.roundness} look="segment" options={CORNERS} valueAttr="data-option-value"
         value={(value("roundness") as "sharp" | "round" | null) ?? null} choose={(r) => write({ roundness: r })} />
     ),
-    opacity: () => {
-      const v = value("opacity");
-      return (
-        <label class="rb-opacity">
-          <input
-            type="range"
-            min="0"
-            max="100"
-            step="10"
-            aria-label={LABEL.opacity}
-            value={typeof v === "number" ? v : cur().opacity}
-            onChange={(e) => write({ opacity: Number(e.currentTarget.value) })}
-          />
-          <output>{typeof v === "number" ? `${v} %` : "Mixte"}</output>
-        </label>
-      );
-    },
+    opacity: () => (
+      <label class="rb-opacity">
+        <input
+          type="range"
+          min="0"
+          max="100"
+          step="10"
+          aria-label={LABEL.opacity}
+          value={opacityValue() ?? cur().opacity}
+          onChange={(e) => write({ opacity: Number(e.currentTarget.value) })}
+        />
+        <output>{opacityValue() !== null ? `${opacityValue()} %` : "Mixte"}</output>
+      </label>
+    ),
     actions: () => (
       <div class="rb-pick-row">
         <IconButton icon="copy-plus" label="Dupliquer" attrs={{ "data-option-value": "duplicate", class: "rb-opt-btn" }} onPress={() => void props.engine().duplicateSelection()} />
@@ -187,6 +214,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   return (
     <Show when={keys().length > 0}>
       <aside
+        ref={root}
         class="rb-island rb-options"
         data-options
         data-collapsed={collapsed() ? "" : undefined}
@@ -196,11 +224,11 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         <IconButton
           icon={collapsed() ? "sliders-horizontal" : "chevron-left"}
           label={collapsed() ? "Options de l'outil" : "Replier les options"}
-          attrs={{ "data-options-toggle": "", class: "rb-opt-btn" }}
+          attrs={{ "data-options-toggle": "", class: "rb-opt-btn", "aria-expanded": String(!collapsed()) }}
           onPress={toggle}
         />
         <Show when={!collapsed()}>
-          <For each={OPTION_ORDER.filter((k) => keys().includes(k))}>
+          <For each={keys()}>
             {(k) => (
               <section class="rb-options-sec" data-option={k} data-mixed={mixed(k) ? "" : undefined}>
                 <h3>{LABEL[k]}</h3>

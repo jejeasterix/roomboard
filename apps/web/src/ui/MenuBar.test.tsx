@@ -225,6 +225,12 @@ describe("MenuBar (design-l2 L2-6)", () => {
     expect(row("grid").querySelector("[data-shortcut]")).toBeNull();
   });
 
+  it("raccourci annoncé : aria-keyshortcuts sur la ligne (Control+N), absent sans raccourci", () => {
+    const { row } = setup();
+    expect(row("file-new").getAttribute("aria-keyshortcuts")).toBe("Control+N");
+    expect(row("grid").hasAttribute("aria-keyshortcuts")).toBe(false);
+  });
+
   it("Tab ferme sans reprendre le focus", async () => {
     const { toggle, list } = setup();
     fireEvent.click(toggle());
