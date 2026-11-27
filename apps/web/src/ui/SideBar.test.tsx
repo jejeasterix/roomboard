@@ -6,7 +6,7 @@ import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageLayout } from "../core/api";
 import type { ToolbarHost } from "../app/toolbar-host";
-import type { Toolbar, ToolItem } from "../toolbar";
+import type { RuntimeCapabilities, Toolbar, ToolItem } from "../toolbar";
 import type { ToolbarView } from "./item-state";
 import type { LayerRow } from "../app/layer-list";
 import { SideBar, type LayersPort, type PagesPort } from "./SideBar";
@@ -24,7 +24,9 @@ const IDS = ["a", "b", "c"];
 const ROW = 100;
 const view = (over: Partial<ToolbarView> = {}): ToolbarView => ({ tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 3, ...over });
 
-function setup(o: { collapsed?: boolean; fixed?: boolean; layout?: PageLayout; thumb?: "s" | "m" | "l" } = {}) {
+const CAPS: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
+
+function setup(o: { collapsed?: boolean; fixed?: boolean; layout?: PageLayout; thumb?: "s" | "m" | "l"; bar?: Toolbar; caps?: RuntimeCapabilities } = {}) {
   const [shown, setShown] = createSignal("a");
   const [layout, setLayout] = createSignal<PageLayout>(o.layout ?? "landscape");
   const [fixed] = createSignal(o.fixed ?? false);
@@ -43,7 +45,8 @@ function setup(o: { collapsed?: boolean; fixed?: boolean; layout?: PageLayout; t
   } satisfies PagesPort;
   const host = { runAction: vi.fn() } as unknown as ToolbarHost;
   const store = { sidebar: vi.fn(() => ({ tab: "pages" as const, thumb: o.thumb ?? ("m" as const) })), setSidebar: vi.fn() };
-  const r = render(() => <SideBar bar={bar} collapsed={() => o.collapsed ?? false} view={() => view()} host={host} pages={pages} store={store} />);
+  const expand = vi.fn();
+  const r = render(() => <SideBar bar={o.bar ?? bar} collapsed={() => o.collapsed ?? false} caps={() => o.caps ?? CAPS} expand={expand} view={() => view()} host={host} pages={pages} store={store} />);
   const thumbs = (): HTMLButtonElement[] => [...r.container.querySelectorAll<HTMLButtonElement>(".rb-pages-list [data-page]")];
   // happy-dom ne calcule aucune mise en page : rectangles posés à la main (ligne i : [i × 100, i × 100 + 100[).
   thumbs().forEach((b, i) => {
@@ -54,7 +57,7 @@ function setup(o: { collapsed?: boolean; fixed?: boolean; layout?: PageLayout; t
   const list = r.container.querySelector<HTMLElement>(".rb-pages-list")!;
   Object.defineProperty(list, "scrollTop", { get: () => 0, set: () => undefined });
   list.getBoundingClientRect = () => new DOMRect(0, 0, 160, 3 * ROW);
-  return { ...r, pages, host, store, thumbs };
+  return { ...r, pages, host, store, thumbs, expand };
 }
 const ptr = (type: string, y: number, pointerType = "mouse"): PointerEvent => {
   const e = new PointerEvent(type, { clientX: 20, clientY: y, pointerId: 1, bubbles: true });
@@ -76,7 +79,7 @@ describe("SideBar (T10)", () => {
     const { container } = setup({ collapsed: true });
     const tab = container.querySelector('[role="tablist"] [role="tab"][data-side-tab="pages"]')!;
     expect(tab.textContent).toContain("Pages");
-    expect(tab.querySelector('[data-icon="panel-left"]')).not.toBeNull();
+    expect(tab.querySelector('[data-icon="dock-left"]')).not.toBeNull();
     expect(tab.closest("[hidden]")).toBeNull();
     const add = container.querySelector('[data-item="page-add"]')!;
     expect(add.closest("[hidden]")).not.toBeNull();
@@ -245,6 +248,50 @@ describe("SideBar (T10)", () => {
   });
 });
 
+describe("SideBar — correctifs de relecture (T19)", () => {
+  it("barre repliée : toucher l'onglet Pages (clic ou Entrée) déplie la barre ; dépliée : aucun appel", () => {
+    const folded = setup({ collapsed: true });
+    fireEvent.click(folded.container.querySelector('[data-side-tab="pages"]')!);
+    expect(folded.expand).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(folded.container.querySelector('[data-side-tab="pages"]')!, { key: "Enter" });
+    expect(folded.expand).toHaveBeenCalledTimes(2);
+    cleanup();
+    const open = setup({ collapsed: false });
+    fireEvent.click(open.container.querySelector('[data-side-tab="pages"]')!);
+    expect(open.expand).not.toHaveBeenCalled();
+  });
+
+  it("la rangée d'actions passe par visibleItems : action `requires` non satisfaite ou inconnue absente, satisfaite présente", () => {
+    const gated: ToolItem = { ...item("annotation"), requires: ["desktopAnnotation"] };
+    const b: Toolbar = { ...bar, groups: [{ id: "pages", items: [item("page-add"), gated, item("action-d-un-profil-plus-recent")], rest: {} }] };
+    const without = setup({ bar: b });
+    const ids = (c: HTMLElement): string[] => [...c.querySelectorAll<HTMLElement>(".rb-side-actions [data-item]")].map((e) => e.dataset["item"]!);
+    expect(ids(without.container)).toEqual(["page-add"]);
+    cleanup();
+    const withCap = setup({ bar: b, caps: { ...CAPS, desktopAnnotation: true } });
+    expect(ids(withCap.container)).toEqual(["page-add", "annotation"]);
+  });
+
+  it("Échap rend le focus à la scène depuis un onglet, un segment ou une action", () => {
+    const stage = document.createElement("div");
+    stage.className = "rb-stage";
+    stage.tabIndex = -1;
+    document.body.append(stage);
+    const { container } = setup();
+    const targets = [
+      container.querySelector<HTMLElement>('[data-side-tab="pages"]')!,
+      container.querySelector<HTMLElement>('[data-side-mode] input, [data-side-mode] button')!,
+      container.querySelector<HTMLElement>('[data-item="page-add"]')!,
+    ];
+    for (const t of targets) {
+      t.focus();
+      fireEvent.keyDown(t, { key: "Escape" });
+      expect(document.activeElement, t.outerHTML.slice(0, 60)).toBe(stage);
+      stage.blur();
+    }
+  });
+});
+
 describe("SideBar — onglet Calques (T14)", () => {
   const ROWS: readonly LayerRow[] = [
     { key: "c", ids: ["c"], label: "Texte : Bonjour", kind: "text", fixed: false, icon: "text" },
@@ -260,7 +307,7 @@ describe("SideBar — onglet Calques (T14)", () => {
     const layers = { rows, selected, select: vi.fn((ids: readonly string[]) => setSelected(ids)), drop: vi.fn() } satisfies LayersPort;
     const host = { runAction: vi.fn() } as unknown as ToolbarHost;
     const store = { sidebar: vi.fn(() => ({ tab: "pages" as const, thumb: "m" as const })), setSidebar: vi.fn() };
-    const r = render(() => <SideBar bar={bar} collapsed={() => o.collapsed ?? false} view={() => view()} host={host} pages={base.pages} layers={layers} store={store} />);
+    const r = render(() => <SideBar bar={bar} collapsed={() => o.collapsed ?? false} caps={() => CAPS} view={() => view()} host={host} pages={base.pages} layers={layers} store={store} />);
     const lines = (): HTMLElement[] => [...r.container.querySelectorAll<HTMLElement>(".rb-layers-list [data-layer]")];
     const movable = (): HTMLElement[] => lines().filter((l) => !l.hasAttribute("data-fixed"));
     const list = r.container.querySelector<HTMLElement>(".rb-layers-list")!;

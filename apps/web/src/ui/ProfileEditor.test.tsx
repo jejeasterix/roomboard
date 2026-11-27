@@ -123,10 +123,10 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     expect([pages.anchor, pages.collapsed]).toEqual(["side-end", false]);
   });
 
-  it("personnalisation-1a : Position d'une barre d'outils : sept ancres ; Flottante (défaut du rôle) retire l'ancre d'une barre latérale", () => {
+  it("personnalisation-1a : Position d'une barre mobile : quatre ancres (centrées et latérales) ; Flottante (défaut du rôle) retire l'ancre d'une barre latérale", () => {
     const { q, save, container } = setup();
     expect([...container.querySelectorAll('[data-edit-bar="outils"] [data-edit="anchor"] [data-choice]')].map((b) => b.textContent)).toEqual([
-      "Haut gauche", "Haut centre", "Haut droite", "Bas gauche", "Bas centre", "À gauche", "À droite",
+      "Haut centre", "Bas centre", "À gauche", "À droite",
     ]);
     fireEvent.click(q('[data-edit-bar="outils"] [data-edit="anchor"] [data-choice="bottom-center"]'));
     fireEvent.click(q('[data-edit="bar"] [data-choice="pages"]'));
@@ -694,5 +694,18 @@ describe("ProfileEditor : panneau latéral (design-l3)", () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe("ProfileEditor — correctifs de relecture (T19)", () => {
+  it("« Repliée au démarrage » : affichée pour les rôles mobiles (outils, pages), absente pour les autres barres flottantes", () => {
+    const { q, container } = setup();
+    expect(container.querySelector('[data-edit-bar="outils"] input[data-edit="collapsed"]')).not.toBeNull();
+    fireEvent.click(q('[data-edit="bar"] [data-choice="pages"]'));
+    expect(container.querySelector('[data-edit-bar="pages"] input[data-edit="collapsed"]')).not.toBeNull();
+    fireEvent.click(q('[data-edit="bar"] [data-choice="menu"]'));
+    fireEvent.click(q('[data-edit-bar="menu"] [data-edit="dock"] [data-choice="floating"], [data-edit="dock"] [data-choice="floating"]'));
+    expect(container.querySelector('[data-edit-bar="menu"] [data-edit="anchor"]')).not.toBeNull();
+    expect(container.querySelector('[data-edit-bar="menu"] input[data-edit="collapsed"]')).toBeNull();
   });
 });
