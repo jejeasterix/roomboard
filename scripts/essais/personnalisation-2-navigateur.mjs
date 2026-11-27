@@ -683,6 +683,43 @@ async function s6(browser, base, mode) {
   console.log(mode === "doigt" ? "S6 OK" : "S6 OK (clavier)");
 }
 
+/** S7.4 (T41) : deux textes choisis, Police Georgia (un `runAll` du vrai module) : un Ctrl+Z rend les deux, un Ctrl+Y les refait. */
+async function s7Multi(browser, base, mode, tmp) {
+  const { ctx, page, errors } = await newPage(browser, base);
+  const write = async (x, y, txt) => {
+    await useTool(page, mode, "text");
+    await tapStage(page, x, y);
+    await page.waitForSelector("#texte-edition", { state: "visible", timeout: 15000 });
+    await page.keyboard.type(txt);
+    await page.keyboard.press("Escape");
+    await frames(page);
+  };
+  await write(300, 250, "Alpha");
+  await write(300, 420, "Beta");
+  await waitAttr(page, "data-elements", "2");
+  await useTool(page, mode, "select");
+  await marquee(page, [200, 150], [700, 600]);
+  await waitAttr(page, "data-selection", "2");
+  const fonts = async (nom) => (await saved(page, tmp, nom)).elements.filter((e) => e.kind === "text").map((e) => e.text.spans.map((x) => x.attrs?.font ?? null).join("+"));
+  const avant = await fonts(`s7m0-${mode}.roomboard`);
+  await choose(page, mode, "font", "Georgia");
+  await frames(page);
+  const apres = await fonts(`s7m1-${mode}.roomboard`);
+  await page.keyboard.press("Control+z");
+  await frames(page);
+  const undo = await fonts(`s7m2-${mode}.roomboard`);
+  await page.keyboard.press("Control+y");
+  await frames(page);
+  const redo = await fonts(`s7m3-${mode}.roomboard`);
+  lire("S7.4 polices avant / Georgia / Ctrl+Z / Ctrl+Y", [avant, apres, undo, redo].map((l) => l.join("|")).join(" / "));
+  const tous = (l, ok) => l.length === 2 && l.every(ok);
+  check(tous(apres, (f) => f === "Georgia"), "S7.4 : Police Georgia sur deux textes choisis les change tous les deux");
+  check(tous(undo, (f) => f !== "Georgia") && undo.join() === avant.join(), "S7.4 : un seul Ctrl+Z rend les deux textes à l'ancienne police");
+  check(tous(redo, (f) => f === "Georgia"), "S7.4 : un seul Ctrl+Y refait les deux");
+  check(errors.length === 0, `S7.4 (${mode}) : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
+  await ctx.close();
+}
+
 /** S7 : outil Texte, alignement, police et taille ; saisie : sections grisées, focus gardé. */
 async function s7(browser, base, mode, tmp) {
   const { ctx, page, errors } = await newPage(browser, base);
@@ -772,6 +809,7 @@ async function s7(browser, base, mode, tmp) {
   check(t3?.look?.textAlign === "right", "S7.3 : Droite touché dans le panneau aligne le texte à droite");
   check(errors.length === 0, `S7 (${mode}) : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
   await ctx.close();
+  await s7Multi(browser, base, mode, tmp);
   console.log(mode === "doigt" ? "S7 OK" : "S7 OK (clavier)");
 }
 const centerOf = async (page, sel) => {
@@ -873,6 +911,8 @@ async function s8(browser, base, mode, tmp) {
   // 4. Effacer la page : confirmation (acceptée par l'essai), page vide, Ctrl+Z rend les objets.
   const n0 = Number(await attr(page, "data-elements"));
   const dialogs0 = dialogs.length;
+  const clearOff = async () => ((await page.locator(item("page-clear")).count()) > 0 ? page.locator(item("page-clear")).isDisabled() : null);
+  const clearOffAvant = await clearOff();
   if (mode === "doigt") await clickItem(page, "page-clear");
   else {
     await openMenuOf(page, "page-clear");
@@ -880,6 +920,9 @@ async function s8(browser, base, mode, tmp) {
   }
   await waitAttr(page, "data-elements", "0");
   check(dialogs.length - dialogs0 === 1, `S8.4 : Effacer demande exactement une confirmation (${dialogs.length - dialogs0})`);
+  const clearOffVide = await clearOff();
+  lire("Effacer la page grisé : page pleine / page vide", `${clearOffAvant} / ${clearOffVide}`);
+  check(clearOffAvant === false && clearOffVide === true, `S8.4 : Effacer la page est actif sur une page pleine, grisé sur une page vide (${clearOffAvant}/${clearOffVide})`);
   lire("page vide après Effacer=0 objet ; après Ctrl+Z=n", `0 objet ; n=${n0}`);
   await page.keyboard.press("Escape");
   await page.mouse.click(1100, 700);
@@ -903,10 +946,12 @@ async function s8(browser, base, mode, tmp) {
   };
   const badge0 = await badgeAt();
   const px0 = await pixelAt(page, badge0.x + 8, badge0.y);
-  await page.keyboard.press("Control+k");
+  // Doigt : le bouton Lien du panneau, touché ; clavier : Ctrl+K.
+  if (mode === "doigt") await tapAt(page, ...(await centerOf(page, `${OPT} [data-option="actions"] [data-option-value="link"]`)));
+  else await page.keyboard.press("Control+k");
   await popup("[data-link-popover]").waitFor({ state: "visible", timeout: 15000 });
   const input = "[data-link-popover] input";
-  check(await page.evaluate(() => document.activeElement?.closest("[data-link-popover]") !== null), "S8.5 : Ctrl+K ouvre l'éditeur de lien, focus dans le champ");
+  check(await page.evaluate(() => document.activeElement?.closest("[data-link-popover]") !== null), `S8.5 : ${mode === "doigt" ? "le bouton Lien du panneau, touché," : "Ctrl+K"} ouvre l'éditeur de lien, focus dans le champ`);
   await page.keyboard.type("javascript:alert(1)");
   await page.keyboard.press("Enter");
   await frames(page);
@@ -927,8 +972,10 @@ async function s8(browser, base, mode, tmp) {
   // Toucher du badge (outil Sélection) : ouvre le lien par window.open(url, "_blank", "noopener"), stub dans la page.
   await page.evaluate(() => {
     window.__ouverts = [];
-    window.open = (...a) => { window.__ouverts.push(a); return {}; };
+    // Comme le navigateur : avec noopener, window.open rend toujours null (norme HTML).
+    window.open = (...a) => { window.__ouverts.push(a); return null; };
   });
+  const dialogsLien0 = dialogs.length;
   await useTool(page, mode, "select");
   await tapStage(page, 1020, 285);
   await frames(page);
@@ -947,6 +994,7 @@ async function s8(browser, base, mode, tmp) {
   const ouvertsClavier = await page.evaluate(() => window.__ouverts);
   lire("window.open après Ctrl+K, Tab, Tab, Entrée", JSON.stringify(ouvertsClavier));
   check(ouvertsClavier.length === 1 && ouvertsClavier[0][0] === "https://example.org" && ouvertsClavier[0][1] === "_blank" && ouvertsClavier[0][2] === "noopener", "S8.5 : Entrée sur « Ouvrir le lien » appelle window.open(url, \"_blank\", \"noopener\")");
+  check(dialogs.length === dialogsLien0, `S8.5 : aucune alerte à une ouverture réussie (${dialogs.length - dialogsLien0} dialogue)`);
   await page.keyboard.press("Escape");
   const js = s.elements.filter((e) => /^javascript:/i.test(e.look?.link ?? ""));
   check(js.length === 0, "S8.5 : aucun lien javascript: n'est enregistré");
