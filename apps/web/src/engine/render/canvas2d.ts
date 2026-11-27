@@ -542,7 +542,7 @@ export class Canvas2DRenderer implements Renderer {
     } else if (el.kind === "model3d") {
       paintModel3d(ctx, el.model3d, this.models?.frame(el.id) ?? null, this.images, this.assetName?.(el.model3d.asset) ?? null);
     } else if (el.kind === "table") {
-      paintTableGrid(ctx, el.table);
+      paintTableGrid(ctx, el.table, this.images ?? null);
       const boxes = cellTextBoxes(el.table);
       const lines = this.cellLinesOf(ctx, el.id, el.table, boxes);
       boxes.forEach((b, i) => {
