@@ -20,7 +20,7 @@ function setup(opts: { zoom?: number; touch?: boolean; inner?: number[]; start?:
   const view = (): ShapeElement | null => {
     const v = real(id) as ShapeElement | null;
     if (!v || v.kind !== "shape") return v;
-    return { ...v, shape: { ...v.shape, points: opts.inner ?? [], start: opts.start ?? null, end: null } } as ShapeElement;
+    return { ...v, shape: { ...v.shape, points: opts.inner ?? [], start: opts.start ?? undefined } } as ShapeElement;
   };
   vi.spyOn(doc, "element").mockImplementation((i: string) => (i === id ? view() : real(i)));
   let shift = false;
