@@ -396,3 +396,15 @@ describe("WebGL2 — cadre de page (DA4, T9)", () => {
     expect(gl.log).toContain("scissor 10,26,96,54");
   });
 });
+
+// OG23 (déc. 11) : `transparent`, seule couleur nommée lisible (H25 de la CLI : aucune autre).
+describe("tryParseColor (OG23)", () => {
+  it("tryParseColor transparent : [0, 0, 0, 0], casse et blancs ignorés ; autres noms : null", () => {
+    expect(tryParseColor("transparent")).toEqual([0, 0, 0, 0]);
+    expect(tryParseColor(" TRANSPARENT ")).toEqual([0, 0, 0, 0]);
+    expect(tryParseColor("Transparent")).toEqual([0, 0, 0, 0]);
+    expect(tryParseColor("red")).toBeNull();
+    expect(tryParseColor("rouge")).toBeNull();
+    expect(tryParseColor("transparentx")).toBeNull();
+  });
+});

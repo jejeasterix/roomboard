@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ALL_COMMANDS, COMMAND_TYPES, parseOp, type RefContext } from "./ops";
 import { codeOf } from "./testing";
+import { CliError } from "./contract";
+import { ARRANGE_HOWS } from "../../web/src/core/arrange";
 
 const ctx = (): RefContext => ({
   idsOf: (n) => (n === 1 ? ["e1", "e2"] : n === 2 ? [] : undefined),
@@ -98,5 +100,31 @@ describe("échappement des références (D6)", () => {
     expect(to("$$$1")).toBe("$$1");
     expect(to("5 $")).toBe("5 $");
     expect(to("$1")).toBe("e1");
+  });
+});
+
+// OG23 (DA-2, D15) : `Arrange` suit le cœur ; `how` contrôlé avant le cœur, comme `to` de `Restack` (code 2).
+describe("Arrange (OG23)", () => {
+  const usage = (run: () => unknown): string => {
+    try {
+      run();
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe("usage");
+      return (e as Error).message;
+    }
+    return "aucune erreur";
+  };
+  it("Arrange admis", () => {
+    expect(COMMAND_TYPES.filter((t) => t === "Arrange")).toEqual(["Arrange"]);
+    const op = parseOp({ type: "Arrange", ids: ["$1", "a"], how: "align-left" }, ctx());
+    expect(op.kind === "command" ? op.cmd : null).toEqual({ type: "Arrange", ids: ["e1", "a"], how: "align-left" });
+  });
+  it("how inconnu : usage", () => {
+    expect(usage(() => parseOp('{"type":"Arrange","ids":[],"how":"spin"}', ctx()))).toBe(`how : une de ${ARRANGE_HOWS.join(", ")}`);
+  });
+  it("how absent : usage", () => {
+    expect(usage(() => parseOp({ type: "Arrange", ids: ["a"] }, ctx()))).toBe(`how : une de ${ARRANGE_HOWS.join(", ")}`);
+    expect(usage(() => parseOp({ type: "Arrange", ids: ["a"], how: 3 }, ctx()))).toBe(`how : une de ${ARRANGE_HOWS.join(", ")}`);
   });
 });

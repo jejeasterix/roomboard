@@ -9,6 +9,8 @@ import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
+import { arrangeUnknown, type ArrangeHow } from "./arrange";
+import type { Bounds } from "./api";
 import { createWasmCore, gridArgs, imageParamsArgs, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, toPair, type WasmModule } from "./wasm-core";
 
 // `apps/web` n'a pas `@types/node` : `node:fs` par import dynamique typé localement, `process` par `globalThis`.
@@ -4485,5 +4487,135 @@ describe.each(factories)("contrat T18 : SetPageMode, MovePage, DuplicatePage, Re
       messageOf(() => d.apply({ type: "Restack", ids: [a, c], to: 0 })),
       messageOf(() => d.apply({ type: "SetPageMode", page: p1, mode: "a4" as never })),
     ]).toEqual(["rang de page hors bornes", "rang de page hors bornes", "élément inconnu : nulle", "objets de pages différentes", "mode de page inconnu : a4"]);
+  });
+});
+
+// OG23 (DA-2) : `Arrange`, joué sur les deux cœurs. Discrimine le patron interdit, le cas `Transform` du faux cœur qui
+// ignore les ids inconnus : `Arrange` refuse le premier inconnu comme `Restack` (« élément inconnu : <id> »), rien
+// d'écrit ; filtré, l'inconnu laisserait aligner les deux autres en une étape. Un membre de groupe désigné seul
+// entraîne tout son groupe (unité = groupe extérieur), jamais le groupe cassé.
+interface Viewed { readonly transform?: Matrix; readonly look?: Look }
+const viewOf = (d: CoreDocument, id: string): Viewed => (d.element(id) ?? {}) as Viewed;
+const boxOf = (d: CoreDocument, id: string): Bounds => {
+  const b = d.bounds([id]);
+  if (b === null) throw new Error(`aucune boîte : ${id}`);
+  return b;
+};
+const shifted = (b: Bounds, dx: number): Bounds => ({ x0: b.x0 + dx, y0: b.y0, x1: b.x1 + dx, y1: b.y1 });
+const nearBox = (got: Bounds, want: Bounds): void => {
+  for (const k of ["x0", "y0", "x1", "y1"] as const) expect(Math.abs(got[k] - want[k]), k).toBeLessThan(1e-6);
+};
+
+describe.each(factories)("contrat Arrange : $name", ({ f }) => {
+  const rect = (d: CoreDocument, p: string, x: number, y = 100): string => {
+    const id = d.apply({ type: "AddShape", page: p, shape: "rect", x0: x, y0: y, x1: x + 50, y1: y + 50, style, fill: null }).ids[0];
+    if (id === undefined) throw new Error("aucun id");
+    return id;
+  };
+  const alignLeft = (g: CoreFactory) => {
+    const d = g.blank();
+    const p = first(d);
+    const ids = [rect(d, p, 40, 100), rect(d, p, 200, 220), rect(d, p, 120, 340)];
+    const before = ids.map((id) => boxOf(d, id));
+    const ch = d.apply({ type: "Arrange", ids, how: "align-left" });
+    return { d, p, ids, before, after: ids.map((id) => boxOf(d, id)), ch };
+  };
+
+  it("Arrange align-left : même boîtes sur les deux cœurs, une étape, undo", () => {
+    const { d, p, ids, before, after, ch } = alignLeft(f);
+    const left = Math.min(...before.map((b) => b.x0));
+    after.forEach((b, k) => nearBox(b, shifted(before[k]!, left - before[k]!.x0)));
+    expect(ch.pages).toEqual([p]);
+    expect(ch.removed).toEqual([]);
+    const ref = alignLeft(fakeCore);
+    after.forEach((b, k) => nearBox(b, ref.after[k]!));
+    ref.d.free();
+    d.undo(); // une seule étape : un undo rend les trois boîtes
+    ids.forEach((id, k) => nearBox(boxOf(d, id), before[k]!));
+    d.redo();
+    ids.forEach((id, k) => nearBox(boxOf(d, id), after[k]!));
+    d.free();
+  });
+
+  it("Arrange flip-h texte + rectangle : le texte reste droit, sa place suit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p, 0, 0);
+    const t = d.apply({ type: "SetText", page: p, id: null, x: 200, y: 0, content: "abc", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 }).ids[0]!;
+    const [rb, tb] = [boxOf(d, r), boxOf(d, t)];
+    const u = { x0: Math.min(rb.x0, tb.x0), x1: Math.max(rb.x1, tb.x1) };
+    d.apply({ type: "Arrange", ids: [t, r], how: "flip-h" });
+    expect(viewOf(d, t).transform?.slice(0, 4)).toEqual([1, 0, 0, 1]);
+    expect(viewOf(d, r).transform?.[0]).toBeCloseTo(-1, 6);
+    nearBox(boxOf(d, t), shifted(tb, u.x0 + u.x1 - tb.x1 - tb.x0));
+    nearBox(boxOf(d, r), shifted(rb, u.x0 + u.x1 - rb.x1 - rb.x0));
+    d.free();
+  });
+
+  it("Arrange étend le groupe : un membre désigné, tout le groupe bouge en bloc", () => {
+    const d = f.blank();
+    const p = first(d);
+    const [a, b, c] = [rect(d, p, 300, 100), rect(d, p, 400, 200), rect(d, p, 100, 300)];
+    d.apply({ type: "Group", ids: [a, b] });
+    const [ba, bb, bc] = [boxOf(d, a), boxOf(d, b), boxOf(d, c)];
+    d.apply({ type: "Arrange", ids: [b, c], how: "align-left" });
+    const dx = bc.x0 - ba.x0; // unité du groupe : sa boîte commence à `a`
+    nearBox(boxOf(d, a), shifted(ba, dx));
+    nearBox(boxOf(d, b), shifted(bb, dx));
+    nearBox(boxOf(d, c), bc);
+    d.free();
+  });
+
+  it("Arrange élément inconnu refusé comme Restack, pages mêlées refusées, rien d'écrit ; ids vides : aucune étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const [a, b] = [rect(d, p, 0), rect(d, p, 100, 300)];
+    d.apply({ type: "AddPage", after: null });
+    const z = rect(d, d.pageIds()[1]!, 0);
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "Arrange", ids: [b, "absent", a], how: "align-left" }))).toBe("élément inconnu : absent"));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "Arrange", ids: [a, z], how: "align-left" }))).toBe("objets de pages différentes"));
+    unchanged(d, () => expect(d.apply({ type: "Arrange", ids: [], how: "align-left" }).ids).toEqual([]));
+    d.free();
+  });
+
+  it("Arrange how inconnu : « disposition inconnue : spin » sur les deux cœurs, avant les ids, rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const [a, b] = [rect(d, p, 0), rect(d, p, 100, 300)];
+    const spin = "spin" as ArrangeHow;
+    expect(arrangeUnknown("spin")).toBe("disposition inconnue : spin");
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "Arrange", ids: [a, b], how: spin }))).toBe("disposition inconnue : spin"));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "Arrange", ids: ["absent"], how: spin }))).toBe("disposition inconnue : spin"));
+    d.free();
+  });
+
+  it("SetStyle variability constant puis null : relu puis absent, une étape chacun, rectangle ignoré", () => {
+    const d = f.blank();
+    const p = first(d);
+    const s = commit(d, p, 100);
+    const r = rect(d, p, 0, 300);
+    d.apply({ type: "SetStyle", ids: [s, r], patch: { variability: "constant" } });
+    expect(viewOf(d, s).look?.variability).toBe("constant");
+    expect(viewOf(d, r).look?.variability).toBeUndefined();
+    d.undo();
+    expect(viewOf(d, s).look?.variability).toBeUndefined();
+    d.redo();
+    d.apply({ type: "SetStyle", ids: [s, r], patch: { variability: null } });
+    expect(viewOf(d, s).look?.variability).toBeUndefined();
+    d.undo();
+    expect(viewOf(d, s).look?.variability).toBe("constant");
+    unchanged(d, () => d.apply({ type: "SetStyle", ids: [r], patch: { variability: "constant" } }));
+    d.free();
+  });
+
+  it("variability constante relue : CommitStroke avec look, puis document relu", () => {
+    const d = f.blank();
+    const p = first(d);
+    const s = d.apply({ type: "CommitStroke", page: p, points: hline(100), style, look: { variability: "constant" } }).ids[0]!;
+    expect(viewOf(d, s).look?.variability).toBe("constant");
+    const back = f.load(d.save(now, "0.1.0"));
+    expect(viewOf(back, s).look?.variability).toBe("constant");
+    back.free();
+    d.free();
   });
 });
