@@ -17,6 +17,7 @@ import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isSegment } from "../core/shapes";
 import { createLineEditor, type LineEditor } from "./tools/line-edit";
+import { linkedCopy } from "./tools/line-points";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
@@ -1423,12 +1424,8 @@ export function createEngine(deps: EngineDeps): Engine {
       if (id === null || v?.kind !== "shape" || (v.shape.shape !== "rect" && v.shape.shape !== "ellipse")) return false;
       const change = run({ type: "AddLinked", id, dir });
       if (change === null) return false;
-      // La copie est l'objet neuf qui n'est pas un segment (l'autre est la flèche) : l'ordre des ids n'est pas lu.
-      const copy = change.ids.find((x) => {
-        const c = x === id ? null : doc.element(x);
-        return c?.kind === "shape" && !isSegment(c.shape.shape);
-      });
-      if (copy !== undefined) selectTool.setSelection([copy]);
+      const copy = linkedCopy(doc, change.ids, id);
+      if (copy !== null) selectTool.setSelection([copy]);
       requestScene();
       emit();
       return true;
@@ -1437,7 +1434,10 @@ export function createEngine(deps: EngineDeps): Engine {
       touchShift = held;
     },
     hover(x, y) {
-      if (tool !== "hand") tools[tool].hover?.(x, y);
+      if (tool === "hand") return;
+      const t = tools[tool];
+      if (t.hover === undefined) return;
+      t.hover(x, y);
       loop.start();
     },
     itemStyle: () => item,
