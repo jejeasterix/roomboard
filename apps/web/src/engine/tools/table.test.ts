@@ -1038,4 +1038,19 @@ describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
     s.tool.close(3, "end");
     expect(s.runs.slice(n).some((c) => c.type === "SetTableLineSizes")).toBe(false);
   });
+  it("TB1 (C10b) : tableau réduit à 0,15 (cases 36 × 9,6 px) : un clic au centre de la case voisine de la case active l'active, il n'arme ni poignée ni bordure", () => {
+    const s = setup();
+    const id = s.doc.apply({ type: "AddTable", page: s.page, x: 0, y: 0, cols: 6, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    s.doc.apply({ type: "Transform", ids: [id], matrix: [0.15, 0, 0, 0.15, 0, 0] });
+    const centre = (row: number, col: number): [number, number] => [36 * col + 18, 9.6 * row + 4.8];
+    s.click(...centre(0, 2));
+    s.tool.requestCommit();
+    const n = s.runs.length;
+    s.click(...centre(0, 3));
+    s.tool.requestCommit();
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 3 });
+    expect(s.runs.length).toBe(n);
+  });
+
+
 });
