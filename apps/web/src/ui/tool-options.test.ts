@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ElementView } from "../core/api";
-import { backgroundPicks, formValue, sectionsFor, showsPanel, strokePicks } from "./tool-options";
+import { appliesTo, backgroundPicks, formValue, sectionsFor, showsPanel, strokePicks } from "./tool-options";
 
 const rect = (id: string, color: string, look?: ElementView["look"]): ElementView =>
   ({ id, kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null }, ...(look ? { look } : {}) }) as ElementView;
@@ -38,12 +38,32 @@ describe("tool-options", () => {
     const p = strokePicks({ pen: [{ color: "#dc2626", width: 4 }] } as never, "pen");
     expect(p).toHaveLength(5);
     expect(new Set(p).size).toBe(5);
-    expect(p[0]).toBe("#dc2626");
+    expect(p[0]!.color).toBe("#dc2626");
+    expect(p[0]!.label).toBe("Rouge");
   });
-  it("backgroundPicks : transparent puis 4 teintes", () => {
-    const b = backgroundPicks();
-    expect(b[0]).toBeNull();
-    expect(b).toHaveLength(5);
+  it("strokePicks : noms lisibles pour les teintes de repli", () => {
+    expect(strokePicks({} as never, "pen").map((x) => x.label)).toEqual(["Noir", "Rouge", "Bleu", "Vert", "Jaune"]);
+  });
+  it("appliesTo : suit la table des sections de l'élément", () => {
+    expect(appliesTo("strokeStyle", rect("a", "#000000"))).toBe(true);
+    expect(appliesTo("roundness", rect("a", "#000000"))).toBe(true);
+    expect(appliesTo("background", img)).toBe(false);
+    expect(appliesTo("opacity", img)).toBe(true);
+    const stroke = { id: "s", kind: "stroke" } as unknown as ElementView;
+    expect(appliesTo("strokeStyle", stroke)).toBe(false);
+    expect(appliesTo("opacity", stroke)).toBe(true);
+    const line = { id: "l", kind: "shape", shape: { shape: "line" } } as unknown as ElementView;
+    expect(appliesTo("background", line)).toBe(false);
+    expect(appliesTo("roundness", line)).toBe(false);
+  });
+  it("backgroundPicks : transparent puis jaune, vert, bleu, rose réels", () => {
+    expect(backgroundPicks()).toEqual([
+      { color: null, label: "Transparent" },
+      { color: "#fef08a", label: "Jaune" },
+      { color: "#bbf7d0", label: "Vert" },
+      { color: "#bfdbfe", label: "Bleu" },
+      { color: "#fecdd3", label: "Rose" },
+    ]);
   });
   it("showsPanel : masqué avec Main, Gomme, Pot, Tableau sans sélection, et en annotation", () => {
     for (const t of ["hand", "eraser", "fill", "table", "select"] as const) expect(showsPanel(t as never, 0, false)).toBe(false);

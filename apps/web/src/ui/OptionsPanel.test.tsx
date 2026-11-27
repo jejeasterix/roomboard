@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ElementView } from "../core/api";
 import { createDeviceSettings } from "../device-settings";
@@ -109,5 +110,100 @@ describe("OptionsPanel (OG11, T10)", () => {
       for (const b of root.querySelectorAll<HTMLElement>("button")) expect(b.style.getPropertyValue("--rb-btn-size")).toBe("");
       unmount();
     }
+  });
+
+  it("pastilles : noms lisibles, pas le code hex", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const labels = [...container.querySelectorAll('[data-option="strokeColor"] .rb-pick')].map((b) => b.getAttribute("aria-label"));
+    expect(labels).toEqual(["Noir", "Rouge", "Bleu", "Vert", "Jaune"]);
+    const bg = [...container.querySelectorAll('[data-option="background"] .rb-pick')].map((b) => b.getAttribute("aria-label"));
+    expect(bg).toEqual(["Transparent", "Jaune", "Vert", "Bleu", "Rose"]);
+  });
+  it("bascule : aria-expanded suit le repli ; libellés Plein et Droits", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const t = container.querySelector("[data-options-toggle]")!;
+    expect(t.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector('[data-option="strokeStyle"] [data-choice="solid"]')!.textContent).toContain("Plein");
+    expect(container.querySelector('[data-option="roundness"] [data-choice="sharp"]')!.textContent).toContain("Droits");
+    fireEvent.click(t);
+    expect(container.querySelector("[data-options-toggle]")!.getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+/** Faux moteur dont l'état change : chaque écriture met le style courant à jour. */
+function live(tool: string, selection: ElementView[] = []) {
+  const [state, setState] = createSignal({ tool, selection: selection.map((e) => e.id), itemStyle: DEFAULT_ITEM_STYLE } as unknown as EngineState);
+  const calls: Partial<ItemStyle>[] = [];
+  const engine = {
+    setItemStyle: (p: Partial<ItemStyle>) => {
+      calls.push(p);
+      setState((s) => ({ ...s, itemStyle: { ...s.itemStyle!, ...p } }) as EngineState);
+    },
+    duplicateSelection: () => true,
+    deleteSelection: () => true,
+  };
+  const r = render(() => (
+    <OptionsPanel
+      engine={() => engine as never}
+      state={state}
+      element={(id) => selection.find((e) => e.id === id) ?? null}
+      presets={() => presets}
+      size={() => "s"}
+      profileId={() => "p"}
+      settings={createDeviceSettings(null)}
+      annotating={() => false}
+      sideStart={() => null}
+    />
+  ));
+  return { ...r, calls };
+}
+const shape = (id: string, kind: string, look?: unknown, fill: string | null = null): ElementView =>
+  ({ id, kind: "shape", style: { color: "#000000", width: 4 }, shape: { shape: kind, w: 10, h: 10, fill }, ...(look ? { look } : {}) }) as unknown as ElementView;
+const stroke = (id: string): ElementView => ({ id, kind: "stroke", style: { color: "#000000", width: 4 } }) as unknown as ElementView;
+const pressed = (c: HTMLElement, sec: string): string | null =>
+  c.querySelector(`[data-option="${sec}"] [aria-pressed="true"], [data-option="${sec}"] [aria-checked="true"]`)?.getAttribute("data-option-value") ?? null;
+
+describe("OptionsPanel : état vivant (T20)", () => {
+  it("mixte : propriété absente ignorée (rectangle en tirets + trait de stylo)", () => {
+    const { container } = live("select", [shape("a", "rect", { stroke: "dashed" }), stroke("b")]);
+    expect(container.querySelector('[data-option="strokeStyle"]')).not.toBeNull();
+    expect(container.querySelector('[data-option="strokeStyle"]')!.hasAttribute("data-mixed")).toBe(false);
+    expect(pressed(container, "strokeStyle")).toBe("dashed");
+  });
+  it("mixte : propriété absente ignorée (rectangle arrondi + ellipse : Angles = arrondi)", () => {
+    const { container } = live("select", [shape("a", "rect", { round: true }), shape("b", "ellipse")]);
+    expect(container.querySelector('[data-option="roundness"]')!.hasAttribute("data-mixed")).toBe(false);
+    expect(pressed(container, "roundness")).toBe("round");
+  });
+  it("mixte : propriété absente ignorée (rectangle à fond jaune + ligne : Arrière-plan = jaune)", () => {
+    const { container } = live("select", [shape("a", "rect", undefined, "#fef08a"), shape("b", "line")]);
+    expect(container.querySelector('[data-option="background"]')!.hasAttribute("data-mixed")).toBe(false);
+    expect(pressed(container, "background")).toBe("#fef08a");
+  });
+  it("focus gardé après une flèche (Largeur), puis une seconde flèche change encore", async () => {
+    const { container, calls } = live("rect");
+    const sec = container.querySelector<HTMLElement>('[data-option="strokeWidth"]')!;
+    sec.querySelector<HTMLElement>('[role="radio"][tabindex="0"]')!.focus();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    await Promise.resolve();
+    expect(calls).toEqual([{ width: 8 }]);
+    expect(container.querySelector('[data-option="strokeWidth"]')!.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
+    await Promise.resolve();
+    expect(calls).toHaveLength(2);
+    expect(container.querySelector('[data-option="strokeWidth"]')!.contains(document.activeElement)).toBe(true);
+  });
+  it("focus gardé après un changement de la réglette Transparence", () => {
+    const { container, calls } = live("rect");
+    const r = container.querySelector<HTMLInputElement>('[data-option="opacity"] input')!;
+    r.focus();
+    r.value = "50";
+    fireEvent.change(r);
+    expect(calls).toEqual([{ opacity: 50 }]);
+    expect(document.activeElement).toBe(container.querySelector('[data-option="opacity"] input'));
+    const r2 = container.querySelector<HTMLInputElement>('[data-option="opacity"] input')!;
+    r2.value = "30";
+    fireEvent.change(r2);
+    expect(calls).toHaveLength(2);
   });
 });
