@@ -3953,7 +3953,7 @@ describe.each(factories)("contrat OG11 : $name", ({ f }) => {
       { roughness: bad<1>(257) }, { roughness: bad<1>(1.5) }, { roughness: bad<1>(-1) }, { roughness: bad<1>(3) },
       { opacity: 300 }, { opacity: 356 }, { opacity: -1 }, { opacity: Number.NaN }, { opacity: Number.POSITIVE_INFINITY },
       { opacity: bad<number>("45") }, { roughness: bad<1>("1") }, { strokeStyle: bad<"dashed">("wavy") },
-      { roundness: bad<"round">("sharp") }, { color: "rouge" }, { fill: "rouge" }, { width: 0 }, { width: -2 },
+      { roundness: bad<"round">("sharp") }, { color: "#12" }, { fill: "rouge!" }, { width: 0 }, { width: -2 },
     ] as LookPatch[]) {
       unchanged(d, () => expect(messageOf(() => restyle(d, [r], patch)), JSON.stringify(patch)).toBe("style invalide"));
     }
