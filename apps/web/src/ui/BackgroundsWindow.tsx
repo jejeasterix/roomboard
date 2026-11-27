@@ -5,7 +5,7 @@
  * tant qu'elle est montée, applique un fond à l'onglet actif en une commande, puis se ferme ; au démontage, le focus
  * revient au bouton « Fonds ».
  */
-import { createMemo, createResource, createSignal, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show, type JSX } from "solid-js";
 import {
   appliedMessage, applyBackground, OUTSIDE_FRAME_MESSAGE, outsideFrame, PACK_BASE, pdfKeptMessage, pdfPagesAmong, resolvePack,
   sourceThumbnail, type PackFiles,
@@ -20,12 +20,12 @@ import type { CoreFactory } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import type { DroppedFile, Notify } from "../platform/files";
 import { HEAD_BYTES, sniffImage } from "../platform/image-import";
+import { messageOf } from "../platform/messages";
 import { BackgroundsDialog, searchDocsOf, type BackgroundCard } from "./BackgroundsDialog";
 
 export const GRID_SAVED_MESSAGE = "Grille enregistrée dans Mes fonds";
 export const BACKGROUNDS_BUTTON = 'button[data-item="backgrounds"]';
 const removeQuestion = (name: string): string => `Retirer « ${name} » de Mes fonds ?`;
-const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const stemOf = (name: string): string => name.replace(/\.[^./\\]*$/, "") || name;
 
 export interface BackgroundsUi {
@@ -51,37 +51,55 @@ const rendered = new Map<string, Promise<Blob | null>>();
 
 export function BackgroundsWindow(props: { readonly ui: BackgroundsUi; readonly host: BackgroundsHost; close(): void }): JSX.Element {
   const ui = props.ui;
-  const [pack] = createResource(() => (ui.loadPack ?? loadPack)());
+  const [packRes] = createResource(() => (ui.loadPack ?? loadPack)());
+  /** Le pack une fois chargé ; lire une ressource en échec lèverait. */
+  const pack = (): readonly PackBackground[] | undefined => (packRes.error === undefined ? packRes() : undefined);
   const [mine, setMine] = createSignal<readonly MyBackground[]>([]);
   const [notice, setNotice] = createSignal<string | null>(null);
-  const refresh = async (): Promise<void> => {
-    setMine(await ui.mine.list());
+  // Un seul chemin de relecture : le changement de « Mes fonds » ; les opérations attendent la relecture en cours.
+  let inflight: Promise<void> = Promise.resolve();
+  let seq = 0;
+  const refresh = (): Promise<void> => {
+    const n = ++seq;
+    inflight = ui.mine.list().then((l) => {
+      if (n === seq) setMine(l);
+    });
+    return inflight;
   };
   const search = createMemo(() => createBackgroundSearch(searchDocsOf(pack() ?? [], mine())));
 
   const addFiles = async (files: readonly DroppedFile[]): Promise<void> => {
+    setNotice(null);
     for (const f of files) {
-      if (sniffImage(await f.head(HEAD_BYTES), f.name) === null) {
-        setNotice(NOT_AN_IMAGE_MESSAGE);
-        continue;
-      }
       try {
+        if (sniffImage(await f.head(HEAD_BYTES), f.name) === null) {
+          setNotice(NOT_AN_IMAGE_MESSAGE);
+          continue;
+        }
         await ui.mine.addImage(await f.blob(), stemOf(f.name));
-        setNotice(null);
       } catch (e) {
-        setNotice(messageOf(e));
+        setNotice(messageOf(e)); // un échec n'est jamais effacé par un succès qui suit
       }
     }
-    await refresh();
+    await inflight;
   };
   onMount(() => {
+    onCleanup(ui.mine.onChange(() => void refresh().catch(() => undefined)));
+    void refresh().catch(() => undefined);
+  });
+  // Dépôts de fichiers : détournés vers « Mes fonds » seulement quand la fenêtre est visible (pack chargé).
+  createEffect(() => {
+    if (pack() === undefined) return;
     props.host.setDropDiverter(addFiles);
-    const off = ui.mine.onChange(() => void refresh());
-    onCleanup(off);
-    void refresh();
+    onCleanup(() => props.host.setDropDiverter(null));
+  });
+  // Échec de l'import dynamique du pack : un avis, et la fenêtre se ferme (jamais une fenêtre invisible).
+  createEffect(() => {
+    const e: unknown = packRes.error;
+    if (e === undefined) return;
+    void Promise.resolve(props.host.say(messageOf(e))).finally(() => props.close());
   });
   onCleanup(() => {
-    props.host.setDropDiverter(null);
     queueMicrotask(() => document.querySelector<HTMLElement>(BACKGROUNDS_BUTTON)?.focus());
   });
 
@@ -124,29 +142,33 @@ export function BackgroundsWindow(props: { readonly ui: BackgroundsUi; readonly 
   };
 
   const addPage = async (): Promise<void> => {
-    const tab = props.host.active();
-    const board = tab.board;
-    const page = board.engine.state().page;
-    const view = board.doc.page(page);
-    if (view === null) return;
-    const blob = await renderPageImage(board.doc, tab.assets, page, PAGE_IMAGE_SCALE, ui.thumbs);
-    if (blob === null) return;
-    const name = `Page ${board.doc.pageIds().indexOf(page) + 1} — ${stampOf(ui.now())}`;
-    const w = Math.round(view.width * PAGE_IMAGE_SCALE);
-    const h = Math.round(view.height * PAGE_IMAGE_SCALE);
     try {
+      const tab = props.host.active();
+      const board = tab.board;
+      const page = board.engine.state().page;
+      const view = board.doc.page(page);
+      if (view === null) return;
+      const blob = await renderPageImage(board.doc, tab.assets, page, PAGE_IMAGE_SCALE, ui.thumbs);
+      if (blob === null) return;
+      const name = `Page ${board.doc.pageIds().indexOf(page) + 1} — ${stampOf(ui.now())}`;
+      const w = Math.round(view.width * PAGE_IMAGE_SCALE);
+      const h = Math.round(view.height * PAGE_IMAGE_SCALE);
       await ui.mine.addSource({ color: view.background, grid: null, image: { blob, name: "page.png", mime: "image/png", w, h } }, name, "page");
       setNotice(outsideFrame(board.doc, page) ? OUTSIDE_FRAME_MESSAGE : null);
+      await inflight;
     } catch (e) {
       setNotice(messageOf(e));
     }
-    await refresh();
   };
 
   const remove = async (e: MyBackground): Promise<void> => {
     if (!(await props.host.ask(removeQuestion(e.name)))) return;
-    await ui.mine.remove(e);
-    await refresh();
+    try {
+      await ui.mine.remove(e);
+      await inflight; // la liste est à jour quand la fenêtre remet le focus
+    } catch (err) {
+      setNotice(messageOf(err));
+    }
   };
 
   return (
@@ -161,7 +183,7 @@ export function BackgroundsWindow(props: { readonly ui: BackgroundsUi; readonly 
           apply={(c, all) => void apply(c, all)}
           importImage={() => void props.host.pickFiles().then(addFiles).catch((e: unknown) => setNotice(messageOf(e)))}
           addPage={() => void addPage()}
-          remove={(e) => void remove(e)}
+          remove={(e) => remove(e)}
           close={() => props.close()}
         />
       )}

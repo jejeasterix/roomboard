@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MyBackground } from "../app/my-backgrounds";
 import type { PackBackground } from "../backgrounds/catalog";
@@ -208,5 +209,139 @@ describe("personnalisation-1b : fenêtre des fonds (Q25 à Q29)", () => {
       expect(text, t).not.toContain(t);
       expect(source, t).not.toContain(t);
     }
+  });
+});
+
+const mineN = (n: number): readonly MyBackground[] =>
+  Array.from({ length: n }, (_, i) => ({ file: `f${i}.json`, name: `Fond ${i}`, created: `2026-11-27T10:00:0${i}.000Z`, origin: "grid" as const, color: "#ffffff", grid: null, image: null }));
+const openMine = (r: ReturnType<typeof setup>): void => void fireEvent.click(r.q('[data-edit="fonds-section"] [data-choice="mine"]'));
+
+describe("T13 : clavier, focus et lecture d'écran de la fenêtre des fonds", () => {
+  it("le conteneur prend le focus (tabindex -1) : un clic sur le titre ou un vide ne l'envoie pas sur le body ; Retour arrière y reste", async () => {
+    const r = setup();
+    await flush();
+    const dialog = r.q<HTMLElement>(".rb-bg-dialog");
+    expect(dialog.getAttribute("tabindex")).toBe("-1");
+    fireEvent.pointerDown(r.q("#rb-bg-title"));
+    expect(document.activeElement).toBe(dialog);
+    const seen: string[] = [];
+    const listen = (e: KeyboardEvent): void => void seen.push(e.key);
+    window.addEventListener("keydown", listen);
+    try {
+      fireEvent.keyDown(dialog, { key: "Backspace", bubbles: true });
+      expect(seen).toEqual([]);
+      fireEvent.keyDown(dialog, { key: "Escape", bubbles: true });
+      expect(r.close).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener("keydown", listen);
+    }
+    r.q<HTMLElement>('input[data-fonds="search"]').focus();
+    fireEvent.pointerDown(r.q('input[data-fonds="search"]'));
+    expect(document.activeElement).toBe(r.q('input[data-fonds="search"]'));
+  });
+
+  it("Tab après « Fermer » revient à la recherche ; Maj+Tab depuis la recherche va à « Fermer » (piège de focus)", async () => {
+    const r = setup();
+    await flush();
+    const close = r.q<HTMLElement>('button[data-fonds="close"]');
+    const search = r.q<HTMLElement>('input[data-fonds="search"]');
+    close.focus();
+    expect(fireEvent.keyDown(close, { key: "Tab" })).toBe(false);
+    expect(document.activeElement).toBe(search);
+    expect(fireEvent.keyDown(search, { key: "Tab", shiftKey: true })).toBe(false);
+    expect(document.activeElement).toBe(close);
+    const mid = r.q<HTMLElement>('button[data-fonds="all"]');
+    mid.focus();
+    expect(fireEvent.keyDown(mid, { key: "Tab" })).toBe(true);
+    expect(document.activeElement).toBe(mid);
+  });
+
+  it("retirer une carte : le focus passe à la carte voisine, ou à la recherche s'il n'en reste aucune", async () => {
+    const [mine, setMine] = createSignal<readonly MyBackground[]>(mineN(2));
+    const remove = vi.fn(async (e: MyBackground) => {
+      setMine((m) => m.filter((x) => x.file !== e.file));
+    });
+    const r = render(() => (
+      <BackgroundsDialog pack={PACK} mine={mine()} search={createBackgroundSearch(searchDocsOf(PACK, mine()))} notice={null}
+        thumbOf={async () => null} apply={vi.fn()} importImage={vi.fn()} addPage={vi.fn()} remove={remove} close={vi.fn()} />
+    ));
+    await flush();
+    fireEvent.click(r.container.querySelector('[data-edit="fonds-section"] [data-choice="mine"]')!);
+    const btn = r.container.querySelector<HTMLElement>('[data-fonds-remove="f1.json"]')!;
+    btn.focus();
+    fireEvent.click(btn);
+    await flush();
+    await flush();
+    expect(document.activeElement).toBe(r.container.querySelector('button[data-fond="mine:f0.json"]'));
+    const last = r.container.querySelector<HTMLElement>('[data-fonds-remove="f0.json"]')!;
+    last.focus();
+    fireEvent.click(last);
+    await flush();
+    await flush();
+    expect(document.activeElement).toBe(r.container.querySelector('input[data-fonds="search"]'));
+  });
+
+  it("colonnes : lues dans gridTemplateColumns ; repli sur la largeur avec l'écart de 16 px", async () => {
+    const r = setup({ mine: mineN(6) });
+    await flush();
+    openMine(r);
+    const grid = r.q<HTMLElement>(".rb-bg-grid");
+    const first = r.q<HTMLElement>('button[data-fond="mine:f0.json"]');
+    first.focus();
+    // Repli : 600 px = 2 colonnes (3 x 192 + 2 x 16 = 608 > 600), floor(600 / 192) en aurait compté 3.
+    Object.defineProperty(grid, "clientWidth", { value: 600, configurable: true });
+    fireEvent.keyDown(first, { key: "ArrowDown" });
+    await flush();
+    expect(document.activeElement).toBe(r.q('button[data-fond="mine:f2.json"]'));
+    // Mesure : quatre pistes déclarées par la feuille de style.
+    const spy = vi.spyOn(window, "getComputedStyle").mockReturnValue({ gridTemplateColumns: "192px 192px 192px 192px" } as CSSStyleDeclaration);
+    try {
+      fireEvent.keyDown(document.activeElement!, { key: "Home" });
+      await flush();
+      fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+      await flush();
+      expect(document.activeElement).toBe(r.q('button[data-fond="mine:f4.json"]'));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("pointercancel : un clic clavier qui suit applique (moved remis à zéro)", () => {
+    const { q, apply } = setup();
+    const card = q('button[data-fond="ardoise"]');
+    fireEvent.pointerDown(card, { clientX: 1, clientY: 1 });
+    fireEvent.pointerCancel(q(".rb-bg-grid"));
+    fireEvent.click(card);
+    expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it("la région role=status est montée en permanence, vide sans avis", () => {
+    const { q } = setup();
+    const s = q<HTMLElement>('[data-fonds="notice"]');
+    expect([s.getAttribute("role"), s.textContent]).toEqual(["status", ""]);
+  });
+
+  it("les « × » de Mes fonds ne sont arrêts de tabulation que pour la carte focalisée", async () => {
+    const r = setup({ mine: mineN(2) });
+    await flush();
+    openMine(r);
+    const tabs = [...r.container.querySelectorAll<HTMLElement>("[data-fonds-remove]")].map((b) => b.getAttribute("tabindex"));
+    expect(tabs).toEqual(["0", "-1"]);
+  });
+
+  it("T13 : un changement de Mes fonds ne recrée pas les cartes du pack (miniatures non redemandées)", async () => {
+    const [mine, setMine] = createSignal<readonly MyBackground[]>([]);
+    const asked: string[] = [];
+    const r = render(() => (
+      <BackgroundsDialog pack={PACK} mine={mine()} search={createBackgroundSearch(searchDocsOf(PACK, mine()))} notice={null}
+        thumbOf={async (c) => { asked.push(c.key); return null; }} apply={vi.fn()} importImage={vi.fn()} addPage={vi.fn()} remove={vi.fn()} close={vi.fn()} />
+    ));
+    await flush();
+    fireEvent.click(r.container.querySelector('[data-edit="fonds-section"] [data-choice="lessons"]')!);
+    await flush();
+    expect(asked.filter((k) => k === "venn")).toHaveLength(1);
+    setMine(mineN(1));
+    await flush();
+    expect(asked.filter((k) => k === "venn")).toHaveLength(1);
   });
 });

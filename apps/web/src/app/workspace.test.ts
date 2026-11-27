@@ -2596,7 +2596,7 @@ describe("C11b : envoi au tableau et fond figé (P3, P6 à P14, P17, P31)", () =
   });
 
   it("personnalisation-1b (Q22) : dérivation posée, un dépôt va à Mes fonds et pas à la page ; retirée, l'import reprend", async () => {
-    const ws = await setupWorkspace();
+    const ws = await setupWorkspace({ decode: fakeDecode });
     const got: string[] = [];
     ws.setDropDiverter(async (files) => {
       got.push(...files.map((f) => f.name));
@@ -2607,9 +2607,10 @@ describe("C11b : envoi au tableau et fond figé (P3, P6 à P14, P17, P31)", () =
     const doc = ws.active().board.doc;
     expect(doc.elementIds(doc.pageIds()[0]!)).toEqual([]);
     ws.setDropDiverter(null);
-    dropHandler!([plainFile("b.tif")], null);
+    dropHandler!([plainFile("b.png", pngHead(10, 10))], null);
     await flush();
     await flush();
+    await vi.waitFor(() => expect(doc.elementIds(doc.pageIds()[0]!)).toHaveLength(1));
     expect(got).toEqual(["a.png"]);
   });
 
