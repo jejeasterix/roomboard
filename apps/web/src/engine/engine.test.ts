@@ -2176,6 +2176,63 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(engine.state().elementCount).toBe(2);
   });
 
+  it("T18 Ctrl+K avec un seul élément : ouvre l'éditeur de lien (linkEditing), rien d'écrit", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    const v = doc.version();
+    expect(engine.state().linkEditing).toBeNull();
+    expect(engine.key(key("k", { ctrlKey: true }))).toBe(true);
+    expect(engine.state().linkEditing).toBe(a);
+    expect(doc.version()).toBe(v);
+  });
+
+  it("T18 Ctrl+K avec deux éléments ou aucun : rien, la touche passe", () => {
+    const { engine, addRect, sel } = styleSetup();
+    expect(engine.key(key("k", { ctrlKey: true }))).toBe(false);
+    sel().setSelection([addRect(), addRect()]);
+    expect(engine.key(key("k", { ctrlKey: true }))).toBe(false);
+    expect(engine.state().linkEditing).toBeNull();
+  });
+
+  it("T18 setLink : un SetStyle { link }, une étape, n'entre pas dans le style courant", () => {
+    const { engine, doc, addRect, sel, lookOf } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    engine.key(key("k", { ctrlKey: true }));
+    const v = doc.version();
+    expect(engine.setLink("https://example.org")).toBe(true);
+    expect(lookOf(a).link).toBe("https://example.org");
+    expect(doc.version()).toBe(v + 1);
+    expect(engine.state().linkEditing).toBeNull();
+    expect("link" in engine.itemStyle()).toBe(false);
+    engine.undo();
+    expect(lookOf(a).link).toBeUndefined();
+  });
+
+  it("T18 setLink(null) retire le lien ; javascript: refusé par le cœur, rien d'écrit", () => {
+    const { engine, doc, addRect, sel, lookOf } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    engine.setLink("mailto:a@example.org");
+    const v = doc.version();
+    expect(engine.setLink("javascript:alert(1)")).toBe(false);
+    expect(doc.version()).toBe(v);
+    expect(lookOf(a).link).toBe("mailto:a@example.org");
+    expect(engine.setLink(null)).toBe(true);
+    expect(lookOf(a).link).toBeUndefined();
+  });
+
+  it("T18 Échap ferme l'éditeur de lien sans vider la sélection", () => {
+    const { engine, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    engine.key(key("k", { ctrlKey: true }));
+    engine.closeLink();
+    expect(engine.state().linkEditing).toBeNull();
+    expect(engine.state().selection).toEqual([a]);
+  });
+
   it("setItemStyle : style courant déjà égal, la sélection est quand même écrite", () => {
     const blue = "#1d4ed8";
     const { engine, addRect, sel, colorOf } = styleSetup({ itemStyle: { ...DEFAULT_ITEM_STYLE, color: blue } });
