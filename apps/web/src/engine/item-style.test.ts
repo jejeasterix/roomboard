@@ -17,7 +17,7 @@ describe("item-style", () => {
     expect(mergeItemStyle(DEFAULT_ITEM_STYLE, { opacity: 40 }).opacity).toBe(40);
   });
   it("défaut : Architecte, Droits, plein, opaque", () => {
-    expect(DEFAULT_ITEM_STYLE).toEqual({ color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100, fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", font: "default", fontSize: 36 });
+    expect(DEFAULT_ITEM_STYLE).toEqual({ color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100, fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", font: "default", fontSize: 36, arrowType: "sharp", arrowBinding: true });
   });
   it("parseItemStyle : couleur invalide refusée (color, background)", () => {
     expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, color: "red" }))?.color).toBe("red"); // nom CSS valide

@@ -14,6 +14,7 @@ export const COMMAND_TYPES = [
   "SetMedia", "AddModel3d", "SetModel3dView", "SetBackdrop", "FormatText", "SetGrid", "ApplyBackground", "AddTable", "SetTableCell",
   "InsertTableLine", "RemoveTableLine", "SetTableSizes", "SetTableFill", "MergeTableCells", "SplitTableCell",
   "SetTableShade", "ImportTable", "Fill", "SetImageParams", "Group", "Ungroup", "SetStyle",
+  "SetLinePoints", "AddLinked",
 ] as const satisfies readonly Command["type"][];
 // Une commande ajoutée à `Command` sans l'être ici casse `tsc` : la CLI suit le cœur (§ 7 du cadrage).
 type Missing = Exclude<Command["type"], (typeof COMMAND_TYPES)[number]>;
@@ -35,6 +36,9 @@ export interface RefContext {
 
 const REF = /^\$(?:(\d+)(?:\.(\d+))?|page:(\d+)|tab:(\d+))$/;
 const FLOAT_KEYS = ["points", "path"] as const;
+/** Clés converties en `Float32Array`, par commande (trait et gomme) ; ailleurs (`AddShape`, `SetLinePoints`, OG12) les
+ *  points restent des nombres du monde, contrôlés de la même façon. */
+const FLOAT_KEYS_OF: Readonly<Record<string, readonly string[]>> = { CommitStroke: ["points"], Erase: ["path"] };
 
 export function resolveRefs(v: unknown, ctx: RefContext): unknown {
   if (typeof v === "string") {
@@ -74,7 +78,7 @@ export function parseOp(line: unknown, ctx: RefContext): Op {
       if (!Array.isArray(a) || !a.every((x) => typeof x === "number" && Number.isFinite(x))) {
         throw new CliError("usage", `${key} : tableau de nombres attendu`);
       }
-      cmd[key] = new Float32Array(a as number[]);
+      if (FLOAT_KEYS_OF[type]?.includes(key)) cmd[key] = new Float32Array(a as number[]);
     }
     if (type === "MovePage" || type === "Restack") {
       const to = cmd["to"];

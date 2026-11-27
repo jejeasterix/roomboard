@@ -47,7 +47,7 @@ describe("look — lot 2 (T12)", () => {
       fillStyle: "hachure", startArrowhead: "triangle", endArrowhead: "none", textAlign: "right", link: "https://example.org",
     });
     expect(toLook({ fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", link: "javascript:alert(1)" })).toBeUndefined();
-    expect(toLook({ fillStyle: 3, startArrowhead: "circle", endArrowhead: null, textAlign: "justify", link: 42 })).toBeUndefined();
+    expect(toLook({ fillStyle: 3, startArrowhead: "diamond", endArrowhead: null, textAlign: "justify", link: 42 })).toBeUndefined();
   });
   it("validLink : refuse blancs, guillemet, chevrons, antislash et caractères de contrôle ; accepte %20", () => {
     for (const ko of ['mailto:a@b" /a "C:\\x"', "https://example.org/a b", "https://example.org/a\tb", "https://example.org/a\nb", 'https://example.org/a"b', "https://example.org/<b>", "https://example.org/a\\b", "https://example.org/a\u007fb", "https://example.org/a\u0000b"]) {
@@ -67,7 +67,7 @@ describe("look — lot 2 (T12)", () => {
   });
   it("domaines du lot 2", () => {
     expect(FILL_STYLES).toEqual(["hachure", "cross-hatch"]);
-    expect(ARROWHEADS).toEqual(["none", "arrow", "triangle", "triangle_outline"]);
+    expect(ARROWHEADS).toEqual(["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline"]);
     expect(TEXT_ALIGNS).toEqual(["center", "right"]);
   });
 });
