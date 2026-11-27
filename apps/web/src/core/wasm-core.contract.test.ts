@@ -2168,6 +2168,64 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     expect(d.element(s.o)?.cell).toBeUndefined();
     d.free();
   });
+
+  it("personnalisation-3 copie : DuplicatePage relie l'objet copié au tableau copié", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Place11(d, s);
+    const p = first(d);
+    d.apply({ type: "DuplicatePage", page: p });
+    const p2 = d.pageIds().find((x) => x !== p) ?? "";
+    const ids = d.elementIds(p2);
+    const t2 = ids.find((id) => d.element(id)?.kind === "table") ?? "";
+    const o2 = ids.find((id) => d.element(id)?.kind === "shape") ?? "";
+    const [, r, c] = s.link(1, 1);
+    expect(t2).not.toBe("");
+    expect(d.element(o2)?.cell).toEqual([t2, r, c]);
+    d.free();
+  });
+
+  it("personnalisation-3 copie : objet passé sous son tableau, relié au tableau copié", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Place11(d, s);
+    const p = first(d);
+    d.apply({ type: "Restack", ids: [s.o], to: 0 });
+    expect(d.elementIds(p)).toEqual([s.o, s.t]);
+    d.apply({ type: "DuplicatePage", page: p });
+    const p2 = d.pageIds().find((x) => x !== p) ?? "";
+    const [o2, t2] = d.elementIds(p2);
+    expect(d.element(t2 ?? "")?.kind).toBe("table");
+    expect(d.element(o2 ?? "")?.cell?.[0]).toBe(t2);
+    d.free();
+  });
+
+  it("personnalisation-3 copie : PlaceInCell monte un objet posé avant le tableau", () => {
+    const d = f.blank();
+    const p = first(d);
+    const o = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 1000, y0: 1000, x1: 1100, y1: 1100, style, fill: null }).ids[0] ?? "";
+    const t = addTable(d, p, { x: 0, y: 0, cols: 3, rows: 3 });
+    const v = tableOf(d, t);
+    const l: CellLink = [t, v.rows[0]?.id ?? "", v.cols[0]?.id ?? ""];
+    d.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: l, sizes: [] });
+    expect(d.elementIds(p)).toEqual([t, o]);
+    expect(d.element(o)?.cell).toEqual(l);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([o, t]);
+    d.free();
+  });
+
+  it("personnalisation-3 tailles en double : une ligne citée deux fois est refusée, rien d'écrit", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const [, r0, c0] = s.link(0, 0);
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableLineSizes", id: s.t, cols: [[c0, 400], [c0, 240]], rows: [] }))).toBe(TABLE_MESSAGE));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableLineSizes", id: s.t, cols: [[c0, 1e39], [c0, 240]], rows: [] }))).toBe(TABLE_MESSAGE));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableLineSizes", id: s.t, cols: [], rows: [[r0, 100], [r0, 64]] }))).toBe(TABLE_MESSAGE));
+    expect(tableOf(d, s.t).cols.map((x) => x.width)).toEqual([240, 240, 240]);
+    expect(tableOf(d, s.t).rows.map((x) => x.height)).toEqual([64, 64, 64]);
+    d.free();
+  });
 });
 
 // C7b (R7, R16) : `spans` facultatif de SetText et SetTableCell. T12 branche le vrai module (`c7bFactories = factories`).

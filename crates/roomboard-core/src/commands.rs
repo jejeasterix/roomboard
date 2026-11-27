@@ -4750,6 +4750,52 @@ pub(crate) mod tests {
         }
     }
 
+    // T5 : un morceau de gomme reste dans la case du trait coupé.
+    #[test]
+    fn partial_erase_keeps_cell() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let s = commit(&mut d, &p, hline(200.0));
+        let t = d
+            .apply(Command::AddTable {
+                page: p.clone(),
+                x: 0.0,
+                y: 0.0,
+                cols: 1,
+                rows: 1,
+                col_width: 2000.0,
+                row_height: 400.0,
+                color: "#000000".into(),
+                size: 36.0,
+            })
+            .expect("t")
+            .ids[0]
+            .clone();
+        let v = d.element(&t).and_then(|v| v.table).expect("vue");
+        let l = [t.clone(), v.rows[0].id.clone(), v.cols[0].id.clone()];
+        d.apply(Command::PlaceInCell {
+            ids: vec![s.clone()],
+            matrix: crate::element::IDENTITY,
+            cell: Some(l.clone()),
+            sizes: vec![],
+        })
+        .expect("logé");
+        let c = d
+            .apply(Command::Erase {
+                page: p.clone(),
+                path: vec![300.0, 180.0, 300.0, 220.0],
+                radius: 8.0,
+                mode: EraseMode::Partial,
+            })
+            .expect("gomme");
+        assert_eq!(c.removed, vec![s]);
+        assert!(c.ids.len() >= 2);
+        assert!(c
+            .ids
+            .iter()
+            .all(|id| d.element(id).and_then(|v| v.cell) == Some(l.clone())));
+    }
+
     /// Correction de cadrage : un groupe partiel est étendu au groupe extérieur entier de chaque id touché.
     #[test]
     fn group_partial_selection_extends_to_whole_outer_group() {

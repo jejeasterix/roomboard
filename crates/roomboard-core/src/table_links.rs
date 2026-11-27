@@ -973,4 +973,122 @@ mod tests {
             "et le lien, dans la même étape"
         );
     }
+
+    // T5 : la copie d'une page relie l'objet copié au tableau copié (mêmes ids de ligne et de colonne).
+    #[test]
+    fn duplicate_page_keeps_cell_links() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1100.0, 1100.0);
+        place11(&mut d, &t, &o);
+        d.apply(Command::DuplicatePage { page: p.clone() })
+            .expect("dup");
+        let p2 = d
+            .page_ids()
+            .into_iter()
+            .find(|x| *x != p)
+            .expect("page 2");
+        let ids = d.element_ids(&p2);
+        let t2 = ids
+            .iter()
+            .find(|id| d.element(id).is_some_and(|v| v.kind == "table"))
+            .expect("t2")
+            .clone();
+        let o2 = ids
+            .iter()
+            .find(|id| d.element(id).is_some_and(|v| v.kind == "shape"))
+            .expect("o2")
+            .clone();
+        let l = d.element(&o2).and_then(|v| v.cell).expect("lien copié");
+        assert_eq!(l[0], t2);
+        assert_eq!(&l[1..], &link(&d, &t, 1, 1)[1..]);
+    }
+
+    // T5, patron écarté : un objet passé sous son tableau est recopié avant lui ; renuméroter au fil de la recopie
+    // perdrait le lien (id neuf du tableau pas encore connu).
+    #[test]
+    fn object_below_its_table_is_relinked() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1100.0, 1100.0);
+        let t = table3(&mut d, &p);
+        d.apply(Command::PlaceInCell {
+            ids: vec![o.clone()],
+            matrix: IDENTITY,
+            cell: Some(link(&d, &t, 0, 0)),
+            sizes: vec![],
+        })
+        .expect("logé");
+        d.apply(Command::Restack {
+            ids: vec![o.clone()],
+            to: 0,
+        })
+        .expect("dessous");
+        assert_eq!(d.element_ids(&p), vec![o.clone(), t.clone()]);
+        d.apply(Command::DuplicatePage { page: p.clone() })
+            .expect("dup");
+        let p2 = d
+            .page_ids()
+            .into_iter()
+            .find(|x| *x != p)
+            .expect("page 2");
+        let ids = d.element_ids(&p2);
+        let t2 = ids
+            .iter()
+            .find(|id| d.element(id).is_some_and(|v| v.kind == "table"))
+            .expect("t2")
+            .clone();
+        assert_eq!(
+            d.element(&ids[0])
+                .and_then(|v| v.cell)
+                .map(|l| l[0].clone()),
+            Some(t2)
+        );
+    }
+
+    // T5 : la mise en case monte l'objet posé avant le tableau juste au-dessus de lui, lien gardé ; une étape.
+    #[test]
+    fn place_in_cell_lifts_object_above_table() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1100.0, 1100.0);
+        let t = table3(&mut d, &p);
+        place11(&mut d, &t, &o);
+        let ids = d.element_ids(&p);
+        assert_eq!(ids, vec![t.clone(), o.clone()]);
+        assert_eq!(d.element(&o).expect("o").cell, Some(link(&d, &t, 1, 1)));
+        assert!(d.undo());
+        assert_eq!(d.element_ids(&p), vec![o, t]);
+    }
+
+    // Défaut T2a : une ligne citée deux fois était contrôlée sur sa dernière taille mais écrite avec la première
+    // différente ; la liste est refusée, rien d'écrit, aucune étape.
+    #[test]
+    fn set_table_line_sizes_refuses_repeated_line() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let v = view(&d, &t);
+        let (c0, r0) = (v.cols[0].id.clone(), v.rows[0].id.clone());
+        let ver = d.version();
+        let cases: [(Vec<(String, f64)>, Vec<(String, f64)>); 3] = [
+            (vec![(c0.clone(), 400.0), (c0.clone(), 240.0)], vec![]),
+            (vec![(c0.clone(), 1e39), (c0.clone(), 240.0)], vec![]),
+            (vec![], vec![(r0.clone(), 100.0), (r0.clone(), 64.0)]),
+        ];
+        for (cols, rows) in cases {
+            assert_eq!(
+                d.apply(Command::SetTableLineSizes {
+                    id: t.clone(),
+                    cols,
+                    rows,
+                }),
+                Err(CommandError::BadTable)
+            );
+        }
+        assert_eq!(view(&d, &t).cols[0].width, 240.0);
+        assert_eq!(view(&d, &t).rows[0].height, 64.0);
+        assert_eq!(d.version(), ver);
+    }
 }
