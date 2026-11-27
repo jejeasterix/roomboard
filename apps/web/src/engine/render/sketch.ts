@@ -35,10 +35,7 @@ export function seedOf(id: string): number {
   return h >>> 0;
 }
 
-/** Graine neuve d'un geste : entier 32 bits non signé. */
-export function newSeed(): number {
-  return (Math.random() * 2 ** 32) >>> 0;
-}
+export { newSeed } from "../../core/look";
 
 /** Rectangle arrondi (0, 0)-(w, h) en chemin SVG, pour `generator.path` (comme Excalidraw). */
 function roundedPath(w: number, h: number): string {

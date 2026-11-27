@@ -102,7 +102,7 @@ import {
   unknownKindMessage,
 } from "./api";
 import { isAssetId } from "./asset-store";
-import { toLook, type Look, type LookPatch } from "./look";
+import { newSeed, STROKE_STYLES, toLook, type Look, type LookPatch } from "./look";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
@@ -200,7 +200,6 @@ const MESSAGES = {
 
 // OG11 : copie de `style.rs` (`StylePatch::validate`, `writes_for`, `differs`), du pont (`small_int`, `look_of`) et de
 // `Look::sanitized` (`element.rs`) ; aucune règle propre à la fausse liaison.
-const STROKE_STYLES: readonly string[] = ["dashed", "dotted"]; // `look.ts` ne l'exporte pas : lecture littérale dans `toLook`
 type MutableLook = { -readonly [K in keyof Look]: Look[K] };
 const absent = (v: unknown): v is null | undefined => v === undefined || v === null;
 const badStyle = (): never => {
@@ -213,7 +212,6 @@ const smallInt = (v: unknown, max: number): number | undefined =>
 const opacityArg = (v: unknown): number | undefined =>
   absent(v) ? undefined : typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100 ? Math.round(v) || 0 : badStyle();
 /** Graine neuve (`random_seed` du cœur) : entier de 0..=u32::MAX. */
-const newSeed = (): number => (Math.random() * 2 ** 32) >>> 0;
 
 /** Aspect d'une création : bornes du pont (`look_of`), puis `Look::sanitized` ; undefined s'il est neutre. */
 function creationLook(l: Look | undefined): Look | undefined {

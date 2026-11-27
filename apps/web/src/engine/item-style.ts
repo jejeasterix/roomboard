@@ -1,5 +1,6 @@
 // OG11 (déc. 23) : style courant commun à tous les outils (currentItem* d'Excalidraw), gardé sur l'appareil.
-import type { Roughness, Roundness, StrokeKind } from "../core/look";
+import { STROKE_STYLES, type Roughness, type Roundness, type StrokeKind } from "../core/look";
+import { validColor } from "../core/rich-text";
 
 export interface ItemStyle {
   readonly color: string;
@@ -13,11 +14,11 @@ export interface ItemStyle {
 export const DEFAULT_ITEM_STYLE: ItemStyle = Object.freeze({
   color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100,
 });
-const KINDS: readonly string[] = ["solid", "dashed", "dotted"];
+const KINDS: readonly string[] = ["solid", ...STROKE_STYLES];
 const ok: { readonly [K in keyof ItemStyle]: (v: unknown) => boolean } = {
-  color: (v) => typeof v === "string" && v !== "",
+  color: (v) => typeof v === "string" && validColor(v),
   width: (v) => typeof v === "number" && Number.isFinite(v) && v > 0,
-  background: (v) => v === null || (typeof v === "string" && v !== ""),
+  background: (v) => v === null || (typeof v === "string" && validColor(v)),
   strokeStyle: (v) => typeof v === "string" && KINDS.includes(v),
   roughness: (v) => v === 0 || v === 1 || v === 2,
   roundness: (v) => v === "sharp" || v === "round",
@@ -31,8 +32,9 @@ export function parseItemStyle(raw: string | null): ItemStyle | null {
   try { v = JSON.parse(raw); } catch { return null; }
   if (typeof v !== "object" || v === null) return null;
   const r = v as Record<string, unknown>;
-  if (!KEYS.every((k) => ok[k](r[k]))) return null;
-  return Object.freeze(Object.fromEntries(KEYS.map((k) => [k, r[k]]))) as unknown as ItemStyle;
+  // Champ absent : son défaut (le lot 2 ajoute des champs sans perdre le style gardé) ; champ invalide : illisible (déc. 23).
+  if (!KEYS.every((k) => !(k in r) || ok[k](r[k]))) return null;
+  return Object.freeze(Object.fromEntries(KEYS.map((k) => [k, k in r ? r[k] : DEFAULT_ITEM_STYLE[k]]))) as unknown as ItemStyle;
 }
 /** Champs invalides ignorés. */
 export function mergeItemStyle(s: ItemStyle, patch: Partial<ItemStyle>): ItemStyle {
