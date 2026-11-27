@@ -164,3 +164,14 @@ export function tabsWidth(area: Box, startX: number, end: number, tools: Point |
   const right = tools !== null && tools.y === EDGE && tools.x > startX ? tools.x - GAP : area.w - EDGE - end - (end > 0 ? GAP : 0);
   return Math.max(TABS_MIN, Math.floor(right - startX - (status > 0 ? status + GAP : 0)));
 }
+
+/** T22 : abscisse (relative à l'îlot) de la rangée contextuelle, repoussée à droite des obstacles (barres latérales) qui
+ *  la recouvrent verticalement ; `obstacles` dans le même repère que `left` et `row.top`. */
+export function beyondObstacles(left: number, row: { readonly top: number; readonly height: number }, obstacles: readonly Rect[], gap: number): number {
+  let x = left;
+  for (const o of obstacles) {
+    const overlapsRow = o.y < row.top + row.height && o.y + o.h > row.top;
+    if (overlapsRow && o.x + o.w > x) x = Math.max(x, o.x + o.w + gap);
+  }
+  return x;
+}

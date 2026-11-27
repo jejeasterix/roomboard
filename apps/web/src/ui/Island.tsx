@@ -4,7 +4,7 @@ import type { ButtonSize, Toolbar as Bar } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import {
   BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, sideCorners, tabsWidth,
-  type Anchor, type Box, type Corners, type Lane, type Point,
+  beyondObstacles, type Anchor, type Box, type Corners, type Lane, type Point, type Rect,
 } from "./island-place";
 import { startPointerGesture } from "./pointer-gesture";
 import { createTip, placeTip } from "./tooltip";
@@ -190,8 +190,15 @@ export function Island(props: IslandProps): JSX.Element {
     const r = ctx.getBoundingClientRect();
     const area = props.area();
     const t = placeTip({ left: p.x, top: p.y, right: p.x + me.width, bottom: p.y + me.height }, { width: r.width, height: r.height }, { width: area.w, height: area.h }, GAP);
-    ctx.style.left = `${t.left - p.x}px`;
-    ctx.style.top = `${t.top - p.y}px`;
+    const top = t.top - p.y;
+    const obstacles: Rect[] = [];
+    for (const o of el.parentElement?.querySelectorAll<HTMLElement>('.rb-island[data-anchor^="side-"]') ?? []) {
+      if (o === el) continue;
+      const b = o.getBoundingClientRect();
+      if (b.width > 0 && b.height > 0) obstacles.push({ x: b.left - me.left, y: b.top - me.top, w: b.width, h: b.height });
+    }
+    ctx.style.left = `${beyondObstacles(t.left - p.x, { top, height: r.height }, obstacles, GAP)}px`;
+    ctx.style.top = `${top}px`;
   };
 
   onMount(() => {
@@ -202,8 +209,16 @@ export function Island(props: IslandProps): JSX.Element {
       frame = requestAnimationFrame(() => {
         measure();
         placeContext();
+        // T22 : la rangée contextuelle suit aussi les barres latérales (dépliées, repliées, déplacées).
+        for (const o of el?.parentElement?.querySelectorAll<HTMLElement>('.rb-island[data-anchor^="side-"]') ?? []) {
+          if (o !== el && !watched.has(o)) {
+            watched.add(o);
+            ro?.observe(o);
+          }
+        }
       });
     };
+    const watched = new WeakSet<Element>();
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver === "function" && el !== undefined) {
       ro = new ResizeObserver(later);
@@ -211,6 +226,7 @@ export function Island(props: IslandProps): JSX.Element {
       const ctx = el.querySelector("[data-island-context]");
       if (ctx !== null) ro.observe(ctx);
     }
+    later();
     onCleanup(() => {
       cancelAnimationFrame(frame);
       ro?.disconnect();
