@@ -3,7 +3,7 @@ import type { Change, ElementView, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
-import { fitWidth, worldToScreen, type Camera } from "./camera";
+import { fitFor, fitWidth, worldToScreen, type Camera } from "./camera";
 import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
@@ -1337,6 +1337,34 @@ describe("moteur — pot (C6a)", () => {
     const fit = vi.spyOn(engine, "fitPage");
     expect(engine.setPageMode("infinite")).toBe(true);
     expect(fit).toHaveBeenCalledTimes(1);
+  });
+
+  it("setPageMode au mode déjà actif : pas de recadrage (T18)", () => {
+    const { engine } = setup();
+    engine.resize(1000, 800, 1);
+    const fit = vi.spyOn(engine, "fitPage");
+    expect(engine.setPageMode("landscape")).toBe(true);
+    expect(fit).not.toHaveBeenCalled();
+    expect(engine.setPageMode("infinite")).toBe(true);
+    expect(fit).toHaveBeenCalledTimes(1);
+    expect(engine.setPageMode("infinite")).toBe(true);
+    expect(fit).toHaveBeenCalledTimes(1);
+  });
+
+  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : cadre entier (décision 10, T18)", () => {
+    const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
+    const mk = (doc: typeof pdf) => createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) } });
+    const view = pdf.page(pdf.pageIds()[0]!)!;
+    expect(view.height).toBeLessThan(view.width);
+    expect(view.backdrop?.rect?.y1).toBeGreaterThan(view.width);
+    const e = mk(pdf);
+    e.resize(1000, 800, 1);
+    expect(e.camera()).toEqual(fitWidth(1000, 800));
+    const { engine } = setup();
+    engine.resize(1000, 800, 1);
+    engine.setPageMode("portrait");
+    const portrait = fitFor("portrait", 1000, 800, { x0: 0, y0: 0, x1: 1920, y1: (1920 * 16) / 9 }, null, 16);
+    expect(engine.camera().zoom).toBeCloseTo(portrait.zoom, 6);
   });
 
   it("setFillColor : défaut rouge, couleur valide gardée, invalide ignorée, null = « Aucune » ; le stylo ne change pas (D16)", () => {
