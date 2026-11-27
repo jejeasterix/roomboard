@@ -233,6 +233,8 @@ async function start(): Promise<void> {
     openLink: (url) => prepared.shell.openLink?.(url),
     // OG11 (déc. 23) : style courant gardé sur l'appareil ; `device` (plus bas) n'est lu qu'à la création d'une session.
     ...createSharedItemStyle(() => device.itemStyle(), (s) => void device.setItemStyle(s)),
+    // OG25 (déc. 25) : gomme automatique à la paume, réglage de l'appareil lu à chaque pose (`device`, plus bas).
+    palmEraser: () => device.palmEraser(),
   };
 
   // C16 (O24) : capacité `officeConverter` lue de la coque avant le profil (convertisseur cherché une fois au lancement).
@@ -518,6 +520,8 @@ async function start(): Promise<void> {
           transparent: support?.transparent ?? true,
           // design-l4 (L4-13, L4-16) : cadre de l'appareil envoyé à `annotate` ; avis d'envoi en bandeau, plus une boîte.
           frame: () => device.frame(),
+          // OG25 (déc. 30) : gomme automatique à la paume de l'appareil, envoyée à `annotate` avec le document.
+          palmEraser: () => device.palmEraser(),
           sent: (page) => showToast(sentToBoardToast(page)),
         });
   annotation = ctl;

@@ -232,6 +232,9 @@ export interface Engine {
   releaseKeys(): void;
   /** Barre d'espace tenue (D17) : le routeur la lit au début d'un geste. */
   panHeld(): boolean;
+  /** OG25 (déc. 23) : faux quand une retouche d'image (rognage, pipette) ou une orbite prend les gestes ; le routeur le
+   *  lit avant de basculer en gomme automatique. */
+  gesturesToTools(): boolean;
   /** Montre une page (caméra par page, D17) ; false si elle est inconnue. Les gestes en cours sont abandonnés. */
   showPage(id: string): boolean;
   /** Ajoute une page après la page montrée et la montre (D16, CL4-9) ; false si le cœur refuse. */
@@ -978,6 +981,10 @@ export function createEngine(deps: EngineDeps): Engine {
       emitIfSelectionChanged(() => g.close(pointerId, how));
       loop.start(); // une image de plus : couche vive effacée, aperçu retiré
     },
+    resize(pointerId, radiusPx) {
+      owner.get(pointerId)?.resize?.(pointerId, radiusPx);
+      loop.start(); // l'aperçu suit le rayon
+    },
   };
 
   /** Champs du style courant en commande SetStyle (noms du cœur ; neutre = champ retiré). */
@@ -1202,6 +1209,7 @@ export function createEngine(deps: EngineDeps): Engine {
       altHeld = false;
     },
     panHeld: () => spaceHeld,
+    gesturesToTools: () => !(imageEdit !== null && imageEdit.mode() !== "idle") && orbit === null,
     showPage(id) {
       if (id === pageId) return true;
       if (!doc.pageIds().includes(id)) return false;

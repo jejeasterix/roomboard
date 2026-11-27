@@ -34,6 +34,8 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("page-prev", "Pages", "Page précédente", "Pg préc"),
   s("page-next", "Pages", "Page suivante", "Pg suiv"),
   s("page-number", "Pages", "Barre latérale, onglet Pages", "Ctrl+Maj+P"),
+  // OG25 (déc. 27) : coupe ou rallume la gomme automatique à la paume (réglage de l'appareil), avec un avis.
+  s("palm-eraser", "Outils", "Gomme automatique à la paume", "Ctrl+Maj+H"),
 ]);
 const MAC: ReadonlyArray<readonly [string, string]> = [["Ctrl+", "⌘"], ["Maj+", "⇧"], ["Alt+", "⌥"]];
 export function shortcutText(id: string, mac: boolean): string | null {
