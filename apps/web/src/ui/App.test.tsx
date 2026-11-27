@@ -362,6 +362,23 @@ describe("App (T95)", () => {
     await vi.waitFor(() => expect(dialog()).not.toBeNull());
   });
 
+  it("OG25 : Ctrl+Maj+H coupe puis rallume la gomme automatique, avec un avis ; le bouton du panneau Réglages suit", async () => {
+    const device = createDeviceSettings(null);
+    const { container } = renderApp({ device });
+    const chord = (): void => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "H", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    };
+    chord();
+    expect(device.palmEraser()).toBe(false);
+    await vi.waitFor(() => expect(container.querySelector(".rb-toast")?.textContent).toBe("Gomme automatique à la paume : coupée"));
+    click(container.querySelector('button[data-item="settings"]'));
+    expect(container.querySelector('button[data-reglage="gomme-paume"]')?.textContent).toBe("Gomme automatique à la paume : coupée");
+    chord();
+    expect(device.palmEraser()).toBe(true);
+    await vi.waitFor(() => expect(container.querySelector(".rb-toast")?.textContent).toBe("Gomme automatique à la paume : active"));
+    expect(container.querySelector('button[data-reglage="gomme-paume"]')?.textContent).toBe("Gomme automatique à la paume : active");
+  });
+
   it("C4 : le bouton Bibliothèque ouvre le panneau, calé en popover", async () => {
     const library: ResourceLibrary = createResourceLibrary({
       files: [createMemoryLibraryFiles("mine")],
