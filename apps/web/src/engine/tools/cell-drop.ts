@@ -3,7 +3,7 @@
  * n'en sait pas plus. Au relâché d'un déplacement, pointeur sur une case d'un tableau absent de la sélection, sélection
  * sans tableau, Alt relâchée, case non ombrée et hors zone fusionnée : `PlaceInCell` (mode agrandir : la colonne et la
  * ligne prennent la taille exigée par l'objet, l'objet est posé au coin de la boîte intérieure). Objet lié lâché hors de
- * tout tableau : `PlaceInCell` sans case, à la place du relâché. Sinon `null` : la Sélection écrit sa `Transform`.
+ * tout tableau (centre hors de sa case ou zone ; dedans, il garde son lien) : `PlaceInCell` sans case, à la place du relâché. Sinon `null` : la Sélection écrit sa `Transform`.
  * Tableaux lus une fois par version du document (D28), jamais par image.
  */
 import type { Bounds, CellLink, Command, ElementView, LineSize, Matrix, TableElement } from "../../core/api";
@@ -164,6 +164,20 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     return { type: "PlaceInCell", ids: [...selection], matrix: translateMatrix(tx - box.x0, ty - box.y0), cell: link, sizes };
   };
 
+  /** Le centre de la boîte déplacée reste dans la case (ou la zone fusionnée) où l'objet est logé : le lien est gardé. */
+  const stays = (selection: readonly string[], matrix: Matrix): boolean => {
+    const link = views(selection).find((v) => v.cell !== undefined)?.cell;
+    const tv = link === undefined ? null : ctx.doc.element(link[0]);
+    const box = ctx.doc.bounds(selection);
+    if (link === undefined || tv?.kind !== "table" || box === null) return false;
+    const row = tv.table.rows.findIndex((x) => x.id === link[1]);
+    const col = tv.table.cols.findIndex((x) => x.id === link[2]);
+    if (row < 0 || col < 0) return false;
+    const [cx, cy] = applyMatrix(matrix, (box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2);
+    const z = transformBounds(tv.transform, cellRect(tv.table, { row, col }));
+    return cx >= z.x0 && cx <= z.x1 && cy >= z.y0 && cy <= z.y1;
+  };
+
   return {
     expand(ids, page) {
       const tables = new Set(ids.filter((id) => view(id)?.kind === "table"));
@@ -183,6 +197,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
       if (sel.some((v) => v.kind === "table")) return null;
       // Hors de tout tableau, ou sur une case refusée (ombrée, fusionnée) : l'objet logé sort, la case quittée est réduite.
       const linked = sel.some((v) => v.cell !== undefined);
+      if (linked && stays(selection, matrix)) return null;
       return linked ? { type: "PlaceInCell", ids: [...selection], matrix, cell: null, sizes: shrinkLeft(selection) } : null;
     },
     place(selection, out) {

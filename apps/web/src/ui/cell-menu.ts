@@ -94,6 +94,8 @@ export function createCellMenu(host: HTMLElement): CellMenuHost {
   // L'appui dans le menu ne remonte pas à la scène.
   root.addEventListener("pointerdown", (e) => e.stopPropagation());
   root.addEventListener("keydown", (e: KeyboardEvent) => {
+    // Alt passe au document (Alt+F bascule le mode) : le libellé du menu serait périmé, il se ferme.
+    if (e.altKey) close();
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     e.stopPropagation();
     if (e.key === "Escape") {

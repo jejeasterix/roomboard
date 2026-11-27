@@ -113,4 +113,13 @@ describe("menu de case (cell-menu, personnalisation-3 T7)", () => {
     expect(placeCellMenu(50, 290, menu, host)).toEqual({ left: 50, top: 190 });
     expect(placeCellMenu(-5, 10, { width: 160, height: 500 }, host)).toEqual({ left: 0, top: 0 });
   });
+
+  it("cell-menu : une touche Alt passée au document ferme le menu (libellé périmé)", () => {
+    const menu = createCellMenu(document.body);
+    menu.open(0, 0, [{ id: "fit", label: "Rétrécir", run: () => undefined }]);
+    const root = [...document.body.querySelectorAll<HTMLElement>(".rb-cell-menu")].at(-1);
+    expect(root?.hidden).toBe(false);
+    root?.querySelector("button")?.dispatchEvent(new KeyboardEvent("keydown", { key: "f", altKey: true, bubbles: true }));
+    expect(root?.hidden).toBe(true);
+  });
 });

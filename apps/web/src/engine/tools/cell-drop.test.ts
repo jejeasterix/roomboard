@@ -129,6 +129,20 @@ describe("glisser vers une case (cell-drop, DA3)", () => {
     expect(s.t().cols.map((c) => c.width)).toEqual([240, 240, 240]);
   });
 
+  it("D11 : objet logé en A1 puis A1:B1 fusionnée, glissé dans sa zone : Transform, le lien et les tailles restent", () => {
+    const s = setup();
+    s.move([1200, 1150], [120, 32]);
+    const r = s.t().rows.map((x) => x.id);
+    const c = s.t().cols.map((x) => x.id);
+    s.doc.apply({ type: "MergeTableCells", id: s.table, from: { row: r[0] ?? "", col: c[0] ?? "" }, to: { row: r[0] ?? "", col: c[1] ?? "" } });
+    const link = s.doc.element(s.image)?.cell;
+    const widths = s.t().cols.map((x) => x.width);
+    s.move([200, 150], [250, 150]);
+    expect(s.runs.at(-1)?.type).toBe("Transform");
+    expect(s.doc.element(s.image)?.cell).toEqual(link);
+    expect(s.t().cols.map((x) => x.width)).toEqual(widths);
+  });
+
   it("D11 : une colonne élargie à la main ne bouge pas", () => {
     const s = setup();
     s.move([1200, 1150], [360, 96]);

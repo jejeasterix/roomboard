@@ -858,7 +858,7 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       const ck = cellKey(e);
       // personnalisation-3 (H12) : la touche passe s'il n'y a rien à loger ou à sortir.
-      if ((ck === "place" || ck === "unplace") && tool === "select" && selectTool.placeInCell?.(ck === "unplace") === true) return true;
+      if ((ck === "place" || ck === "unplace") && tool === "select" && (imageEdit === null || imageEdit.mode() === "idle") && selectTool.placeInCell?.(ck === "unplace") === true) return true;
       // personnalisation-3 (T7) : Alt+F en outil Tableau bascule « rétrécir » ; sans cellule active la touche passe.
       if (ck === "fit" && tool === "table" && tableTool.cell() !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
         tableTool.act("fit-toggle");
