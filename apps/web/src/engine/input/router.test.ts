@@ -582,4 +582,60 @@ describe("gomme automatique à la surface de contact (OG25)", () => {
     expect(rings).toEqual([]);
     expect(router.roleOf(2)).toBeNull();
   });
+
+  it("OG25 : second doigt tardif (ignoré) qui s'élargit dans sa fenêtre : gomme, trait abandonné (règle 2, revue T4)", () => {
+    const { router, log, rings } = palmSetup();
+    router.handle(touch("start", 1, 100, 100, 0, 30));
+    router.handle(touch("start", 2, 130, 100, 170, 30));
+    expect(router.roleOf(2)).toBeNull();
+    router.handle(touch("move", 2, 130, 100, 220, 120));
+    expect(log).toEqual(["begin 1 pen 1", "close 1 abort", "begin -1 eraser 1", "resize -1 60"]);
+    expect(rings).toEqual(["130,100,60"]);
+    expect([router.roleOf(1), router.roleOf(2)]).toEqual(["erase", "erase"]);
+  });
+
+  it("OG25 : trois doigts serrés posés à 0, 160 et 200 ms, le second ignoré : gomme (déc. 9, règle 3, revue T4)", () => {
+    const { router, log, rings } = palmSetup();
+    router.handle(touch("start", 1, 100, 100, 0, 24));
+    router.handle(touch("start", 2, 130, 100, 160, 24));
+    router.handle(touch("start", 3, 160, 100, 200, 24));
+    expect(log).toEqual(["begin 1 pen 1", "close 1 abort", "begin -1 eraser 1", "resize -1 42"]);
+    expect(rings).toEqual(["130,100,42"]);
+    expect([router.roleOf(1), router.roleOf(2), router.roleOf(3)]).toEqual(["erase", "erase", "erase"]);
+  });
+
+  it("OG25 : contact ignoré au-delà de sa fenêtre : il le reste et n'empêche pas la bascule d'une paume posée ensuite (déc. 12)", () => {
+    const { router, log } = palmSetup();
+    router.handle(touch("start", 1, 100, 100, 0));
+    router.handle(touch("start", 2, 130, 100, 160));
+    router.handle(touch("end", 1, 0, 0, 0));
+    router.handle(touch("start", 3, 400, 400, 1000, 140));
+    router.handle(touch("move", 2, 140, 100, 1010));
+    expect(log).toEqual(["begin 1 pen 1", "close 1 end", "begin -1 eraser 1", "resize -1 70"]);
+    expect(router.roleOf(2)).toBeNull();
+    expect(router.roleOf(3)).toBe("erase");
+  });
+
+  it("OG25 : membre d'un pincement encore dans sa fenêtre qui s'élargit : gomme, la vue ne bouge pas (déc. 10, revue T4)", () => {
+    const { router, log, rings } = palmSetup();
+    router.handle(touch("start", 1, 100, 100, 0, 24));
+    router.handle(touch("start", 2, 200, 100, 20, 24));
+    router.handle(touch("move", 2, 200, 100, 40, 120));
+    expect(log).toEqual(["begin 1 pen 1", "close 1 abort", "begin -1 eraser 1", "resize -1 86"]);
+    expect(rings).toEqual(["174,100,86"]);
+    expect([router.roleOf(1), router.roleOf(2)]).toEqual(["erase", "erase"]);
+  });
+
+  it("OG25 : outil Main ou espace tenu, contact qui grandit : la vue suit chaque déplacement, aucune gomme (déc. 14, revue T4)", () => {
+    const cases: NonNullable<Parameters<typeof palmSetup>[0]>[] = [{ tool: "hand" }, { held: true }];
+    for (const c of cases) {
+      const { router, log, rings } = palmSetup(c);
+      router.handle(touch("start", 5, 100, 100, 0, 30));
+      router.handle(touch("move", 5, 110, 100, 10, 140));
+      router.handle(touch("move", 5, 120, 105, 20, 140));
+      router.handle(touch("end", 5, 0, 0, 0));
+      expect(log, JSON.stringify(c)).toEqual(["pan 10 0", "pan 10 5"]);
+      expect(rings, JSON.stringify(c)).toEqual([]);
+    }
+  });
 });
