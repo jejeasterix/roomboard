@@ -33,6 +33,7 @@ fn dashed() -> Look {
         seed: Some(7),
         roundness: Some("round".into()),
         opacity: Some(50),
+        ..Look::default()
     }
 }
 
@@ -304,6 +305,7 @@ fn erase_partial_keeps_look() {
         seed: Some(4_000_000_000),
         roundness: None,
         opacity: Some(40),
+        ..Look::default()
     };
     add_stroke(&mut d, look.clone());
     let c = d
@@ -474,6 +476,7 @@ fn set_style_noop_no_step() {
         roughness: Some(1),
         roundness: Some(Some("round".into())),
         opacity: Some(50.0),
+        ..Default::default()
     };
     let c = set_style(&mut d, &[&a], same).expect("style");
     assert!(c.ids.is_empty());
@@ -778,6 +781,7 @@ fn out_of_domain_look_at_creation_writes_no_key() {
         seed: Some(5),
         roundness: Some("sharp".into()),
         opacity: Some(150),
+        ..Look::default()
     };
     let mut d = blank();
     let r = add_rect(&mut d, bad.clone());
@@ -901,4 +905,365 @@ fn set_style_color_keeps_text_span_colors() {
     .expect("couleur");
     assert_eq!(d.element(&t).unwrap().style.unwrap().color, "#1d4ed8");
     assert_eq!(d.element(&t).unwrap().text.unwrap().spans, before);
+}
+
+// --- Lot 2 (T12) : `fillStyle`, `startArrowhead`, `endArrowhead`, `textAlign`, `link` ---
+
+const LOOK2_KEYS: [&str; 5] = [
+    "fillStyle",
+    "startArrowhead",
+    "endArrowhead",
+    "textAlign",
+    "link",
+];
+
+fn add_kind(d: &mut Document, shape: ShapeKind, look: Look) -> String {
+    let page = first_page(d);
+    d.apply(Command::AddShape {
+        page,
+        shape,
+        x0: 0.0,
+        y0: 0.0,
+        x1: 50.0,
+        y1: 20.0,
+        style: pen(),
+        fill: None,
+        look,
+    })
+    .expect("forme")
+    .ids[0]
+        .clone()
+}
+
+fn look_of(d: &Document, id: &str) -> Look {
+    d.element(id).expect("vue").look.unwrap_or_default()
+}
+
+fn heads(start: &str, end: &str) -> StylePatch {
+    StylePatch {
+        start_arrowhead: Some(Some(start.into())),
+        end_arrowhead: Some(Some(end.into())),
+        ..Default::default()
+    }
+}
+
+/// Discrimine le patron écarté (écrire le défaut `endArrowhead: "arrow"` sur chaque flèche) : le défaut d'une pointe
+/// n'est jamais écrit, ni à la création ni par `SetStyle`, et un retour au défaut retire la clé au lieu de l'écrire.
+#[test]
+fn arrowhead_default_not_written() {
+    let mut d = blank();
+    let defaults = Look {
+        start_arrowhead: Some("none".into()),
+        end_arrowhead: Some("arrow".into()),
+        ..Look::default()
+    };
+    let a = add_kind(&mut d, ShapeKind::Arrow, defaults);
+    assert_eq!(d.element(&a).expect("vue").look, None);
+    for k in ["startArrowhead", "endArrowhead"] {
+        assert_eq!(raw_field(&d, &a, k), None, "{k} écrit à la création");
+    }
+    let (v, bytes) = (d.version(), d.encode_v1());
+    let c = set_style(&mut d, &[&a], heads("none", "arrow")).expect("défauts");
+    assert!(c.ids.is_empty());
+    assert_eq!(d.version(), v);
+    assert_eq!(d.encode_v1(), bytes, "le défaut a changé les octets");
+    set_style(&mut d, &[&a], heads("triangle", "none")).expect("pointes");
+    let l = look_of(&d, &a);
+    assert_eq!(
+        (l.start_arrowhead.as_deref(), l.end_arrowhead.as_deref()),
+        (Some("triangle"), Some("none"))
+    );
+    assert_eq!(raw_field(&d, &a, "endArrowhead").as_deref(), Some("none"));
+    let c = set_style(&mut d, &[&a], heads("none", "arrow")).expect("retour au défaut");
+    assert_eq!(c.ids, vec![a.clone()]);
+    for k in ["startArrowhead", "endArrowhead"] {
+        assert_eq!(raw_field(&d, &a, k), None, "{k} écrit au retour au défaut");
+    }
+    assert_eq!(d.element(&a).expect("vue").look, None);
+    // Un défaut écrit par un autre client se lit neutre et reste tel quel.
+    let d2 = with_raw_field(&d, &a, "endArrowhead", In::from("arrow"));
+    assert_eq!(d2.element(&a).expect("vue").look, None);
+    assert_eq!(raw_field(&d2, &a, "endArrowhead").as_deref(), Some("arrow"));
+}
+
+/// Un lien hors de `http://`, `https://`, `mailto:` ou de plus de 2 048 caractères est refusé (`BadStyle`, rien
+/// d'écrit) ; à la création il n'écrit aucune clé ; lu dans un fichier, il est neutre et gardé tel quel.
+#[test]
+fn bad_link_refused() {
+    let mut d = blank();
+    let a = add_rect(&mut d, Look::default());
+    let v = d.version();
+    let too_long = format!("https://{}", "h".repeat(2049 - 8));
+    for bad in [
+        "javascript:alert(1)",
+        "JavaScript:alert(1)",
+        " https://example.org",
+        "ftp://x",
+        "data:text/html,x",
+        "https:x",
+        "",
+        too_long.as_str(),
+    ] {
+        let r = set_style(
+            &mut d,
+            &[&a],
+            StylePatch {
+                link: Some(Some(bad.to_string())),
+                ..Default::default()
+            },
+        );
+        assert!(matches!(r, Err(CommandError::BadStyle)), "{bad:?} : {r:?}");
+    }
+    assert_eq!(d.version(), v);
+    assert_eq!(raw_field(&d, &a, "link"), None);
+    let longest = format!("https://{}", "é".repeat(2048 - 8));
+    for good in [
+        "http://example.org",
+        "mailto:a@example.org",
+        longest.as_str(),
+        "https://example.org",
+    ] {
+        set_style(
+            &mut d,
+            &[&a],
+            StylePatch {
+                link: Some(Some(good.to_string())),
+                ..Default::default()
+            },
+        )
+        .expect(good);
+        assert_eq!(look_of(&d, &a).link.as_deref(), Some(good));
+    }
+    let b = add_rect(
+        &mut d,
+        Look {
+            link: Some("javascript:alert(1)".into()),
+            ..Look::default()
+        },
+    );
+    assert_eq!(raw_field(&d, &b, "link"), None);
+    let d2 = with_raw_field(&d, &b, "link", In::from("javascript:alert(1)"));
+    assert_eq!(d2.element(&b).expect("vue").look, None);
+    assert_eq!(
+        raw_field(&d2, &b, "link").as_deref(),
+        Some("javascript:alert(1)")
+    );
+    set_style(
+        &mut d,
+        &[&a],
+        StylePatch {
+            link: Some(None),
+            ..Default::default()
+        },
+    )
+    .expect("retrait");
+    assert_eq!(raw_field(&d, &a, "link"), None);
+}
+
+#[test]
+fn text_align_on_text_only() {
+    let mut d = blank();
+    let r = add_rect(&mut d, Look::default());
+    let s = add_stroke(&mut d, Look::default());
+    let t = set_text(&mut d, None, "Bonjour", Look::default())[0].clone();
+    let center = |v: &str| StylePatch {
+        text_align: Some(Some(v.into())),
+        ..Default::default()
+    };
+    let v = d.version();
+    let c = set_style(&mut d, &[&r, &s], center("center")).expect("inapplicable");
+    assert!(c.ids.is_empty());
+    assert_eq!(d.version(), v);
+    let c = set_style(&mut d, &[&r, &s, &t], center("right")).expect("texte");
+    assert_eq!(c.ids, vec![t.clone()]);
+    assert_eq!(look_of(&d, &t).text_align.as_deref(), Some("right"));
+    for id in [&r, &s] {
+        assert_eq!(raw_field(&d, id, "textAlign"), None);
+    }
+}
+
+#[test]
+fn fill_style_on_rect_and_ellipse_only() {
+    let mut d = blank();
+    let r = add_rect(&mut d, Look::default());
+    let e = add_kind(&mut d, ShapeKind::Ellipse, Look::default());
+    let a = add_kind(&mut d, ShapeKind::Arrow, Look::default());
+    let s = add_stroke(&mut d, Look::default());
+    let hachure = |v: Option<&str>| StylePatch {
+        fill_style: Some(v.map(str::to_string)),
+        ..Default::default()
+    };
+    let c = set_style(&mut d, &[&r, &e, &a, &s], hachure(Some("cross-hatch"))).expect("hachures");
+    assert_eq!(c.ids, vec![r.clone(), e.clone()]);
+    assert_eq!(look_of(&d, &e).fill_style.as_deref(), Some("cross-hatch"));
+    for id in [&a, &s] {
+        assert_eq!(raw_field(&d, id, "fillStyle"), None);
+    }
+    set_style(&mut d, &[&r], hachure(None)).expect("retrait");
+    assert_eq!(raw_field(&d, &r, "fillStyle"), None);
+    assert_eq!(
+        raw_field(&d, &e, "fillStyle").as_deref(),
+        Some("cross-hatch")
+    );
+}
+
+#[test]
+fn arrowheads_on_arrow_only() {
+    let mut d = blank();
+    let r = add_rect(&mut d, Look::default());
+    let l = add_kind(&mut d, ShapeKind::Line, Look::default());
+    let a = add_kind(&mut d, ShapeKind::Arrow, Look::default());
+    let c = set_style(&mut d, &[&r, &l, &a], heads("arrow", "triangle_outline")).expect("pointes");
+    assert_eq!(c.ids, vec![a.clone()]);
+    for id in [&r, &l] {
+        for k in ["startArrowhead", "endArrowhead"] {
+            assert_eq!(raw_field(&d, id, k), None, "{k} hors d'une flèche");
+        }
+    }
+    let la = look_of(&d, &a);
+    assert_eq!(
+        (la.start_arrowhead.as_deref(), la.end_arrowhead.as_deref()),
+        (Some("arrow"), Some("triangle_outline"))
+    );
+}
+
+/// Le lien vaut pour tout élément dont l'aspect est lu (forme, trait, texte, image).
+#[test]
+fn link_on_every_look_kind() {
+    let mut d = blank();
+    let r = add_rect(&mut d, Look::default());
+    let s = add_stroke(&mut d, Look::default());
+    let t = set_text(&mut d, None, "Bonjour", Look::default())[0].clone();
+    let mut d = with_raw_image(&d, "img-1", vec![]);
+    let i = "img-1".to_string();
+    let c = set_style(
+        &mut d,
+        &[&r, &s, &t, &i],
+        StylePatch {
+            link: Some(Some("https://example.org".into())),
+            ..Default::default()
+        },
+    )
+    .expect("lien");
+    assert_eq!(c.ids, vec![r.clone(), s.clone(), t.clone(), i.clone()]);
+    for id in [&r, &s, &t, &i] {
+        assert_eq!(look_of(&d, id).link.as_deref(), Some("https://example.org"));
+    }
+}
+
+#[test]
+fn lot2_out_of_domain_refused() {
+    let mut d = blank();
+    let a = add_kind(&mut d, ShapeKind::Arrow, Look::default());
+    let v = d.version();
+    let s = |v: &str| Some(Some(v.to_string()));
+    for patch in [
+        StylePatch {
+            fill_style: s("solid"),
+            ..Default::default()
+        },
+        StylePatch {
+            fill_style: s("zigzag"),
+            ..Default::default()
+        },
+        StylePatch {
+            start_arrowhead: s("circle"),
+            ..Default::default()
+        },
+        StylePatch {
+            end_arrowhead: s("Arrow"),
+            ..Default::default()
+        },
+        StylePatch {
+            text_align: s("left"),
+            ..Default::default()
+        },
+        StylePatch {
+            text_align: s("justify"),
+            ..Default::default()
+        },
+        StylePatch {
+            start_arrowhead: s("triangle"),
+            link: s("javascript:alert(1)"),
+            ..Default::default()
+        },
+    ] {
+        let r = set_style(&mut d, &[&a], patch.clone());
+        assert!(matches!(r, Err(CommandError::BadStyle)), "{patch:?}");
+    }
+    assert_eq!(d.version(), v);
+    assert_eq!(d.element(&a).expect("vue").look, None);
+}
+
+/// Un aspect du lot 2 neutre ou hors domaine n'écrit aucune clé à la création (DA-5) ; une valeur illisible d'un fichier
+/// est lue neutre et gardée telle quelle (G12).
+#[test]
+fn lot2_neutral_writes_no_key_and_unreadable_is_kept() {
+    let odd = Look {
+        fill_style: Some("solid".into()),
+        start_arrowhead: Some("none".into()),
+        end_arrowhead: Some("arrow".into()),
+        text_align: Some("left".into()),
+        link: Some("ftp://x".into()),
+        ..Look::default()
+    };
+    for look in [Look::default(), odd] {
+        assert!(look.is_neutral(), "{look:?}");
+        let mut d = blank();
+        let ids = [
+            add_rect(&mut d, look.clone()),
+            add_kind(&mut d, ShapeKind::Arrow, look.clone()),
+            add_stroke(&mut d, look.clone()),
+            set_text(&mut d, None, "Bonjour", look.clone())[0].clone(),
+        ];
+        for id in &ids {
+            assert_eq!(d.element(id).expect("vue").look, None, "{look:?}");
+            for k in LOOK2_KEYS {
+                assert_eq!(raw_field(&d, id, k), None, "{k} écrit ({look:?})");
+            }
+        }
+    }
+    let mut d = blank();
+    let a = add_kind(&mut d, ShapeKind::Arrow, Look::default());
+    let d = with_raw_field(&d, &a, "fillStyle", In::from("zigzag"));
+    let d = with_raw_field(&d, &a, "startArrowhead", In::Any(Any::from(3.0)));
+    let d = with_raw_field(&d, &a, "textAlign", In::from("justify"));
+    assert_eq!(d.element(&a).expect("vue").look, None);
+    assert_eq!(raw_field(&d, &a, "fillStyle").as_deref(), Some("zigzag"));
+    assert_eq!(raw_field(&d, &a, "textAlign").as_deref(), Some("justify"));
+    assert!(raw_field(&d, &a, "startArrowhead").is_some());
+}
+
+/// La création écrit les champs du lot 2 non neutres, dans la même étape que l'élément.
+#[test]
+fn lot2_written_at_creation() {
+    let mut d = blank();
+    let look = Look {
+        start_arrowhead: Some("triangle".into()),
+        end_arrowhead: Some("none".into()),
+        link: Some("mailto:a@example.org".into()),
+        ..Look::default()
+    };
+    let a = add_kind(&mut d, ShapeKind::Arrow, look.clone());
+    assert_eq!(look_of(&d, &a), look);
+    assert_eq!(raw_field(&d, &a, "endArrowhead").as_deref(), Some("none"));
+    let r = add_rect(
+        &mut d,
+        Look {
+            fill_style: Some("hachure".into()),
+            ..Look::default()
+        },
+    );
+    assert_eq!(raw_field(&d, &r, "fillStyle").as_deref(), Some("hachure"));
+    let t = set_text(
+        &mut d,
+        None,
+        "Bonjour",
+        Look {
+            text_align: Some("center".into()),
+            ..Look::default()
+        },
+    )[0]
+    .clone();
+    assert_eq!(look_of(&d, &t).text_align.as_deref(), Some("center"));
 }

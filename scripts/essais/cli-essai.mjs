@@ -456,6 +456,9 @@ try {
     verifie("personnalisation-2 : SetStyle puis undo, une étape chacun", s.code === 0 && avant.includes('"strokeStyle":"dashed"') && avant.includes('"opacity":45') && !apres.includes('"strokeStyle"'), s.brut);
     const refus = cli(["run", f, "--ops", "-"], `${JSON.stringify({ type: "SetStyle", ids: [id], patch: { opacity: 150 } })}\n`);
     verifie("personnalisation-2 : opacity 150 refusée (code 1)", refus.code === 1, refus.brut);
+    // T12 (H5) : un lien hors de http://, https://, mailto: est refusé, rien d'écrit.
+    const lien = cli(["run", f, "--ops", "-"], `${JSON.stringify({ type: "SetStyle", ids: [id], patch: { link: "javascript:alert(1)" } })}\n`);
+    verifie("personnalisation-2 : lien javascript: refusé (code 1)", lien.code === 1, lien.brut);
     console.log("personnalisation-2 : SetStyle puis undo");
   }
   console.log("CLI : OK");
