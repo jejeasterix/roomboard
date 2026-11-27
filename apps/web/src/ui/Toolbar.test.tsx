@@ -8,6 +8,7 @@ import type { ButtonSize, RuntimeCapabilities, StartMode, Toolbar as Bar, ToolIt
 import { ACTION_TABLE } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ToolbarHost } from "../app/toolbar-host";
+import { PagesBar } from "./PagesBar";
 import { Toolbar, type PresetTable } from "./Toolbar";
 import type { ToolbarView } from "./item-state";
 import { TIP_HOVER_MS } from "./tooltip";
@@ -542,5 +543,45 @@ describe("Toolbar — design-l2 (L2-8, L2-13)", () => {
     expect(bar.hasAttribute("data-collapsed")).toBe(false);
     setC(true);
     expect(bar.getAttribute("data-collapsed")).toBe("1");
+  });
+});
+
+describe("Toolbar — compteur de pages (personnalisation-1a, T6)", () => {
+  const nav = mkBar([
+    { id: "page-prev", kind: "action", action: "page-prev", label: "Page précédente", requires: [], rest: {} },
+    { id: "page-number", kind: "action", action: "page-number", label: "Numéro de page", requires: [], rest: {} },
+    { id: "page-next", kind: "action", action: "page-next", label: "Page suivante", requires: [], rest: {} },
+  ]);
+  it("page-number rend #pages 2 / 5, bouton à icône, seul #pages de la page", () => {
+    const { container, setV } = setup(nav);
+    setV({ ...VIEW, pageIndex: 1, pageCount: 5 });
+    const b = container.querySelector<HTMLButtonElement>('button[data-item="page-number"]')!;
+    expect(b.id).toBe("pages");
+    expect(b.classList.contains("rb-pages-count")).toBe(true);
+    expect(b.textContent).toBe("2 / 5");
+    expect(b.getAttribute("aria-label")).toBe("2 / 5");
+    expect(b.querySelector("svg.rb-icon")).not.toBeNull();
+    expect(document.querySelectorAll("#pages")).toHaveLength(1);
+  });
+  it("page-number pressed quand sidebarOpen ; clic → runAction(page-number)", () => {
+    const { container, setV, host } = setup(nav);
+    const b = container.querySelector<HTMLButtonElement>('button[data-item="page-number"]')!;
+    expect(b.getAttribute("aria-pressed")).toBe("false");
+    setV({ ...VIEW, sidebarOpen: true });
+    expect(b.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(b);
+    expect(host.runAction).toHaveBeenCalledWith("page-number");
+  });
+  it("PagesBar sans Précédente ni Suivante : aucun second #pages", () => {
+    const { container } = render(() => (
+      <PagesBar bar={{ id: "pages", role: "pages", dock: "bottom", collapsed: false, groups: [], rest: {} }} items={() => [nav.groups[0]!.items[1]!]} view={() => ({ pageIndex: 0, pageCount: 2 })} size={() => "m"} runAction={() => {}} goTo={() => {}} />
+    ));
+    expect(container.querySelector("#pages")).toBeNull();
+  });
+  it("page-next sur la dernière page : actif, nommé Nouvelle page", () => {
+    const { container } = setup(nav);
+    const b = container.querySelector<HTMLButtonElement>('button[data-item="page-next"]')!;
+    expect(b.disabled).toBe(false);
+    expect(b.getAttribute("aria-label")).toBe("Nouvelle page");
   });
 });

@@ -171,6 +171,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-stage[hidden] { display: none; }
 /* Barre des pages (T101) : même allure que la barre d'outils ; compteur lisible, chiffres de largeur fixe. */
 .rb-bar button[aria-current="page"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
+.rb-bar button.rb-pages-count { display: inline-flex; align-items: center; gap: calc(var(--rb-gap) / 2); }
 .rb-pages-count { margin-inline: 0; padding: 0 var(--rb-pad); color: var(--rf-navy-500); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Liste des numéros (CL5b-8) : une seule rangée qui défile ; les actions et le compteur restent visibles. */
 .rb-pages-list { display: flex; flex: 1 1 auto; flex-wrap: nowrap; min-width: calc(3 * var(--rb-btn) + 2 * var(--rb-gap)); gap: var(--rb-gap); overflow-x: auto; }
