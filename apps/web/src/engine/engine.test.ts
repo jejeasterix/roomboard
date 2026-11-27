@@ -2858,10 +2858,33 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     engine.select([id]);
     expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(false);
     expect(engine.state().lineEditing).toBeNull();
-    engine.select([rect(300, 300, 400, 400)]);
+    engine.select([rect(300, 300, 400, 400), rect(500, 500, 600, 600)]);
     expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(false);
     expect(engine.editLinePoints()).toBe(false);
     expect(engine.state().lineEditing).toBeNull();
+  });
+
+  it("Ctrl+Entrée sur un rectangle : ligne fermée et « Modifier les points »", () => {
+    const { engine, doc, rect } = og12();
+    const id = rect(300, 300, 400, 350);
+    engine.select([id]);
+    expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(true);
+    const v = doc.element(id)!;
+    expect(v.kind === "shape" && v.shape.shape === "line" && v.shape.polygon === true).toBe(true);
+    expect(engine.state().lineEditing).toBe(id);
+    expect(doc.undo()).not.toBeNull();
+    expect((doc.element(id) as { shape: { shape: string } }).shape.shape).toBe("rect");
+  });
+
+  it("Ctrl+Entrée sur un rectangle refusé par le cœur : ni éditeur, ni étape", () => {
+    const { engine, doc, rect } = og12();
+    const id = rect(300, 300, 400, 350);
+    engine.select([id]);
+    const before = doc.version();
+    vi.spyOn(doc, "apply").mockImplementation(() => { throw new Error("refus"); });
+    expect(engine.editLinePoints()).toBe(false);
+    expect(engine.state().lineEditing).toBeNull();
+    expect(doc.version()).toBe(before);
   });
 
   it("lineEdit : en édition, un appui sur une poignée va à l'éditeur, Suppr retire le point choisi, Échap sort", () => {

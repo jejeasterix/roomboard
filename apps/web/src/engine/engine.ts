@@ -15,7 +15,7 @@ import { stepTarget, wholeUnits } from "../app/layer-list";
 import { editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
-import { isSegment } from "../core/shapes";
+import { isPointsShape, isSegment } from "../core/shapes";
 import { createLineEditor, type LineEditor } from "./tools/line-edit";
 import { linkedCopy } from "./tools/line-points";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -625,9 +625,17 @@ export function createEngine(deps: EngineDeps): Engine {
 
   /** OG12 (n° 21) : entre dans « Modifier les points » pour `id` (ligne ou flèche non coudée), sélection = `id`. */
   function enterLineEdit(id: string): boolean {
-    const v = doc.element(id);
-    if (v?.kind !== "shape" || !isSegment(v.shape.shape) || elbowedOf(v.look)) return false;
+    let v = doc.element(id);
     if (!doc.elementIds(pageId).includes(id)) return false;
+    if (v?.kind === "shape" && isPointsShape(v.shape.shape)) {
+      try {
+        doc.apply({ type: "ShapeToPolygon", id });
+      } catch {
+        return false;
+      }
+      v = doc.element(id);
+    }
+    if (v?.kind !== "shape" || !isSegment(v.shape.shape) || elbowedOf(v.look)) return false;
     if (tool !== "select") engine.setTool("select");
     lineEditor?.leave?.("tool");
     lineEditor = createLineEditor(ctx, id, exitLineEdit);
@@ -1542,7 +1550,7 @@ export function createEngine(deps: EngineDeps): Engine {
       const sel = selectTool.selection();
       const id = sel.length === 1 ? sel[0]! : null;
       const v = id === null ? null : doc.element(id);
-      if (id === null || v?.kind !== "shape" || (v.shape.shape !== "rect" && v.shape.shape !== "ellipse")) return false;
+      if (id === null || v?.kind !== "shape" || !isPointsShape(v.shape.shape)) return false;
       const change = run({ type: "AddLinked", id, dir });
       if (change === null) return false;
       const copy = linkedCopy(doc, change.ids, id);

@@ -455,7 +455,7 @@ function setupLines(pointer: "touch" | "mouse" = "touch") {
     editPoints: (id) => { edits.push(id); },
   };
   const tool = createSelectTool(ctx);
-  const add = (shape: "line" | "arrow" | "rect", x0: number, y0: number, x1: number, y1: number): string =>
+  const add = (shape: "line" | "arrow" | "rect" | "diamond" | "ellipse", x0: number, y0: number, x1: number, y1: number): string =>
     doc.apply({ type: "AddShape", page, shape, x0, y0, x1, y1, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
   return { doc, tool, runs, edits, add, copie: () => copie };
 }
@@ -546,6 +546,21 @@ describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () =>
     tool.begin(4, [atT(70, 0, 2200)]);
     tool.close(4, "end");
     expect(edits).toEqual([id]);
+  });
+});
+
+describe("OG12 lot 2a : double toucher sur une forme", () => {
+  it("double toucher sur une forme : editPoints appelé (rectangle, losange, ellipse)", () => {
+    for (const shape of ["rect", "diamond", "ellipse"] as const) {
+      const { tool, edits, add } = setupLines();
+      const id = add(shape, 0, 0, 200, 100);
+      tool.setSelection([id]);
+      tool.begin(1, [atT(100, 50, 0)]);
+      tool.close(1, "end");
+      tool.begin(2, [atT(105, 50, 200)]);
+      tool.close(2, "end");
+      expect(edits, shape).toEqual([id]);
+    }
   });
 });
 
