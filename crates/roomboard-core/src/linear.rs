@@ -587,15 +587,7 @@ pub(crate) fn follow(
                 *p = apply_transform(m, p.0, p.1);
             }
         }
-        let world = settle(
-            doc,
-            &*txn,
-            &page,
-            &s,
-            world,
-            start.as_ref(),
-            end.as_ref(),
-        );
+        let world = settle(doc, &*txn, &page, &s, world, start.as_ref(), end.as_ref());
         if write_line(txn, &e, &t, &world, start.as_ref(), end.as_ref()) {
             out.push(id);
         }
@@ -993,7 +985,7 @@ mod tests {
             })
             .expect("ajout")
             .ids[0]
-            .clone()
+                .clone()
         };
         let r = add(&mut d, &p2, ShapeKind::Rect, [0.0, 0.0, 100.0, 50.0]);
         let f = add(&mut d, &p1, ShapeKind::Arrow, [200.0, 25.0, 400.0, 25.0]);
@@ -1006,7 +998,10 @@ mod tests {
             e.insert(&mut w, "startFixed", nums_in(&[1.0, 0.5]));
         }
         let before = serde_json::to_value(d.element(&f).expect("vue")).expect("json");
-        assert!(before["shape"].get("start").is_none(), "lue libre : {before}");
+        assert!(
+            before["shape"].get("start").is_none(),
+            "lue libre : {before}"
+        );
         let ch = d
             .apply(Command::Transform {
                 ids: vec![r.clone()],

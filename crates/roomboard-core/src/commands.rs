@@ -1127,12 +1127,13 @@ impl Document {
         // C1 : une flèche coudée est routée dès sa création (n° 11), comme `settle` : sortie perpendiculaire au côté lié,
         // vers l'autre bout si libre ; ses points intérieurs sont ceux de la route.
         if kind == ShapeKind::Arrow && look.elbowed == Some(true) {
-            let end_of = |p: (f64, f64), b: &Option<(BindInput, linear::BindBox)>| linear::ElbowEnd {
-                p,
-                normal: b
-                    .as_ref()
-                    .map(|(b, bx)| linear::side_normal(bx, [b.fx, b.fy])),
-            };
+            let end_of =
+                |p: (f64, f64), b: &Option<(BindInput, linear::BindBox)>| linear::ElbowEnd {
+                    p,
+                    normal: b
+                        .as_ref()
+                        .map(|(b, bx)| linear::side_normal(bx, [b.fx, b.fy])),
+                };
             let (a, b) = (end_of(world[0], &ends[0]), end_of(world[last], &ends[1]));
             world = linear::elbow_route(a, b);
         }

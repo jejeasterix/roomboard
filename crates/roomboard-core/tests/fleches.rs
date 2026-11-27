@@ -724,7 +724,12 @@ fn add_shape_elbowed_is_routed_at_creation() {
         .expect("coudée");
     let f = ch.ids[0].clone();
     let w = world(&d, &f);
-    let want = [(200.0, 200.0), (250.0, 200.0), (250.0, 300.0), (300.0, 300.0)];
+    let want = [
+        (200.0, 200.0),
+        (250.0, 200.0),
+        (250.0, 300.0),
+        (300.0, 300.0),
+    ];
     assert_eq!(w.len(), want.len(), "route en Z : {w:?}");
     assert!(w.iter().zip(want).all(|(a, b)| near(*a, b)), "{w:?}");
     assert!(d.undo());
@@ -895,7 +900,9 @@ fn table_sizes_change_moves_bound_end() {
 fn table_lines(d: &Document, t: &str, axis: &str) -> Vec<String> {
     fn find<'a>(v: &'a serde_json::Value, k: &str) -> Option<&'a serde_json::Value> {
         match v {
-            serde_json::Value::Object(m) => m.get(k).or_else(|| m.values().find_map(|x| find(x, k))),
+            serde_json::Value::Object(m) => {
+                m.get(k).or_else(|| m.values().find_map(|x| find(x, k)))
+            }
             _ => None,
         }
     }
@@ -1041,7 +1048,10 @@ fn add_linked_copy_drops_link_and_draws_new_seed() {
         .expect("relié");
     let c = view(&d, &ch.ids[0]);
     assert!(c["look"].get("link").is_none(), "lien retiré : {c}");
-    assert!(c["look"]["seed"].is_number(), "graine gardée présente : {c}");
+    assert!(
+        c["look"]["seed"].is_number(),
+        "graine gardée présente : {c}"
+    );
     assert_ne!(c["look"]["seed"], src["look"]["seed"], "graine neuve");
     assert_eq!(c["look"]["roughness"], 1, "le reste de l'aspect copié");
 }
