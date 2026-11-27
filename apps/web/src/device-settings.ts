@@ -12,6 +12,23 @@ const FRAME_HIDDEN = "non";
 /** OG11 (déc. 23) : style courant commun aux outils (`ItemStyle`), JSON ; illisible : style par défaut (null). */
 export const ITEM_STYLE_KEY = "roomboard.style-courant";
 
+/** OG23 : sections du panneau d'options ouvertes ou repliées par l'utilisateur, JSON objet de booléens ; illisible : `{}`. */
+export const OPTION_SECTIONS_KEY = "roomboard.options-sections";
+type Sections = Readonly<Partial<Record<string, boolean>>>;
+function parseSections(raw: string | null): Sections {
+  if (raw === null) return {};
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return {};
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
+  const out: Record<string, boolean> = {};
+  for (const [k, x] of Object.entries(v)) if (typeof x === "boolean") out[k] = x;
+  return out;
+}
+
 /** design-l2 (L2-7, DA-L2-3) : position et repli d'un îlot, par profil et par barre, sur le poste ; jamais dans le
  *  profil (format `.rbprofile` inchangé). Valeur : JSON `{ "x", "y", "collapsed" }`, champs facultatifs. */
 export const ISLAND_KEY_PREFIX = "roomboard.ilot.";
@@ -99,6 +116,10 @@ export interface DeviceSettings {
   sidebar(): SidebarState;
   /** Gardé en mémoire, puis sur le poste s'il le permet. Ne déclenche pas `onChange` (comme `setIsland`). */
   setSidebar(s: SidebarState): void;
+  /** OG23 : sections du panneau d'options que l'utilisateur a ouvertes ou repliées ; rien ou illisible : `{}`. */
+  optionSections(): Sections;
+  /** Écrit la seule clé touchée. Vrai si gardé sur l'appareil ; faux : mémoire seule. Ne déclenche pas `onChange`. */
+  setOptionSection(key: string, open: boolean): boolean;
   onChange(cb: () => void): () => void;
 }
 
@@ -117,6 +138,7 @@ export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
   /** Style courant écrit dans cette séance (gardé même si le stockage refuse) ; undefined : lire le stockage. */
   let item: ItemStyle | null | undefined;
   let sidebar: SidebarState | null = null;
+  let sections: Sections | null = null;
   return {
     frame: () => frame,
     setFrame(on) {
@@ -190,6 +212,30 @@ export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
         kv?.setItem(SIDEBAR_KEY, JSON.stringify(sidebar));
       } catch {
         // Stockage qui refuse : mémoire seule.
+      }
+    },
+    optionSections() {
+      if (sections !== null) return sections;
+      try {
+        return parseSections(kv?.getItem(OPTION_SECTIONS_KEY) ?? null);
+      } catch {
+        return {};
+      }
+    },
+    setOptionSection(key, open) {
+      let base: Sections;
+      try {
+        base = sections ?? parseSections(kv?.getItem(OPTION_SECTIONS_KEY) ?? null);
+      } catch {
+        base = sections ?? {};
+      }
+      sections = { ...base, [key]: open };
+      if (kv === null) return false;
+      try {
+        kv.setItem(OPTION_SECTIONS_KEY, JSON.stringify(sections));
+        return true;
+      } catch {
+        return false;
       }
     },
     onChange(cb) {
