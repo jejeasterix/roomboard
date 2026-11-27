@@ -421,6 +421,9 @@ export function gridArgs(g: GridView): [boolean, boolean, boolean, string[], str
   return [g.visible, g.snap, g.above, g.levels.map((l) => l.kind), g.levels.map((l) => l.color), g.levels.map((l) => l.line), nums];
 }
 
+/** Grille absente d'`ApplyBackground` : tableaux vides, ignorés par le cœur (drapeau `grid` faux). */
+const NO_GRID: GridView = { visible: false, snap: false, above: false, levels: [] };
+
 /** Types admis par `normalizeParams` du faux cœur (le domaine reste au cœur) : `crop` quatre nombres, booléens, nombres
  *  (null vaut neutre pour ces trois-là), `transparent` aux quatre champs typés. */
 /** Manifeste et `ybin` d'un enregistrement en deux parties du cœur, l'objet Wasm libéré après lecture (C3). */
@@ -582,6 +585,18 @@ class WasmCoreDocument implements CoreDocument {
         const g = cmd.grid;
         if (g === null) return toChange(this.d.clear_grid(cmd.page));
         return toChange(this.d.set_grid(cmd.page, ...gridArgs(g)));
+      }
+      case "ApplyBackground": {
+        // Clé absente (ligne brute) lue comme null, comme dans le faux cœur : « pas de fond », « pas de grille ».
+        const b = cmd.backdrop ?? null;
+        const g = cmd.grid ?? null;
+        const [visible, snap, above, kinds, colors, lines, nums] = gridArgs(g ?? NO_GRID);
+        return toChange(
+          this.d.apply_background(
+            [...cmd.pages], cmd.color, b?.asset.id ?? undefined, b?.asset.name ?? "", b?.asset.mime ?? "", b?.asset.size ?? 0,
+            b?.w ?? 0, b?.h ?? 0, b?.fit ?? "width", g !== null, visible, snap, above, kinds, colors, lines, nums,
+          ),
+        );
       }
       case "AddTable":
         return toChange(

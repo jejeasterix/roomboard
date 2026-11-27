@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use yrs::types::AsPrelim;
 use yrs::{
     Any, Array, ArrayRef, GetString, In, Map, MapPrelim, MapRef, Out, ReadTxn, TextPrelim, TextRef,
+    TransactionMut,
 };
 
 use crate::asset::{is_asset_id, AssetRef};
@@ -13,8 +14,8 @@ use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
     apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, out_bytes, out_f64,
     out_string, out_transform, read_backdrop, read_group, read_style, style_fields,
-    transform_to_any, PageLayout, StrokeStyle, Transform, FIT_WIDTH, IDENTITY, INFINITE_MODE,
-    PAGE_HEIGHT, PORTRAIT_HEIGHT,
+    transform_to_any, PageLayout, RawBackdrop, StrokeStyle, Transform, FIT_WIDTH, IDENTITY,
+    INFINITE_MODE, PAGE_HEIGHT, PORTRAIT_HEIGHT,
 };
 use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
@@ -125,6 +126,14 @@ pub enum Command {
     /// Grille de page (U31, C9) ; `None` retire la grille. Remplacée en bloc, une étape (G5).
     SetGrid {
         page: String,
+        grid: Option<GridInput>,
+    },
+    /// Aspect complet de N pages (personnalisation-1b, DA1) : couleur, grille et fond image en une étape ; seules les
+    /// pages qui changent sont écrites et rendues ; une page à fond `pdf-page` ne reçoit que couleur et grille (Q35).
+    ApplyBackground {
+        pages: Vec<String>,
+        color: String,
+        backdrop: Option<BackdropInput>,
         grid: Option<GridInput>,
     },
     /// Tableau (U32, C10a, T3) : `cols` × `rows` (1 à 64), colonnes et lignes à la taille donnée ; coin en (x, y).
@@ -581,6 +590,40 @@ pub(crate) fn valid_asset(a: &AssetRef) -> bool {
         && a.size.fract() == 0.0
 }
 
+/// Fond demandé (K6, HK1) : asset conforme (`BadAsset`), puis boîte finie > 0 et `fit: "width"` (`BadImage`). Partagé par
+/// `SetBackdrop` et `ApplyBackground` (personnalisation-1b).
+pub(crate) fn check_backdrop(b: &BackdropInput) -> Result<(), CommandError> {
+    if !valid_asset(&b.asset) {
+        return Err(CommandError::BadAsset);
+    }
+    if !finite_positive(b.w) || !finite_positive(b.h) || b.fit != FIT_WIDTH {
+        return Err(CommandError::BadImage);
+    }
+    Ok(())
+}
+
+/// Écriture d'un fond décidée par `backdrop_plan`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BackdropWrite {
+    Meta,
+    Full,
+}
+
+/// Même fond (D38) : rien à retirer, ou même image (asset, genre `image`, taille, ajustement `width`).
+pub(crate) fn same_backdrop(input: Option<&BackdropInput>, current: Option<&RawBackdrop>) -> bool {
+    match (input, current) {
+        (None, None) => true,
+        (Some(b), Some(r)) => {
+            r.asset.as_deref() == Some(b.asset.id.as_str())
+                && r.kind.as_deref() == Some("image")
+                && r.w == Some(b.w)
+                && r.h == Some(b.h)
+                && r.fit.as_deref() == Some(FIT_WIDTH)
+        }
+        _ => false,
+    }
+}
+
 fn stroke_prelim(
     id: &str,
     transform: &Transform,
@@ -720,6 +763,12 @@ impl Document {
                 box_height,
             } => self.cmd_format_text(&id, (start, len), &attrs, box_height),
             Command::SetGrid { page, grid } => self.cmd_set_grid(&page, grid.as_ref()),
+            Command::ApplyBackground {
+                pages,
+                color,
+                backdrop,
+                grid,
+            } => self.cmd_apply_background(&pages, &color, backdrop.as_ref(), grid.as_ref()),
             Command::AddTable {
                 page,
                 x,
@@ -1141,12 +1190,7 @@ impl Document {
         input: Option<&BackdropInput>,
     ) -> Result<Change, CommandError> {
         if let Some(b) = input {
-            if !valid_asset(&b.asset) {
-                return Err(CommandError::BadAsset);
-            }
-            if !finite_positive(b.w) || !finite_positive(b.h) || b.fit != FIT_WIDTH {
-                return Err(CommandError::BadImage);
-            }
+            check_backdrop(b)?;
         }
         let (page_map, current) = {
             let txn = self.read();
@@ -1156,53 +1200,70 @@ impl Document {
             let current = read_backdrop(&txn, &m);
             (m, current)
         };
-        let same = match (input, &current) {
-            (None, None) => true,
-            (Some(b), Some(r)) => {
-                r.asset.as_deref() == Some(b.asset.id.as_str())
-                    && r.kind.as_deref() == Some("image")
-                    && r.w == Some(b.w)
-                    && r.h == Some(b.h)
-                    && r.fit.as_deref() == Some(FIT_WIDTH)
-            }
-            _ => false,
+        let plan = {
+            let txn = self.read();
+            self.backdrop_plan(&txn, input, current.as_ref())
         };
-        // Même fond mais métadonnée d'asset absente : on l'écrit (une étape) au lieu de « inchangé ».
-        let meta_missing = same
-            && input.is_some_and(|b| {
-                let txn = self.read();
-                self.assets_ref().get(&txn, b.asset.id.as_str()).is_none()
-            });
-        if same && !meta_missing {
+        let Some(plan) = plan else {
             return Ok(self.unchanged());
-        }
+        };
         {
             let mut txn = self.transact_local();
-            match input {
-                Some(b) if same => self.insert_asset_meta(&mut txn, &b.asset),
-                None => {
-                    page_map.remove(&mut txn, "backdrop");
-                }
-                Some(b) => {
-                    page_map.insert(
-                        &mut txn,
-                        "backdrop",
-                        MapPrelim::from([
-                            ("asset", In::from(b.asset.id.as_str())),
-                            ("kind", In::from("image")),
-                            ("w", In::Any(Any::from(b.w))),
-                            ("h", In::Any(Any::from(b.h))),
-                            ("fit", In::from(FIT_WIDTH)),
-                        ]),
-                    );
-                    self.insert_asset_meta(&mut txn, &b.asset);
-                }
-            }
+            self.write_backdrop(&mut txn, &page_map, input, plan);
         }
         Ok(self.done(Change {
             pages: vec![page.to_string()],
             ..Default::default()
         }))
+    }
+
+    /// Ce qu'il faut écrire pour que la page ait le fond `input`, partagé par `SetBackdrop` et `ApplyBackground` : `None`
+    /// si rien (même fond, métadonnée d'asset présente) ; `Meta` si même fond mais métadonnée d'asset absente ; `Full`
+    /// sinon.
+    pub(crate) fn backdrop_plan<T: ReadTxn>(
+        &self,
+        txn: &T,
+        input: Option<&BackdropInput>,
+        current: Option<&RawBackdrop>,
+    ) -> Option<BackdropWrite> {
+        if !same_backdrop(input, current) {
+            return Some(BackdropWrite::Full);
+        }
+        let meta_missing =
+            input.is_some_and(|b| self.assets_ref().get(txn, b.asset.id.as_str()).is_none());
+        meta_missing.then_some(BackdropWrite::Meta)
+    }
+
+    /// Écriture du fond d'une page (U6, K6), partagée par `SetBackdrop` et `ApplyBackground` : `None` retire ; `Meta` :
+    /// même fond, seule la métadonnée d'asset absente s'écrit ; `Full` : champs du `Y.Map` (jamais `Any::Map`, G4), puis
+    /// métadonnée (K3).
+    pub(crate) fn write_backdrop(
+        &self,
+        txn: &mut TransactionMut,
+        page: &MapRef,
+        input: Option<&BackdropInput>,
+        write: BackdropWrite,
+    ) {
+        match input {
+            Some(b) if write == BackdropWrite::Meta => self.insert_asset_meta(txn, &b.asset),
+            None => {
+                page.remove(txn, "backdrop");
+            }
+            Some(b) => {
+                page.insert(
+                    txn,
+                    "backdrop",
+                    MapPrelim::from([
+                        ("asset", In::from(b.asset.id.as_str())),
+                        ("kind", In::from("image")),
+                        ("w", In::Any(Any::from(b.w))),
+                        ("h", In::Any(Any::from(b.h))),
+                        ("fit", In::from(FIT_WIDTH)),
+                    ]),
+                );
+                self.insert_asset_meta(txn, &b.asset);
+            }
+        }
     }
 
     pub(crate) fn done(&mut self, mut change: Change) -> Change {

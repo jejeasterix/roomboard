@@ -1,7 +1,8 @@
 /**
  * Choix exclusif (design-l3, L3-23, DA-L3-2) : `role="radiogroup"` de boutons `role="radio"`, un seul arrêt de
  * tabulation (le bouton choisi, sinon le premier), flèches gauche / haut et droite / bas qui déplacent focus et choix
- * (bouclent aux bouts). Trois aspects : cartes (démarrage), vignettes (emplacement), segments (taille, barre).
+ * (bouclent aux bouts). Cinq aspects : cartes (démarrage), vignettes (emplacement), segments (taille, barre), rail et puces
+ * (sections et thèmes de la fenêtre des fonds, styles dans `backgrounds.css`).
  * `data-edit` sur le groupe et `data-choice` sur chaque bouton : les sélecteurs des tests et des essais.
  */
 import { For, Show, type JSX } from "solid-js";
@@ -19,7 +20,7 @@ export interface RadioChoicesProps<T extends string> {
   readonly name: string;
   /** Nom du groupe pour les lecteurs d'écran (`aria-label`). */
   readonly label: string;
-  readonly look: "card" | "tile" | "segment";
+  readonly look: "card" | "tile" | "segment" | "rail" | "chips";
   readonly options: readonly RadioOption<T>[];
   readonly value: T;
   choose(v: T): void;

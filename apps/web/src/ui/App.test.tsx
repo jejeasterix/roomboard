@@ -8,6 +8,8 @@ import { createTabs } from "../app/tabs";
 import type { TabSession, Workspace } from "../app/workspace";
 import { createResourceLibrary, type ResourceLibrary } from "../app/library";
 import { createMemoryLibraryFiles } from "../platform/library-files";
+import { createMyBackgrounds, probeImage } from "../app/my-backgrounds";
+import { fakeCore } from "../core/fake-core";
 import { createAssetStore } from "../core/asset-store";
 import type { EngineState } from "../engine/engine";
 import { createSettingsStore, parseSettings } from "../engine/settings";
@@ -206,6 +208,8 @@ function fakeWorkspace(first: FakeTab): Workspace {
     captureResource: vi.fn(async () => null),
     ask: vi.fn(async () => true),
     say: vi.fn(async () => undefined),
+    setDropDiverter: vi.fn(),
+    pickFiles: vi.fn(async () => []),
     canPaste: () => false,
     onClipboard: () => () => undefined,
     anyDirty: () => false,
@@ -225,7 +229,7 @@ function fakeFiles(picks: ({ name: string; text: string } | null)[] = []) {
   } satisfies ProfileFiles;
 }
 
-function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"]; annotation?: AnnotationUi; device?: AppProps["device"]; sidebar?: AppProps["sidebar"] } = {}) {
+function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"]; annotation?: AnnotationUi; device?: AppProps["device"]; backgrounds?: AppProps["backgrounds"]; sidebar?: AppProps["sidebar"] } = {}) {
   const tab = opts.tab ?? fakeTab("Sans titre.roomboard");
   const workspace = fakeWorkspace(tab);
   const store = createProfileStore(opts.kv ?? null, BUILTIN_PROFILES);
@@ -256,6 +260,7 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
         {...(opts.library ? { library: opts.library } : {})}
         {...(opts.annotation ? { annotation: opts.annotation } : {})}
         {...(opts.device ? { device: opts.device } : {})}
+        {...(opts.backgrounds ? { backgrounds: opts.backgrounds } : {})}
         {...(opts.sidebar ? { sidebar: opts.sidebar } : {})}
       />
     ),
@@ -338,6 +343,25 @@ afterEach(() => {
 });
 
 describe("App (T95)", () => {
+  it("personnalisation-1b (Q28) : le bouton Fonds et Ctrl+Maj+F ouvrent la fenêtre des fonds, Ctrl+Maj+F la referme", async () => {
+    const mine = createMyBackgrounds(createMemoryLibraryFiles("backgrounds"), { now: () => "n", probe: probeImage, thumbnail: async () => null });
+    const backgrounds = {
+      mine, core: fakeCore, makeAssets: () => createAssetStore(), files: { read: async () => new Blob() }, now: () => new Date(2026, 10, 27),
+      thumbs: {} as never, loadPack: async () => [],
+    } as AppProps["backgrounds"];
+    const { container } = renderApp({ backgrounds });
+    const dialog = (): Element | null => document.querySelector('[data-panel="backgrounds"]');
+    expect(dialog()).toBeNull();
+    click(container.querySelector('button[data-item="backgrounds"]'));
+    await vi.waitFor(() => expect(dialog()).not.toBeNull());
+    const chord = new KeyboardEvent("keydown", { key: "F", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+    window.dispatchEvent(chord);
+    await vi.waitFor(() => expect(dialog()).toBeNull());
+    expect(chord.defaultPrevented).toBe(true);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "F", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(dialog()).not.toBeNull());
+  });
+
   it("C4 : le bouton Bibliothèque ouvre le panneau, calé en popover", async () => {
     const library: ResourceLibrary = createResourceLibrary({
       files: [createMemoryLibraryFiles("mine")],

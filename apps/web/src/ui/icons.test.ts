@@ -42,6 +42,7 @@ const PANEL_ICONS: Readonly<Record<string, string>> = {
 };
 /** design-l2 (L2-22) : icônes de la maquette 01 propres aux îlots, nom RoomBoard -> nom Lucide. */
 const ISLAND_ICONS: Readonly<Record<string, string>> = { menu: "menu", collapse: "chevron-up" };
+const DIALOG_ICONS = ["search", "image-plus"];
 const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "eraser-part", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
 /** personnalisation-1a (T6, GC4) : icônes Lucide du lot 1, recopiées telles quelles (trait 2 d'origine, rendu à 1,5 par la feuille de style). */
 const LOT1: Readonly<Record<string, IconNode>> = {
@@ -68,10 +69,10 @@ const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", too
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 71 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots et le lot 1 de personnalisation-1a", () => {
-    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2)]);
+  it("ICONS : 74 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a et la fenêtre des fonds", () => {
+    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(71);
+    expect(Object.keys(ICONS)).toHaveLength(74);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -91,12 +92,12 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
   it("calage : viewBox -0.25 -0.25 24 24", () => {
     expect(ICON_VIEWBOX).toBe("-0.25 -0.25 24 24");
   });
-  it("chaque outil et chaque action connus ont une icône de la table (11 + 39)", () => {
+  it("chaque outil et chaque action connus ont une icône de la table (11 + 40)", () => {
     expect(Object.keys(TOOL_ICONS).sort()).toEqual(Object.keys(TOOL_TABLE).sort());
     expect(Object.keys(ACTION_ICONS).sort()).toEqual(Object.keys(ACTION_TABLE).sort());
     for (const name of [...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS)]) expect(Object.hasOwn(ICONS, name), name).toBe(true);
     expect(Object.keys(TOOL_ICONS)).toHaveLength(11);
-    expect(Object.keys(ACTION_ICONS)).toHaveLength(39);
+    expect(Object.keys(ACTION_ICONS)).toHaveLength(40);
   });
   it("balises admises, attributs en chaînes non vides", () => {
     for (const [name, node] of Object.entries(ICONS)) {
@@ -133,6 +134,12 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     expect(iconFor({ id: "z", kind: "dropzone", label: "Déposer", requires: [], rest: {} })).toBeNull();
   });
 
+  it("personnalisation-1b : wallpaper, search et image-plus recopiés de Lucide (7981a0798a), Fonds → wallpaper", () => {
+    expect(ICONS["wallpaper"]).toEqual([["path", { d: "M12 17v4" }], ["path", { d: "M8 21h8" }], ["path", { d: "m9 17 6.1-6.1a2 2 0 0 1 2.81.01L22 15" }], ["circle", { cx: "8", cy: "9", r: "2" }], ["rect", { x: "2", y: "3", width: "20", height: "14", rx: "2" }]]);
+    expect(ICONS["search"]).toEqual([["path", { d: "m21 21-4.34-4.34" }], ["circle", { cx: "11", cy: "11", r: "8" }]]);
+    expect(ICONS["image-plus"]).toEqual([["path", { d: "M16 5h6" }], ["path", { d: "M19 2v6" }], ["path", { d: "M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5" }], ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" }], ["circle", { cx: "9", cy: "9", r: "2" }]]);
+    expect(ACTION_ICONS["backgrounds"]).toBe("wallpaper");
+  });
   it("design-l2 T12 : « Insérer des pages… » a sa propre icône (Lucide file-plus), distincte d'Importer ; notice à jour ; base de eraser-part en tirets d'au moins 2 unités", () => {
     expect(ACTION_ICONS["page-insert-file"]).toBe("file-plus");
     expect(ACTION_ICONS["page-insert-file"]).not.toBe(ACTION_ICONS["file-import"]);

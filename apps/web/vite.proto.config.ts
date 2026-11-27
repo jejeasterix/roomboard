@@ -6,6 +6,8 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 
 export default defineConfig({
   base: "./",
+  // Le banc n'emporte pas public/ (pack de fonds) : un seul fichier HTML.
+  publicDir: false,
   plugins: [viteSingleFile()],
   build: {
     outDir: "dist-proto",

@@ -55,3 +55,4 @@ en une phrase. Les fiches C11a (`c11a-coque.md`) restent à jouer avant celle-ci
 ## C11b-8 — Fichiers temporaires (P24)
 - [ ] Après un envoi, le dossier `captures` du cache de l'application est vide (Windows `%LOCALAPPDATA%\org.roomboard.app\captures`, macOS `~/Library/Caches/org.roomboard.app/captures`, Linux `~/.cache/org.roomboard.app/captures`).
 - [ ] Tuer RoomBoard pendant une capture (Gestionnaire des tâches, `kill -9`), relancer : un reste de plus d'une minute disparaît au lancement.
+- [ ] personnalisation 1b (Q35) : après « Envoyer au tableau », « Fonds » › une photo sur la page de la capture : la capture est remplacée par la photo ; un « Annuler » rend la capture.

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Fenêtre principale : boîtes de fichiers, lecture et écriture des seuls fichiers choisis (portée ajoutée par le plugin dialog), fermeture gardée, titre. Bibliothèque (C4) : lecture, écriture, création et suppression sous Documents/RoomBoard/Ressources, et dans le dossier partagé choisi par la boîte native (portée ajoutée par le plugin dialog, récursive, pour la session). Fichiers déposés ou passés au lancement : lus par les commandes de la coque (read_granted_file, granted_file_size, launch_files), limitées aux fichiers accordés, jamais un dossier ; quit_app. Aucune portée fs pour les dépôts (scopeDroppedPaths: false). Office (C16) : conversion, ouverture de l'original et réimport par les commandes de la coque (office_converter, convert_office, release_conversion, open_original, reimport_original), appelées depuis Rust, sans permission pour la page. Médias liés (C14) : link_media (empreinte SHA-256 par morceaux, puis accord du seul fichier au protocole d'assets, portée vide au départ) et relink_media (fichier retrouvé à l'ouverture : même taille, extension de média), jamais un dossier. Annotation et capture (C11a, C11b) : annotation_support, annotation_enter, annotation_exit, annotation_close, annotation_ignore, relaunch_compat, annotation_capture, release_capture, commandes de la coque appelées par la page ; la fenêtre d'annotation a sa propre capacité (annotate.json).",
+  "description": "Fenêtre principale : boîtes de fichiers, lecture et écriture des seuls fichiers choisis (portée ajoutée par le plugin dialog), fermeture gardée, titre. Bibliothèque (C4) : lecture, écriture, création et suppression sous Documents/RoomBoard/Ressources, et dans le dossier partagé choisi par la boîte native (portée ajoutée par le plugin dialog, récursive, pour la session). Mes fonds (personnalisation 1b) : lecture, écriture, création et suppression sous Documents/RoomBoard/Fonds. Fichiers déposés ou passés au lancement : lus par les commandes de la coque (read_granted_file, granted_file_size, launch_files), limitées aux fichiers accordés, jamais un dossier ; quit_app. Aucune portée fs pour les dépôts (scopeDroppedPaths: false). Office (C16) : conversion, ouverture de l'original et réimport par les commandes de la coque (office_converter, convert_office, release_conversion, open_original, reimport_original), appelées depuis Rust, sans permission pour la page. Médias liés (C14) : link_media (empreinte SHA-256 par morceaux, puis accord du seul fichier au protocole d'assets, portée vide au départ) et relink_media (fichier retrouvé à l'ouverture : même taille, extension de média), jamais un dossier. Annotation et capture (C11a, C11b) : annotation_support, annotation_enter, annotation_exit, annotation_close, annotation_ignore, relaunch_compat, annotation_capture, release_capture, commandes de la coque appelées par la page ; la fenêtre d'annotation a sa propre capacité (annotate.json).",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -17,7 +17,7 @@
     "fs:allow-remove",
     {
       "identifier": "fs:scope",
-      "allow": [{ "path": "$DOCUMENT/RoomBoard/Ressources" }, { "path": "$DOCUMENT/RoomBoard/Ressources/**" }]
+      "allow": [{ "path": "$DOCUMENT/RoomBoard/Ressources" }, { "path": "$DOCUMENT/RoomBoard/Ressources/**" }, { "path": "$DOCUMENT/RoomBoard/Fonds" }, { "path": "$DOCUMENT/RoomBoard/Fonds/**" }]
     }
   ]
 }

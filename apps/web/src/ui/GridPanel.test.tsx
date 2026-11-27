@@ -148,5 +148,24 @@ describe("GridPanel (C9 éditeur, E9)", () => {
     expect([...sel.options].map((o) => o.value)).toEqual(["1", "2", "3", "4", "6"]);
     expect(sel.value).toBe("2");
   });
+
+  it("personnalisation-1b (Q21) : « Enregistrer comme fond » rend la grille du brouillon, sans apply ni cancel ; désactivé sur « Aucune » ; absent sans rappel", () => {
+    const save = vi.fn<(g: GridView) => void>();
+    const apply = vi.fn<(g: GridView | null) => string | null>(() => null);
+    const cancel = vi.fn();
+    const r = render(() => <GridPanel initial={null} preview={vi.fn()} endPreview={vi.fn()} apply={apply} cancel={cancel} saveAsBackground={save} />);
+    const btn = r.container.querySelector<HTMLButtonElement>('[data-grille="save-background"]')!;
+    expect(btn.textContent).toBe("Enregistrer comme fond");
+    expect(btn.disabled).toBe(true);
+    choose(r.container.querySelector<HTMLSelectElement>('[data-grille="kind"]')!, "dots");
+    expect(btn.disabled).toBe(false);
+    fireEvent.click(btn);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0]![0].levels[0]).toMatchObject({ kind: "dots", spacingX: 40 });
+    expect([apply.mock.calls.length, cancel.mock.calls.length]).toEqual([0, 0]);
+    r.unmount();
+    const plain = setup();
+    expect(plain.container.querySelector('[data-grille="save-background"]')).toBeNull();
+  });
 });
 

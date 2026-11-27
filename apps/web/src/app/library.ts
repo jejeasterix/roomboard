@@ -73,7 +73,7 @@ export interface ResourceLibrary {
   onChange(listener: () => void): () => void;
 }
 
-export const ROOT_LABELS: Readonly<Record<LibraryRoot, string>> = Object.freeze({ mine: "Mes ressources", shared: "Ressources partagées" });
+export const ROOT_LABELS: Readonly<Record<LibraryRoot, string>> = Object.freeze({ mine: "Mes ressources", shared: "Ressources partagées", backgrounds: "Mes fonds" });
 const EXT = ".rbitem";
 const NAME_MAX = 80;
 /** Diacritiques combinants, la classe de `slug` (`profile-file.ts:20`). */

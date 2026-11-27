@@ -10,11 +10,13 @@
  * cli-lot2 (D23) : toute écriture de document vise un `.roomboard`, contrôlé avant tout chargement par `documentTarget`.
  * cli-lot3 : `.pdf` lu (`state`, `run`, `import`, source de `convert`) et écrit (`export`, `convert`, D41).
  * cli-lot4 (D59, D72) : un fichier Office (`state`, `run`, source de `convert`) est converti par `roomboard-office`.
+ * personnalisation-1b (Q32) : `backgrounds` liste et cherche les fonds du pack ; opération `background` dans `run` et `apply`.
  */
 import { APP_VERSION } from "../../web/src/platform/controller";
 import { isSheetName } from "../../web/src/platform/import";
 import { OFFICE_EXTENSIONS } from "../../web/src/platform/office-import";
 import { flagStr, parseArgs } from "./args";
+import { listBackgrounds } from "./backgrounds";
 import { asCliError, CLI_VERSION, CliError, SCHEMA, usage, type CliIO } from "./contract";
 import { exists, readBytes } from "./disk";
 import { checkConvert, checkExportTarget, checkNotSource, exportFragment, exportWhole, isBoardOut, isPdfOut } from "./exporter";
@@ -42,6 +44,7 @@ const USAGE = {
   export: "export <fichier> <sortie.rbitem | .iwb | .ubz | .pdf> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]",
   convert: "convert <source .roomboard | .pdf | tableau | Office> <sortie.roomboard | .iwb | .ubz | .pdf>",
   library: "library list <dossier> [--folder <f>] | library import <dossier> <paquet.rbpack> | library export <dossier> <sortie.rbpack> [--folder <f>]",
+  backgrounds: "backgrounds [--search <texte>] [--section colors | lines | lessons | images]",
 } as const;
 
 const HELP = ["help", "--help", "-h"];
@@ -49,7 +52,8 @@ const USAGE_HELP = "help | --help | -h";
 const REFS =
   "opérations : une ligne JSON par commande du cœur ({\"type\":…}) ou de la CLI ({\"op\":…}) ; références (chaîne entière) : " +
   "$n, $n.k, $page:i, $tab:i ; $$ donne un $ littéral ; après DuplicatePage d'une page non vide, $n désigne les éléments " +
-  "copiés ; la copie se lit par $page:i (rang d'origine + 1)";
+  "copiés ; la copie se lit par $page:i (rang d'origine + 1)" +
+  " ; fond : {\"op\":\"background\",\"id\":… | \"file\":…, \"page\":… | \"pages\":\"all\"}";
 const ENV =
   "ROOMBOARD_NOW=<millisecondes depuis 1970> : date du manifeste (essais reproductibles), sinon l'heure du système ; " +
   "ROOMBOARD_OFFICE=<chemin> : binaire roomboard-office des fichiers Office, sinon target/debug/ puis target/release/ du dépôt";
@@ -245,6 +249,12 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     if (sub === "list") io.out(JSON.stringify({ library: dir, ...(await libraryList(lib, folder)) }));
     else if (sub === "import") io.out(JSON.stringify({ library: dir, ...(await libraryImport(lib, file!)) }));
     else io.out(JSON.stringify(await libraryExport(lib, file!, folder)));
+    return 0;
+  },
+  backgrounds: async (args, io) => {
+    const p = parseArgs(args, { "--search": "value", "--section": "value" });
+    if (p.positional.length > 0) throw usage(USAGE.backgrounds);
+    for (const line of await listBackgrounds({ search: flagStr(p, "--search"), section: flagStr(p, "--section") })) io.out(JSON.stringify(line));
     return 0;
   },
 };

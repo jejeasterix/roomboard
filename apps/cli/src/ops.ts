@@ -11,7 +11,7 @@ import { CliError } from "./contract";
 export const COMMAND_TYPES = [
   "AddPage", "RemovePage", "SetPageMode", "MovePage", "DuplicatePage", "Restack",
   "CommitStroke", "Erase", "Delete", "AddShape", "SetText", "Transform", "AddImage", "AddMedia",
-  "SetMedia", "AddModel3d", "SetModel3dView", "SetBackdrop", "FormatText", "SetGrid", "AddTable", "SetTableCell",
+  "SetMedia", "AddModel3d", "SetModel3dView", "SetBackdrop", "FormatText", "SetGrid", "ApplyBackground", "AddTable", "SetTableCell",
   "InsertTableLine", "RemoveTableLine", "SetTableSizes", "SetTableFill", "MergeTableCells", "SplitTableCell",
   "SetTableShade", "ImportTable", "Fill", "SetImageParams", "Group", "Ungroup",
 ] as const satisfies readonly Command["type"][];
@@ -19,7 +19,7 @@ export const COMMAND_TYPES = [
 type Missing = Exclude<Command["type"], (typeof COMMAND_TYPES)[number]>;
 export const ALL_COMMANDS: [Missing] extends [never] ? true : Missing = true;
 
-export const CLI_OPS = ["undo", "redo", "state", "save", "import", "export", "tab.new", "tab.open", "tab.select", "tab.close", "tab.list"] as const;
+export const CLI_OPS = ["undo", "redo", "state", "save", "import", "background", "export", "tab.new", "tab.open", "tab.select", "tab.close", "tab.list"] as const;
 export type CliOpName = (typeof CLI_OPS)[number];
 
 export type Op =

@@ -1,0 +1,48 @@
+/* Fenêtre des fonds (personnalisation-1b, Q25, DA6) : jetons de rb.css seulement, aucune règle de rb.css recopiée.
+   Cibles ≥ 44 px (48 px pour le rail, la recherche, Fermer, les actions et l'interrupteur) ; bords de 1 px sur des
+   coordonnées entières (§ 10 netteté). */
+.rb-bg-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(13, 27, 42, 0.32); }
+.rb-bg-dialog {
+  display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "head close" "body body" "foot foot";
+  inline-size: min(1200px, 92vw); block-size: min(760px, 88vh);
+  background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: var(--rf-shadow-modal); color: var(--rf-navy-500); overflow: hidden;
+}
+.rb-bg-head { grid-area: head; display: flex; align-items: center; gap: var(--rf-space-md); padding: var(--rf-space-md) 0 var(--rf-space-md) var(--rf-space-lg); }
+.rb-bg-head h2 { margin: 0; font-size: 20px; font-weight: 600; line-height: 28px; }
+.rb-bg-search { flex: 1; display: flex; align-items: center; gap: var(--rf-space-sm); min-block-size: var(--rb-btn-m); padding: 0 var(--rb-pad); border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); color: var(--rf-text-muted-aa); }
+.rb-bg-search:focus-within { outline: 2px solid var(--rf-violet-600); outline-offset: 0; }
+.rb-bg-search input { flex: 1; min-block-size: 44px; border: none; outline: none; background: transparent; color: var(--rf-navy-500); font: inherit; font-size: 16px; }
+.rb-bg-close { grid-area: close; align-self: center; margin: var(--rf-space-md) var(--rf-space-md) var(--rf-space-md) 0; display: inline-grid; place-items: center; inline-size: var(--rb-btn-m); block-size: var(--rb-btn-m); border: none; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); }
+.rb-bg-body { grid-area: body; display: grid; grid-template-columns: 220px minmax(0, 1fr); min-block-size: 0; border-block: 1px solid var(--rf-gray-300); }
+.rb-bg-rail { padding: var(--rf-space-sm); border-inline-end: 1px solid var(--rf-gray-300); overflow-y: auto; }
+.rb-radios[data-look="rail"] { display: flex; flex-direction: column; gap: 2px; }
+.rb-radios[data-look="rail"] .rb-radio { display: flex; align-items: center; gap: var(--rf-space-sm); min-block-size: 48px; padding: 0 var(--rb-pad); border: none; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; font-size: 15px; text-align: start; }
+.rb-radios[data-look="rail"] .rb-radio[aria-checked="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
+.rb-radios[data-look="chips"] { display: flex; flex-wrap: wrap; gap: var(--rf-space-sm); padding-block-end: var(--rf-space-md); }
+.rb-radios[data-look="chips"] .rb-radio { min-block-size: 44px; padding: 0 var(--rf-space-md); border: 1px solid var(--rf-gray-300); border-radius: 22px; background: var(--rf-white); color: var(--rf-navy-500); font: inherit; font-size: 14px; }
+.rb-radios[data-look="chips"] .rb-radio[aria-checked="true"] { border-color: var(--rf-violet-600); background: var(--rf-violet-100); color: var(--rf-violet-700); }
+.rb-bg-main { min-block-size: 0; overflow-y: auto; padding: var(--rf-space-md) var(--rf-space-lg); touch-action: pan-y; }
+.rb-bg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(192px, 1fr)); gap: var(--rf-space-md); }
+.rb-bg-card { position: relative; }
+.rb-bg-pick { display: flex; flex-direction: column; gap: var(--rf-space-xs); inline-size: 100%; padding: 0; border: none; background: transparent; color: var(--rf-navy-500); font: inherit; text-align: start; cursor: pointer; }
+.rb-bg-thumb { display: block; aspect-ratio: 16 / 9; inline-size: 100%; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); overflow: hidden; }
+.rb-bg-thumb img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; pointer-events: none; -webkit-user-drag: none; user-select: none; }
+.rb-bg-pick:hover .rb-bg-thumb, .rb-bg-pick:focus-visible .rb-bg-thumb { outline: 2px solid var(--rf-violet-600); outline-offset: 0; }
+.rb-bg-label { font-size: 14px; line-height: 20px; min-block-size: 20px; }
+.rb-bg-remove { position: absolute; inset-block-start: 4px; inset-inline-end: 4px; display: inline-grid; place-items: center; inline-size: 44px; block-size: 44px; border: none; border-radius: var(--rf-radius-lg); background: rgba(255, 255, 255, 0.92); color: var(--rf-navy-500); box-shadow: var(--rf-shadow-card); }
+.rb-bg-actions { display: flex; flex-wrap: wrap; gap: var(--rf-space-sm); padding-block-end: var(--rf-space-md); }
+.rb-bg-actions button { display: inline-flex; align-items: center; gap: var(--rf-space-sm); min-block-size: 48px; padding: 0 var(--rf-space-md); border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); color: var(--rf-navy-500); font: inherit; }
+.rb-bg-drop { flex: 1; display: grid; place-items: center; min-block-size: 48px; min-inline-size: 220px; border: 1px dashed var(--rf-gray-300); border-radius: var(--rf-radius-lg); color: var(--rf-text-muted-aa); }
+.rb-bg-results { margin: 0 0 var(--rf-space-md); font-size: 15px; font-weight: 600; }
+.rb-bg-empty, .rb-bg-notice { margin: 0 0 var(--rf-space-md); color: var(--rf-text-muted-aa); }
+.rb-bg-foot { grid-area: foot; display: flex; align-items: center; justify-content: space-between; gap: var(--rf-space-md); padding: var(--rf-space-sm) var(--rf-space-lg); }
+.rb-bg-switch { display: inline-flex; align-items: center; gap: var(--rf-space-sm); min-block-size: 48px; padding: 0 var(--rf-space-sm); border: none; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; }
+.rb-bg-knob { position: relative; inline-size: 40px; block-size: 24px; border-radius: 12px; background: var(--rf-gray-300); }
+.rb-bg-knob::after { content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 20px; block-size: 20px; border-radius: 50%; background: var(--rf-white); box-shadow: var(--rf-shadow-card); }
+.rb-bg-switch[aria-checked="true"] .rb-bg-knob { background: var(--rf-violet-600); }
+.rb-bg-switch[aria-checked="true"] .rb-bg-knob::after { inset-inline-start: 18px; }
+.rb-bg-hint { font-size: 13px; color: var(--rf-text-muted-aa); }
+.rb-bg-dialog button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: 0; }
+.rb-bg-close:hover, .rb-bg-actions button:hover, .rb-bg-switch:hover, .rb-radios[data-look="rail"] .rb-radio:not([aria-checked="true"]):hover { background: var(--rf-gray-50); }
+.rb-bg-notice:empty { display: none; }
