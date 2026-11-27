@@ -67,6 +67,7 @@ function keyOf(e: KeyboardEvent): KeyLike {
     metaKey: e.metaKey,
     shiftKey: e.shiftKey,
     altKey: e.altKey,
+    code: e.code,
     isComposing: e.isComposing,
     target: e.target instanceof HTMLElement ? e.target : null,
   };

@@ -322,7 +322,9 @@ impl Document {
         if !matches!(fit, None | Some("grow" | "shrink")) {
             return Err(CommandError::BadTable);
         }
-        let shrink = fit.map(|f| f == "shrink").filter(|s| *s != raw.fit.is_some());
+        let shrink = fit
+            .map(|f| f == "shrink")
+            .filter(|s| *s != raw.fit.is_some());
         let head = header.filter(|h| *h != raw.header);
         if shrink.is_none() && head.is_none() {
             return Ok(self.unchanged());
@@ -788,14 +790,36 @@ mod tests {
         let mut d = Document::blank();
         let p = first(&d);
         let t = table3(&mut d, &p);
-        d.apply(Command::SetTableOptions { id: t.clone(), fit: Some("shrink".into()), header: Some(true) }).expect("options");
+        d.apply(Command::SetTableOptions {
+            id: t.clone(),
+            fit: Some("shrink".into()),
+            header: Some(true),
+        })
+        .expect("options");
         assert_eq!(view(&d, &t).fit.as_deref(), Some("shrink"));
         assert!(view(&d, &t).header);
         let v = d.version();
-        d.apply(Command::SetTableOptions { id: t.clone(), fit: Some("shrink".into()), header: None }).expect("même");
+        d.apply(Command::SetTableOptions {
+            id: t.clone(),
+            fit: Some("shrink".into()),
+            header: None,
+        })
+        .expect("même");
         assert_eq!(d.version(), v);
-        assert_eq!(d.apply(Command::SetTableOptions { id: t.clone(), fit: Some("zz".into()), header: None }), Err(CommandError::BadTable));
-        d.apply(Command::SetTableOptions { id: t.clone(), fit: Some("grow".into()), header: Some(false) }).expect("retour");
+        assert_eq!(
+            d.apply(Command::SetTableOptions {
+                id: t.clone(),
+                fit: Some("zz".into()),
+                header: None
+            }),
+            Err(CommandError::BadTable)
+        );
+        d.apply(Command::SetTableOptions {
+            id: t.clone(),
+            fit: Some("grow".into()),
+            header: Some(false),
+        })
+        .expect("retour");
         assert_eq!(view(&d, &t).fit, None);
         assert!(!view(&d, &t).header);
     }

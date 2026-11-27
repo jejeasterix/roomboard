@@ -554,6 +554,10 @@ try {
   verifie("S16 : undo, une étape : la forme remonte", yDe(5) === yDe(1), loge.brut);
   const reluS16 = etat(pl).pages[0].elements.find((e) => e.id === forme.id);
   egal("S16 : réouverture : cell présent", reluS16?.cell, lien);
+  // personnalisation-3 (T7) : SetTableOptions fit shrink, relu par `state`.
+  const opts = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ type: "SetTableOptions", id: tab.id, fit: "shrink" }, { op: "state" }));
+  const reluOpts = (opts.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id);
+  verifie("T7 : SetTableOptions fit shrink, relu par state", opts.code === 0 && reluOpts?.table?.fit === "shrink", opts.brut);
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);

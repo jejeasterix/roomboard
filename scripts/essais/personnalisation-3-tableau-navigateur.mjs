@@ -162,6 +162,70 @@ async function scenario(page, url, { captures }) {
   await page.keyboard.press("Escape");
   await fr();
 
+  // S2 : second tableau 3 × 3 sous le premier ; appui long (doigt) sur sa case (1, 1), menu « Rétrécir » ; une image 400 × 300
+  // glissée sur cette case y est réduite à 64 × 48, posée en haut à gauche de la boîte intérieure.
+  const DY = 420;
+  const cellPt2 = (row, col) => screen(c, origin[0] + COL * col + COL / 2, origin[1] + DY + ROW * row + ROW / 2);
+  const longPress = async (p) => {
+    const box = await stageBox(page);
+    const pt = { x: box.x + p[0], y: box.y + p[1], id: 1, radiusX: 4, radiusY: 4, force: 0.5 };
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [pt] });
+    await page.waitForTimeout(600);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await fr();
+  };
+  await page.click(item("table"));
+  await fr();
+  const t2 = screen(c, origin[0], origin[1] + DY);
+  await mouse.click(t2[0], t2[1]);
+  await page.waitForSelector(".rb-table-picker:not([hidden])", { timeout: 5000 });
+  await page.click('button[aria-label="3 colonnes, 3 lignes"]');
+  await page.keyboard.press("Escape");
+  await fr();
+  await longPress(cellPt2(1, 1));
+  await page.waitForSelector('.rb-cell-menu:not([hidden]) button:has-text("Rétrécir")', { timeout: 5000 });
+  const menuBox = await page.locator(".rb-cell-menu button").first().boundingBox();
+  check(menuBox !== null && menuBox.height >= 44, `S2 : appui long au doigt : le menu de case propose « Rétrécir » (bouton de ${menuBox?.height} px de haut)`);
+  await capture("menu-case");
+  await page.click('.rb-cell-menu button:has-text("Rétrécir")');
+  await fr();
+  await page.click(item("select"));
+  await fr();
+  await dropFile(page, "#stage", "photo2.png", solidPng(400, 300, [90, 60, 30]), "image/png", imageAt);
+  await fr();
+  await touchDrag(imageAt, cellPt2(1, 1));
+  await selectAt(screen(c, origin[0] + COL + 8 + 32, origin[1] + DY + ROW + 8 + 24));
+  const [rx0, ry0, rx1, ry1] = await boundsOf();
+  check(near(rx0, origin[0] + 248) && near(ry0, origin[1] + DY + 72) && near(rx1, origin[0] + 312) && near(ry1, origin[1] + DY + 120), `S2 : image réduite à 64 × 48, en haut à gauche de la case (data-bounds ${rx0},${ry0},${rx1},${ry1})`);
+  await page.keyboard.press("Escape");
+  await fr();
+  const tb2 = screen(c, origin[0], origin[1] + DY + ROW / 2);
+  await selectAt(tb2);
+  const [qx0, qy0, qx1, qy1] = await boundsOf();
+  check(near(qx1 - qx0, 720) && near(qy1 - qy0, 192), `S2 : le second tableau reste 720 × 192 (lu ${qx1 - qx0} × ${qy1 - qy0})`);
+  await capture("objet-ajuste");
+  await page.keyboard.press("Escape");
+  await fr();
+  // Au clavier : Alt+F en outil Tableau bascule le mode ; le menu le dit (« Agrandir » devient « Rétrécir »).
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...cellPt2(2, 2));
+  await page.keyboard.press("Escape");
+  await fr();
+  await longPress(cellPt2(2, 2));
+  await page.waitForSelector('.rb-cell-menu:not([hidden]) button:has-text("Agrandir")', { timeout: 5000 });
+  check(true, "S2 : table en mode rétrécir : le menu propose « Agrandir »");
+  await page.keyboard.press("Escape");
+  await mouse.click(...cellPt2(2, 2));
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Alt+f");
+  await fr();
+  await longPress(cellPt2(2, 2));
+  await page.waitForSelector('.rb-cell-menu:not([hidden]) button:has-text("Rétrécir")', { timeout: 5000 });
+  check(true, "S2 : Alt+F bascule le mode : le menu propose de nouveau « Rétrécir »");
+  await page.keyboard.press("Escape");
+  await fr();
+
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
 }
 
