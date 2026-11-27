@@ -480,7 +480,7 @@ describe("OptionsPanel : Modifier les points (OG12 T11)", () => {
       expect(b!.classList.contains("rb-opt-btn")).toBe(true);
       cleanup();
     }
-    const txt = { id: "t", kind: "text", style: { color: "#000000", width: 4 } } as unknown as ElementView;
+    const txt = { id: "t", kind: "text", style: { color: "#000000", width: 4 }, text: { content: "a", size: 36, boxWidth: 100, boxHeight: 40, spans: [{ text: "a", attrs: {} }] } } as unknown as ElementView;
     expect(mount({ tool: "select", selection: [txt] }).container.querySelector(editBtn)).toBeNull();
   });
   it("Retirer le point : visible en édition avec un point choisi, appelle removeLinePoints ; absent sans point choisi", () => {
