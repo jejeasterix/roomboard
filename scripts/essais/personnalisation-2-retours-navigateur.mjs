@@ -663,6 +663,7 @@ async function s4(browser, base, mode, tmp) {
     }
   }
   const sel0 = await selBounds(page);
+  await page.evaluate(() => document.activeElement?.blur?.()); // le focus d'un bouton du panneau garde les flèches pour lui
   await page.keyboard.press("ArrowRight");
   await frames(page);
   const sel1 = await selBounds(page);
@@ -1253,7 +1254,10 @@ async function s6(browser, base, mode, tmp) {
     }, [x, y]);
   };
   const left0 = (await pxAt([4, 4]))[0];
+  lire("S6.avant.droite", (await pxAt([195, 4])).join(","));
   await act("flip-h");
+  await page.waitForTimeout(800);
+  lire("S6.degrade", `gauche ${left0} -> ${(await pxAt([4, 4])).join(",")} ; droite ${(await pxAt([195, 4])).join(",")} ; version ${await attr(page, "data-version")}`);
   await until(async () => (await pxAt([4, 4]))[0] < left0 - 10, "S6.4 : Retourner ↔ : le dégradé du fond est inversé");
   const x0Flip = (await box()).x0;
   await act("crop");
