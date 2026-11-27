@@ -365,7 +365,8 @@ try {
   const hauteur = await page.$eval(SETTING, (b) => b.getBoundingClientRect().height);
   console.log(`hauteur du bouton Réglages : ${hauteur} px`);
   check(hauteur >= 44, `S8 : bouton du panneau Réglages haut de ${hauteur} px (cible tactile, 44 au moins)`);
-  console.log("S8 : netteté § 10 sans objet, panneau sans icône");
+  const icons = await page.$$eval("#reglages svg", (l) => l.map((s) => s.getAttribute("viewBox")));
+  check(icons.length === 0, "S8 : netteté § 10 sans objet, panneau sans icône");
   const panel = await page.locator("#reglages").boundingBox();
   await shot("reglage-gomme-paume.png", around(panel, 8));
   await clickItem(page, "settings");

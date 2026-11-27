@@ -649,4 +649,69 @@ describe("gomme automatique à la surface de contact (OG25)", () => {
       expect(rings, JSON.stringify(c)).toEqual([]);
     }
   });
+
+  it("OG25 : défilement lointain encore dans sa fenêtre à la bascule : la vue ne bouge plus, gomme centrée sur la paume (règle 5, revue T11)", () => {
+    const { router, log, rings } = palmSetup();
+    penSeen(router, log);
+    router.handle(touch("start", 5, 100, 100, 0));
+    router.handle(touch("start", 6, 1500, 300, 200, 140, 120));
+    expect(router.roleOf(6)).toBe("erase");
+    router.handle(touch("move", 5, 400, 100, 300));
+    router.handle(touch("move", 6, 1510, 300, 320, 140, 120));
+    expect(log).toEqual(["begin -1 eraser 1", "resize -1 70", "extend -1 1"]);
+    expect(rings).toEqual(["1500,300,70", "1510,300,70"]);
+    expect(router.roleOf(5)).toBeNull();
+  });
+
+  it("OG25 : pincement dont un doigt rejoint la gomme : la paire entre en entier ; après la fermeture, une paume suivante ouvre une gomme (revue T11)", () => {
+    const { router, log, rings } = palmSetup();
+    router.handle(touch("start", 1, 100, 100, 0, 24));
+    router.handle(touch("start", 2, 700, 100, 20, 24));
+    router.handle(touch("start", 3, 150, 300, 100, 140));
+    expect([router.roleOf(1), router.roleOf(2), router.roleOf(3)]).toEqual(["erase", "erase", "erase"]);
+    router.handle(touch("move", 2, 720, 100, 150, 24));
+    router.handle(touch("end", 3, 0, 0, 0));
+    router.handle(touch("end", 1, 0, 0, 0));
+    router.handle(touch("end", 2, 0, 0, 0));
+    router.handle(touch("start", 4, 400, 500, 900, 140));
+    router.handle(touch("move", 4, 420, 500, 950, 140));
+    expect(log).toEqual([
+      "begin 1 pen 1",
+      "close 1 abort",
+      "begin -1 eraser 1",
+      "resize -1 160",
+      "extend -1 1",
+      "close -1 end",
+      "begin -2 eraser 1",
+      "resize -2 70",
+      "extend -2 1",
+    ]);
+    expect(rings).toEqual(["396,229,160", "406,229,160", "null", "400,500,70", "420,500,70"]);
+    expect(router.roleOf(4)).toBe("erase");
+  });
+
+  it("OG25 : trait au doigt établi à plus de 160 px : la paume ne bascule pas, le trait continue (déc. 13, 32, revue T10)", () => {
+    const { router, log, rings } = palmSetup();
+    router.handle(touch("start", 5, 100, 100, 0));
+    router.handle(touch("move", 5, 110, 100, 300));
+    router.handle(touch("start", 6, 1500, 300, 400, 140, 120));
+    router.handle(touch("move", 5, 120, 100, 410));
+    expect(log).toEqual(["begin 5 pen 1", "extend 5 1", "extend 5 1"]);
+    expect(rings).toEqual([]);
+    expect(router.roleOf(5)).toBe("ink");
+    expect(router.roleOf(6)).toBeNull();
+  });
+
+  it("OG25 : pincement lointain encore dans sa fenêtre à la bascule : la vue ne bouge plus, et il n'empêche pas une paume suivante (règle 5, revue T11)", () => {
+    const { router, log, rings } = palmSetup();
+    router.handle(touch("start", 1, 100, 100, 0, 24));
+    router.handle(touch("start", 2, 200, 100, 20, 24));
+    router.handle(touch("start", 3, 1500, 300, 100, 140, 120));
+    router.handle(touch("move", 2, 260, 100, 150, 24));
+    expect([router.roleOf(1), router.roleOf(2)]).toEqual([null, null]);
+    router.handle(touch("end", 3, 0, 0, 0));
+    router.handle(touch("start", 4, 1500, 600, 900, 140));
+    expect(log).toEqual(["begin 1 pen 1", "close 1 abort", "begin -1 eraser 1", "resize -1 70", "close -1 end", "begin -2 eraser 1", "resize -2 70"]);
+    expect(rings).toEqual(["1500,300,70", "null", "1500,600,70"]);
+  });
 });

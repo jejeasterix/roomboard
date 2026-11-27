@@ -387,3 +387,21 @@ Témoin consigné, pas porte : un toucher CDP `Input.dispatchTouchEvent` à `rad
 ## 8. Portes immédiates
 
 Aucune.
+
+## Amendements de l'exécution (relectures de fin de lot, 2026-11-27)
+
+Ces amendements précisent les décisions 12 et 32 et la règle 5 des gestes. Ils viennent des relectures de fin de lot
+(trois relecteurs, puis deux tours de correctifs) ; chacun a ses tests dans `router.test.ts`.
+
+- **A-1 (déc. 12, contact ignoré).** Un contact que le routeur a mis en « ignoré » (doigt posé pendant un trait) compte
+  dans le groupe tant qu'il est dans sa fenêtre de 250 ms : une paume qui s'étale en deux contacts bascule quand même.
+  Les contacts d'une gomme fermée passent en rôle « usé » (`spent`) : inertes, ils ne rouvrent rien.
+- **A-2 (déc. 12, distance).** Le groupe ne prend que les contacts à 160 px (`CLUSTER_PX`) au plus du déclencheur.
+  Raison : à deux au tableau, la paume de l'un ne doit pas avorter le trait de l'autre ni ouvrir une gomme entre eux.
+  Un trait lointain garde son geste. Compromis : un doigt de la même main à plus de 160 px de la paume garde son trait.
+- **A-3 (pincement).** Le partenaire d'un membre qui rejoint le groupe le rejoint aussi : une paire de pincement entre
+  en entier. Il compte alors dans le cercle de la gomme (hypothèse H18 : cercle centré entre les deux, rayon plafonné).
+- **A-4 (règle 5, vue figée).** À la bascule, un défilement ou un pincement tactile lointain, encore dans sa fenêtre,
+  passe en « usé » : la vue ne bouge plus tant que la gomme est ouverte. Le déplacement qu'il avait déjà fait reste.
+- **A-5 (déc. 32).** Un geste établi (fenêtre dépassée), où qu'il soit, bloque toujours la bascule.
+- **A-6 (cible tactile).** Les boutons du panneau Réglages passent à 44 px de haut (`rb.css`) : ils mesuraient 21 px.
