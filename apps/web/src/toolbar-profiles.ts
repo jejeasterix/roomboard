@@ -150,6 +150,7 @@ const defaultToolbars = () => [
       { id: "navigation", items: [tool("select", "Sélection"), tool("hand", "Main")] },
       { id: "dessin", items: [sep("sep-1"), tool("pen", "Stylo"), tool("eraser", "Gomme"), action("eraser-mode", "Gomme : partielle")] },
       { id: "edition", items: [sep("sep-2"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
+      { id: "page", items: [sep("sep-fonds"), action("backgrounds", "Fonds")] },
       { id: "bureau", items: [sep("sep-3"), annotationEntry()] },
     ],
   },
@@ -185,7 +186,7 @@ export const SIMPLE_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFreeze
       groups: [
         { id: "dessin", items: [tool("pen", "Stylo"), tool("eraser", "Gomme"), tool("hand", "Main")] },
         { id: "historique", items: [sep("sep-1"), action("undo", "Annuler"), action("redo", "Rétablir")] },
-        { id: "vue", items: [sep("sep-2"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages"), annotationEntry()] },
+        { id: "vue", items: [sep("sep-2"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages"), action("backgrounds", "Fonds"), annotationEntry()] },
       ],
     },
     pagesBar(true),

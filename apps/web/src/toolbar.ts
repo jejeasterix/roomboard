@@ -119,6 +119,7 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   profiles: { label: "Profil" },
   grid: { label: "Grille" },
   library: { label: "Bibliothèque" },
+  backgrounds: { label: "Fonds" },
   "desktop-annotation": { label: "Annotation du bureau" },
   "annotation-pointer": { label: "Souris" },
   "annotation-screen": { label: "Écran suivant" },

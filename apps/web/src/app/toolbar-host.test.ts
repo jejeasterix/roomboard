@@ -90,6 +90,11 @@ describe("ToolbarHost local", () => {
     host.runAction("library");
     expect(vi.mocked(t.toggle).mock.calls.map((c) => c[0])).toEqual(["library"]);
   });
+  it("personnalisation-1b : backgrounds bascule le panneau « backgrounds »", () => {
+    const { host, t } = setup();
+    host.runAction("backgrounds");
+    expect(vi.mocked(t.toggle).mock.calls.map((c) => c[0])).toEqual(["backgrounds"]);
+  });
   it('grid → toggle("grid") (E7)', () => {
     const { host, t } = setup();
     host.runAction("grid");

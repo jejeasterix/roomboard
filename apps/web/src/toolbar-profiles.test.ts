@@ -228,9 +228,10 @@ describe("design-l4 : barres d'annotation livrées (L4-1, L4-5 à L4-7)", () => 
 
 describe("design-l2 : profils fournis en îlots (L2-2 à L2-4)", () => {
   const flat = (id: string, barId: string) => builtinProfile(id)!.toolbars.find((b) => b.id === barId)!.groups.flatMap((g) => g.items.map((i) => i.id));
-  it("design-l2 L2-4 : outils de defaut et annotation : Sélection, Main | Stylo, Gomme, Gomme : partielle | formes, Texte, Tableau, Pot | Annotation du bureau", () => {
+  it("design-l2 L2-4, personnalisation-1b Q23 : outils de defaut et annotation : Sélection, Main | Stylo, Gomme, Gomme : partielle | formes, Texte, Tableau, Pot | Fonds | Annotation du bureau", () => {
     for (const id of ["defaut", "annotation"]) {
-      expect(flat(id, "outils"), id).toEqual(["select", "hand", "sep-1", "pen", "eraser", "eraser-mode", "sep-2", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "sep-3", "desktop-annotation"]);
+      expect(flat(id, "outils"), id).toEqual(["select", "hand", "sep-1", "pen", "eraser", "eraser-mode", "sep-2", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "sep-fonds", "backgrounds", "sep-3", "desktop-annotation"]);
+      expect(builtinProfile(id)!.toolbars[0]!.groups.map((g) => g.id), id).toEqual(["navigation", "dessin", "edition", "page", "bureau"]);
       expect(visibleItems(builtinProfile(id)!.toolbars[0]!, ALL)[0]!.id, id).toBe("select");
     }
   });
@@ -241,7 +242,7 @@ describe("design-l2 : profils fournis en îlots (L2-2 à L2-4)", () => {
     expect(flat("defaut", "pages")).toEqual(["page-prev", "page-next", "page-add", "page-remove"]);
   });
   it("design-l2 L2-4, H1 : simple : outils et pages inchangés, pages en îlot", () => {
-    expect(flat("simple", "outils")).toEqual(["pen", "eraser", "hand", "sep-1", "undo", "redo", "sep-2", "fit-page", "profiles", "settings", "desktop-annotation"]);
+    expect(flat("simple", "outils")).toEqual(["pen", "eraser", "hand", "sep-1", "undo", "redo", "sep-2", "fit-page", "profiles", "settings", "backgrounds", "desktop-annotation"]);
     expect(flat("simple", "pages")).toEqual(["page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "export-pdf", "export-iwb", "export-ubz"]);
   });
   it("design-l2 L2-3 : rôles tools, menu, history, panels, pages, annotation ; ids uniques dans le profil", () => {

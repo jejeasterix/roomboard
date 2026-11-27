@@ -76,7 +76,7 @@ export interface AppProps {
   readonly device?: DeviceSettings;
 }
 
-type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library";
+type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library" | "backgrounds";
 
 export function App(props: AppProps): JSX.Element {
   const ws = props.workspace;
