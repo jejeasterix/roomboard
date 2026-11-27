@@ -14,7 +14,7 @@ export const COMMAND_TYPES = [
   "SetMedia", "AddModel3d", "SetModel3dView", "SetBackdrop", "FormatText", "SetGrid", "ApplyBackground", "AddTable", "SetTableCell",
   "InsertTableLine", "RemoveTableLine", "SetTableSizes", "SetTableFill", "MergeTableCells", "SplitTableCell",
   "SetTableShade", "ImportTable", "Fill", "SetImageParams", "Group", "Ungroup", "SetStyle",
-  "SetLinePoints", "AddLinked",
+  "SetLinePoints", "AddLinked", "ShapeToPolygon",
 ] as const satisfies readonly Command["type"][];
 // Une commande ajoutée à `Command` sans l'être ici casse `tsc` : la CLI suit le cœur (§ 7 du cadrage).
 type Missing = Exclude<Command["type"], (typeof COMMAND_TYPES)[number]>;

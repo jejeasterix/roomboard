@@ -107,10 +107,10 @@ describe("OG12 : chemin, courbe et ancrage (miroir de linear.rs)", () => {
     expect(Math.max(...xs)).toBeGreaterThan(100);
   });
   it("anchorPoint : contour + écart 5 + épaisseur / 2, dedans sans écart, ellipse", () => {
-    const b = { id: "a", m: [1, 0, 0, 1, 10, 20] as const, w: 100, h: 50, ellipse: false, gap: 7 };
+    const b = { id: "a", m: [1, 0, 0, 1, 10, 20] as const, w: 100, h: 50, outline: "box" as const, gap: 7 };
     expect(anchorPoint(b, 1, 0.5)).toEqual([117, 45]);
     expect(anchorPoint(b, 0.3, 0.4)).toEqual([40, 40]);
-    const [x, y] = anchorPoint({ ...b, ellipse: true }, 0.5, 0);
+    const [x, y] = anchorPoint({ ...b, outline: "ellipse" as const }, 0.5, 0);
     expect([x, Math.round(y * 1e9) / 1e9]).toEqual([60, 13]);
     expect(ANCHOR_RATIOS).toEqual([[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]]);
   });

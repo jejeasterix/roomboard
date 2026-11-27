@@ -55,7 +55,7 @@ describe("OG12 lot 2a : losange et ligne fermée (faux cœur)", () => {
     expect(s.points).toEqual([100, 0, 100, 50]);
     expect([s.w, s.h]).toEqual([0, 50]);
     expect(d.element(id)!.transform.slice(4)).toEqual([10, 20]);
-    expect(d.undo()).toBe(true);
+    expect(d.undo().full).toBe(true);
     expect(JSON.stringify(d.element(id))).toBe(before);
   });
   it("losange converti : quatre sommets haut, droite, bas, gauche", () => {
