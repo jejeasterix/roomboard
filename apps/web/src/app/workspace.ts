@@ -309,6 +309,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     confirm: (m) => shell.confirm(m),
     notify: (...a) => shell.notify(...a),
     guardClose: () => () => undefined,
+    openLink: (url) => shell.openLink?.(url),
     setTitle(title) {
       slot.title = title;
       if (slot.tab !== null && tabs.active()?.session === slot.tab) shell.setTitle(title);
@@ -413,6 +414,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     const files = createFileController({
       encode: (now, appVersion) => io.encode(board.doc, assets, now, appVersion, { kind: "document" }),
       importFiles: (f) => ws.importFiles(f, null),
+      exportPdf: () => ws.exportPdf(),
       saveBlocked: () => (slot.unread || missingOf(board.doc, assets).length > 0 ? UNREAD_ASSETS_MESSAGE : null),
       versions: board.engine,
       host: tabHost,

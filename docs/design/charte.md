@@ -31,6 +31,7 @@ Les deux dépôts donnent les mêmes valeurs pour les couleurs communes (le web 
 | `--rf-white` | `#FFFFFF` | `Tokens.Base.xaml:31` = `RF.Surface.Brush` (`Tokens.Semantic.xaml:22`) | `--color-bg-card` (l. 21) | îlots, panneaux, page |
 | `--rf-success` | `#27AE60` | `Tokens.Base.xaml:36` = `RF.Status.SuccessBrush` (`Tokens.Semantic.xaml:58`) | `--color-success` (l. 47) | pastille « envoyé », « enregistré » |
 | `--rf-danger` | `#E74C3C` | `Tokens.Base.xaml:44` = `RF.Status.DangerBrush` (`Tokens.Semantic.xaml:60`) | `--color-danger` (l. 49) | erreurs (pas dans les maquettes) |
+| `--rf-danger-text` | `#C0392B` | « Danger hover » de la charte RoomFlow (`roomflow2-web`, `docs/branding/RoomFlow_Charte_Graphique_v1.1.md:89`) | — | texte d'erreur (5,44:1 sur blanc, AA ; `--rf-danger` seul fait 3,82:1), personnalisation-2 lot 2 |
 
 Couleurs de portée (`RoomFlow2.App/Converters/ScopeColors.cs:10-16`) : Tous `#6044EB`, Officiel `#2D7DD2`, Entreprise
 `#27AE60`, Personnel `#E08585`, Communauté `#7C3AED`, Pictogramme `#EAB308`. RoomBoard ne les emploie pas encore ; elles

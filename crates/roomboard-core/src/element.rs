@@ -375,14 +375,72 @@ pub struct Look {
     /// 0..=99 ; 100 est le neutre (arbitrage 0..100), jamais gardé.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opacity: Option<u8>,
+    /// Lot 2 (T12) : `hachure` ou `cross-hatch` ; le plein est le neutre.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_style: Option<String>,
+    /// Pointe de début : le neutre lu est `none`, jamais gardé ni écrit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_arrowhead: Option<String>,
+    /// Pointe de fin : le neutre lu est `arrow`, jamais gardé ni écrit (un fichier ancien garde ses octets).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_arrowhead: Option<String>,
+    /// `center` ou `right` ; la gauche est le neutre.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_align: Option<String>,
+    /// Lien `http://`, `https://` ou `mailto:` de 2 048 caractères au plus (`valid_link`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
 }
 
 /// Styles de trait lisibles ; le trait plein est le neutre (champ absent).
 pub const STROKE_STYLES: [&str; 2] = ["dashed", "dotted"];
 
-/// Clés `Y.Map` des cinq champs d'aspect.
-pub(crate) const LOOK_KEYS: [&str; 5] =
-    ["strokeStyle", "roughness", "seed", "roundness", "opacity"];
+/// Remplissages lisibles ; le plein est le neutre (champ absent).
+pub const FILL_STYLES: [&str; 2] = ["hachure", "cross-hatch"];
+
+/// Pointes lisibles, aux deux bouts ; le neutre est `none` au début et `arrow` à la fin (jamais écrit).
+pub const ARROWHEADS: [&str; 4] = ["none", "arrow", "triangle", "triangle_outline"];
+pub const START_ARROWHEAD_DEFAULT: &str = "none";
+pub const END_ARROWHEAD_DEFAULT: &str = "arrow";
+
+/// Alignements lisibles ; la gauche est le neutre (champ absent).
+pub const TEXT_ALIGNS: [&str; 2] = ["center", "right"];
+
+/// Longueur maximale d'un lien, en caractères (même compte que le faux cœur : points de code).
+pub const LINK_MAX_CHARS: usize = 2048;
+
+/// Lien admis (H5) : `http://`, `https://` ou `mailto:`, casse exacte, 2 048 caractères au plus, sans blanc, sans
+/// `"`, `<`, `>`, `\` ni caractère de contrôle (la chaîne arrive brute à l'ouverture système).
+/// Tout autre schéma (`javascript:`, `data:`, `ftp:`…) est refusé à l'écriture et lu neutre.
+pub fn valid_link(s: &str) -> bool {
+    ["http://", "https://", "mailto:"]
+        .iter()
+        .any(|p| s.starts_with(p))
+        && s.chars().count() <= LINK_MAX_CHARS
+        && !s
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '"' | '<' | '>' | '\\'))
+}
+
+/// Pointe de domaine différente du neutre `default`, sinon `None`.
+fn arrowhead(v: &Option<String>, default: &str) -> Option<String> {
+    v.clone()
+        .filter(|s| ARROWHEADS.contains(&s.as_str()) && s != default)
+}
+
+/// Clés `Y.Map` des dix champs d'aspect.
+pub(crate) const LOOK_KEYS: [&str; 10] = [
+    "strokeStyle",
+    "roughness",
+    "seed",
+    "roundness",
+    "opacity",
+    "fillStyle",
+    "startArrowhead",
+    "endArrowhead",
+    "textAlign",
+    "link",
+];
 
 impl Look {
     pub fn is_neutral(&self) -> bool {
@@ -401,6 +459,17 @@ impl Look {
             seed: self.seed.filter(|_| roughness.is_some()),
             roundness: self.roundness.clone().filter(|s| s == "round"),
             opacity: self.opacity.filter(|o| *o < 100),
+            fill_style: self
+                .fill_style
+                .clone()
+                .filter(|s| FILL_STYLES.contains(&s.as_str())),
+            start_arrowhead: arrowhead(&self.start_arrowhead, START_ARROWHEAD_DEFAULT),
+            end_arrowhead: arrowhead(&self.end_arrowhead, END_ARROWHEAD_DEFAULT),
+            text_align: self
+                .text_align
+                .clone()
+                .filter(|s| TEXT_ALIGNS.contains(&s.as_str())),
+            link: self.link.clone().filter(|s| valid_link(s)),
         }
     }
 }
@@ -424,6 +493,18 @@ pub(crate) fn look_fields(l: &Look) -> Vec<(&'static str, In)> {
     if let Some(o) = l.opacity {
         v.push(("opacity", In::Any(Any::from(f64::from(o)))));
     }
+    let strings = [
+        ("fillStyle", &l.fill_style),
+        ("startArrowhead", &l.start_arrowhead),
+        ("endArrowhead", &l.end_arrowhead),
+        ("textAlign", &l.text_align),
+        ("link", &l.link),
+    ];
+    for (key, s) in strings {
+        if let Some(s) = s {
+            v.push((key, In::from(s.as_str())));
+        }
+    }
     v
 }
 
@@ -440,6 +521,11 @@ pub(crate) fn read_look<T: ReadTxn>(txn: &T, e: &MapRef) -> Look {
         seed: out_small_int(e.get(txn, "seed"), f64::from(u32::MAX)).map(|x| x as u32),
         roundness: out_string(e.get(txn, "roundness")),
         opacity: out_small_int(e.get(txn, "opacity"), 100.0).map(|x| x as u8),
+        fill_style: out_string(e.get(txn, "fillStyle")),
+        start_arrowhead: out_string(e.get(txn, "startArrowhead")),
+        end_arrowhead: out_string(e.get(txn, "endArrowhead")),
+        text_align: out_string(e.get(txn, "textAlign")),
+        link: out_string(e.get(txn, "link")),
     }
     .sanitized()
 }

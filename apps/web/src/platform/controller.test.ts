@@ -303,6 +303,10 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(fileCommandOf(k("s", { ctrlKey: true, altKey: true }))).toBeNull();
     expect(fileCommandOf(k("z", { ctrlKey: true }))).toBeNull();
     expect(fileCommandOf(k("O", { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(fileCommandOf(k("E", { ctrlKey: true, shiftKey: true }))).toBe("exportPdf"); // Ctrl+Maj+E exporte
+    expect(fileCommandOf(k("e", { metaKey: true, shiftKey: true }))).toBe("exportPdf");
+    expect(fileCommandOf(k("e", { ctrlKey: true }))).toBeNull();
+    expect(fileCommandOf(k("E", { ctrlKey: true, shiftKey: true, altKey: true }))).toBeNull();
     // Reconnue même tenue : la page doit pouvoir appeler preventDefault (sinon le navigateur ouvre « Enregistrer sous »).
     expect(fileCommandOf(k("s", { ctrlKey: true, repeat: true }))).toBe("save");
     expect(fileCommandOf(k("o", { metaKey: true, repeat: true }))).toBe("open");

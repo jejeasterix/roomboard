@@ -315,7 +315,7 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
       s.transform = cssMatrix(camera, session.matrix);
       s.width = `${session.boxWidth}px`;
       s.minHeight = `${session.size * TEXT_LINE_HEIGHT}px`;
-      s.font = textFont(session.size);
+      s.font = textFont(session.size, session.font !== undefined ? { font: session.font } : undefined);
       s.lineHeight = String(TEXT_LINE_HEIGHT);
       s.color = session.color;
       s.background = session.background ?? "transparent";

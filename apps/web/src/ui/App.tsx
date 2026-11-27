@@ -4,7 +4,7 @@
  * scène avec l'îlot des onglets et `#etat` (L2-5, L2-14) ; la scène (`main.rb-stages`) n'occupe que sa case. Panneaux
  * passagers (réglages, grille, image, bibliothèque, profils) au-dessus des îlots.
  */
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js";
+import { createComputed, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
 import { PDF_PAGE_KIND, type GridView, type ImageData, type PageLayout } from "../core/api";
@@ -40,6 +40,8 @@ import { createPageThumbs, type PageThumbs } from "./page-thumbs";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
 import { GridPanel } from "./GridPanel";
+import { HelpPanel } from "./HelpPanel";
+import { isHelpKey } from "./shortcuts";
 import { ImagePanel } from "./ImagePanel";
 import { LibraryPanel, type SharedFolder } from "./LibraryPanel";
 import type { ResourceLibrary } from "../app/library";
@@ -87,7 +89,7 @@ export interface AppProps {
   readonly sidebar?: { toggle?: (tab: "pages" | "calques") => void };
 }
 
-type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library" | "backgrounds";
+type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library" | "backgrounds" | "help";
 
 export function App(props: AppProps): JSX.Element {
   const ws = props.workspace;
@@ -174,6 +176,56 @@ export function App(props: AppProps): JSX.Element {
   };
   follow();
   const stopTabs = ws.tabs.onChange(follow);
+  // « ? » ouvre l'Aide (hors champ, sans Ctrl ni Alt, hors composition) ; l'écoute est ici : le panneau est à l'état de la page.
+  const helpKey = (e: KeyboardEvent): void => {
+    if (!isHelpKey(e) || annotating()) return;
+    e.preventDefault();
+    leaveEditor(() => setPanel((cur) => (cur === "help" ? null : "help")));
+  };
+  const helpDoc = props.stages.ownerDocument;
+  helpDoc.addEventListener("keydown", helpKey);
+  // T39 : Échap ferme l'Aide même si le focus n'est pas dans le panneau, et s'arrête là (la page ne désélectionne pas en plus).
+  // T41 : une couche posée par-dessus (menu ☰, sélecteur de couleur, éditeur de lien) garde son Échap : l'Aide attend le suivant.
+  const helpEscape = (e: KeyboardEvent): void => {
+    if (e.key !== "Escape" || panel() !== "help" || e.isComposing) return;
+    if (e.target instanceof Element && e.target.closest("[data-menu-list], [data-color-picker], [data-link-popover]") !== null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setPanel(null);
+  };
+  helpDoc.addEventListener("keydown", helpEscape, true);
+  onCleanup(() => {
+    helpDoc.removeEventListener("keydown", helpKey);
+    helpDoc.removeEventListener("keydown", helpEscape, true);
+  });
+  // T39 : l'élément qui a ouvert l'Aide (le bouton ☰ pour une ligne du menu ; rien pour « ? ») la retrouve à la fermeture ;
+  // sans lui, la scène : le focus ne tombe jamais sur le corps de la page. `createComputed` : avant que le panneau ne prenne le focus.
+  let helpOpener: HTMLElement | null = null;
+  createComputed(
+    on(
+      panel,
+      (p, prev) => {
+        if (p !== "help" || prev === "help") return;
+        const a = helpDoc.activeElement;
+        const menu = a instanceof HTMLElement ? a.closest('[data-toolbar="menu"]') : null;
+        helpOpener = menu !== null ? menu.querySelector<HTMLElement>("[data-menu-toggle]") : a instanceof HTMLElement && a !== helpDoc.body ? a : null;
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      panel,
+      (p, prev) => {
+        if (prev !== "help" || p !== null) return;
+        const back = helpOpener !== null && helpOpener.isConnected ? helpOpener : props.stages;
+        helpOpener = null;
+        if (!back.hasAttribute("tabindex") && back === props.stages) back.tabIndex = -1;
+        back.focus();
+      },
+      { defer: true },
+    ),
+  );
   const stopClipboard = ws.onClipboard(() => bump());
   onCleanup(() => {
     stopClipboard();
@@ -378,6 +430,8 @@ export function App(props: AppProps): JSX.Element {
       importFiles: (files, at) => void (ann !== undefined && annotating() ? ann.control.dropOnZone(files, at ?? null) : ws.importFiles(files, at)),
       insertPages: () => void ws.insertPages(),
       exportPdf: () => void ws.exportPdf(),
+      pageElementIds: () => ws.active().board.doc.elementIds(ws.active().board.engine.state().page),
+      confirm: (m) => props.shell.confirm(m),
       exportBoard: (format) => void ws.exportBoard(format),
       editOriginal: () => void ws.editOriginal(),
       selection: (a) => ws.selection(a),
@@ -609,6 +663,8 @@ export function App(props: AppProps): JSX.Element {
             annotating={annotating}
             sideStart={sideStart}
             above={above}
+            hidden={() => panel() !== null}
+            openLink={(url) => props.shell.openLink?.(url)}
           />
         )}
         onTopFree={setPopTop}
@@ -726,6 +782,11 @@ export function App(props: AppProps): JSX.Element {
             </div>
           );
         }}
+      </Show>
+      <Show when={panel() === "help"}>
+        <div class="rb-popover rb-help">
+          <HelpPanel close={() => setPanel(null)} />
+        </div>
       </Show>
       <Show when={panel() === "grid"}>
         <div class="rb-popover">{gridPanelFor(ws.active().board)}</div>

@@ -545,3 +545,17 @@ describe("zone de saisie riche (C7b)", () => {
     expect(readSelection(zone)).toEqual({ start: 4, end: 4 });
   });
 });
+
+describe("zone de saisie : police du style courant (T32)", () => {
+  it("la session porte une police : la zone la montre à la taille choisie, avec repli générique", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open({ ...session, font: "Georgia" }, IDENTITY);
+    expect(zone.style.fontSize).toBe("48px");
+    expect(zone.style.fontFamily).toBe("Georgia, serif");
+  });
+  it("sans police : la police du socle", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(session, IDENTITY);
+    expect(zone.style.fontFamily).toBe('"Atkinson Hyperlegible", system-ui, sans-serif');
+  });
+});

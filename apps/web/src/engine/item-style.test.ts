@@ -17,7 +17,7 @@ describe("item-style", () => {
     expect(mergeItemStyle(DEFAULT_ITEM_STYLE, { opacity: 40 }).opacity).toBe(40);
   });
   it("défaut : Architecte, Droits, plein, opaque", () => {
-    expect(DEFAULT_ITEM_STYLE).toEqual({ color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100 });
+    expect(DEFAULT_ITEM_STYLE).toEqual({ color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100, fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", font: "default", fontSize: 36 });
   });
   it("parseItemStyle : couleur invalide refusée (color, background)", () => {
     expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, color: "red" }))?.color).toBe("red"); // nom CSS valide
@@ -32,5 +32,16 @@ describe("item-style", () => {
   });
   it("parseItemStyle : seul un objet simple est lu (tableau, null, scalaire : null)", () => {
     for (const raw of ["[]", "[1]", "null", "3", "\"x\"", "true"]) expect(parseItemStyle(raw)).toBeNull();
+  });
+});
+
+describe("style courant : police et taille du prochain texte (T31)", () => {
+  it("relus ; champ invalide : illisible ; fusion ignore l'invalide", () => {
+    const s = { ...DEFAULT_ITEM_STYLE, font: "Georgia", fontSize: 48 };
+    expect(parseItemStyle(JSON.stringify(s))).toEqual(s);
+    expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, fontSize: 0 }))).toBeNull();
+    expect(parseItemStyle(JSON.stringify({ ...DEFAULT_ITEM_STYLE, font: "" }))).toBeNull();
+    expect(mergeItemStyle(DEFAULT_ITEM_STYLE, { fontSize: -3 }).fontSize).toBe(36);
+    expect(mergeItemStyle(DEFAULT_ITEM_STYLE, { font: "Courier New" }).font).toBe("Courier New");
   });
 });

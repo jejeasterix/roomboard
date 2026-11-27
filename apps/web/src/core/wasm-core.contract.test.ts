@@ -129,9 +129,10 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     ).toThrow("Change invalide");
     expect(() => d.apply({ type: "Transform", ids: ["e1", "e2"], matrix: [2, 0, 0, 2, 10, 20] })).toThrow("Change invalide");
     expect(calls).toEqual([
-      // OG11 : les cinq derniers arguments sont l'aspect (stroke_style, roughness, seed, roundness, opacity), absents ici.
-      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000", undefined, undefined, undefined, undefined, undefined],
-      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined, undefined, undefined, undefined, undefined, undefined],
+      // OG11 : les dix derniers arguments sont l'aspect (stroke_style, roughness, seed, roundness, opacity, puis au lot 2
+      // fill_style, start_arrowhead, end_arrowhead, text_align, link), absents ici.
+      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
+      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
       ["transform", ["e1", "e2"], new Float64Array([2, 0, 0, 2, 10, 20])],
     ]);
   });
@@ -2216,7 +2217,7 @@ describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
     const spansArgOf = (a: unknown[], i: number): unknown => (i < 2 ? a[9] : a.at(-1));
     expect(calls.map(spansArgOf)).toEqual([[{ text: "a", attrs: { bold: true } }], undefined, [{ text: "a", attrs: { bold: true } }]]);
     expect((calls[0]?.[9] as { attrs: unknown }[])[0]?.attrs).toStrictEqual({ bold: true });
-    expect(calls[0]?.slice(10)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    expect(calls[0]?.slice(10)).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]); // aspect absent (lots 1 et 2)
   });
 });
 
@@ -4102,6 +4103,109 @@ describe.each(factories)("contrat OG11 : $name", ({ f }) => {
   });
 });
 
+// OG11 (T12) : champs du lot 2 (`fillStyle`, pointes, `textAlign`, `link`), joués sur les deux cœurs. Référence :
+// `element.rs` (`valid_link`, `Look::sanitized`), `style.rs` (`validate`, `writes_for`) ; un défaut n'est jamais écrit.
+describe.each(factories)("contrat OG11 lot 2 : $name", ({ f }) => {
+  const black = { color: "#000000", width: 4 };
+  const shape = (d: CoreDocument, p: string, kind: ShapeKind, look?: Look): string =>
+    d.apply({ type: "AddShape", page: p, shape: kind, x0: 0, y0: 0, x1: 100, y1: 50, style: black, fill: null, ...(look ? { look } : {}) }).ids[0] ?? "";
+  const box = (d: CoreDocument, p: string, look?: Look): string =>
+    d.apply({ type: "SetText", page: p, id: null, x: 10, y: 10, content: "abc", color: "#000000", size: 16, boxWidth: 100, boxHeight: 30, ...(look ? { look } : {}) }).ids[0] ?? "";
+  const restyle = (d: CoreDocument, ids: readonly string[], patch: LookPatch): Change => d.apply({ type: "SetStyle", ids, patch });
+  const odd = <T>(v: unknown): T => v as T;
+
+  it("Lien : blancs Unicode et caractères interdits, même réponse sur les deux cœurs", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shape(d, p, "rect");
+    const v = d.version();
+    const bad = ["\u00A0", "\u2028", "\u3000", "\u0085", '"', "<", ">", "\\"];
+    for (const c of bad) {
+      expect(messageOf(() => restyle(d, [r], { link: `https://a${c}b` })), JSON.stringify(c)).toBe("style invalide");
+    }
+    expect(d.version()).toBe(v);
+    // U+FEFF n'est pas un blanc pour Rust (White_Space l'exclut) : accepté.
+    restyle(d, [r], { link: "https://a\uFEFFb" });
+    expect(d.element(r)?.look?.link).toBe("https://a\uFEFFb");
+  });
+
+  it("Lien : javascript refusé, sur les deux cœurs", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shape(d, p, "rect");
+    const v = d.version();
+    for (const bad of ["javascript:alert(1)", "JavaScript:alert(1)", " https://example.org", "ftp://x", "data:text/html,x", "https:x", "", `https://${"h".repeat(2041)}`]) {
+      expect(messageOf(() => restyle(d, [r], { link: bad })), bad.slice(0, 30)).toBe("style invalide");
+    }
+    expect(d.version()).toBe(v);
+    expect(d.element(r)?.look).toBeUndefined();
+    for (const good of ["http://example.org", "mailto:a@example.org", `https://${"é".repeat(2040)}`, "https://example.org"]) {
+      restyle(d, [r], { link: good });
+      expect(d.element(r)?.look?.link).toBe(good);
+    }
+    expect(d.element(shape(d, p, "rect", odd<Look>({ link: "javascript:alert(1)" })))?.look).toBeUndefined();
+    restyle(d, [r], { link: null });
+    expect(d.element(r)?.look).toBeUndefined();
+  });
+
+  it("pointes : le défaut (début none, fin arrow) n'est jamais écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = shape(d, p, "arrow", { startArrowhead: "none", endArrowhead: "arrow" });
+    expect(d.element(a)?.look).toBeUndefined();
+    const v = d.version();
+    expect(restyle(d, [a], { startArrowhead: "none", endArrowhead: "arrow" }).ids).toEqual([]);
+    expect(d.version()).toBe(v);
+    expect(restyle(d, [a], { startArrowhead: "triangle", endArrowhead: "none" }).ids).toEqual([a]);
+    expect(d.element(a)?.look).toEqual({ startArrowhead: "triangle", endArrowhead: "none" });
+    expect(restyle(d, [a], { startArrowhead: "none", endArrowhead: "arrow" }).ids).toEqual([a]);
+    expect(d.element(a)?.look).toBeUndefined();
+  });
+
+  it("applicabilité : fillStyle rect et ellipse, pointes flèche, textAlign texte, lien partout", () => {
+    const d = f.blank();
+    const p = first(d);
+    const ids = [shape(d, p, "rect"), shape(d, p, "ellipse"), shape(d, p, "arrow"), shape(d, p, "line"), box(d, p), commit(d, p, 300)];
+    const [r, e, a, , t] = ids;
+    expect(restyle(d, ids, { fillStyle: "hachure" }).ids).toEqual([r, e]);
+    expect(restyle(d, ids, { endArrowhead: "triangle_outline" }).ids).toEqual([a]);
+    expect(restyle(d, ids, { textAlign: "right" }).ids).toEqual([t]);
+    expect(restyle(d, ids, { link: "https://example.org" }).ids).toEqual(ids);
+    expect(d.element(r ?? "")?.look).toEqual({ fillStyle: "hachure", link: "https://example.org" });
+    expect(d.element(a ?? "")?.look).toEqual({ endArrowhead: "triangle_outline", link: "https://example.org" });
+    expect(d.element(t ?? "")?.look).toEqual({ textAlign: "right", link: "https://example.org" });
+    expect(restyle(d, ids, { fillStyle: null }).ids).toEqual([r, e]);
+    expect(d.element(e ?? "")?.look).toEqual({ link: "https://example.org" });
+  });
+
+  it("lot 2 hors domaine : style invalide, rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = shape(d, p, "arrow");
+    const v = d.version();
+    for (const patch of [
+      { fillStyle: odd<"hachure">("solid") }, { fillStyle: odd<"hachure">("zigzag") }, { startArrowhead: odd<"arrow">("circle") },
+      { endArrowhead: odd<"arrow">("Arrow") }, { textAlign: odd<"center">("left") }, { textAlign: odd<"center">("justify") },
+      { startArrowhead: "triangle", link: "javascript:alert(1)" },
+    ] as LookPatch[]) {
+      expect(messageOf(() => restyle(d, [a], patch)), JSON.stringify(patch)).toBe("style invalide");
+    }
+    expect(d.version()).toBe(v);
+    expect(d.element(a)?.look).toBeUndefined();
+  });
+
+  it("créations : champs du lot 2 écrits, défauts et hors domaine omis", () => {
+    const d = f.blank();
+    const p = first(d);
+    const heads: Look = { startArrowhead: "triangle", endArrowhead: "none", link: "mailto:a@example.org" };
+    expect(d.element(shape(d, p, "arrow", heads))?.look).toEqual(heads);
+    expect(d.element(shape(d, p, "rect", { fillStyle: "cross-hatch" }))?.look).toEqual({ fillStyle: "cross-hatch" });
+    expect(d.element(box(d, p, { textAlign: "center" }))?.look).toEqual({ textAlign: "center" });
+    const neutral = odd<Look>({ fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", link: "ftp://x" });
+    expect(d.element(shape(d, p, "rect", neutral))?.look).toBeUndefined();
+  });
+});
+
 describe.skipIf(loaded === null)("contrat OG11 : vrai module seulement", () => {
   // Écart documenté de `fake-core.ts` : la fausse liaison ne coupe pas à la gomme partielle (aucun morceau).
   it("gomme partielle : look recopié sur les morceaux", () => {
@@ -4112,6 +4216,81 @@ describe.skipIf(loaded === null)("contrat OG11 : vrai module seulement", () => {
     const c = d.apply({ type: "Erase", page, path: new Float32Array([100, 80, 100, 120]), radius: 6, mode: "partial" });
     expect(c.ids.length).toBeGreaterThanOrEqual(2);
     for (const id of c.ids) expect(d.element(id)?.look).toEqual({ opacity: 40 });
+    d.free();
+  });
+});
+
+// OG11 (DA-2) : `Restack`, ordre des objets, joué sur les deux cœurs. Discrimine le patron interdit : un bloc déplacé
+// élément par élément (une transaction chacun) laisserait, après un seul `undo`, l'ordre à moitié rétabli ; une
+// réécriture à l'identique quand l'ordre ne change pas pousserait une étape.
+describe.each(factories)("contrat Restack : $name", ({ f }) => {
+  const rect = (d: CoreDocument, p: string, x: number): string => {
+    const id = d.apply({ type: "AddShape", page: p, shape: "rect", x0: x, y0: 100, x1: x + 50, y1: 150, style, fill: null }).ids[0];
+    if (id === undefined) throw new Error("aucun id");
+    return id;
+  };
+
+  it("Restack : une étape, sur les deux cœurs", () => {
+    const d = f.blank();
+    const p = first(d);
+    const [a, b, c, e] = [rect(d, p, 0), rect(d, p, 100), rect(d, p, 200), rect(d, p, 300)];
+    const view = d.element(a);
+    const ch = d.apply({ type: "Restack", ids: [c!, a!, c!], to: 2 });
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+    expect(ch.ids).toEqual([a, c]);
+    expect(ch.pages).toEqual([p]);
+    expect(ch.removed).toEqual([]);
+    expect(d.element(a!)).toEqual(view);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([a, b, c, e]);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([a, b, c]);
+    d.free();
+  });
+
+  it("Restack : même ordre, aucune étape ; arrière-plan et premier plan", () => {
+    const d = f.blank();
+    const p = first(d);
+    const [a, b, c] = [rect(d, p, 0), rect(d, p, 100), rect(d, p, 200)];
+    unchanged(d, () => expect(d.apply({ type: "Restack", ids: [b!, c!], to: 1 }).ids).toEqual([]));
+    d.apply({ type: "Restack", ids: [c!], to: 0 });
+    expect(d.elementIds(p)).toEqual([c, a, b]);
+    d.apply({ type: "Restack", ids: [c!], to: 2 });
+    expect(d.elementIds(p)).toEqual([a, b, c]);
+    d.free();
+  });
+
+  it("MovePage : rang non entier ou hors u32 refusé comme par le faux cœur, rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    rect(d, p, 0);
+    d.apply({ type: "AddPage", after: null });
+    for (const to of [0.5, -1, 2, 2 ** 32 + 1, Number.NaN]) {
+      unchanged(d, () => expect(messageOf(() => d.apply({ type: "MovePage", page: p, to })), String(to)).toBe("rang de page hors bornes"));
+    }
+    d.free();
+  });
+
+  it("Restack : refus d'OG4 (rang hors bornes ou non entier, bloc vide : BadIndex ; id inconnu : UnknownElement ; page mêlée : MixedPages), rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = rect(d, p, 0);
+    rect(d, p, 100);
+    d.apply({ type: "AddPage", after: null });
+    const q = d.pageIds()[1]!;
+    const z = rect(d, q, 0);
+    const range = "rang de page hors bornes";
+    for (const [cmd, message] of [
+      [{ type: "Restack", ids: [a], to: 2 }, range],
+      [{ type: "Restack", ids: [a], to: -1 }, range],
+      [{ type: "Restack", ids: [a], to: 0.5 }, range],
+      [{ type: "Restack", ids: [a], to: 2 ** 32 + 1 }, range],
+      [{ type: "Restack", ids: [a, "inconnu"], to: 0 }, "élément inconnu : inconnu"],
+      [{ type: "Restack", ids: [], to: 0 }, range],
+      [{ type: "Restack", ids: [a, z], to: 0 }, "objets de pages différentes"],
+    ] as const satisfies readonly (readonly [Command, string])[]) {
+      unchanged(d, () => expect(messageOf(() => d.apply(cmd))).toBe(message));
+    }
     d.free();
   });
 });

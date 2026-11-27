@@ -5,7 +5,7 @@
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
-import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, PageLayout, PageMode, ShapeKind, StrokeStyle } from "../core/api";
+import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type EraseMode, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
@@ -25,6 +25,7 @@ import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
 import { createModelOrbit, type ModelOrbit, type ModelOrbitSession } from "./tools/model-orbit";
 import { SELECT_TOL_PX } from "./tools/select";
+import { inLinkBadge, linkBadgeBox } from "./render/link-badge";
 import type { ModelCamera } from "./render/model-frames";
 import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type SelectionTool, type TableTool, type ToolContext } from "./tools/tool";
 
@@ -63,6 +64,9 @@ export interface EngineState {
   /** OG11 (déc. 23) : style courant des créations et du panneau d'options. Facultatif comme fillColor (PC5) : le moteur
    *  le publie toujours. */
   readonly itemStyle?: ItemStyle;
+  /** T18 (H5, déc. 38) : élément dont l'éditeur de lien est ouvert (Ctrl+K ou bouton Lien, un seul élément) ; null
+   *  sinon. Facultatif comme fillColor (PC5) : le moteur le publie toujours. */
+  readonly linkEditing?: string | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -106,6 +110,9 @@ export interface EngineDeps {
   readonly fitTop?: () => number;
   /** Disposition d'une page neuve (profil actif, `behavior.pageMode`) ; absent : paysage. */
   readonly pageMode?: () => PageLayout;
+  /** T18 (déc. 38) : ouverture d'un lien (`ShellPort.openLink`), appelée seulement au relâché d'un toucher du badge avec
+   *  l'outil Sélection ; absent : rien ne s'ouvre. */
+  readonly openLink?: (url: string) => void;
 }
 
 /**
@@ -156,6 +163,9 @@ export interface Engine {
   setTool(t: ToolChoice): void;
   setEraserMode(m: EraseMode): void;
   run(cmd: Command): Change | null;
+  /** T37 : plusieurs commandes d'un même changement, une seule étape d'annulation (un annuler les défait toutes, un
+   *  rétablir les refait) ; une seule émission. Liste vide : null. Une commande refusée arrête la suite (erreur de l'état). */
+  runAll(cmds: readonly Command[]): Change | null;
   /** Lot 2 (calques) : outil Sélection, sélection = `ids` de la page montrée (les inconnus sont ignorés) ; [] la vide. */
   select(ids: readonly string[]): void;
   /** Lot 2 : bloc `ids` au rang `to` de la pile (0 = arrière-plan) ; une étape ; faux si refusé ou sans effet. */
@@ -230,6 +240,13 @@ export interface Engine {
   deleteSelection(): boolean;
   /** OG11 (Ctrl+D) : copie de la sélection décalée de +10/+10, sélectionnée ; une étape ; faux sans sélection. */
   duplicateSelection(): boolean;
+  /** T18 (déc. 38) : ouvre l'éditeur de lien sur l'unique élément sélectionné (`linkEditing`) ; faux sinon. */
+  editLink(): boolean;
+  /** T18 : pose (un SetStyle { link }, une étape) ou retire (null) le lien de l'unique élément sélectionné, puis ferme
+   *  l'éditeur ; faux sans élément unique ou si le cœur refuse (schéma hors http, https, mailto ; 2 048 caractères). */
+  setLink(url: string | null): boolean;
+  /** T18 : ferme l'éditeur de lien sans écrire. */
+  closeLink(): void;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
    *  invalide est ignorée. */
   setFillColor(color: string | null): void;
@@ -239,7 +256,7 @@ export interface Engine {
   tableAction(a: TableAction): void;
   /** Pastille de remplissage (T12) : sur la cellule active ; null retire le remplissage. */
   tableFill(fill: string | null): void;
-  /** Style de texte des outils Texte et Tableau, et de la cible d'import (F21). */
+  /** Style de texte de l'outil Tableau et de la cible d'import (F21) ; l'outil Texte a `textToolStyle`. */
   textStyle(): TextStyle;
   /** Bouton de la rangée Format (C7b, DAR4) : relayé à l'outil actif (Texte ou Tableau) ; autre outil : sans effet. */
   textFormat(a: FormatAction): void;
@@ -366,6 +383,8 @@ export function createEngine(deps: EngineDeps): Engine {
   let lastOverlay = overlayKey(EMPTY_OVERLAY);
   let eraserMode: EraseMode = "partial";
   let error: string | null = null;
+  /** T18 : élément dont l'éditeur de lien est ouvert ; retombe à null dès qu'il n'est plus l'unique sélection. */
+  let linkEditing: string | null = null;
   let sceneDirty = true;
   let lastHidden: ReadonlySet<string> = new Set<string>();
   /** Aperçu de grille posé sur le rendu (DAE1). */
@@ -464,13 +483,21 @@ export function createEngine(deps: EngineDeps): Engine {
       fillColor,
       fillTolerance,
       itemStyle: item,
+      linkEditing: linkTarget(),
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
     };
   }
 
+  /** T18 : élément de l'éditeur de lien, s'il est encore l'unique sélection. */
+  function linkTarget(): string | null {
+    const sel = selectTool.selection();
+    return linkEditing !== null && sel.length === 1 && sel[0] === linkEditing ? linkEditing : null;
+  }
+
   function emit(): void {
+    linkEditing = linkTarget();
     const s = state();
     for (const cb of stateListeners) cb(s);
   }
@@ -532,14 +559,26 @@ export function createEngine(deps: EngineDeps): Engine {
   function commit(write: () => Change, showAppeared: boolean): Change | null {
     lastDeleted = null;
     const before = doc.pageIds();
+    const v0 = doc.version();
     let change: Change;
     try {
       change = write();
     } catch (e) {
+      trackSteps(v0);
+      // Un lot refusé au milieu garde ses écritures déjà faites : la scène est rafraîchie comme après une écriture réussie.
+      if (doc.version() !== v0) {
+        renderer.invalidate({ ...NO_CHANGE, full: true, version: doc.version() });
+        imageEdit?.changed(doc.version());
+        followPages(before, showAppeared);
+        selectTool.prune();
+        tableTool.prune();
+        requestScene();
+      }
       error = e instanceof Error ? e.message : String(e);
       emit();
       return null;
     }
+    trackSteps(v0);
     renderer.invalidate(change);
     imageEdit?.changed(doc.version());
     error = null;
@@ -555,12 +594,88 @@ export function createEngine(deps: EngineDeps): Engine {
     return commit(() => doc.apply(cmd), false);
   }
 
+  /** Lots d'étapes (T37) : le cœur compte une étape par commande ; un lot en compte `width` et s'annule d'un geste.
+   *  Pile des écritures passées par `commit` : `end` = version du document qu'elles laissent (tout état a sa version,
+   *  annuler et rétablir en changent aussi). Une écriture hors `commit` rompt la correspondance : les piles sont jetées
+   *  et l'annulation retombe sur une étape simple. */
+  interface Lot { at: number; width: number }
+  const undoLots: Lot[] = [];
+  const redoLots: Lot[] = [];
+  let lotWidth = 1;
+
+  function trackSteps(v0: number): void {
+    const width = lotWidth;
+    lotWidth = 1;
+    const v = doc.version();
+    if (v === v0) return;
+    // Continuité : le sommet doit finir à `v0`, sinon une écriture hors `commit` s'est glissée entre les deux.
+    const top = undoLots[undoLots.length - 1];
+    if (top !== undefined && top.at !== v0) undoLots.length = 0;
+    undoLots.push({ at: v, width });
+    redoLots.length = 0;
+  }
+
+  function mergeChange(a: Change, b: Change): Change {
+    return {
+      pages: [...new Set([...a.pages, ...b.pages])],
+      ids: [...new Set([...a.ids, ...b.ids])],
+      removed: [...new Set([...a.removed, ...b.removed])],
+      full: a.full || b.full,
+      version: b.version,
+    };
+  }
+
+  function runAll(cmds: readonly Command[]): Change | null {
+    if (cmds.length === 0) return null;
+    return commit(() => {
+      let total: Change | null = null;
+      let width = 0;
+      try {
+        for (const cmd of cmds) {
+          const before = doc.version();
+          const change = doc.apply(cmd);
+          if (doc.version() !== before) width++;
+          total = total === null ? change : mergeChange(total, change);
+        }
+      } finally {
+        lotWidth = Math.max(1, width);
+      }
+      return total ?? NO_CHANGE;
+    }, false);
+  }
+
+  /** Étapes à défaire ou refaire d'un geste : la largeur du lot au sommet, 1 si la pile ne correspond plus au document. */
+  function lotWidthFor(which: "undo" | "redo"): number {
+    const mine = which === "undo" ? undoLots : redoLots;
+    const top = mine[mine.length - 1];
+    if (top === undefined) return 1;
+    if (top.at === doc.version()) return top.width;
+    undoLots.length = 0;
+    redoLots.length = 0;
+    return 1;
+  }
+
+  /** Après un annuler ou rétablir de `width` étapes : le lot passe sur l'autre pile, l'état d'arrivée est celui du sommet suivant. */
+  function moveLot(which: "undo" | "redo", width: number, moved: boolean): void {
+    const from = which === "undo" ? undoLots : redoLots;
+    const to = which === "undo" ? redoLots : undoLots;
+    if (!moved || from.length === 0) return;
+    from.pop();
+    const v = doc.version();
+    to.push({ at: v, width });
+    const next = from[from.length - 1];
+    if (next !== undefined) next.at = v;
+  }
+
   function history(which: "undo" | "redo"): void {
     const before = doc.pageIds();
     const restore = which === "undo" ? lastDeleted : null;
     lastDeleted = null;
     const version = doc.version();
-    const change = which === "undo" ? doc.undo() : doc.redo();
+    const width = lotWidthFor(which);
+    let change = which === "undo" ? doc.undo() : doc.redo();
+    for (let i = 1; i < width; i++) change = mergeChange(change, which === "undo" ? doc.undo() : doc.redo());
+    moveLot(which, width, doc.version() !== version);
     renderer.invalidate(change);
     // Rien à annuler ou à rétablir : aucune écriture, le brouillon de la retouche reste (I31).
     if (doc.version() !== version) imageEdit?.changed(doc.version());
@@ -587,10 +702,12 @@ export function createEngine(deps: EngineDeps): Engine {
     stateChanged: () => emit(),
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
-  /** Style de texte des outils Texte et Tableau : couleur du stylo, taille par défaut. */
-  const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}) });
+  /** Style de texte de l'outil Tableau et de l'import : couleur du stylo, taille par défaut ; l'outil Texte a `textToolStyle`. */
+  const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}), ...(item.textAlign !== "left" ? { textAlign: item.textAlign } : {}) });
+  /** T32 : style de l'outil Texte seul : taille et police choisies dans le panneau ; l'outil Tableau et l'import gardent `textStyle`. */
+  const textToolStyle = (): TextStyle => ({ ...textStyle(), size: item.fontSize, ...(item.font !== "default" ? { font: item.font } : {}) });
   const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
-  const textTool: TextTool = deps.tools.text?.(ctx, textStyle) ?? inertText();
+  const textTool: TextTool = deps.tools.text?.(ctx, textToolStyle) ?? inertText();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => item) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => item),
@@ -701,9 +818,67 @@ export function createEngine(deps: EngineDeps): Engine {
     };
   };
 
+  /** T18 (déc. 38) : lien dont le badge est sous le point (px CSS), élément du dessus d'abord ; null : aucun. */
+  const badgeLinkAt = (s: InputSample | undefined, pointerType?: string): string | null => {
+    if (s === undefined) return null;
+    const ids = doc.elementIds(pageId);
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const id = ids[i];
+      if (id === undefined || lastHidden.has(id)) continue;
+      const link = doc.element(id)?.look?.link;
+      if (link === undefined) continue;
+      const b = doc.bounds([id]);
+      if (b !== null && inLinkBadge(linkBadgeBox(b, camera), s.x, s.y, pointerType)) return link;
+    }
+    return null;
+  };
+
+  /**
+   * T18 : appui sur un badge (patron de `missedOrbit`). Relâché sous le seuil : le lien s'ouvre, seul geste qui ouvre
+   * une URL ; au-delà du seuil, l'outil Sélection reçoit tous les points (glisser l'élément ou une poignée reste
+   * possible) ; abandon ou fin anormale : rien.
+   */
+  const linkTap = (g: GestureTool, pointerId: number, first: readonly InputSample[], url: string): GestureTool => {
+    const held: InputSample[] = [];
+    const origin = first[0];
+    let started = false;
+    const start = (predicted: readonly InputSample[]): void => {
+      started = true;
+      emitIfSelectionChanged(() => {
+        g.begin(pointerId, first);
+        if (held.length > 0) g.extend(pointerId, held, predicted);
+      });
+      loop.start();
+    };
+    const far = (s: InputSample): boolean => origin !== undefined && Math.hypot(s.x - origin.x, s.y - origin.y) > ORBIT_MISS_SLOP_PX;
+    return {
+      begin() {},
+      extend(id, samples, predicted) {
+        if (started) return g.extend(id, samples, predicted);
+        held.push(...samples);
+        if (samples.some(far)) start(predicted);
+      },
+      frame() {},
+      close(id, how) {
+        if (started) return g.close(id, how);
+        if (how === "end") deps.openLink?.(url);
+      },
+      live: () => NO_LIVE,
+      active: () => started && g.active(),
+    };
+  };
+
   const sink: GestureSink = {
-    begin(pointerId, t, samples) {
+    begin(pointerId, t, samples, pointerType) {
       lastDeleted = null;
+      // T18 (déc. 38) : toucher du badge d'un lien avec l'outil Sélection, hors rognage, pipette et orbite.
+      if (t === "select" && orbit === null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        const url = badgeLinkAt(samples[0], pointerType);
+        if (url !== null) {
+          owner.set(pointerId, linkTap(tools[t], pointerId, samples, url));
+          return;
+        }
+      }
       // C15 (S2) : un appui qui ne touche pas l'objet de l'orbite (zone vide ou autre élément, hit-test de la sélection)
       // ferme l'orbite et va à l'outil courant (`missedOrbit`) ; pendant un glissé de l'orbite, un second appui lui
       // reste (ignoré).
@@ -738,6 +913,10 @@ export function createEngine(deps: EngineDeps): Engine {
       ...(p.roughness !== undefined ? { roughness: p.roughness } : {}),
       ...(p.roundness !== undefined ? { roundness: p.roundness === "round" ? "round" : null } : {}),
       ...(p.opacity !== undefined ? { opacity: p.opacity } : {}),
+      ...(p.fillStyle !== undefined ? { fillStyle: p.fillStyle === "solid" ? null : p.fillStyle } : {}),
+      ...(p.startArrowhead !== undefined ? { startArrowhead: p.startArrowhead } : {}),
+      ...(p.endArrowhead !== undefined ? { endArrowhead: p.endArrowhead } : {}),
+      ...(p.textAlign !== undefined ? { textAlign: p.textAlign === "left" ? null : p.textAlign } : {}),
     };
   }
 
@@ -750,10 +929,15 @@ export function createEngine(deps: EngineDeps): Engine {
     item = next;
     if (changed) for (const cb of [...itemListeners]) cb(item);
     const sel = selectTool.selection();
-    if (writeSelection && sel.length > 0) {
+    // T31 : un texte rouvert en saisie est la cible quand rien n'est sélectionné (le panneau agit sur lui, comme Excalidraw).
+    const editedId = tool === "text" ? textTool.editing()?.id ?? null : null;
+    const ids = sel.length > 0 ? [...sel] : editedId !== null ? [editedId] : [];
+    if (writeSelection && ids.length > 0) {
       const accepted = Object.fromEntries(keys.filter((k) => k in p && p[k] === next[k]).map((k) => [k, p[k]])) as Partial<ItemStyle>;
-      if (Object.keys(accepted).length > 0) {
-        run({ type: "SetStyle", ids: [...sel], patch: patchOf(accepted) });
+      const patch = patchOf(accepted);
+      // `font` et `fontSize` ne sont que le style du prochain texte : aucune commande.
+      if (Object.keys(patch).length > 0) {
+        run({ type: "SetStyle", ids, patch });
         return;
       }
     }
@@ -788,6 +972,7 @@ export function createEngine(deps: EngineDeps): Engine {
       emit();
     },
     run,
+    runAll,
     group,
     ungroup,
     deleteSelection() {
@@ -874,7 +1059,7 @@ export function createEngine(deps: EngineDeps): Engine {
           imageEdit.cancelMode();
           return true;
         }
-        if (edit === "delete" || objectKey(e) === "duplicate") return true;
+        if (edit === "delete" || objectKey(e) === "duplicate" || objectKey(e) === "link") return true;
         if (enterAction(e)) {
           if (imageEdit.mode() === "crop") imageEdit.finishCrop(true);
           return true;
@@ -894,6 +1079,8 @@ export function createEngine(deps: EngineDeps): Engine {
         engine.duplicateSelection();
         return true;
       }
+      // T18 (déc. 38, 39) : Ctrl+K ouvre l'éditeur de lien sur un seul élément ; aucun ou plusieurs : la touche passe.
+      if (objectKey(e) === "link") return engine.editLink();
       if (edit !== null) {
         // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
         if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
@@ -1062,6 +1249,29 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     setItemStyle(p) {
       setItem(p, true);
+    },
+    editLink() {
+      const sel = selectTool.selection();
+      const id = sel.length === 1 ? sel[0] : undefined;
+      if (id === undefined) return false;
+      linkEditing = id;
+      emit();
+      return true;
+    },
+    setLink(url) {
+      const sel = selectTool.selection();
+      const id = sel.length === 1 ? sel[0] : undefined;
+      if (id === undefined) return false;
+      // Lien inchangé (vide sur un élément sans lien) : aucune étape vide dans l'historique.
+      if ((doc.element(id)?.look?.link ?? null) !== url && run({ type: "SetStyle", ids: [id], patch: { link: url } }) === null) return false;
+      linkEditing = null;
+      emit();
+      return true;
+    },
+    closeLink() {
+      if (linkEditing === null) return;
+      linkEditing = null;
+      emit();
     },
     itemStyle: () => item,
     adoptItemStyle(s) {
