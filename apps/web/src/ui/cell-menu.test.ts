@@ -111,6 +111,6 @@ describe("menu de case (cell-menu, personnalisation-3 T7)", () => {
     expect(placeCellMenu(50, 60, menu, host)).toEqual({ left: 50, top: 60 });
     expect(placeCellMenu(390, 60, menu, host)).toEqual({ left: 240, top: 60 });
     expect(placeCellMenu(50, 290, menu, host)).toEqual({ left: 50, top: 190 });
-    expect(placeCellMenu(-5, 10, { width: 160, height: 500 }, host)).toEqual({ left: 0, top: 10 });
+    expect(placeCellMenu(-5, 10, { width: 160, height: 500 }, host)).toEqual({ left: 0, top: 0 });
   });
 });

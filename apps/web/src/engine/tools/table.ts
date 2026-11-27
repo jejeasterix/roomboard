@@ -40,6 +40,7 @@ import {
   type Range,
 } from "../table-geom";
 import type { Measure } from "../text-layout";
+import type { CellDrop } from "./cell-drop";
 import { createCommitGate } from "./commit-gate";
 import { transformBounds } from "./handles";
 import type { TextEditorHost, TextStyle } from "./text";
@@ -92,7 +93,7 @@ interface Press {
 const HOLD_MS = 500;
 const HOLD_SLOP = 8;
 
-export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu): TableTool {
+export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu, cellDrop?: Pick<CellDrop, "place">): TableTool {
   let active: CellRef | null = null;
   /** Autre coin de la plage (F14), dans le tableau de `active` ; null : aucune plage. */
   let corner: CellRef | null = null;
@@ -315,7 +316,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         id: "unplace",
         label: "Sortir",
         run: () => {
-          ctx.run({ type: "PlaceInCell", ids: out, matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] });
+          // Même commande que Alt+Maj+Entrée (D11) : la case quittée revient à la taille exigée sans l'objet.
+          const cmd = cellDrop?.place(out, true) ?? { type: "PlaceInCell", ids: out, matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] };
+          if (cmd !== null) ctx.run(cmd);
           ctx.stateChanged?.();
         },
       });
@@ -365,6 +368,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const s = samples[samples.length - 1];
       if (p === null || p.pointerId !== pointerId || !s) return;
       if (Math.hypot(s.x - p.sx, s.y - p.sy) > HOLD_SLOP) stopHold(p);
+      if (p.held) return;
       const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
       const hit = tableAt(ctx.doc, ctx.page(), x, y);
       if (hit === null || hit.id !== p.id) return;

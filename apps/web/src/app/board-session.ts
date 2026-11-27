@@ -344,7 +344,8 @@ async function buildBoardSession(
   const picker = createTablePicker(container);
   const cellMenu = createCellMenu(container);
   undo.push(() => picker.element.remove());
-  undo.push(() => cellMenu.element.remove());
+  undo.push(() => cellMenu.destroy());
+  const cellDrop = (ctx: Parameters<typeof createCellDrop>[0]) => createCellDrop(ctx, measure);
   editor.element.removeAttribute("id");
   undo.push(() => editor.element.remove());
   undo.push(() => choice.release());
@@ -372,14 +373,14 @@ async function buildBoardSession(
     tools: {
       pen: createPenTool,
       eraser: createEraserTool,
-      select: (ctx) => createSelectTool(ctx, createCellDrop(ctx, measure)),
+      select: (ctx) => createSelectTool(ctx, cellDrop(ctx)),
       shape: createShapeTool,
       text: (ctx, style) => {
         textTool = createTextTool(ctx, editor, style, measure);
         return textTool;
       },
       table: (ctx, style) => {
-        tableTool = createTableTool(ctx, editor, picker, style, measure, cellMenu);
+        tableTool = createTableTool(ctx, editor, picker, style, measure, cellMenu, cellDrop(ctx));
         return tableTool;
       },
       fill: (ctx, color, tolerance) => createFillTool(ctx, color, measure, { tolerance, submit: (r, run) => fillQueue.submit(r, zoneMarks.timed(run)) }),
@@ -854,7 +855,7 @@ async function buildBoardSession(
       doc.free();
       stage.remove();
       picker.element.remove();
-      cellMenu.element.remove();
+      cellMenu.destroy();
       editor.element.remove();
     },
   };

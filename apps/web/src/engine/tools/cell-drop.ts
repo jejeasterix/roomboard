@@ -185,8 +185,9 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
       if (hit !== null) return placeInto(selection, hit);
       const sel = views(selection);
       if (sel.some((v) => v.kind === "table")) return null;
+      // Hors de tout tableau, ou sur une case refusée (ombrée, fusionnée) : l'objet logé sort, la case quittée est réduite.
       const linked = sel.some((v) => v.cell !== undefined);
-      return linked && tableHitIn(read().tables, x, y) === null ? { type: "PlaceInCell", ids: [...selection], matrix, cell: null, sizes: shrinkLeft(selection) } : null;
+      return linked ? { type: "PlaceInCell", ids: [...selection], matrix, cell: null, sizes: shrinkLeft(selection) } : null;
     },
     place(selection, out) {
       if (selection.length === 0) return null;

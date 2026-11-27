@@ -860,12 +860,12 @@ export function createEngine(deps: EngineDeps): Engine {
       // personnalisation-3 (H12) : la touche passe s'il n'y a rien à loger ou à sortir.
       if ((ck === "place" || ck === "unplace") && tool === "select" && selectTool.placeInCell?.(ck === "unplace") === true) return true;
       // personnalisation-3 (T7) : Alt+F en outil Tableau bascule « rétrécir » ; sans cellule active la touche passe.
-      if (ck === "fit" && tool === "table" && tableTool.cell() !== null) {
+      if (ck === "fit" && tool === "table" && tableTool.cell() !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
         tableTool.act("fit-toggle");
         return true;
       }
       // personnalisation-3 (T9) : Alt+I en outil Tableau met l'image logée de la case active en fond.
-      if (ck === "cell-image" && tool === "table") {
+      if (ck === "cell-image" && tool === "table" && tableTool.cell() !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
         tableTool.act("cell-image");
         return true;
       }
