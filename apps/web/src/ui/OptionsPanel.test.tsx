@@ -121,7 +121,7 @@ describe("OptionsPanel (OG11, T10)", () => {
   it("pastilles : noms lisibles, pas le code hex", () => {
     const { container } = mount({ tool: "rect", selection: [] });
     const labels = [...container.querySelectorAll('[data-option="strokeColor"] .rb-pick')].map((b) => b.getAttribute("aria-label"));
-    expect(labels).toEqual(["Noir", "Rouge", "Bleu", "Vert", "Jaune"]);
+    expect(labels).toEqual(["Noir", "Rouge", "Bleu", "Vert"]);
     const bg = [...container.querySelectorAll('[data-option="background"] .rb-pick')].map((b) => b.getAttribute("aria-label"));
     expect(bg).toEqual(["Transparent", "Jaune", "Vert", "Bleu", "Rose"]);
   });
@@ -425,5 +425,88 @@ describe("OptionsPanel : avant la saisie, focus, sélecteur borné (T31)", () =>
       Object.defineProperty(window, "innerHeight", { configurable: true, value: inner });
       if (h) Object.defineProperty(HTMLElement.prototype, "offsetHeight", h); else delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
     }
+  });
+});
+
+describe("OptionsPanel accordéon et couleurs (OG23, T5)", () => {
+  const head = (c: HTMLElement, k: string): HTMLElement => c.querySelector<HTMLElement>(`[data-option-head="${k}"]`)!;
+  it("sections repliées par défaut, état relu", () => {
+    const m = mount({ tool: "rect", selection: [] });
+    expect(head(m.container, "strokeWidth").getAttribute("aria-expanded")).toBe("true");
+    expect(head(m.container, "strokeStyle").getAttribute("aria-expanded")).toBe("false");
+    expect(m.container.querySelector<HTMLElement>("#opt-body-strokeStyle")!.hidden).toBe(true);
+    fireEvent.click(head(m.container, "strokeStyle"));
+    expect(head(m.container, "strokeStyle").getAttribute("aria-expanded")).toBe("true");
+    expect(m.settings.optionSections().strokeStyle).toBe(true);
+    m.unmount();
+    const again = render(() => (
+      <OptionsPanel engine={() => m.engine as never} state={() => ({ tool: "rect", selection: [], itemStyle: DEFAULT_ITEM_STYLE, textFormat: null }) as unknown as EngineState}
+        element={() => null} presets={() => presets} size={() => "s"} profileId={() => "p"} settings={m.settings} annotating={() => false} sideStart={() => null} />
+    ));
+    expect(head(again.container, "strokeStyle").getAttribute("aria-expanded")).toBe("true");
+  });
+  it("en-tête : Entrée et Espace basculent", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const h = head(container, "roundness");
+    expect(h.tagName).toBe("BUTTON");
+    expect(h.getAttribute("aria-controls")).toBe("opt-body-roundness");
+    // Un bouton natif bascule par Entrée ou Espace via `click` : on joue le clic que le navigateur déclenche.
+    fireEvent.click(h);
+    expect(h.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(h);
+    expect(h.getAttribute("aria-expanded")).toBe("false");
+  });
+  it("résumé de valeur", () => {
+    const m = mount({ tool: "rect", selection: [] });
+    expect(head(m.container, "roughness").textContent).toContain("Style de tracé");
+    expect(head(m.container, "roughness").textContent).toContain("· Net");
+    const a = rectEl("a", "#000000");
+    const b = { ...rectEl("b", "#000000"), look: { roughness: 2 } } as unknown as ElementView;
+    const mx = mount({ tool: "select", selection: [a, b] });
+    expect(head(mx.container, "roughness").textContent).toContain("· Mixte");
+  });
+  it("S ouvre Trait replié puis le sélecteur", async () => {
+    const m = mount({ tool: "rect", selection: [] });
+    m.settings.setOptionSection("strokeColor", false);
+    m.unmount();
+    const r = mount({ tool: "rect", selection: [], });
+    r.settings.setOptionSection("strokeColor", false);
+    fireEvent.click(head(r.container, "strokeColor")); // ouvert
+    fireEvent.click(head(r.container, "strokeColor")); // replié
+    expect(head(r.container, "strokeColor").getAttribute("aria-expanded")).toBe("false");
+    fireEvent.keyDown(window, { key: "s", code: "KeyS" });
+    expect(head(r.container, "strokeColor").getAttribute("aria-expanded")).toBe("true");
+    await Promise.resolve();
+    expect(r.container.querySelector("[data-color-picker]")).not.toBeNull();
+  });
+  it("4 pastilles et palette sur une ligne", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    expect(container.querySelectorAll('[data-option="strokeColor"] .rb-pick')).toHaveLength(4);
+    expect(container.querySelector('[data-more-colors="strokeColor"] [data-icon="palette"]')).not.toBeNull();
+  });
+  it("trait transparent : sélecteur seulement, rectangles seulement", () => {
+    const m = mount({ tool: "select", selection: [rectEl("a", "#000000"), rectEl("b", "#dc2626")] });
+    expect(m.container.querySelector('[data-option="strokeColor"] [data-transparent]')).toBeNull();
+    fireEvent.click(m.container.querySelector('[data-more-colors="strokeColor"]')!);
+    const t = m.container.querySelector('[data-color-transparent]')!;
+    expect(t).not.toBeNull();
+    fireEvent.click(t);
+    expect(m.calls).toContainEqual({ color: "transparent" });
+    m.unmount();
+    const pen = mount({ tool: "pen", selection: [] });
+    fireEvent.click(pen.container.querySelector('[data-more-colors="strokeColor"]')!);
+    expect(pen.container.querySelector("[data-color-transparent]")).toBeNull();
+    pen.unmount();
+    const bg = mount({ tool: "rect", selection: [] });
+    fireEvent.click(bg.container.querySelector('[data-more-colors="background"]')!);
+    expect(bg.container.querySelector("[data-color-transparent]")).not.toBeNull();
+  });
+  it("Largeur : icône et mot ; Style de tracé : Net, À main levée, Très à main levée", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const w = container.querySelector('[data-option="strokeWidth"] [data-choice="2"]')!;
+    expect(w.querySelector('[data-icon="width-thin"]')).not.toBeNull();
+    expect(w.textContent).toContain("Fin");
+    const labels = [...container.querySelectorAll('[data-option="roughness"] .rb-radio')].map((b) => b.textContent);
+    expect(labels).toEqual(["Net", "À main levée", "Très à main levée"]);
   });
 });
