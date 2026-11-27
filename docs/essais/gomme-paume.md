@@ -11,10 +11,10 @@ Relevé le 2026-11-27 sur 6c9d4cea : `Input.dispatchTouchEvent` avec `radiusX` 4
 
 Lecture : W = 80, Chromium rend le diamètre du contact (le double du rayon).
 
-## Cible tactile du panneau Réglages (consigné, pas une porte)
+## Cible tactile du panneau Réglages
 
-Le bouton `data-reglage="gomme-paume"` mesure 21 px de haut, sous les 44 px d'une cible tactile. Le CSS du panneau
-Réglages n'est pas du périmètre de OG25 : l'essai l'avertit sans échouer.
+Les boutons du panneau Réglages mesuraient 21 px de haut. OG25 leur donne `min-block-size: 44px` (`rb.css`), la cible
+tactile du cadrage design ; l'essai exige 44 px au moins pour le bouton `data-reglage="gomme-paume"`.
 
 ## Hors VM
 

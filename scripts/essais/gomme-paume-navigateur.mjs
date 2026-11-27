@@ -352,9 +352,7 @@ try {
   check(((await page.textContent(SETTING)) ?? "").trim() === OFF, "S8 : bouton du panneau Réglages à « coupée »");
   const hauteur = await page.$eval(SETTING, (b) => b.getBoundingClientRect().height);
   console.log(`hauteur du bouton Réglages : ${hauteur} px`);
-  // Contrôle consigné, pas une porte : le CSS du panneau Réglages n'est pas du périmètre de OG25.
-  if (hauteur >= 44) check(true, `S8 : bouton du panneau Réglages haut de ${hauteur} px (cible tactile, 44 au moins)`);
-  else console.log(`avertissement — S8 : bouton du panneau Réglages haut de ${hauteur} px, sous la cible tactile de 44 px (CSS du panneau hors périmètre)`);
+  check(hauteur >= 44, `S8 : bouton du panneau Réglages haut de ${hauteur} px (cible tactile, 44 au moins)`);
   const icons = await page.$$eval("#reglages svg", (l) => l.map((s) => s.getAttribute("viewBox")));
   check(icons.every((v) => v === "-0.25 -0.25 24 24"), `S8 : netteté § 10, icônes du panneau calées (${icons.length})`);
   const panel = await page.locator("#reglages").boundingBox();

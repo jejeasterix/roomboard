@@ -455,3 +455,6 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
    remplissage ; jamais une cible ; position et taille écrites par `app/eraser-ring.ts`. */
 .rb-eraser-ring { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 1.5px solid var(--rf-violet-600); border-radius: 50%; box-shadow: 0 0 0 1px #fff; background: none; pointer-events: none; z-index: 2; }
 .rb-eraser-ring[hidden] { display: none; }
+/* OG25 : boutons du panneau Réglages à 44 px de haut au moins (cible tactile du cadrage design), dont le réglage
+   « Gomme automatique à la paume ». */
+#reglages button[data-reglage] { min-block-size: 44px; }
