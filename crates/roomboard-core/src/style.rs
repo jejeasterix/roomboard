@@ -186,12 +186,6 @@ fn writes_for(
     w
 }
 
-/// H5 (OG12 lot 2a) : retire la clé d'aspect `roundness`, comme `cmd_set_style` pour un neutre (`Some(None)`), dans la
-/// transaction de l'appelant.
-pub(crate) fn clear_roundness(e: &MapRef, txn: &mut yrs::TransactionMut) {
-    set_or_remove(e, txn, "roundness", None);
-}
-
 impl Document {
     /// `SetStyle` (T2) : validation, puis plan des écritures effectives (lecture), puis une seule `transact_local`.
     /// La graine est tirée par `new_seed` seulement quand le tracé passe à 1 ou 2 depuis un autre niveau : au même
