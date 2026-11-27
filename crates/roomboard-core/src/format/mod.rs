@@ -483,6 +483,7 @@ pub fn migrate(manifest: Manifest, ybin: Vec<u8>) -> Result<(Manifest, Vec<u8>),
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::element::Look;
     use yrs::{Doc, Map, ReadTxn, StateVector, Transact};
 
     fn meta() -> SaveMeta {
@@ -539,6 +540,7 @@ mod tests {
                 width: 4.0,
             },
             fill: None,
+            look: Look::default(),
         })
         .expect("forme");
         d
@@ -894,6 +896,7 @@ mod tests {
                     color: format!("#00{k}"),
                     width: w,
                 },
+                look: Look::default(),
             })
             .expect("trait");
         }

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use roomboard_core::commands::Command;
 use roomboard_core::document::Document;
-use roomboard_core::element::StrokeStyle;
+use roomboard_core::element::{Look, StrokeStyle};
 use roomboard_core::format::{load, save, SaveMeta};
 use roomboard_core::rich_text::{SpanAttrs, TextSpanView};
 use roomboard_core::shape::ShapeKind;
@@ -48,6 +48,7 @@ fn socle_document() -> Document {
         page: p1.clone(),
         points: hline(100.0),
         style: pen(),
+        look: Look::default(),
     })
     .expect("trait");
     d.apply(Command::AddShape {
@@ -59,6 +60,7 @@ fn socle_document() -> Document {
         y1: 350.0,
         style: pen(),
         fill: Some("#fde68a".into()),
+        look: Look::default(),
     })
     .expect("forme");
     d.apply(Command::SetText {
@@ -72,6 +74,7 @@ fn socle_document() -> Document {
         box_width: 600.0,
         box_height: 45.0,
         spans: None,
+        look: Look::default(),
     })
     .expect("texte");
     let p2 = d
@@ -85,6 +88,7 @@ fn socle_document() -> Document {
         page: p2,
         points: hline(300.0),
         style: pen(),
+        look: Look::default(),
     })
     .expect("trait 2");
     d

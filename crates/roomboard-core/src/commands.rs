@@ -9,9 +9,9 @@ use yrs::{
 use crate::asset::{is_asset_id, AssetRef};
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
-    apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, out_bytes, out_f64,
-    out_string, out_transform, read_backdrop, read_group, read_style, style_fields,
-    transform_to_any, StrokeStyle, Transform, FIT_WIDTH, IDENTITY,
+    apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, look_fields,
+    out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group, read_look,
+    read_style, style_fields, transform_to_any, Look, StrokeStyle, Transform, FIT_WIDTH, IDENTITY,
 };
 use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
@@ -38,6 +38,8 @@ pub enum Command {
         page: String,
         points: Vec<f32>,
         style: StrokeStyle,
+        /// OG11 : aspect écrit dans la même transaction ; neutre = aucune clé (DA-5).
+        look: Look,
     },
     Erase {
         page: String,
@@ -57,6 +59,8 @@ pub enum Command {
         y1: f64,
         style: StrokeStyle,
         fill: Option<String>,
+        /// OG11 : aspect écrit dans la même transaction ; neutre = aucune clé (DA-5).
+        look: Look,
     },
     Transform {
         ids: Vec<String>,
@@ -74,6 +78,9 @@ pub enum Command {
         box_height: f64,
         /// C7b (R7) : état voulu des segments, aligné dans la même transaction ; `None` : différence seule (C7).
         spans: Option<Vec<SpanInput>>,
+        /// OG11 : aspect d'une boîte neuve (`id` absent), écrit dans la même transaction ; ignoré sur un texte
+        /// existant (son style passe par `SetStyle`).
+        look: Look,
     },
     /// Image (U5, K5) : `w`, `h` = taille source en pixels, boîte locale placée par `matrix`.
     AddImage {
@@ -452,6 +459,7 @@ struct TextInput<'a> {
     box_width: f64,
     box_height: f64,
     spans: Option<&'a [SpanInput]>,
+    look: &'a Look,
 }
 
 /// Chemin monde (paires x, y) ramené au repère local par l'inverse de `t` ; `None` si `t` n'est pas inversible.
@@ -550,9 +558,10 @@ fn stroke_prelim(
     transform: &Transform,
     style: &StrokeStyle,
     points: &[InkPoint],
+    look: &Look,
 ) -> MapPrelim {
     let [color, width, tool] = style_fields(style);
-    MapPrelim::from([
+    let mut prelim = MapPrelim::from([
         ("id", In::from(id)),
         ("kind", In::from("stroke")),
         ("transform", In::Any(transform_to_any(transform))),
@@ -560,7 +569,12 @@ fn stroke_prelim(
         width,
         tool,
         ("points", In::Any(Any::Buffer(encode(points).into()))),
-    ])
+    ]);
+    // OG11 (DA-5) : seulement les champs d'aspect non neutres, jamais un jeu fixe.
+    for (k, v) in look_fields(look) {
+        prelim.insert(k.into(), v);
+    }
+    prelim
 }
 
 /// Trait touché par la gomme : retiré, puis remplacé à sa place par `pieces` (vide en gomme d'objet).
@@ -571,6 +585,8 @@ struct Cut {
     style: StrokeStyle,
     pieces: Vec<Vec<InkPoint>>,
     group: Option<Any>,
+    /// OG11 : aspect du trait coupé, réécrit sur chaque morceau (neutre : aucune clé).
+    look: Look,
 }
 
 /// Les chaînes données, triées et sans doublon.
@@ -620,7 +636,8 @@ impl Document {
                 page,
                 points,
                 style,
-            } => self.cmd_commit_stroke(&page, &points, &style),
+                look,
+            } => self.cmd_commit_stroke(&page, &points, &style, &look),
             Command::Erase {
                 page,
                 path,
@@ -637,7 +654,15 @@ impl Document {
                 y1,
                 style,
                 fill,
-            } => self.cmd_add_shape(&page, shape, [x0, y0, x1, y1], &style, fill.as_deref()),
+                look,
+            } => self.cmd_add_shape(
+                &page,
+                shape,
+                [x0, y0, x1, y1],
+                &style,
+                fill.as_deref(),
+                &look,
+            ),
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
             Command::SetText {
                 page,
@@ -650,6 +675,7 @@ impl Document {
                 box_width,
                 box_height,
                 spans,
+                look,
             } => self.cmd_set_text(TextInput {
                 page: &page,
                 id: id.as_deref(),
@@ -661,6 +687,7 @@ impl Document {
                 box_width,
                 box_height,
                 spans: spans.as_deref(),
+                look: &look,
             }),
             Command::AddImage {
                 page,
@@ -866,6 +893,7 @@ impl Document {
         corners: [f64; 4],
         style: &StrokeStyle,
         fill: Option<&str>,
+        look: &Look,
     ) -> Result<Change, CommandError> {
         if corners.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadShape);
@@ -898,6 +926,7 @@ impl Document {
         if let Some(f) = fill {
             fields.push(("fill", In::from(f)));
         }
+        fields.extend(look_fields(look));
         {
             let mut txn = self.transact_local();
             elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
@@ -1025,7 +1054,7 @@ impl Document {
             return Ok(self.unchanged());
         }
         let id = yrs::uuid_v4().to_string();
-        let fields: Vec<(&str, In)> = vec![
+        let mut fields: Vec<(&str, In)> = vec![
             ("id", In::from(id.as_str())),
             ("kind", In::from("text")),
             (
@@ -1038,6 +1067,7 @@ impl Document {
             ("boxHeight", In::Any(Any::from(t.box_height))),
             ("content", In::from(TextPrelim::new(t.content))),
         ];
+        fields.extend(look_fields(t.look));
         {
             let mut txn = self.transact_local();
             let el = elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
@@ -1221,6 +1251,7 @@ impl Document {
         page: &str,
         flat: &[f32],
         style: &StrokeStyle,
+        look: &Look,
     ) -> Result<Change, CommandError> {
         if flat.len() < 3 || !flat.len().is_multiple_of(3) || flat.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadPoints);
@@ -1235,7 +1266,7 @@ impl Document {
             let mut txn = self.transact_local();
             elements.push_back(
                 &mut txn,
-                stroke_prelim(&id, &[1.0, 0.0, 0.0, 1.0, ox, oy], style, &local),
+                stroke_prelim(&id, &[1.0, 0.0, 0.0, 1.0, ox, oy], style, &local, look),
             );
         }
         Ok(self.done(Change {
@@ -1293,6 +1324,7 @@ impl Document {
                             Some(Out::Any(a)) => Some(a),
                             _ => None,
                         },
+                        look: read_look(&txn, &e),
                     });
                 }
             }
@@ -1312,7 +1344,8 @@ impl Document {
                 elements.remove(&mut txn, cut.index);
                 for (k, piece) in cut.pieces.iter().enumerate() {
                     let id = yrs::uuid_v4().to_string();
-                    let mut prelim = stroke_prelim(&id, &cut.transform, &cut.style, piece);
+                    let mut prelim =
+                        stroke_prelim(&id, &cut.transform, &cut.style, piece, &cut.look);
                     // Z1 : un morceau reste dans le groupe du trait coupé (valeur recopiée telle quelle).
                     if let Some(g) = &cut.group {
                         prelim.insert("group".into(), In::Any(g.clone()));
@@ -1567,6 +1600,7 @@ pub(crate) mod tests {
             page: page.into(),
             points: pts,
             style: pen(),
+            look: Look::default(),
         })
         .expect("commit")
         .ids[0]
@@ -1660,6 +1694,7 @@ pub(crate) mod tests {
             page: p.clone(),
             points,
             style: pen(),
+            look: Look::default(),
         };
         assert_eq!(d.apply(bad(vec![1.0, 2.0])), Err(CommandError::BadPoints));
         assert_eq!(
@@ -1693,6 +1728,7 @@ pub(crate) mod tests {
                     color: "#000000".into(),
                     width,
                 },
+                look: Look::default(),
             });
             assert_eq!(r, Err(CommandError::BadWidth), "épaisseur {width}");
         }
@@ -1707,6 +1743,7 @@ pub(crate) mod tests {
             page: "nope".into(),
             points: hline(1.0),
             style: pen(),
+            look: Look::default(),
         });
         assert_eq!(r, Err(CommandError::UnknownPage("nope".into())));
     }
@@ -1850,14 +1887,16 @@ pub(crate) mod tests {
             .apply(Command::CommitStroke {
                 page: "nope".into(),
                 points: hline(1.0),
-                style: pen()
+                style: pen(),
+                look: Look::default(),
             })
             .is_err());
         assert!(d
             .apply(Command::CommitStroke {
                 page: p.clone(),
                 points: vec![1.0],
-                style: pen()
+                style: pen(),
+                look: Look::default(),
             })
             .is_err());
         let bad_path = Command::Erase {
@@ -2000,6 +2039,7 @@ pub(crate) mod tests {
                 page: p.clone(),
                 points: hline(1.0),
                 style: pen(),
+                look: Look::default(),
             })
             .expect("commit");
         assert_eq!(c1.version, 1);
@@ -2043,6 +2083,7 @@ pub(crate) mod tests {
             y1,
             style: pen(),
             fill: None,
+            look: Look::default(),
         }
     }
 
@@ -2274,6 +2315,7 @@ pub(crate) mod tests {
                 y1: 50.0,
                 style: pen(),
                 fill: Some("#ff0000".into()),
+                look: Look::default(),
             })
             .expect("flèche")
             .ids[0]
@@ -2342,6 +2384,7 @@ pub(crate) mod tests {
             box_width: 600.0,
             box_height: 45.0,
             spans: None,
+            look: Look::default(),
         }
     }
 
@@ -3727,6 +3770,7 @@ pub(crate) mod tests {
                     width: 10.0,
                 },
                 fill: None,
+                look: Look::default(),
             })
             .expect("b")
             .ids[0]
@@ -3781,6 +3825,7 @@ pub(crate) mod tests {
             y1: 150.0,
             style: pen(),
             fill: None,
+            look: Look::default(),
         })
         .expect("forme")
         .ids[0]

@@ -1,0 +1,420 @@
+//! OG11 (T1) : champs d'aspect facultatifs du lot 1 (`strokeStyle`, `roughness`, `seed`, `roundness`, `opacity`), en
+//! scalaires du `Y.Map` de l'élément (D25, G12). Absent = neutre ; un aspect neutre n'écrit aucune clé (DA-5 : un
+//! fichier ancien recoupé ou réenregistré garde ses octets) ; une valeur illisible est lue neutre et gardée telle quelle.
+use std::path::PathBuf;
+
+use roomboard_core::commands::{Command, EraseMode};
+use roomboard_core::document::Document;
+use roomboard_core::element::{Look, StrokeStyle};
+use roomboard_core::format::load;
+use roomboard_core::shape::ShapeKind;
+use yrs::updates::decoder::Decode;
+use yrs::{
+    Any, Array, ArrayRef, Doc, In, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector, Transact,
+    Update,
+};
+
+const LOOK_KEYS: [&str; 5] = ["strokeStyle", "roughness", "seed", "roundness", "opacity"];
+const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+fn pen() -> StrokeStyle {
+    StrokeStyle {
+        color: "#000000".into(),
+        width: 4.0,
+    }
+}
+
+fn dashed() -> Look {
+    Look {
+        stroke_style: Some("dashed".into()),
+        roughness: Some(1),
+        seed: Some(7),
+        roundness: Some("round".into()),
+        opacity: Some(50),
+    }
+}
+
+/// Aspects neutres : défaut, opacité 100 (le neutre de l'arbitrage 0..100), tracé 0 (architecte) avec une graine.
+fn neutral_looks() -> Vec<Look> {
+    vec![
+        Look::default(),
+        Look {
+            opacity: Some(100),
+            ..Look::default()
+        },
+        Look {
+            roughness: Some(0),
+            seed: Some(9),
+            ..Look::default()
+        },
+    ]
+}
+
+fn blank() -> Document {
+    Document::blank() // Document::new() n'a aucune page
+}
+
+fn first_page(d: &Document) -> String {
+    d.page_ids()[0].clone()
+}
+
+fn hline(y: f32) -> Vec<f32> {
+    (0..=20)
+        .flat_map(|i| [100.0 + i as f32 * 10.0, y, 0.5])
+        .collect()
+}
+
+fn add_rect(d: &mut Document, look: Look) -> String {
+    let page = first_page(d);
+    d.apply(Command::AddShape {
+        page,
+        shape: ShapeKind::Rect,
+        x0: 0.0,
+        y0: 0.0,
+        x1: 100.0,
+        y1: 50.0,
+        style: pen(),
+        fill: None,
+        look,
+    })
+    .expect("forme")
+    .ids[0]
+        .clone()
+}
+
+fn add_stroke(d: &mut Document, look: Look) -> String {
+    let page = first_page(d);
+    d.apply(Command::CommitStroke {
+        page,
+        points: hline(100.0),
+        style: pen(),
+        look,
+    })
+    .expect("trait")
+    .ids[0]
+        .clone()
+}
+
+fn set_text(d: &mut Document, id: Option<String>, content: &str, look: Look) -> Vec<String> {
+    let page = first_page(d);
+    d.apply(Command::SetText {
+        page,
+        id,
+        x: 500.0,
+        y: 500.0,
+        content: content.into(),
+        color: "#000000".into(),
+        size: 36.0,
+        box_width: 600.0,
+        box_height: 45.0,
+        spans: None,
+        look,
+    })
+    .expect("texte")
+    .ids
+}
+
+// --- Lecture brute (aide de `tests/element_inconnu.rs`, `raw_h1`) : un `Doc` yrs neuf relu depuis `encode_v1`. ---
+
+fn raw_doc(d: &Document) -> (Doc, ArrayRef) {
+    let raw = Doc::new();
+    let pages = raw.get_or_insert_array("pages");
+    raw.transact_mut()
+        .apply_update(Update::decode_v1(&d.encode_v1()).expect("décodage"))
+        .expect("application");
+    (raw, pages)
+}
+
+fn find_raw<T: ReadTxn>(txn: &T, pages: &ArrayRef, id: &str) -> Option<MapRef> {
+    for p in pages.iter(txn) {
+        let Out::YMap(page) = p else { continue };
+        let Some(Out::YArray(els)) = page.get(txn, "elements") else {
+            continue;
+        };
+        for e in els.iter(txn) {
+            let Out::YMap(e) = e else { continue };
+            if matches!(e.get(txn, "id"), Some(Out::Any(Any::String(s))) if &*s == id) {
+                return Some(e);
+            }
+        }
+    }
+    None
+}
+
+/// Clés brutes de l'élément `id`, triées.
+fn raw_keys(d: &Document, id: &str) -> Vec<String> {
+    let (raw, pages) = raw_doc(d);
+    let txn = raw.transact();
+    let e = find_raw(&txn, &pages, id).expect("élément brut");
+    let mut keys: Vec<String> = e.keys(&txn).map(str::to_string).collect();
+    keys.sort();
+    keys
+}
+
+/// Valeur brute d'un champ en texte : chaîne telle quelle, nombre par `Display`.
+fn raw_field(d: &Document, id: &str, key: &str) -> Option<String> {
+    let (raw, pages) = raw_doc(d);
+    let txn = raw.transact();
+    let e = find_raw(&txn, &pages, id)?;
+    match e.get(&txn, key)? {
+        Out::Any(Any::String(s)) => Some(s.to_string()),
+        Out::Any(Any::Number(n)) => n.as_f64().map(|x| x.to_string()),
+        other => Some(format!("{other:?}")),
+    }
+}
+
+/// Document relu après une écriture brute sur la première page, comme une autre version l'écrirait.
+fn edit_raw(d: &Document, edit: impl FnOnce(&mut yrs::TransactionMut, &ArrayRef)) -> Document {
+    let (raw, pages) = raw_doc(d);
+    {
+        let mut txn = raw.transact_mut();
+        edit(&mut txn, &pages);
+    }
+    let bytes = raw
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    Document::from_update_v1(&bytes).expect("relecture")
+}
+
+fn with_raw_field(d: &Document, id: &str, key: &str, v: In) -> Document {
+    edit_raw(d, |txn, pages| {
+        let e = find_raw(txn, pages, id).expect("élément brut");
+        e.insert(txn, key, v);
+    })
+}
+
+/// Image brute (champs de `tests/parite_c6b.rs`, `image`) ajoutée à la première page.
+fn with_raw_image(d: &Document, id: &'static str, extra: Vec<(&'static str, In)>) -> Document {
+    edit_raw(d, |txn, pages| {
+        let Some(Out::YMap(page)) = pages.get(txn, 0) else {
+            panic!("page")
+        };
+        let Some(Out::YArray(els)) = page.get(txn, "elements") else {
+            panic!("éléments")
+        };
+        let transform: Vec<Any> = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+            .into_iter()
+            .map(Any::from)
+            .collect();
+        let mut fields: Vec<(&'static str, In)> = vec![
+            ("id", In::from(id)),
+            ("kind", In::from("image")),
+            ("transform", In::Any(Any::Array(transform.into()))),
+            ("asset", In::from(ABC)),
+            ("w", In::from(640.0)),
+            ("h", In::from(480.0)),
+        ];
+        fields.extend(extra);
+        els.push_back(txn, MapPrelim::from_iter(fields));
+    })
+}
+
+fn socle() -> Document {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/socle-v1.roomboard");
+    load(&std::fs::read(path).expect("fixture du socle")).expect("ouverture")
+}
+
+// --- Écriture ---
+
+#[test]
+fn add_shape_writes_look_in_one_step() {
+    let mut d = blank();
+    let id = add_rect(&mut d, dashed());
+    let el = d.element(&id).expect("vue");
+    assert_eq!(el.look, Some(dashed()));
+    let json = serde_json::to_value(&el).expect("json");
+    assert_eq!(
+        json["look"],
+        serde_json::json!({ "strokeStyle": "dashed", "roughness": 1, "seed": 7, "roundness": "round", "opacity": 50 })
+    );
+    assert!(d.undo());
+    assert!(d.element(&id).is_none(), "une seule étape");
+}
+
+#[test]
+fn commit_stroke_and_new_text_write_look() {
+    let mut d = blank();
+    let s = add_stroke(&mut d, dashed());
+    assert_eq!(d.element(&s).expect("trait").look, Some(dashed()));
+    let t = set_text(&mut d, None, "Bonjour", dashed())[0].clone();
+    assert_eq!(d.element(&t).expect("texte").look, Some(dashed()));
+    assert!(d.undo());
+    assert!(d.element(&t).is_none(), "texte : une seule étape");
+    assert!(d.undo());
+    assert!(d.element(&s).is_none(), "trait : une seule étape");
+}
+
+#[test]
+fn set_text_on_existing_box_ignores_look() {
+    let mut d = blank();
+    let t = set_text(&mut d, None, "Bonjour", Look::default())[0].clone();
+    set_text(&mut d, Some(t.clone()), "Bonjour !", dashed());
+    let el = d.element(&t).expect("texte");
+    assert_eq!(el.text.expect("vue texte").content, "Bonjour !");
+    assert_eq!(
+        el.look, None,
+        "le style d'un texte existant passe par SetStyle (T2)"
+    );
+}
+
+#[test]
+fn neutral_look_is_absent() {
+    let mut d = blank();
+    let id = add_rect(&mut d, Look::default());
+    let el = d.element(&id).expect("vue");
+    assert_eq!(el.look, None);
+    assert!(!serde_json::to_string(&el).expect("json").contains("look"));
+}
+
+/// Discrimine le patron écarté (`style_fields`, tableau fixe toujours écrit) : un aspect neutre n'écrit aucune clé, ni
+/// sur une forme, ni sur un trait, ni sur une boîte de texte neuve.
+#[test]
+fn neutral_look_writes_no_key() {
+    for look in neutral_looks() {
+        let mut d = blank();
+        let ids = [
+            add_rect(&mut d, look.clone()),
+            add_stroke(&mut d, look.clone()),
+            set_text(&mut d, None, "Bonjour", look.clone())[0].clone(),
+        ];
+        for id in &ids {
+            assert_eq!(d.element(id).expect("vue").look, None, "{look:?}");
+            for k in LOOK_KEYS {
+                assert_eq!(
+                    raw_field(&d, id, k),
+                    None,
+                    "{k} écrit alors qu'il est neutre ({look:?})"
+                );
+            }
+        }
+    }
+}
+
+// --- Gomme partielle ---
+
+#[test]
+fn erase_partial_keeps_look() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let look = Look {
+        stroke_style: Some("dotted".into()),
+        roughness: Some(2),
+        seed: Some(4_000_000_000),
+        roundness: None,
+        opacity: Some(40),
+    };
+    add_stroke(&mut d, look.clone());
+    let c = d
+        .apply(Command::Erase {
+            page,
+            path: vec![200.0, 80.0, 200.0, 120.0],
+            radius: 6.0,
+            mode: EraseMode::Partial,
+        })
+        .expect("gomme");
+    assert!(c.ids.len() >= 2, "deux morceaux");
+    for id in &c.ids {
+        assert_eq!(d.element(id).expect("morceau").look, Some(look.clone()));
+    }
+}
+
+/// Discrimine le patron écarté côté fichier ancien : un trait du socle (sans aucun champ d'aspect), recoupé par la
+/// gomme, donne des morceaux qui portent exactement les clés du trait d'origine.
+#[test]
+fn erase_partial_of_socle_stroke_adds_no_key() {
+    let mut d = socle();
+    let page = first_page(&d);
+    let stroke = d
+        .element_ids(&page)
+        .into_iter()
+        .find(|id| d.element(id).is_some_and(|e| e.kind == "stroke"))
+        .expect("trait du socle");
+    let before = raw_keys(&d, &stroke);
+    assert!(LOOK_KEYS.iter().all(|k| !before.contains(&k.to_string())));
+    let c = d
+        .apply(Command::Erase {
+            page,
+            path: vec![200.0, 80.0, 200.0, 120.0],
+            radius: 6.0,
+            mode: EraseMode::Partial,
+        })
+        .expect("gomme");
+    assert!(c.ids.len() >= 2, "deux morceaux");
+    for id in &c.ids {
+        assert_eq!(raw_keys(&d, id), before, "clés du morceau {id}");
+        assert_eq!(d.element(id).expect("morceau").look, None);
+    }
+}
+
+// --- Lecture ---
+
+#[test]
+fn image_look_read() {
+    let d = with_raw_image(&blank(), "i1", vec![("opacity", In::from(40.0))]);
+    assert_eq!(
+        d.element("i1").expect("image").look,
+        Some(Look {
+            opacity: Some(40),
+            ..Look::default()
+        })
+    );
+    let d = with_raw_image(&blank(), "i2", vec![("opacity", In::from(100.0))]);
+    assert_eq!(d.element("i2").expect("image").look, None, "100 = neutre");
+    let d = with_raw_image(&blank(), "i3", vec![]);
+    assert_eq!(d.element("i3").expect("image").look, None);
+}
+
+#[test]
+fn unreadable_value_is_neutral_and_kept() {
+    let mut d = blank();
+    let id = add_rect(&mut d, Look::default());
+    let cases: Vec<(&str, In)> = vec![
+        ("strokeStyle", In::from("wavy")),
+        ("strokeStyle", In::from(3.0)),
+        ("roughness", In::from(1.5)),
+        ("roughness", In::from(3.0)),
+        ("seed", In::from(12.0)), // sans tracé lisible
+        ("roundness", In::from("sharp")),
+        ("opacity", In::from(-1.0)),
+        ("opacity", In::from(101.0)),
+        ("opacity", In::from(f64::NAN)),
+        ("opacity", In::from("40")),
+    ];
+    for (k, v) in cases {
+        let label = format!("{k} = {v:?}");
+        let edited = with_raw_field(&d, &id, k, v);
+        assert_eq!(edited.element(&id).expect("vue").look, None, "{label}");
+        let kept = raw_field(&edited, &id, k);
+        let reloaded = Document::from_update_v1(&edited.encode_v1()).expect("relecture");
+        assert!(kept.is_some(), "{label} : gardé");
+        assert_eq!(
+            raw_field(&reloaded, &id, k),
+            kept,
+            "{label} : gardé au rechargement"
+        );
+    }
+}
+
+#[test]
+fn reencode_keeps_bytes_with_look() {
+    let mut d = blank();
+    add_rect(&mut d, dashed());
+    add_stroke(&mut d, Look::default());
+    let a = d.encode_v1();
+    let b = Document::from_update_v1(&a).expect("relecture").encode_v1();
+    assert_eq!(a, b);
+}
+
+// --- Copie ---
+
+#[test]
+fn extract_keeps_look() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let id = add_rect(&mut d, dashed());
+    let frag = d.extract(&page, &[id]).expect("extraction");
+    let ins = d
+        .insert_fragment(&frag, &page, 10.0, 10.0)
+        .expect("insertion");
+    assert_eq!(d.element(&ins.ids[0]).expect("copie").look, Some(dashed()));
+}

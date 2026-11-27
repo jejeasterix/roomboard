@@ -1141,6 +1141,7 @@ impl Document {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::element::Look;
     use yrs::{Any, ArrayPrelim, Doc, In, MapPrelim, StateVector, TextPrelim, Transact};
 
     use super::*;
@@ -2141,6 +2142,7 @@ pub(crate) mod tests {
                     color: "#000000".into(),
                     width: 4.0,
                 },
+                look: Look::default(),
             })
             .expect("trait")
             .ids[0]

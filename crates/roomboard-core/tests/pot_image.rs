@@ -2,7 +2,7 @@
 use roomboard_core::asset::AssetRef;
 use roomboard_core::commands::{Command, CommandError};
 use roomboard_core::document::Document;
-use roomboard_core::element::{ImageView, StrokeStyle, Transform};
+use roomboard_core::element::{ImageView, Look, StrokeStyle, Transform};
 use roomboard_core::fill::FillTarget;
 use roomboard_core::format::{load, save, SaveMeta};
 use roomboard_core::image::{ImageParams, ImageParamsInput, TransparentInput};
@@ -233,6 +233,7 @@ fn same_asset_is_no_step_and_refusals_keep_core_order() {
             page: p.clone(),
             points: vec![0.0, 0.0, 0.5, 50.0, 0.0, 0.5],
             style: pen(),
+            look: Look::default(),
         })
         .expect("trait")
         .ids[0]
@@ -318,6 +319,7 @@ fn grouped_image_fills_alone_and_keeps_its_group() {
             y1: 50.0,
             style: pen(),
             fill: None,
+            look: Look::default(),
         })
         .expect("forme")
         .ids[0]
