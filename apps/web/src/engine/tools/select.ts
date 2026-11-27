@@ -8,6 +8,7 @@
  * haut sous le point la révèle (SetTableShade à null, une étape), sélection inchangée ; au-delà, le glisser sélectionne et déplace.
  * C3 (Z2) : un clic prend le groupe extérieur entier, Maj+clic l'ajoute ou le retire entier, le rectangle ne prend un
  * groupe qu'entier (`engine/groups.ts`).
+ * personnalisation-3 (DA3) : glisser vers une case par `cell-drop.ts`, 4 points d'appel.
  */
 import type { Bounds, LinkDir, Matrix, ShapeElement, ElementView } from "../../core/api";
 import { elbowedOf } from "../../core/look";
@@ -28,6 +29,7 @@ import {
   translateMatrix,
   type HandleId,
 } from "./handles";
+import type { CellDrop } from "./cell-drop";
 import { expandToGroups, keepWholeGroups, viewsOf, type GroupedView } from "../groups";
 import { cellContent, tableAt } from "../table-geom";
 import type { LivePart, SelectionTool, ToolContext } from "./tool";
@@ -109,18 +111,27 @@ function grabbedHandle(frame: Bounds, x: number, y: number, zoom: number): Handl
   return hitHandle(frame, x, y, reachPx / zoom, skip);
 }
 
-export function createSelectTool(ctx: ToolContext): SelectionTool {
+export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): SelectionTool {
   let selection: string[] = [];
   let drag: Drag | null = null;
   let lastTap: (Tap & { id: string }) | null = null;
   let first: InputSample | null = null;
   const one = (): ElementView | null => (selection.length === 1 ? ctx.doc.element(selection[0]!) : null);
+  // personnalisation-3 (D28) : pendant un glisser, la vue de l'élément seul (OG12 : ligne, nœud) est lue une fois, au
+  // premier aperçu ; aucun element() par image. Le glisser est muté en place : la clé tient jusqu'à sa fin.
+  const dragViews = new WeakMap<Drag, ElementView | null>();
+  const oneOf = (d: Drag | null): ElementView | null => {
+    if (d === null) return one();
+    if (!dragViews.has(d)) dragViews.set(d, one());
+    return dragViews.get(d) ?? null;
+  };
 
   const world = (s: InputSample): [number, number] => screenToWorld(ctx.camera(), s.x, s.y);
   const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= (d.bound ? BOUND_DRAG_PX : DRAG_THRESHOLD_PX);
 
   /** Vues de la page montrée (C3, Z2), lues au geste, jamais gardées. */
   const pageViews = (): GroupedView[] => viewsOf(ctx.doc, ctx.doc.elementIds(ctx.page()));
+  const widen = (ids: string[], views: readonly GroupedView[]): string[] => cellDrop?.expand(ids, views) ?? ids;
 
   /**
    * Déplacement du glisser (C9, G7, G8) : aimanté depuis le déplacement brut, à chaque image et au relâché (l'aperçu
@@ -225,7 +236,8 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
           startDrag(pointerId, "tap-shade", x, y, { reveal });
           return;
         }
-        const unit = expandToGroups([hit], pageViews()); // C3 : le groupe extérieur entier
+        const views = pageViews();
+        const unit = widen(expandToGroups([hit], views), views); // C3 + D6 : le groupe extérieur entier
         if (shift) {
           selection = selection.includes(hit)
             ? selection.filter((id) => !unit.includes(id))
@@ -250,7 +262,10 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       // F10 : au-delà de 8 px écran, le toucher devient un déplacement depuis le point d'appui.
       if (drag.mode === "tap-shade" && Math.hypot(x - drag.x0, y - drag.y0) * drag.zoom >= REVEAL_TAP_PX) {
         const id = drag.reveal?.id;
-        if (id !== undefined && !selection.includes(id)) selection = expandToGroups([id], pageViews());
+        if (id !== undefined && !selection.includes(id)) {
+          const views = pageViews();
+          selection = widen(expandToGroups([id], views), views);
+        }
         drag.mode = "move";
       }
     },
@@ -302,7 +317,8 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       if (d.mode === "none" || selection.length === 0) return;
       const m = matrixOf(d);
       if (isIdentity(m)) return;
-      ctx.run({ type: "Transform", ids: [...selection], matrix: m });
+      const placed = d.mode === "move" ? (cellDrop?.drop(selection, m, d.x, d.y, ctx.alt?.() === true) ?? null) : null;
+      ctx.run(placed ?? { type: "Transform", ids: [...selection], matrix: m });
     },
     live(): LivePart {
       const d = drag;
@@ -312,7 +328,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       if (selection.length === 0) return { strokes: [], erasers: [], hidden: NONE };
       const bounds = ctx.doc.bounds(selection);
       const zoom = ctx.camera().zoom;
-      const v = one();
+      const v = oneOf(d);
       if (isLine(v)) {
         // n° 39 : ligne seule : un point à chaque bout, un milieu ; aucun cadre à 8 poignées.
         if (d && (d.mode === "line-end" || d.mode === "line-mid") && moved(d) && d.hit) {
@@ -336,6 +352,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
           ...EMPTY_OVERLAY,
           ghosts: dragging ? [{ id: v.id, matrix: m }] : [],
           ...(dragging ? {} : { points: pointHandles(pts, [], zoom, mids) }),
+          target: dragging && d ? (cellDrop?.target(selection, d.x, d.y) ?? null) : null,
         };
         return { strokes: [], erasers: [], hidden: dragging ? new Set(selection) : NONE, overlay };
       }
@@ -346,6 +363,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
         ghosts: dragging ? selection.map((id) => ({ id, matrix: m })) : [],
         frame: bounds === null ? null : dragging ? transformBounds(m, bounds) : bounds,
         handles: !dragging,
+        target: dragging && d?.mode === "move" ? (cellDrop?.target(selection, d.x, d.y) ?? null) : null,
         ...(isNode(v) && !dragging && bounds ? { links: linkHandles(bounds, zoom) } : {}),
       };
       return { strokes: [], erasers: [], hidden: dragging ? new Set(selection) : NONE, overlay };
@@ -354,6 +372,10 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
     selection: () => selection,
     setSelection(ids) {
       selection = [...ids];
+    },
+    placeInCell(out) {
+      const cmd = cellDrop?.place(selection, out) ?? null;
+      return cmd !== null && ctx.run(cmd) !== null;
     },
     prune() {
       const present = new Set(ctx.doc.elementIds(ctx.page()));

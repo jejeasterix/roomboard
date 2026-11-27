@@ -13,6 +13,7 @@
 // élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
 // C10b : MergeTableCells, SplitTableCell, SetTableShade, ImportTable ; RemoveTableLine.to, SetTableFill.to (plages) ;
 // TableData.merges (zones calculées par le cœur, règle F2 : la page les lit, ne les recalcule pas) ; TableCell.shade (F8).
+// personnalisation-3 : PlaceInCell, SetTableLineSizes (une étape chacune) ; ElementBase.cell (lien de case, D1), suivi des objets liés (D5, D6).
 // C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
 // C6a : Fill (contour, intérieur, fond de page ; une étape, D38) ; edgeHit (bord d'une forme, mesuré par le cœur, DA2).
 // C3 : Group, Ungroup ; ElementBase.group ; extract, insertFragment, insertPages, saveFragment(Parts), loadFragment(Parts).
@@ -66,7 +67,7 @@ export type Command =
   /** Ordre des objets (décision 16) : bloc des `ids` (une même page), bas au rang `to` (0 = arrière-plan), ids gardés. */
   | { readonly type: "Restack"; readonly ids: readonly string[]; readonly to: number }
   /** OG11 : `look` écrit dans la même étape, assaini comme le cœur (`Look::sanitized`) ; nombres hors bornes : « style invalide ». */
-  | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle; readonly look?: Look }
+  | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle; readonly look?: Look; readonly cell?: CellLink }
   | { readonly type: "Erase"; readonly page: string; readonly path: Float32Array; readonly radius: number; readonly mode: EraseMode }
   | { readonly type: "Delete"; readonly ids: readonly string[] }
   | {
@@ -197,6 +198,14 @@ export type Command =
   | { readonly type: "SplitTableCell"; readonly id: string; readonly row: string; readonly col: string }
   /** C10b (F9) : shade = couleur, null retire (révéler, retirer l'ombrage). */
   | { readonly type: "SetTableShade"; readonly id: string; readonly from: CellIds; readonly to: CellIds; readonly shade: string | null }
+  /** personnalisation-3 (D3) : tailles, suivi, matrice composée sur ids, cell posé (null : retiré) ; une étape. */
+  | { readonly type: "PlaceInCell"; readonly ids: readonly string[]; readonly matrix: Matrix; readonly cell: CellLink | null; readonly sizes: readonly LineSize[] }
+  /** personnalisation-3 (D4) : tailles par id, objets liés suivis ; une étape. */
+  | { readonly type: "SetTableLineSizes"; readonly id: string; readonly cols: readonly (readonly [string, number])[]; readonly rows: readonly (readonly [string, number])[] }
+  /** personnalisation-3 (T7) : `fit` "shrink" écrit, "grow" retire ; `header` true écrit, false retire ; une étape. */
+  | { readonly type: "SetTableOptions"; readonly id: string; readonly fit?: "grow" | "shrink"; readonly header?: boolean }
+  /** personnalisation-3 (T9) : l'image logée `from` devient le fond de la case et quitte la page ; null retire le fond ; une étape. */
+  | { readonly type: "SetCellImage"; readonly id: string; readonly row: string; readonly col: string; readonly from: string | null }
   /** C10b (F18) : tableau rempli ; cells = rows × cols textes en rangées ; merges = [ligne, colonne, lignes, colonnes]. */
   | {
       readonly type: "ImportTable";
@@ -301,6 +310,10 @@ export interface LinkedAsset { readonly id: string; readonly path: string }
 export interface UnknownData { readonly sourceKind: string; readonly w: number; readonly h: number }
 
 export type TableAxis = "row" | "col";
+/** personnalisation-3 (D1) : case qui loge un objet, `[tableId, rowId, colId]`. */
+export type CellLink = readonly [table: string, row: string, col: string];
+/** personnalisation-3 (D3) : taille d'une ligne ou d'une colonne, `[tableau, axe, ligne, taille]`. */
+export type LineSize = readonly [table: string, axis: TableAxis, line: string, size: number];
 export interface TableCol { readonly id: string; readonly width: number }
 export interface TableRow { readonly id: string; readonly height: number }
 /** Cellule par ids (C10b). */
@@ -314,6 +327,8 @@ export interface TableCell {
   readonly fill: string | null;
   readonly shade: string | null;
   readonly spans: readonly TextSpan[];
+  /** personnalisation-3 (T9) : id d'asset de l'image de fond de la case ; absent : aucun. */
+  readonly bg?: string;
 }
 /** Zone fusionnée (F29) : ancre par ids, étendue en rangs, après la règle F2 du cœur. */
 export interface TableMerge { readonly row: string; readonly col: string; readonly rows: number; readonly cols: number }
@@ -326,6 +341,10 @@ export interface TableData {
   readonly rows: readonly TableRow[];
   readonly cells: readonly TableCell[];
   readonly merges: readonly TableMerge[];
+  /** personnalisation-3 (T7) : "shrink" seulement (absent = agrandir). */
+  readonly fit?: "shrink";
+  /** personnalisation-3 (T7) : en-tête (dessin : lot B) ; absent = faux. */
+  readonly header?: boolean;
 }
 
 interface ElementBase {
@@ -335,6 +354,8 @@ interface ElementBase {
   readonly group?: readonly string[];
   /** OG11 : aspect facultatif (absent = neutre). */
   readonly look?: Look;
+  /** personnalisation-3 (D1) : case qui loge l'objet ; absent sans lien, si la case n'existe plus, et sur un tableau. */
+  readonly cell?: CellLink;
 }
 export interface StrokeElement extends ElementBase { readonly kind: "stroke"; readonly style: StrokeStyle }
 export interface ShapeElement extends ElementBase { readonly kind: "shape"; readonly style: StrokeStyle; readonly shape: ShapeData }

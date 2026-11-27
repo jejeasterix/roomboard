@@ -12,7 +12,7 @@ import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from ".
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
+import { cellKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isSegment } from "../core/shapes";
@@ -1240,6 +1240,19 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       if (isPanKey(e)) {
         spaceHeld = true;
+        return true;
+      }
+      const ck = cellKey(e);
+      // personnalisation-3 (H12) : la touche passe s'il n'y a rien à loger ou à sortir.
+      if ((ck === "place" || ck === "unplace") && tool === "select" && (imageEdit === null || imageEdit.mode() === "idle") && selectTool.placeInCell?.(ck === "unplace") === true) return true;
+      // personnalisation-3 (T7) : Alt+F en outil Tableau bascule « rétrécir » ; sans cellule active la touche passe.
+      if (ck === "fit" && tool === "table" && tableTool.cell() !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        tableTool.act("fit-toggle");
+        return true;
+      }
+      // personnalisation-3 (T9) : Alt+I en outil Tableau met l'image logée de la case active en fond.
+      if (ck === "cell-image" && tool === "table" && tableTool.cell() !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        tableTool.act("cell-image");
         return true;
       }
       const order = orderKey(e);

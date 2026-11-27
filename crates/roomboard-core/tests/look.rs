@@ -93,6 +93,7 @@ fn add_stroke(d: &mut Document, look: Look) -> String {
         points: hline(100.0),
         style: pen(),
         look,
+        cell: None,
     })
     .expect("trait")
     .ids[0]

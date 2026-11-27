@@ -34,6 +34,7 @@ fn commit(d: &mut Document, page: &str, pts: Vec<f32>) -> String {
         points: pts,
         style: pen(),
         look: Look::default(),
+        cell: None,
     })
     .expect("commit")
     .ids[0]

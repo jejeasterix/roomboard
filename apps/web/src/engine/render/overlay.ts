@@ -39,6 +39,8 @@ export interface EditOverlay {
   readonly handles: boolean;
   /** Rectangle de sélection en cours (monde), ou null. */
   readonly band: Bounds | null;
+  /** personnalisation-3 : cadre de la case visée (monde), ou null. */
+  readonly target?: Bounds | null;
   readonly points?: readonly PointHandle[];
   readonly bind?: BindHint | null;
   readonly links?: readonly LinkHandle[];
@@ -59,6 +61,7 @@ export function mergeOverlays(parts: readonly (EditOverlay | undefined)[]): Edit
     frame: present.find((p) => p.frame !== null)?.frame ?? null,
     handles: present.some((p) => p.handles),
     band: present.find((p) => p.band !== null)?.band ?? null,
+    target: present.find((p) => (p.target ?? null) !== null)?.target ?? null,
     ...(pts.length > 0 ? { points: pts } : {}),
     ...(bind ? { bind } : {}),
     ...(links.length > 0 ? { links } : {}),
@@ -69,5 +72,5 @@ export function mergeOverlays(parts: readonly (EditOverlay | undefined)[]): Edit
 export const overlayKey = (o: EditOverlay): string => JSON.stringify(o);
 
 export const isEmptyOverlay = (o: EditOverlay): boolean =>
-  o.ghosts.length === 0 && o.shapes.length === 0 && o.frame === null && o.band === null &&
+  o.ghosts.length === 0 && o.shapes.length === 0 && o.frame === null && o.band === null && (o.target ?? null) === null &&
   (o.points?.length ?? 0) === 0 && !o.bind && (o.links?.length ?? 0) === 0;

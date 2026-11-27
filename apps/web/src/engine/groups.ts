@@ -6,6 +6,8 @@
 export interface GroupedView {
   readonly id: string;
   readonly group?: readonly string[];
+  /** personnalisation-3 : lien de case, lu par `cell-drop.expand`. */
+  readonly cell?: readonly [string, string, string];
 }
 
 /** Vues (avec leur groupe) des éléments `ids` que le document connaît, dans l'ordre donné. */

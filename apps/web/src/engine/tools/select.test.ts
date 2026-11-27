@@ -418,6 +418,15 @@ describe("outil Sélection : groupes (Z2)", () => {
     gesture(tool, [[90, 90], [610, 210]]);
     expect(tool.selection()).toEqual([a, b, c]);
   });
+
+  it("sans cellDrop : un objet lâché sur un tableau est posé par-dessus (Transform)", () => {
+    const { doc, tool, runs, rect } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 });
+    rect(1000, 1000, 1100, 1100);
+    gesture(tool, [[1050, 1050], [360, 96]]);
+    expect(runs.at(-1)?.type).toBe("Transform");
+  });
 });
 
 const HIT_A = { id: "A", fixed: [1, 0.3] as const, onOutline: true, anchors: [[50, 0], [100, 25], [50, 50], [0, 25]] as const };

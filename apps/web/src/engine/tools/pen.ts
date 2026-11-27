@@ -4,7 +4,8 @@
  * vif les couvre avec la géométrie du trait (lissage, largeur), sans queue dessinée à part ni enregistrement. "cancel" (fin anormale, D39) garde l'encre reçue ; "abort" (second doigt, paume) n'écrit rien.
  * Pression (D8, HL3-4) : 0,5 tant qu'aucune valeur hors de {0 ; 0,5} n'a été vue, suivie ensuite.
  */
-import type { StrokeBuilderApi, StrokeStyle } from "../../core/api";
+import type { CellLink, StrokeBuilderApi, StrokeStyle } from "../../core/api";
+import { cellContaining } from "../table-geom";
 import { opacityLook, type Look } from "../../core/look";
 import type { ItemStyle } from "../item-style";
 import { screenToWorld } from "../camera";
@@ -116,7 +117,12 @@ export function createPenTool(ctx: ToolContext, style: () => StrokeStyle & Parti
       strokes.delete(pointerId);
       l.builder.free();
       if (how === "abort" || l.all.length < 3) return;
-      ctx.run({ type: "CommitStroke", page: l.page, points: new Float32Array(l.all), style: l.style, ...(l.look ? { look: l.look } : {}) });
+      // T8 (D10) : la case n'est cherchée qu'ici, au relâché (jamais pendant le tracé : chemin de l'encre intact).
+      const cell = cellOfStroke(ctx, l);
+      const base = { type: "CommitStroke", page: l.page, points: new Float32Array(l.all), style: l.style, ...(l.look ? { look: l.look } : {}) } as const;
+      // Le cœur peut refuser le lien (case disparue, ombrée) : le trait n'est jamais perdu, il est alors commité libre.
+      if (cell && ctx.run({ ...base, cell }) !== null) return;
+      ctx.run(base);
     },
     live(): LivePart {
       const views: LiveStrokeView[] = [];
@@ -129,4 +135,22 @@ export function createPenTool(ctx: ToolContext, style: () => StrokeStyle & Parti
     },
     active: () => strokes.size > 0,
   };
+}
+
+/** D10 : boîte des points (monde) élargie d'une demi-épaisseur, puis case du tableau sous le premier point qui la contient. */
+function cellOfStroke(ctx: ToolContext, l: { readonly page: string; readonly all: readonly number[]; readonly style: StrokeStyle }): CellLink | null {
+  const half = l.style.width / 2;
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (let i = 0; i + 1 < l.all.length; i += 3) {
+    const x = l.all[i] ?? 0;
+    const y = l.all[i + 1] ?? 0;
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  }
+  return cellContaining(ctx.doc, l.page, { x0, y0, x1, y1 }, l.all[0] ?? 0, l.all[1] ?? 0, half);
 }

@@ -21,5 +21,6 @@ pub mod rich_text;
 pub mod shape;
 pub mod style;
 pub mod table;
+pub mod table_links;
 #[cfg(feature = "zone")]
 pub mod zone;

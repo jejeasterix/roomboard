@@ -1,7 +1,8 @@
 //! Recopie profonde (C3, DAZ1, DAZ2) : une seule routine, bâtie sur `AsPrelim` de yrs (copie des `Y.Map`, `Y.Array`,
 //! `Y.Text` avec attributs de plage et embeds), sert l'extraction d'une sélection, l'insertion d'un fragment et
 //! l'insertion des pages d'un document. Chaque élément garde tous ses champs (types inconnus compris, U3) ; seuls
-//! `id`, `group` (renuméroté par une table commune à l'insertion) et la translation de `transform` sont réécrits.
+//! `id`, `group` (renuméroté par une table commune à l'insertion) et la translation de `transform` sont réécrits ;
+//! `cell` (personnalisation-3, T5) vise le tableau copié dans le même appel, ou est retiré si le tableau n'est pas copié.
 //! Aucune lecture du `kind`.
 //!
 //! Jamais l'état d'un document appliqué comme mise à jour Yrs sur la cible (U9) : la cible garderait les ids et
@@ -17,7 +18,9 @@ use yrs::{
 
 use crate::commands::{Change, CommandError};
 use crate::document::{collect_out, insert_page, Document};
-use crate::element::{out_string, out_transform, transform_to_any, SCHEMA};
+use crate::element::{
+    cell_link_to_any, out_string, out_transform, read_cell_link, transform_to_any, SCHEMA,
+};
 use crate::linear::End;
 
 /// Table ancien → neuf des ids de groupe, commune à toute une insertion (Z4).
@@ -57,10 +60,11 @@ fn elements_of<T: ReadTxn>(txn: &T, page: &MapRef) -> Vec<MapRef> {
     }
 }
 
-/// Recopies de `from` (lus dans `src`), sans écrire : id neuf, groupes renumérotés par `ids`, translation ; OG12 (n° 10) :
-/// `startBound` / `endBound` renvoyés vers la copie de leur cible quand elle est copiée aussi, retirés avec leur `*Fixed`
-/// sinon (`fixDuplicatedBindingsAfterDuplication` d'Excalidraw). Rend (id neuf, prélim), dans l'ordre. Moitié lecture de
-/// `copy_elements`, appelée seule par `AddLinked` avant sa transaction unique.
+/// Recopies de `from` (lus dans `src`), sans écrire : id neuf, groupes renumérotés par `ids`, lien de case relié au
+/// tableau copié, translation ; OG12 (n° 10) : `startBound` / `endBound` renvoyés vers la copie de leur cible quand elle
+/// est copiée aussi, retirés avec leur `*Fixed` sinon (`fixDuplicatedBindingsAfterDuplication` d'Excalidraw). Rend (id
+/// neuf, prélim), dans l'ordre. Moitié lecture de `copy_elements`, appelée seule par `AddLinked` avant sa transaction
+/// unique.
 pub(crate) fn copy_prelims<T: ReadTxn>(
     src: &T,
     from: &[MapRef],
@@ -68,7 +72,10 @@ pub(crate) fn copy_prelims<T: ReadTxn>(
     dx: f64,
     dy: f64,
 ) -> Vec<(String, MapPrelim)> {
-    let mut fresh: HashMap<String, String> = HashMap::new();
+    // personnalisation-3 (T5) : ids neufs générés d'abord (un objet passé sous son tableau est recopié avant lui), puis
+    // `cell[0]` remplacé par l'id neuf du tableau copié ; tableau absent de la copie : lien retiré. Un id neuf par
+    // élément, même si la source répète un id ; la table suit la première occurrence (liaisons OG12 comprises).
+    let mut fresh: HashMap<String, String> = HashMap::with_capacity(from.len());
     let mut own: Vec<String> = Vec::with_capacity(from.len());
     for e in from {
         let id = yrs::uuid_v4().to_string();
@@ -84,6 +91,18 @@ pub(crate) fn copy_prelims<T: ReadTxn>(
             prelim.insert("id".into(), In::from(id.as_str()));
             if let Some(g) = prelim.get("group").and_then(|g| renumber(g, ids)) {
                 prelim.insert("group".into(), g);
+            }
+            // Lien illisible : recopié tel quel (U3).
+            if let Some(mut l) = read_cell_link(src, e) {
+                match fresh.get(&l[0]) {
+                    Some(t) => {
+                        l[0] = t.clone();
+                        prelim.insert("cell".into(), In::Any(cell_link_to_any(&l)));
+                    }
+                    None => {
+                        prelim.remove("cell");
+                    }
+                }
             }
             // Transformation illisible : gardée telle quelle.
             if dx != 0.0 || dy != 0.0 {
@@ -412,6 +431,7 @@ mod tests {
             points,
             style: pen(),
             look: Look::default(),
+            cell: None,
         })
         .expect("trait")
         .ids[0]

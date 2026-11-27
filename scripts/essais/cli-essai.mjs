@@ -546,6 +546,71 @@ try {
   const avantC = empreinte(pc);
   const mele = cli(["run", pc, "--save", "--ops", "-"], lignesOps({ type: "Restack", ids: [pile1[0], autre], to: 0 }));
   verifie("1a calques : Restack de deux pages mêlées : code 1, fichier inchangé", mele.code === 1 && empreinte(pc) === avantC, mele.brut);
+  // personnalisation-3 (S16, D25) : loger une forme dans une case, insérer une ligne en tête, enregistrer, relire.
+  const pl = join(dir, "cases-3.roomboard");
+  verifie("S16 : new cases-3.roomboard", cli(["new", pl]).code === 0);
+  const pose = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "AddTable", page: "$page:0", x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 },
+    { type: "AddShape", page: "$page:0", shape: "rect", x0: 1000, y0: 1000, x1: 1100, y1: 1050, style: { color: "#1e40af", width: 4 }, fill: null },
+    { op: "state" },
+  ));
+  const els = pose.lignes[2]?.state?.pages?.[0]?.elements ?? [];
+  const tab = els.find((e) => e.kind === "table");
+  const forme = els.find((e) => e.kind === "shape");
+  verifie("S16 : un tableau et une forme", pose.code === 0 && tab !== undefined && forme !== undefined, pose.brut);
+  const lien = [tab.id, tab.table.rows[1].id, tab.table.cols[1].id];
+  const loge = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "PlaceInCell", ids: [forme.id], matrix: [1, 0, 0, 1, 0, 0], cell: lien, sizes: [] },
+    { op: "state" },
+    { type: "InsertTableLine", id: tab.id, axis: "row", at: 0 },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+    { op: "redo" },
+  ));
+  const yDe = (i) => (loge.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === forme.id)?.transform?.[5];
+  verifie("S16 : PlaceInCell, puis InsertTableLine à la ligne 0 : la forme descend de 64", loge.code === 0 && yDe(3) === yDe(1) + 64, loge.brut);
+  verifie("S16 : undo, une étape : la forme remonte", yDe(5) === yDe(1), loge.brut);
+  const reluS16 = etat(pl).pages[0].elements.find((e) => e.id === forme.id);
+  egal("S16 : réouverture : cell présent", reluS16?.cell, lien);
+  // personnalisation-3 (T7) : SetTableOptions fit shrink, relu par `state`.
+  const opts = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ type: "SetTableOptions", id: tab.id, fit: "shrink" }, { op: "state" }));
+  const reluOpts = (opts.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id);
+  verifie("T7 : SetTableOptions fit shrink, relu par state", opts.code === 0 && reluOpts?.table?.fit === "shrink", opts.brut);
+  // personnalisation-3 (T9) : image logée, SetCellImage, `state` : bg présent ; undo : image revenue.
+  const asset = { id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", name: "photo.png", mime: "image/png", size: 3 };
+  const poseImg = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "AddImage", page: "$page:0", asset, w: 100, h: 100, matrix: [1, 0, 0, 1, 0, 0] },
+    { op: "state" },
+  ));
+  const img = (poseImg.lignes[1]?.state?.pages?.[0]?.elements ?? []).find((e) => e.kind === "image");
+  verifie("T9 : une image posée", poseImg.code === 0 && img !== undefined, poseImg.brut);
+  const fond = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "PlaceInCell", ids: [img.id], matrix: [1, 0, 0, 1, 0, 0], cell: lien, sizes: [] },
+    { type: "SetCellImage", id: tab.id, row: lien[1], col: lien[2], from: img.id },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+  ));
+  const casesDe = (i) => (fond.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id)?.table?.cells ?? [];
+  const imgDe = (i) => (fond.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === img.id);
+  verifie("T9 : SetCellImage, state : bg présent, image partie", fond.code === 0 && casesDe(2).some((c) => c.bg === asset.id) && imgDe(2) === undefined, fond.brut);
+  verifie("T9 : undo : image revenue, liée, sans fond", casesDe(4).every((c) => c.bg === undefined) && imgDe(4)?.cell?.[2] === lien[2], fond.brut);
+  // personnalisation-3 (D4) : SetTableLineSizes, l'objet logé suit, undo en une étape.
+  const taillesAvant = cli(["run", pl, "--save", "--ops", "-"], lignesOps({ op: "state" }));
+  const yForme = (r, i) => (r.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === forme.id)?.transform?.[5];
+  const ligne0 = tab.table.rows[0].id;
+  const tailles = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "SetTableLineSizes", id: tab.id, cols: [], rows: [[ligne0, 100]] },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+  ));
+  const hauteurDe = (r, i) => (r.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id)?.table?.rows?.find((l) => l.id === ligne0)?.height;
+  const h0 = hauteurDe(taillesAvant, 0);
+  verifie("D4 : SetTableLineSizes change la hauteur de la ligne", tailles.code === 0 && h0 !== 100 && hauteurDe(tailles, 1) === 100, tailles.brut);
+  verifie("D4 : l'objet logé suit la ligne agrandie", yForme(tailles, 1) === yForme(taillesAvant, 0) + (100 - h0), tailles.brut);
+  verifie("D4 : undo, une étape : hauteur et objet reviennent", hauteurDe(tailles, 3) === h0 && yForme(tailles, 3) === yForme(taillesAvant, 0), tailles.brut);
   // OG12 (S5) : deux rectangles, une flèche liée, Transform suivi puis undo en une étape, SetLinePoints refusé, AddLinked.
   {
     const f = join(dir, "fleches.roomboard");

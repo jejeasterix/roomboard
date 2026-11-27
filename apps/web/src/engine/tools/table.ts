@@ -14,6 +14,7 @@ import { TABLE_MAX_LINES } from "../../core/api";
 import { sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { composeMatrix, translateMatrix } from "../../core/shapes";
+import type { CellMenu, CellMenuItem } from "../../ui/cell-menu";
 import { screenToWorld } from "../camera";
 import { EMPTY_OVERLAY } from "../render/overlay";
 import {
@@ -24,6 +25,7 @@ import {
   cellOf,
   cellRect,
   expandRange,
+  linkedIn,
   mergeAt,
   rangeCells,
   rangeRect,
@@ -39,6 +41,7 @@ import {
   type Range,
 } from "../table-geom";
 import type { Measure } from "../text-layout";
+import type { CellDrop } from "./cell-drop";
 import { createCommitGate } from "./commit-gate";
 import { transformBounds } from "./handles";
 import type { TextEditorHost, TextStyle } from "./text";
@@ -80,9 +83,18 @@ interface Press {
   readonly id: string;
   readonly start: Cell;
   moved: boolean;
+  /** Appui long (T7) : point écran de départ, minuterie, menu ouvert (le relâché n'ouvre alors aucune saisie). */
+  readonly sx: number;
+  readonly sy: number;
+  hold: ReturnType<typeof setTimeout> | null;
+  held: boolean;
 }
 
-export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure): TableTool {
+/** Appui long (G8) : durée et mouvement toléré en px écran. */
+const HOLD_MS = 500;
+const HOLD_SLOP = 8;
+
+export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu, cellDrop?: Pick<CellDrop, "place">): TableTool {
   let active: CellRef | null = null;
   /** Autre coin de la plage (F14), dans le tableau de `active` ; null : aucune plage. */
   let corner: CellRef | null = null;
@@ -90,6 +102,10 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   /** Pointeur dont l'appui a seulement validé la saisie ou fermé la grille : ni plage, ni ouverture au relâché. */
   let swallowed: number | null = null;
   let opened: Opened | null = null;
+  const stopHold = (p: Press | null): void => {
+    if (p?.hold != null) clearTimeout(p.hold);
+    if (p !== null) p.hold = null;
+  };
   let live: LivePart = NO_LIVE;
   const gate = createCommitGate(() => commit(), () => opened !== null);
 
@@ -274,7 +290,43 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     return true;
   };
 
-  return {
+  /** Objets logés dans la case `ref` (T9), du plus bas au plus haut de la pile. */
+  const placedIn = (ref: CellRef): string[] =>
+    linkedIn(ctx.doc, ctx.page(), ref.id)
+      .filter((v) => v.cell?.[1] === ref.row && v.cell[2] === ref.col)
+      .map((v) => v.id);
+  const topImage = (ref: CellRef): string | null => {
+    const ids = placedIn(ref).filter((e) => ctx.doc.element(e)?.kind === "image");
+    return ids[ids.length - 1] ?? null;
+  };
+
+  /** Appui long (T7) : la cellule appuyée est active ; le menu propose Rétrécir (ou Agrandir), puis, si des objets y logent (T9), « Mettre en fond » (une image) et « Sortir ». */
+  const openMenu = (p: Press): void => {
+    p.hold = null;
+    if (press !== p || menu === undefined) return;
+    const at = locate(active);
+    if (at === null) return;
+    p.held = true;
+    const shrink = at.table.fit === "shrink";
+    const items: CellMenuItem[] = [{ id: "fit", label: shrink ? "Agrandir" : "Rétrécir", run: () => api.act("fit-toggle") }];
+    if (topImage(at.ref) !== null) items.push({ id: "cell-image", label: "Mettre en fond", run: () => api.act("cell-image") });
+    const out = placedIn(at.ref);
+    if (out.length > 0) {
+      items.push({
+        id: "unplace",
+        label: "Sortir",
+        run: () => {
+          // Même commande que Alt+Maj+Entrée (D11) : la case quittée revient à la taille exigée sans l'objet.
+          const cmd = cellDrop?.place(out, true) ?? { type: "PlaceInCell", ids: out, matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] };
+          if (cmd !== null) ctx.run(cmd);
+          ctx.stateChanged?.();
+        },
+      });
+    }
+    menu.open(p.sx, p.sy, items);
+  };
+
+  const api: TableTool = {
     begin(pointerId, samples) {
       const s = samples[0];
       if (!s) return;
@@ -304,7 +356,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           return;
         }
         setActive(ref);
-        press = { pointerId, id: hit.id, start: hit.cell, moved: false };
+        const p: Press = { pointerId, id: hit.id, start: hit.cell, moved: false, sx: s.x, sy: s.y, hold: null, held: false };
+        press = p;
+        if (menu !== undefined) p.hold = setTimeout(() => openMenu(p), HOLD_MS);
         return;
       }
       picker.open({ x: s.x, y: s.y }, (cols, rows) => create(x, y, cols, rows));
@@ -313,6 +367,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const p = press;
       const s = samples[samples.length - 1];
       if (p === null || p.pointerId !== pointerId || !s) return;
+      if (Math.hypot(s.x - p.sx, s.y - p.sy) > HOLD_SLOP) stopHold(p);
+      if (p.held) return;
       const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
       const hit = tableAt(ctx.doc, ctx.page(), x, y);
       if (hit === null || hit.id !== p.id) return;
@@ -333,8 +389,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const p = press;
       if (p === null || p.pointerId !== pointerId) return;
       press = null;
-      // F14 : sans changement de cellule, le clic ouvre la saisie au relâché.
-      if (how === "end" && !p.moved) openActive();
+      stopHold(p);
+      // F14 : sans changement de cellule, le clic ouvre la saisie au relâché (sauf après l'appui long : le menu est ouvert).
+      if (how === "end" && !p.moved && !p.held) openActive();
       // Geste interrompu (abort, cancel) après un glisser : la plage posée par `extend` est retirée, sinon le prochain
       // « Ombrer » ou « − Ligne » s'y appliquerait.
       if (how !== "end" && p.moved) setCorner(null);
@@ -342,6 +399,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     live: () => live,
     active: () => false,
     leave() {
+      stopHold(press);
+      menu?.close();
       gate.request();
       picker.close();
       press = null;
@@ -360,7 +419,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         return r !== undefined && k !== undefined && cellContent(t, r.id, k.id).shade !== null;
       });
       const zone = mergeAt(t, at.cell);
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded };
+      // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
+      const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked };
     },
     act(a) {
       if (!settle()) return;
@@ -398,6 +459,14 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         case "unshade":
           shadeOver(at, span, null);
           break;
+        case "fit-toggle":
+          ctx.run({ type: "SetTableOptions", id: ref.id, fit: t.fit === "shrink" ? "grow" : "shrink" });
+          break;
+        case "cell-image": {
+          const image = topImage(ref);
+          if (image !== null) ctx.run({ type: "SetCellImage", id: ref.id, row: ref.row, col: ref.col, from: image });
+          break;
+        }
         default:
           // Contrôle d'exhaustivité : une action ajoutée à `TableAction` sans cas ici ne compile pas.
           return a satisfies never;
@@ -491,4 +560,5 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       ctx.stateChanged?.();
     },
   };
+  return api;
 }

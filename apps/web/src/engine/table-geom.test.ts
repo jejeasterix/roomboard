@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { anchorOf, cellAt, cellContent, cellHeight, cellInnerBox, cellOf, cellRect, expandRange, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, rowHeightsFor, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { anchorOf, cellAt, cellContaining, cellContent, cellHeight, cellInnerBox, cellOf, cellRect, expandRange, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -15,8 +16,9 @@ const T: TableData = {
   merges: [],
 };
 const at = (row: number, col: number) => ({ row, col });
-const docOf = (els: ElementView[]): Pick<CoreDocument, "elementIds" | "element"> => ({
+const docOf = (els: ElementView[]): Pick<CoreDocument, "elementIds" | "elementIdsOfKind" | "element"> => ({
   elementIds: () => els.map((e) => e.id),
+  elementIdsOfKind: (_page, kind) => els.filter((e) => e.kind === kind).map((e) => e.id),
   element: (id) => els.find((e) => e.id === id) ?? null,
 });
 const table = (id: string, transform: Matrix): ElementView => ({ id, kind: "table", transform, table: T });
@@ -206,5 +208,44 @@ describe("table-geom — cellules par segments (C7b, R17)", () => {
     const rich: TableData = { ...T, cells: [{ row: "r1", col: "c1", text: "ab", fill: null, shade: null, spans: [{ text: "ab", attrs: { bold: true } }] }] };
     expect(cellContent(rich, "r1", "c1").spans).toEqual([{ text: "ab", attrs: { bold: true } }]);
     expect(cellContent(rich, "r2", "c2").spans).toEqual(plainSpans(""));
+  });
+
+  it("tableAt garde le plus haut (D28, elementIdsOfKind)", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const add = (x: number): string => doc.apply({ type: "AddTable", page, x, y: 0, cols: 2, rows: 2, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    add(0);
+    const top = add(100);
+    expect(tableAt(doc, page, 150, 10)?.id).toBe(top);
+  });
+
+  it("requiredSizes (D34) : objet + 2 × marge, plancher 64 en hauteur et 2 × 8 + 24 en largeur", () => {
+    const t: TableData = { color: "#000000", size: 36, cols: [{ id: "c0", width: 240 }, { id: "c1", width: 240 }], rows: [{ id: "r0", height: 64 }, { id: "r1", height: 64 }], cells: [], merges: [] };
+    const measure = (s: string, size: number): number => s.length * size * 0.5;
+    const r = requiredSizes(t, [{ row: "r1", col: "c1", w: 400, h: 300 }], [240, 240], measure);
+    expect(r.cols).toEqual([40, 416]);
+    expect(r.rows[1]).toBe(316);
+    expect(r.rows[0]).toBeGreaterThanOrEqual(64);
+  });
+});
+
+describe("D10 : cellContaining (T8)", () => {
+  it("D10 : cellContaining rend la case qui contient la boîte (tolérance demi-épaisseur), null si elle déborde", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const id = doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const v = doc.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect(cellContaining(doc, page, { x0: 20, y0: 70, x1: 200, y1: 126 }, 20, 90, 2)).toEqual([id, v.table.rows[1]?.id, v.table.cols[0]?.id]);
+    expect(cellContaining(doc, page, { x0: 20, y0: 70, x1: 300, y1: 126 }, 20, 90, 2)).toBeNull();
+  });
+});
+
+describe("cellContent : fond d'image (T9, S5)", () => {
+  it("S5 : bg présent quand la case a un fond, absent sinon", () => {
+    const bg = "a".repeat(64);
+    const t = { color: "#000000", size: 36, cols: [{ id: "c", width: 240 }], rows: [{ id: "r", height: 64 }], cells: [{ row: "r", col: "c", text: "", fill: null, shade: null, spans: [], bg }], merges: [] };
+    expect(cellContent(t, "r", "c").bg).toBe(bg);
+    expect("bg" in cellContent({ ...t, cells: [] }, "r", "c")).toBe(false);
   });
 });

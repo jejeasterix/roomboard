@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Command, TableData, TextSpan } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import { editSpans, plainSpans } from "../../core/rich-text";
@@ -6,6 +6,8 @@ import type { FormatAction, FormatState } from "../rich-edit";
 import type { InputSample } from "../input/sampler";
 import { cellHeight, TABLE_SHADE_COLOR } from "../table-geom";
 import type { Measure } from "../text-layout";
+import type { CellMenu, CellMenuItem } from "../../ui/cell-menu";
+import { createCellDrop } from "./cell-drop";
 import { createTableTool, type TablePicker } from "./table";
 import type { TextEditorHost, TextEditSession } from "./text";
 import type { TableTool, ToolContext } from "./tool";
@@ -103,7 +105,9 @@ function setup() {
       changes++;
     },
   };
-  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow);
+  const menuOpens: { x: number; y: number; items: readonly CellMenuItem[] }[] = [];
+  const menu: CellMenu = { open: (x, y, items) => void menuOpens.push({ x, y, items }), close: () => undefined };
+  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow, menu, createCellDrop(ctx, narrow));
   holder.tool = tool;
   const click = (x: number, y: number): void => {
     tool.begin(1, [at(x, y)]);
@@ -122,7 +126,7 @@ function setup() {
     return ids[ids.length - 1] ?? "";
   };
   const last = (): Command | undefined => runs[runs.length - 1];
-  return { doc, page, runs, host, picker, tool, click, create, table, last, type: (s: string) => (host.text = s), changes: () => changes, setShift: (v: boolean) => {
+  return { menuOpens, doc, page, runs, host, picker, tool, click, create, table, last, type: (s: string) => (host.text = s), changes: () => changes, setShift: (v: boolean) => {
     shift = v;
   } };
 }
@@ -733,5 +737,161 @@ describe("outil Tableau — fond de page (C6a)", () => {
     s.tool.navigate("next");
     expect(s.tool.cellState()).toMatchObject({ row: 0, col: 1 });
     expect(s.host.last().background).toBe("#fef08a");
+  });
+});
+
+describe("outil Tableau (personnalisation-3)", () => {
+  it("linked : cellState compte les objets logés dans le tableau actif", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    expect(s.tool.cellState()?.linked).toBe(0);
+    const o = s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: 1000, y0: 1000, x1: 1100, y1: 1050, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    const t = s.table(id);
+    s.doc.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: [id, t.rows[0]?.id ?? "", t.cols[0]?.id ?? ""], sizes: [] });
+    expect(s.tool.cellState()?.linked).toBe(1);
+  });
+});
+
+describe("appui long sur une case (menu de case, personnalisation-3 T7)", () => {
+  it("appui long (500 ms, < 8 px) sur une case : menu ouvert avec l'entrée fit ; < 500 ms : saisie ouverte comme aujourd'hui", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      const id = s.create(100, 200, 3, 3);
+      s.tool.requestCommit();
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      expect(s.menuOpens).toHaveLength(1);
+      expect(s.menuOpens[0]?.items.map((i) => i.id)).toEqual(["fit"]);
+      const opened = s.host.opened.length;
+      s.tool.close(1, "end");
+      expect(s.host.opened.length).toBe(opened);
+      s.menuOpens[0]?.items[0]?.run();
+      expect(s.last()).toEqual({ type: "SetTableOptions", id, fit: "shrink" });
+      s.tool.begin(2, [at(120, 220)]);
+      vi.advanceTimersByTime(300);
+      s.tool.close(2, "end");
+      expect(s.menuOpens).toHaveLength(1);
+      expect(s.host.opened.length).toBe(opened + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("appui long : bouger de plus de 8 px avant 500 ms annule le menu", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      s.create(100, 200, 3, 3);
+      s.tool.requestCommit();
+      s.tool.begin(1, [at(120, 220)]);
+      s.tool.extend(1, [at(135, 220)], []);
+      vi.advanceTimersByTime(600);
+      expect(s.menuOpens).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("image de fond de case (personnalisation-3 T9, S5)", () => {
+  const ASSET = { id: "ab".repeat(32), name: "p.png", mime: "image/png", size: 3 };
+  /** Tableau 2 × 2, cellule (0, 0) active, une image logée dedans. */
+  function withImage() {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const t = s.table(id);
+    const link: [string, string, string] = [id, t.rows[0]?.id ?? "", t.cols[0]?.id ?? ""];
+    const image = s.doc.apply({ type: "AddImage", page: s.page, asset: ASSET, w: 100, h: 100, matrix: [1, 0, 0, 1, 0, 0] }).ids[0] ?? "";
+    s.doc.apply({ type: "PlaceInCell", ids: [image], matrix: [1, 0, 0, 1, 0, 0], cell: link, sizes: [] });
+    return { ...s, id, image, link };
+  }
+
+  it("S5 : Alt+I (act cell-image) met l'image logée la plus haute de la case active en fond, une étape ; undo : image revenue", () => {
+    const s = withImage();
+    s.tool.begin(1, [at(120, 220)]);
+    s.tool.close(1, "end");
+    s.tool.requestCommit();
+    const before = s.doc.element(s.image)?.transform;
+    s.tool.act("cell-image");
+    expect(s.last()).toEqual({ type: "SetCellImage", id: s.id, row: s.link[1], col: s.link[2], from: s.image });
+    expect(s.doc.element(s.image)).toBeNull();
+    expect(s.table(s.id).cells.find((c) => c.row === s.link[1] && c.col === s.link[2])?.bg).toBe(ASSET.id);
+    s.doc.undo();
+    expect(s.doc.element(s.image)?.transform).toEqual(before);
+    expect(s.doc.element(s.image)?.cell).toEqual(s.link);
+    expect(s.table(s.id).cells.find((c) => c.bg !== undefined)).toBeUndefined();
+  });
+
+  it("S5 : sans image logée, cell-image ne fait rien", () => {
+    const s = setup();
+    s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const n = s.runs.length;
+    s.tool.act("cell-image");
+    expect(s.runs.length).toBe(n);
+  });
+
+  it("S5 : appui long (500 ms, < 8 px) sur une case : menu avec « Mettre en fond » et « Sortir » si une image y loge", () => {
+    vi.useFakeTimers();
+    try {
+      const s = withImage();
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      expect(s.menuOpens).toHaveLength(1);
+      const items = s.menuOpens[0]?.items ?? [];
+      expect(items.map((i) => i.id)).toEqual(["fit", "cell-image", "unplace"]);
+      expect(items.map((i) => i.label)).toEqual(["Rétrécir", "Mettre en fond", "Sortir"]);
+      s.tool.close(1, "end");
+      items[2]?.run();
+      expect(s.last()).toEqual({ type: "PlaceInCell", ids: [s.image], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] });
+      expect(s.doc.element(s.image)?.cell).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("D11 : « Sortir » du menu réduit la case comme Alt+Maj+Entrée (colonne 240, ligne 64, une seule PlaceInCell)", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      const id = s.create(100, 200, 2, 2);
+      s.tool.requestCommit();
+      const t = s.table(id);
+      const col = t.cols[0]?.id ?? "";
+      const row = t.rows[0]?.id ?? "";
+      const image = s.doc.apply({ type: "AddImage", page: s.page, asset: ASSET, w: 400, h: 300, matrix: [1, 0, 0, 1, 0, 0] }).ids[0] ?? "";
+      s.doc.apply({ type: "PlaceInCell", ids: [image], matrix: [1, 0, 0, 1, 108, 208], cell: [id, row, col], sizes: [[id, "col", col, 416], [id, "row", row, 316]] });
+      expect(s.table(id).cols[0]?.width).toBe(416);
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      const items = s.menuOpens[0]?.items ?? [];
+      s.tool.close(1, "end");
+      items.find((i) => i.id === "unplace")?.run();
+      const cmd = s.last();
+      expect(cmd?.type === "PlaceInCell" && cmd.cell === null && cmd.sizes.length).toBe(2);
+      expect(s.table(id).cols[0]?.width).toBe(240);
+      expect(s.table(id).rows[0]?.height).toBe(64);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("menu ouvert (appui tenu) : le glisser n'étend plus la plage", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      s.create(100, 200, 2, 2);
+      s.tool.requestCommit();
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      expect(s.menuOpens).toHaveLength(1);
+      s.tool.extend(1, [at(400, 290)], []);
+      expect(s.tool.cellState()?.range).toBeNull();
+      s.tool.close(1, "end");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

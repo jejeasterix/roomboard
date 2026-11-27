@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, editAction, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, cellKey, editAction, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -14,6 +14,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
   "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
   "palm-eraser": ["app", "palm-eraser"],
+  "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
 };
 const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "Entrée": "Enter" };
 const press = (keys: string): KeyLike => {
@@ -38,6 +39,7 @@ describe("shortcuts", () => {
       else if (by === "help") expect(isHelpKey({ ...press("?"), key: "?" }), s.id).toBe(true);
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
+      else if (by === "cell") expect(cellKey({ ...press("Enter"), code: s.keys.endsWith("Entrée") ? "Enter" : `Key${s.keys.slice(-1)}`, altKey: true, shiftKey: s.keys.includes("Maj") }), s.id).toBe(value);
       else if (by === "lineEdit") expect(lineEditKey(e), s.id).toBe(true);
       else if (by === "linked") expect(linkedKey({ ...press("→"), key: "ArrowRight", altKey: true, shiftKey: true }), s.id).toBe(value);
       else if (by === "ctrlHeld") expect(isCtrlKey({ key: "Control" }), s.id).toBe(true);

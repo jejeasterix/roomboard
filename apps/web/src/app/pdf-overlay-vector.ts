@@ -15,6 +15,7 @@ import type { ImageSource } from "../engine/render/image-cache";
 import { Canvas2DRenderer, exportPainterOptions } from "../engine/render/canvas2d";
 import { RecordingContext2D, RecordingPath, type RecordedList } from "../engine/render/record-ctx";
 import type { PdfJob } from "../platform/container";
+import { kindOfMime, probeSize } from "../platform/image-import";
 import { runOnce, type WorkerLike } from "../platform/one-shot-worker";
 import { typed } from "./container-io";
 import type { Overlay, OverlayProducer } from "./pdf-export";
@@ -84,20 +85,32 @@ export function vectorPainter(doc: CoreDocument): VectorOverlayDeps["painter"] {
   return (ctx, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images, { makePath: () => new RecordingPath() as unknown as Path2D }));
 }
 
-/** Jeton d'une image citée : `drawImage` l'enregistre tel quel, ses octets sont lus après le dessin. */
+/** Jeton d'une image citée : `drawImage` l'enregistre tel quel, ses octets sont lus après le dessin. Taille naturelle
+ *  lue dans l'en-tête (`probeSize`, comme l'import) : un fond de case la lit comme celle d'un bitmap pour « couvrir »
+ *  (personnalisation-3, C1) ; absente si l'en-tête est illisible. */
 interface Token {
   readonly asset: string;
   readonly mime: string;
+  readonly width?: number;
+  readonly height?: number;
 }
 
 export function createVectorOverlay(deps: VectorOverlayDeps): OverlayProducer {
   return {
     async pages(requests) {
-      // Document lu ici seulement, sans `await` : ids, images citées, puis le dessin de chaque page.
+      // Ids et images citées lus avant le premier `await` (comme le producteur PNG) ; tailles lues dans les en-têtes ;
+      // puis le dessin de chaque page, `alive()` relu.
       const views = requests.map((r) => ({ r, page: { id: r.pageId, elementIds: deps.doc.elementIds(r.pageId) } }));
-      const tokens = new Map<string, Token>();
+      const cited: { readonly id: string; readonly mime: string; readonly blob: Blob }[] = [];
       for (const a of deps.doc.citedAssets()) {
-        if (a.mime.startsWith("image/") && deps.assets.get(a.id) !== undefined) tokens.set(a.id, { asset: a.id, mime: a.mime });
+        const blob = a.mime.startsWith("image/") ? deps.assets.get(a.id) : undefined;
+        if (blob !== undefined) cited.push({ id: a.id, mime: a.mime, blob });
+      }
+      const tokens = new Map<string, Token>();
+      for (const c of cited) {
+        const kind = kindOfMime(c.mime);
+        const size = kind === null ? null : await probeSize(c.blob, kind);
+        tokens.set(c.id, size === null ? { asset: c.id, mime: c.mime } : { asset: c.id, mime: c.mime, width: size.w, height: size.h });
       }
       const images: ImageSource = { bitmap: (id) => (tokens.get(id) as unknown as CanvasImageSource | undefined) ?? null };
       const rec = new RecordingContext2D(deps.measure);
