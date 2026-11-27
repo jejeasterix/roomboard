@@ -1712,10 +1712,12 @@ class FakeDocument implements CoreDocument {
     const looked = e.look ? { look: e.look } : {};
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
     if (e.image) return { ...base, ...looked, kind: "image", image: e.image };
-    if (e.media) return { ...base, kind: "media", media: e.media };
-    if (e.model3d) return { ...base, kind: "model3d", model3d: e.model3d };
+    // OG23 (T22, `drag_copy_view`) : tableau, média et objet 3D ne servent que `dragCopy` de leur aspect.
+    const dragged = e.look?.dragCopy ? { look: { dragCopy: true as const } } : {};
+    if (e.media) return { ...base, ...dragged, kind: "media", media: e.media };
+    if (e.model3d) return { ...base, ...dragged, kind: "model3d", model3d: e.model3d };
     if (e.fill) return { ...base, kind: "fill", fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h } };
-    if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
+    if (e.table) return { ...base, ...dragged, kind: "table", table: tableView(e.table) };
     const styled = { ...base, ...looked, style: e.style };
     if (e.shape) return { ...styled, kind: "shape", shape: e.shape };
     if (e.text) return { ...styled, kind: "text", text: e.text };

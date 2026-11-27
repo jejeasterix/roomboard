@@ -568,6 +568,16 @@ pub(crate) fn look_view<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<Look> {
     Some(read_look(txn, e)).filter(|l| !l.is_neutral())
 }
 
+/// OG23 (T22) : vue de l'aspect d'un tableau, d'un média ou d'un objet 3D : seul `dragCopy` (décision 29) y est lu, aucun
+/// autre champ d'aspect n'apparaît là où il n'existait pas ; `None` sans bascule.
+pub(crate) fn drag_copy_view<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<Look> {
+    let drag_copy = read_look(txn, e).drag_copy?;
+    Some(Look {
+        drag_copy: Some(drag_copy),
+        ..Look::default()
+    })
+}
+
 pub(crate) fn finite_positive(v: f64) -> bool {
     v.is_finite() && v > 0.0
 }
