@@ -3,9 +3,9 @@
 Statut : en cours
 Gabarit : chantier (provisoire)
 Objectif : Jérôme choisit pour chaque page un mode Page (cadre 16:9 comme PowerPoint) ou Infini, gère ses pages et les calques des objets dans une barre latérale repliable, et navigue de page en page depuis la barre d'outils principale.
-Avancement : 7/14 tâches terminées
-Étage : 3 (vague 3) — depuis 2026-11-27 09:02
-Tâche : T7 — grille du cœur et CLI — depuis 09:18 ; T9 — rendus et miniatures — depuis 09:18 ; T11 — essais adaptés (en attente de T10) — depuis 09:18
+Avancement : 13/16 tâches terminées (T1-T11, T13-T15 ; T16 correctif en cours ; T12 intégration à faire)
+Étage : 3 (vague 6) — depuis 2026-11-27 10:15
+Tâche : T16 — barre latérale sans recouvrement, bande repliée, essais existants verts — depuis 10:15
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-1a   Branche : feat/personnalisation-1a   Base : origin/main @ 45484db
 Branche principale locale au lancement : 45484db
@@ -32,9 +32,15 @@ Plan : docs/plans/personnalisation-1a-PLAN.md (table en tête, 14 tâches, 6 vag
 | T5 | terminée | 332dcad | vitest 112 |
 | T6 | terminée | f0a7ba6 | vitest 130 ; controle-icones OK |
 | T8 | terminée | 4676c28 | vitest 430 ; tsc 0 |
-| T7, T9 | en cours | — | — |
-| T11 | commit dffe795, essais à rejouer après T10 | — | — |
-| T10, T12, T13, T14 | à faire | — | — |
+| T7 | terminée | 42231b7 | core 415 ; grid_clip 5 ; contrat 393 (vrai module) ; CLI 265 ; CLI : OK ; Wasm 1 391 619 o |
+| T9 | terminée | b4da390 | vitest 346 |
+| T10 | terminée | ced2d9c | vitest 434 ; tsc 0 |
+| T13 | terminée | fbe8b13 | restack 6 ; wasm 57 ; CLI : OK ; Wasm 1 403 655 o |
+| T15 (correctif) | terminée | 200a0ab | web complet 3714/3714 ; fmt et clippy propres |
+| T14 | terminée | b537512 | vitest 383/385 (2 Toolbar.test → T16) |
+| T11 | fusionnée (aides d'essais) | d3fe937 | essais rouges : défaut de placement de l'app → T16 |
+| T16 (correctif) | en cours | — | — |
+| T12 | à faire | — | — |
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · scénarios réussis · captures 2x avant/après · PR fusionnée par `git merge --no-ff` et poussée
