@@ -1,0 +1,144 @@
+import { describe, expect, it } from "vitest";
+import type { Command } from "../../core/api";
+import { fakeCore } from "../../core/fake-core";
+import type { InputSample } from "../input/sampler";
+import { viewsOf } from "../groups";
+import { createCellDrop } from "./cell-drop";
+import { createSelectTool } from "./select";
+import type { ToolContext } from "./tool";
+
+const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
+const measure = (s: string, size: number): number => s.length * size * 0.5;
+const ASSET = { id: "a".repeat(64), name: "x.png", mime: "image/png", size: 1 };
+
+function setup() {
+  const doc = fakeCore.blank();
+  const page = doc.pageIds()[0] ?? "";
+  let alt = false;
+  const runs: Command[] = [];
+  const ctx: ToolContext = {
+    doc,
+    page: () => page,
+    camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
+    run: (cmd) => {
+      runs.push(cmd);
+      try {
+        return doc.apply(cmd);
+      } catch {
+        return null;
+      }
+    },
+    alt: () => alt,
+  };
+  const drop = createCellDrop(ctx, measure);
+  const tool = createSelectTool(ctx, drop);
+  const table = doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+  const image = doc.apply({ type: "AddImage", page, asset: ASSET, w: 400, h: 300, matrix: [1, 0, 0, 1, 1000, 1000] }).ids[0] ?? "";
+  const t = () => {
+    const v = doc.element(table);
+    if (v?.kind !== "table") throw new Error("tableau");
+    return v.table;
+  };
+  const move = (from: [number, number], to: [number, number]): void => {
+    tool.begin(1, [at(...from)]);
+    tool.extend(1, [at(to[0], to[1])], []);
+    tool.close(1, "end");
+  };
+  return { doc, page, tool, drop, runs, table, image, t, move, setAlt: (v: boolean) => { alt = v; } };
+}
+
+describe("glisser vers une case (cell-drop, DA3)", () => {
+  it("S1 : image 400 × 300 sur la case (1, 1) : PlaceInCell, colonne 416, ligne 316, image dans la boîte intérieure", () => {
+    const s = setup();
+    s.move([1200, 1150], [360, 96]);
+    const cmd = s.runs.at(-1);
+    expect(cmd?.type).toBe("PlaceInCell");
+    expect(s.t().cols.map((c) => c.width)).toEqual([240, 416, 240]);
+    expect(s.t().rows.map((r) => r.height)).toEqual([64, 316, 64]);
+    expect(s.doc.bounds([s.image])).toEqual({ x0: 248, y0: 72, x1: 648, y1: 372 });
+    expect(s.doc.element(s.image)?.cell).toEqual([s.table, s.t().rows[1]?.id, s.t().cols[1]?.id]);
+    s.doc.undo();
+    expect(s.t().cols[1]?.width).toBe(240);
+  });
+
+  it("Alt : Transform seul (effet de bord, G8 de C9)", () => {
+    const s = setup();
+    s.setAlt(true);
+    s.move([1200, 1150], [360, 96]);
+    expect(s.runs.at(-1)?.type).toBe("Transform");
+    expect(s.doc.element(s.image)?.cell).toBeUndefined();
+  });
+
+  it("hors de tout tableau : Transform d'aujourd'hui", () => {
+    const s = setup();
+    s.move([1200, 1150], [1300, 1150]);
+    expect(s.runs.at(-1)).toEqual({ type: "Transform", ids: [s.image], matrix: [1, 0, 0, 1, 100, 0] });
+  });
+
+  it("case ombrée : déplacement libre (D35)", () => {
+    const s = setup();
+    const r = s.t().rows[1]?.id ?? "";
+    const c = s.t().cols[1]?.id ?? "";
+    s.doc.apply({ type: "SetTableShade", id: s.table, from: { row: r, col: c }, to: { row: r, col: c }, shade: "#94a3b8" });
+    s.move([1200, 1150], [360, 96]);
+    expect(s.runs.at(-1)?.type).toBe("Transform");
+  });
+
+  it("sélection avec tableau : drop rend null", () => {
+    const s = setup();
+    expect(s.drop.drop([s.table, s.image], [1, 0, 0, 1, 10, 0], 360, 96, false)).toBeNull();
+  });
+
+  it("S4 : objet lié lâché hors de tout tableau : PlaceInCell sans cell, à la place du relâché", () => {
+    const s = setup();
+    s.move([1200, 1150], [360, 96]);
+    s.move([448, 222], [1448, 222]);
+    const cmd = s.runs.at(-1);
+    expect(cmd?.type === "PlaceInCell" && cmd.cell === null).toBe(true);
+    expect(s.doc.element(s.image)?.cell).toBeUndefined();
+    expect(s.doc.bounds([s.image])?.x0).toBe(1248);
+  });
+
+  it("expand (D6) : un tableau sélectionné prend ses objets liés", () => {
+    const s = setup();
+    s.move([1200, 1150], [360, 96]);
+    expect(s.drop.expand([s.table], viewsOf(s.doc, s.doc.elementIds(s.page))).sort()).toEqual([s.table, s.image].sort());
+  });
+
+  it("D28 : aucun element() pendant le glisser (tableaux et vues lus au begin)", () => {
+    const base = fakeCore.blank();
+    const page = base.pageIds()[0] ?? "";
+    let calls = 0;
+    const doc = new Proxy(base, {
+      get(target, key) {
+        if (key === "element") return (id: string) => { calls++; return target.element(id); };
+        const v = Reflect.get(target, key) as unknown;
+        return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+      },
+    });
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (cmd) => doc.apply(cmd) };
+    const tool = createSelectTool(ctx, createCellDrop(ctx, measure));
+    doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 });
+    doc.apply({ type: "AddImage", page, asset: ASSET, w: 400, h: 300, matrix: [1, 0, 0, 1, 1000, 1000] });
+    tool.begin(1, [at(1200, 1150)]);
+    tool.extend(1, [at(1100, 1000)], []);
+    tool.live();
+    const before = calls;
+    for (let i = 0; i < 10; i++) {
+      tool.extend(1, [at(1000 - i * 60, 900 - i * 80)], []);
+      tool.live();
+    }
+    expect(calls).toBe(before);
+    tool.close(1, "cancel");
+  });
+
+  it("target : cadre monde de la case visée pendant le glisser, null hors tableau", () => {
+    const s = setup();
+    expect(s.drop.target([s.image], 360, 96)).toEqual({ x0: 240, y0: 64, x1: 480, y1: 128 });
+    expect(s.drop.target([s.image], 1500, 1500)).toBeNull();
+    s.tool.begin(1, [at(1200, 1150)]);
+    s.tool.extend(1, [at(360, 96)], []);
+    expect(s.tool.live().overlay?.target).toEqual({ x0: 240, y0: 64, x1: 480, y1: 128 });
+    s.tool.close(1, "cancel");
+  });
+});
