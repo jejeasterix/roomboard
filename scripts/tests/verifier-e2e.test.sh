@@ -28,6 +28,8 @@ grep -q "scripts/essais/design-l4-navigateur.mjs" scripts/verifier.sh || ko "des
 grep -q "scripts/essais/design-l3-navigateur.mjs" scripts/verifier.sh || ko "design-l3-navigateur absent de verifier.sh"
 # design L2 : ligne à part, comme design L3.
 grep -q "scripts/essais/design-l2-navigateur.mjs" scripts/verifier.sh || ko "design-l2-navigateur absent de verifier.sh"
+# personnalisation 1b : ligne à part, comme design L2.
+grep -q "scripts/essais/fonds-navigateur.mjs" scripts/verifier.sh || ko "fonds-navigateur absent de verifier.sh"
 if grep -E 'essais/.*-navigateur\.mjs.*--captures?' scripts/verifier.sh >/dev/null; then ko "--e2e ne doit passer aucune option de capture"; fi
 # Les essais ne sont lancés que dans le bloc --e2e.
 awk '/essais\/.*-navigateur\.mjs/ && !in_e2e {print "hors bloc e2e : " $0; bad=1} /if \[ "\$E2E" = 1 \]/ {in_e2e=1} /^fi/ {in_e2e=0} END {exit bad}' scripts/verifier.sh >&2 || ko "un essai navigateur est lancé hors du bloc --e2e"
