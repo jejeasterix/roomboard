@@ -545,7 +545,7 @@ class WasmCoreDocument implements CoreDocument {
       case "Restack": return toChange(this.d.restack([...cmd.ids], cmd.to));
       case "CommitStroke": {
         const l = cmd.look;
-        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity)));
+        return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, l?.strokeStyle, num(l?.roughness), num(l?.seed), l?.roundness, num(l?.opacity), cmd.cell?.[0], cmd.cell?.[1], cmd.cell?.[2]));
       }
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));

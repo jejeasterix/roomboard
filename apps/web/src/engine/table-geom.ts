@@ -7,7 +7,7 @@
  * (`layoutRich`, B1) ; sur une ancre de plusieurs lignes, la dernière ligne porte le reste (F7). Tailles par défaut en
  * unités de page (T4) ; la largeur de page se lit sur la page, jamais ici.
  */
-import type { Bounds, CoreDocument, Matrix, TableData, TableElement, TextSpan } from "../core/api";
+import type { Bounds, CellLink, CoreDocument, Matrix, TableData, TableElement, TextSpan } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
@@ -187,6 +187,27 @@ export function tableAt(doc: Pick<CoreDocument, "elementIdsOfKind" | "element">,
     return el?.kind === "table" ? [el] : [];
   });
   return tableHitIn(tables, x, y);
+}
+
+/** D10 : case du tableau le plus haut sous le premier point qui contient `box` (monde), à `tol` près ; null sinon
+ *  (case ombrée, boîte qui déborde). Quatre coins passés par la matrice du tableau : l'englobante reste valable. */
+export function cellContaining(doc: Pick<CoreDocument, "elementIdsOfKind" | "element">, page: string, box: Bounds, firstX: number, firstY: number, tol: number): CellLink | null {
+  const hit = tableAt(doc, page, firstX, firstY);
+  if (hit === null) return null;
+  const row = hit.table.rows[hit.cell.row];
+  const col = hit.table.cols[hit.cell.col];
+  if (row === undefined || col === undefined) return null;
+  if ((hit.table.cells.find((c) => c.row === row.id && c.col === col.id)?.shade ?? null) !== null) return null;
+  const r = cellRect(hit.table, hit.cell);
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const [x, y] of [[r.x0, r.y0], [r.x1, r.y0], [r.x0, r.y1], [r.x1, r.y1]] as const) {
+    const [wx, wy] = applyMatrix(hit.transform, x, y);
+    xs.push(wx);
+    ys.push(wy);
+  }
+  const inside = box.x0 >= Math.min(...xs) - tol && box.y0 >= Math.min(...ys) - tol && box.x1 <= Math.max(...xs) + tol && box.y1 <= Math.max(...ys) + tol;
+  return inside ? [hit.id, row.id, col.id] : null;
 }
 
 /** Cellule voisine (T8, PC4, F16, PC14). Tab / Maj+Tab : ancres et cellules simples dans l'ordre de lecture ; Tab en

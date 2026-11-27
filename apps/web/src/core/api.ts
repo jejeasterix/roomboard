@@ -67,7 +67,7 @@ export type Command =
   /** Ordre des objets (décision 16) : bloc des `ids` (une même page), bas au rang `to` (0 = arrière-plan), ids gardés. */
   | { readonly type: "Restack"; readonly ids: readonly string[]; readonly to: number }
   /** OG11 : `look` écrit dans la même étape, assaini comme le cœur (`Look::sanitized`) ; nombres hors bornes : « style invalide ». */
-  | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle; readonly look?: Look }
+  | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle; readonly look?: Look; readonly cell?: CellLink }
   | { readonly type: "Erase"; readonly page: string; readonly path: Float32Array; readonly radius: number; readonly mode: EraseMode }
   | { readonly type: "Delete"; readonly ids: readonly string[] }
   | {

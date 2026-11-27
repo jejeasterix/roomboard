@@ -1067,10 +1067,18 @@ class FakeDocument implements CoreDocument {
         }
         if (!positive(cmd.style.width)) throw new Error(MESSAGES.badWidth);
         this.pageOf(cmd.page);
+        // T8 (D10), comme `check_cell_target` du cœur : contrôles de la case avant toute écriture.
+        const target = cmd.cell;
+        if (target !== undefined) {
+          const { found, t } = this.tableOf(target[0]);
+          if (found.page.id !== cmd.page) throw new Error(MESSAGES.badTable);
+          if (!t.rows.some((r) => r.id === target[1]) || !t.cols.some((c) => c.id === target[2])) throw new Error(MESSAGES.badTable);
+          if ((t.cells.get(cellKey(target[1], target[2]))?.shade ?? null) !== null) throw new Error(MESSAGES.badTable);
+        }
         return this.step((s) => {
           const id = newId();
           const { x0, y0, local } = toLocal(cmd.points);
-          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(x0, y0), local, style: cmd.style, ...(look ? { look } : {}) });
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(x0, y0), local, style: cmd.style, ...(look ? { look } : {}), ...(target ? { cell: target } : {}) });
           return { pages: [cmd.page], ids: [id], removed: [] };
         });
       }

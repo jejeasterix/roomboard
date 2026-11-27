@@ -211,3 +211,28 @@ describe("outil Stylo : transparence (OG11 T9b)", () => {
     }
   });
 });
+
+describe("outil Stylo : trait lié à sa case (T8)", () => {
+  const drag = (t: ReturnType<typeof setup>["tool"], x1: number, y1: number): void => {
+    t.begin(1, [s(20, 90)]);
+    t.extend(1, [s(100, 100), s(x1, y1)], []);
+    t.close(1, "end");
+  };
+  it("D10 : un trait écrit dans la case (1, 0) porte `cell` ; un trait sur deux cases n'en porte pas", () => {
+    const { doc, page, runs, tool } = setup();
+    const id = doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const v = doc.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    drag(tool, 180, 95);
+    const first = runs.at(-1);
+    expect(first?.type === "CommitStroke" ? first.cell : "autre").toEqual([id, v.table.rows[1]?.id, v.table.cols[0]?.id]);
+    drag(tool, 300, 95);
+    const second = runs.at(-1);
+    expect(second?.type === "CommitStroke" && "cell" in second).toBe(false);
+  });
+  it("D10 : hors de tout tableau, la commande reste sans `cell`", () => {
+    const { runs, tool } = setup();
+    drag(tool, 180, 95);
+    expect(runs.at(-1)).not.toHaveProperty("cell");
+  });
+});

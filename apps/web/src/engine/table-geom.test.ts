@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { anchorOf, cellAt, cellContent, cellHeight, cellInnerBox, cellOf, cellRect, expandRange, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { anchorOf, cellAt, cellContaining, cellContent, cellHeight, cellInnerBox, cellOf, cellRect, expandRange, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -226,5 +226,17 @@ describe("table-geom — cellules par segments (C7b, R17)", () => {
     expect(r.cols).toEqual([40, 416]);
     expect(r.rows[1]).toBe(316);
     expect(r.rows[0]).toBeGreaterThanOrEqual(64);
+  });
+});
+
+describe("D10 : cellContaining (T8)", () => {
+  it("D10 : cellContaining rend la case qui contient la boîte (tolérance demi-épaisseur), null si elle déborde", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const id = doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const v = doc.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect(cellContaining(doc, page, { x0: 20, y0: 70, x1: 200, y1: 126 }, 20, 90, 2)).toEqual([id, v.table.rows[1]?.id, v.table.cols[0]?.id]);
+    expect(cellContaining(doc, page, { x0: 20, y0: 70, x1: 300, y1: 126 }, 20, 90, 2)).toBeNull();
   });
 });

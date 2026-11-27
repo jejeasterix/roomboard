@@ -2064,6 +2064,27 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     d.free();
   });
 
+  it("CommitStroke cell : lié à sa case, il suit InsertTableLine (ids [tableau, trait]) et le lien est lu", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const pts = new Float32Array([20, 90, 0.5, 100, 100, 0.5, 180, 95, 0.5]);
+    const o = d.apply({ type: "CommitStroke", page: first(d), points: pts, style, cell: s.link(1, 0) }).ids[0] ?? "";
+    expect(d.element(o)?.cell).toEqual(s.link(1, 0));
+    const y = d.element(o)?.transform[5] ?? 0;
+    d.apply({ type: "InsertTableLine", id: s.t, axis: "row", at: 1 });
+    expect(d.element(o)?.transform[5]).toBe(y + 64);
+    d.free();
+  });
+  it("CommitStroke cell : case ombrée, ligne inconnue ou autre page refusées, aucune étape", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const pts = new Float32Array([20, 90, 0.5, 100, 100, 0.5]);
+    const [, r, k] = s.link(0, 0);
+    d.apply({ type: "SetTableShade", id: s.t, from: { row: r, col: k }, to: { row: r, col: k }, shade: "#94a3b8" });
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "CommitStroke", page: first(d), points: pts, style, cell: s.link(0, 0) }))).toBe(TABLE_MESSAGE));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "CommitStroke", page: first(d), points: pts, style, cell: [s.t, "zz", k] }))).toBe(TABLE_MESSAGE));
+    d.free();
+  });
   it("personnalisation-3 suivi (S16, D5) : InsertTableLine en tête : l'objet descend de 64 ; ids [tableau, objet]", () => {
     const d = f.blank();
     const s = p3Placed(d);
