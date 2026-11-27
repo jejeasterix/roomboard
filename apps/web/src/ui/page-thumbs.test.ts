@@ -33,6 +33,20 @@ describe("createPageThumbs (DA7)", () => {
     expect(await thumbs.get("a", 240)).toBeNull();
   });
 
+  it("forme du cadre : un mode de page autre que le précédent refait la miniature (même version, même largeur)", async () => {
+    const render = vi.fn(async (_p: string, _w: number) => png());
+    const thumbs = createPageThumbs(render);
+    const a1 = await thumbs.get("a", 120, "landscape");
+    expect(await thumbs.get("a", 120, "landscape")).toBe(a1);
+    expect(render).toHaveBeenCalledTimes(1);
+    const a2 = await thumbs.get("a", 120, "portrait");
+    expect(a2).not.toBe(a1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(a1);
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(await thumbs.get("a", 120)).toBe(a2); // sans `form` : rien ne change
+    thumbs.dispose();
+  });
+
   it("un seul rendu à la fois ; la même demande en cours est partagée ; rendu nul → null", async () => {
     let live = 0;
     let peak = 0;

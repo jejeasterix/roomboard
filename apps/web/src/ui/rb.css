@@ -176,7 +176,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-pages-count { margin-inline: 0; padding: 0 var(--rb-pad); color: var(--rf-navy-500); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Barre latérale (personnalisation-1a, T10) : la barre `pages` en îlot, colonne d'actions, mode, miniatures, taille ;
    cibles de 44 px au moins (--rb-btn-s), valeurs entières, aucun 48 px littéral. Repliée : seul l'en-tête reste visible ;
-   le reste est `hidden`, dans le DOM. Miniature : numéro à gauche, image sur toute la largeur utile de la ligne, la liste ayant --rb-thumb (posé en ligne par la barre) pour largeur minimale,
+   le reste est `hidden`, dans le DOM. Miniature : numéro à gauche, image sur toute la largeur utile de la ligne, l'image ne compte pas dans la largeur du panneau (contain: inline-size : sinon le tampon grandit avec la mesure, le panneau avec le tampon…), la liste ayant --rb-thumb (posé en ligne par la barre) pour largeur minimale,
    anneau violet 600 sur la page montrée ; touch-action: none pour que le doigt déplace la miniature au lieu de défiler. */
 .rb-side { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: var(--rb-gap); min-block-size: 0; }
 .rb-island > .rb-side { overflow-x: hidden; overflow-y: auto; }
@@ -192,7 +192,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-side .rb-page-thumb[aria-current="page"] { box-shadow: inset 0 0 0 2px var(--rf-violet-600); }
 .rb-side .rb-page-thumb:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: 2px; }
 .rb-page-num { padding-block-start: 4px; font-size: 13px; font-weight: 500; color: var(--rf-gray-800); text-align: end; font-variant-numeric: tabular-nums; }
-.rb-page-img { display: block; inline-size: 100%; min-block-size: var(--rb-btn-s); box-sizing: border-box; overflow: hidden; background: var(--rf-white); border-radius: var(--rf-radius-sm); box-shadow: 0 0 0 1px var(--rf-gray-300); }
+.rb-page-img { display: block; contain: inline-size; inline-size: 100%; min-block-size: var(--rb-btn-s); box-sizing: border-box; overflow: hidden; background: var(--rf-white); border-radius: var(--rf-radius-sm); box-shadow: 0 0 0 1px var(--rf-gray-300); }
 .rb-page-img img { display: block; inline-size: 100%; block-size: auto; pointer-events: none; -webkit-user-drag: none; }
 /* Onglet Calques (T14) : un panneau par onglet (contents : la liste garde sa place dans la colonne) ; une ligne de 44 px
    au moins par objet, premier plan en haut ; trait fin (icône 1,5), fond violet 100 sur la sélection de la scène, lignes

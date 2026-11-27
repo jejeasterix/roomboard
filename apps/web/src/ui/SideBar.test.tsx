@@ -209,6 +209,7 @@ describe("SideBar (T10)", () => {
     const rule = (sel: string): string => css.split("\n").find((l) => l.startsWith(`${sel} {`)) ?? "";
     expect(rule(".rb-side .rb-page-thumb")).toMatch(/grid-template-columns: 24px minmax\(0, 1fr\)/);
     expect(rule(".rb-page-img")).toMatch(/inline-size: 100%;/);
+    expect(rule(".rb-page-img")).toMatch(/contain: inline-size/); // l'image (tampon au dpr) ne dicte pas la largeur du panneau
     expect(rule(".rb-pages-list")).toMatch(/min-inline-size: calc\(var\(--rb-thumb\) \+ 40px\)/);
     expect(rule(".rb-page-img img")).toMatch(/inline-size: 100%; block-size: auto/);
   });

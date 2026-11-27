@@ -4,7 +4,8 @@
  * `Change` (`Change.pages` et les pages de `Change.ids`) ; `dispose` révoque tout.
  */
 export interface PageThumbs {
-  get(pageId: string, width: number): Promise<string | null>;
+  /** `form` : ce qui change le cadre de la page (son mode) ; une valeur autre que la précédente refait la miniature. */
+  get(pageId: string, width: number, form?: string): Promise<string | null>;
   invalidate(pages: readonly string[]): void;
   dispose(): void;
 }
@@ -29,6 +30,7 @@ async function blobOf(img: ImageBitmap | Blob): Promise<Blob | null> {
 export function createPageThumbs(render: (pageId: string, width: number) => Promise<ImageBitmap | Blob | null>): PageThumbs {
   const versions = new Map<string, number>();
   const kept = new Map<string, Kept>();
+  const forms = new Map<string, string>();
   const pending = new Map<string, Promise<string | null>>();
   let queue: Promise<unknown> = Promise.resolve();
   let disposed = false;
@@ -63,8 +65,13 @@ export function createPageThumbs(render: (pageId: string, width: number) => Prom
     }
   };
 
-  const get = (page: string, width: number): Promise<string | null> => {
+  const get = (page: string, width: number, form?: string): Promise<string | null> => {
     if (disposed) return Promise.resolve(null);
+    if (form !== undefined) {
+      const before = forms.get(page);
+      forms.set(page, form);
+      if (before !== undefined && before !== form) invalidate([page]);
+    }
     const version = versionOf(page);
     const k = kept.get(page);
     if (k && k.version === version && k.width === width) return Promise.resolve(k.url);
@@ -77,14 +84,16 @@ export function createPageThumbs(render: (pageId: string, width: number) => Prom
     return p;
   };
 
+  function invalidate(pages: readonly string[]): void {
+    for (const page of pages) {
+      versions.set(page, versionOf(page) + 1);
+      forget(page);
+    }
+  }
+
   return {
     get,
-    invalidate(pages) {
-      for (const page of pages) {
-        versions.set(page, versionOf(page) + 1);
-        forget(page);
-      }
-    },
+    invalidate,
     dispose() {
       disposed = true;
       for (const page of [...kept.keys()]) forget(page);

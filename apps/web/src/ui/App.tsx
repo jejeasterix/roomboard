@@ -475,7 +475,8 @@ export function App(props: AppProps): JSX.Element {
     },
     addAfter: (id) => void ws.active().board.engine.addPage(id),
     setLayout: (m: PageLayout) => void ws.active().board.engine.setPageMode(m),
-    thumb: async (id, width) => thumbsFor(ws.active()).get(id, width),
+    // Le mode de la page montrée change son cadre : sa miniature gardée est refaite, même sans version neuve.
+    thumb: async (id, width) => thumbsFor(ws.active()).get(id, width, id === state().page ? (state().pageLayout ?? "landscape") : undefined),
   };
   /** Onglet Calques : lignes de la page montrée, sélection et glisser branchés sur le moteur. */
   const layersPort: LayersPort = {
@@ -496,14 +497,6 @@ export function App(props: AppProps): JSX.Element {
   createEffect(
     on(
       () => state().version,
-      () => thumbsFor(ws.active()).invalidate([state().page]),
-      { defer: true },
-    ),
-  );
-  /** Le mode de la page (Paysage, Portrait, Infini) change son cadre : sa miniature gardée est refaite, même sans version neuve. */
-  createEffect(
-    on(
-      () => state().pageLayout,
       () => thumbsFor(ws.active()).invalidate([state().page]),
       { defer: true },
     ),
