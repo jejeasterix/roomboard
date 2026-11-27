@@ -26,6 +26,10 @@ export interface RadioChoicesProps<T extends string> {
   readonly value: T | null;
   /** Attribut posé sur chaque bouton avec sa valeur (sélecteur d'essai) ; `data-choice` reste. */
   readonly valueAttr?: string;
+  /** Groupe grisé (OG11 lot 2 : Police et Taille pendant une saisie) : boutons `disabled`, hors tabulation. */
+  readonly disabled?: boolean;
+  /** Un appui ne prend pas le focus (pointerdown et mousedown annulés) : la zone de saisie du texte le garde (T31). */
+  readonly keepFocus?: boolean;
   choose(v: T): void;
 }
 
@@ -34,6 +38,7 @@ const STEP: Readonly<Record<string, -1 | 1>> = { ArrowLeft: -1, ArrowUp: -1, Arr
 
 export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX.Element {
   let group: HTMLDivElement | undefined;
+  const keep = (e: Event): void => { if (props.keepFocus === true) e.preventDefault(); };
   const known = (): boolean => props.value !== null && props.options.some((o) => o.value === props.value);
   const onKey = (e: KeyboardEvent, index: number): void => {
     if (!Object.hasOwn(STEP, e.key)) return;
@@ -57,9 +62,12 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
               class="rb-radio"
               role="radio"
               aria-checked={on()}
+              disabled={props.disabled === true}
               tabIndex={on() || (i() === 0 && !known()) ? 0 : -1}
               data-choice={o.value}
               {...(props.valueAttr ? { [props.valueAttr]: o.value } : {})}
+              onPointerDown={keep}
+              onMouseDown={keep}
               onClick={() => props.choose(o.value)}
               onKeyDown={(e) => onKey(e, i())}
             >

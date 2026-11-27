@@ -1378,3 +1378,40 @@ describe("session : style courant (OG11 T9)", () => {
     s.dispose();
   });
 });
+
+describe("session : gomme automatique à la paume (OG25)", () => {
+  /** Événement de pointeur synthétique : les champs lus par l'échantillonneur, posés sur un `Event` (happy-dom). */
+  const pointer = (stage: HTMLElement, type: string, o: Record<string, number | string>): void => {
+    const e = new Event(type, { bubbles: true, cancelable: true });
+    const fields = { pointerType: "touch", pressure: 0.5, tiltX: 0, tiltY: 0, buttons: type === "pointerup" ? 0 : 1, ...o };
+    for (const [k, v] of Object.entries(fields)) Object.defineProperty(e, k, { value: v });
+    stage.dispatchEvent(e);
+  };
+  const ringOf = (stage: HTMLElement): HTMLElement | null => stage.querySelector<HTMLElement>(".rb-eraser-ring");
+
+  it("OG25 : paume posée puis élargie : anneau au rayon 70, outil courant inchangé ; levée : anneau caché ; dispose : retiré", async () => {
+    const s = await createBoardSession(fakeCore.blank(), { ...shared, palmEraser: () => true });
+    s.activate();
+    expect(ringOf(s.stage)?.hidden).toBe(true);
+    pointer(s.stage, "pointerdown", { pointerId: 11, clientX: 300, clientY: 300, width: 30, height: 30, timeStamp: 1000 });
+    pointer(s.stage, "pointermove", { pointerId: 11, clientX: 300, clientY: 320, width: 140, height: 120, timeStamp: 1040 });
+    await vi.waitFor(() => expect(ringOf(s.stage)?.hidden).toBe(false));
+    expect(ringOf(s.stage)?.dataset["rayon"]).toBe("70");
+    expect(s.engine.tool()).toBe("pen");
+    pointer(s.stage, "pointerup", { pointerId: 11, clientX: 300, clientY: 320, timeStamp: 1080 });
+    await vi.waitFor(() => expect(ringOf(s.stage)?.hidden).toBe(true));
+    s.dispose();
+    expect(ringOf(s.stage)).toBeNull();
+  });
+
+  it("OG25 : réglage coupé (SessionShared.palmEraser faux) : aucune bascule, l'anneau reste caché", async () => {
+    const s = await createBoardSession(fakeCore.blank(), { ...shared, palmEraser: () => false });
+    s.activate();
+    pointer(s.stage, "pointerdown", { pointerId: 12, clientX: 300, clientY: 300, width: 140, height: 120, timeStamp: 2000 });
+    pointer(s.stage, "pointermove", { pointerId: 12, clientX: 300, clientY: 340, width: 140, height: 120, timeStamp: 2040 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ringOf(s.stage)?.hidden).toBe(true);
+    pointer(s.stage, "pointerup", { pointerId: 12, clientX: 300, clientY: 340, timeStamp: 2080 });
+    s.dispose();
+  });
+});

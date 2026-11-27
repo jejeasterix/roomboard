@@ -1732,6 +1732,7 @@ dependencies = [
  "objc2-core-graphics",
  "open",
  "png",
+ "roomboard-core",
  "serde_json",
  "sha2",
  "windows",

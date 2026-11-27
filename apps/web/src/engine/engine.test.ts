@@ -4,10 +4,11 @@ import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, fitWidth, worldToScreen, type Camera } from "./camera";
-import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
+import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, scrollShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "./item-style";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
+import { linkBadgeBox } from "./render/link-badge";
 import type { InputSample } from "./input/sampler";
 import { DEFAULT_CAMERA, type ModelCamera } from "./render/model-frames";
 import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
@@ -19,7 +20,7 @@ import type { TableCellState } from "./table-geom";
 import { createTableTool, type TablePicker } from "./tools/table";
 import { plainSpans } from "../core/rich-text";
 import type { FormatState } from "./rich-edit";
-import type { TextEditorHost, TextEditSession, TextTool } from "./tools/text";
+import type { TextEditorHost, TextEditSession, TextStyle, TextTool } from "./tools/text";
 import { NO_LIVE, type GestureTool, type TableTool, type ToolContext } from "./tools/tool";
 
 class Frames implements FrameLoopDeps {
@@ -196,6 +197,19 @@ describe("createEngine", () => {
     engine.sink.extend(1, [sample], []);
     expect(log).toEqual(["eraser.begin 1", "eraser.extend 1"]);
     expect(frames.pending()).toBe(1);
+  });
+
+  it("OG25 : sink.resize va à l'outil du geste ; geste inconnu : rien", () => {
+    const log: string[] = [];
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", log, ctx),
+      eraser: (ctx) => ({ ...fakeTool("eraser", log, ctx), resize: (id: number, r: number) => void log.push(`eraser.resize ${id} ${r}`) }),
+    };
+    const engine = createEngine({ doc: fakeCore.blank(), renderer: new FakeRenderer(), frames: new Frames(), tools });
+    engine.sink.begin(-1, "eraser", [sample]);
+    engine.sink.resize?.(-1, 70);
+    engine.sink.resize?.(5, 70);
+    expect(log).toEqual(["eraser.begin -1", "eraser.resize -1 70"]);
   });
 
   it("une image : frame des outils, scène si sale, couche vive, onLiveDrawn", () => {
@@ -520,7 +534,7 @@ describe("createEngine", () => {
     expect(engine.state().page).not.toBe(p1);
   });
 
-  it("setPageMode portrait : fitPage montre tout le cadre", () => {
+  it("setPageMode portrait : fitPage en largeur, haut de page en haut (OG24)", () => {
     const { engine } = setup();
     engine.resize(1000, 800, 1);
     expect(engine.state().pageLayout).toBe("landscape");
@@ -528,8 +542,90 @@ describe("createEngine", () => {
     expect(engine.state().pageLayout).toBe("portrait");
     engine.fitPage();
     const cam = engine.camera();
-    // cadre portrait entier visible : hauteur du cadre (1920 × 16 / 9) × zoom ≤ hauteur de la vue
-    expect(cam.zoom * ((1920 * 16) / 9)).toBeLessThanOrEqual(800 + 1e-6);
+    // OG24 (H4 renversée par Jérôme) : la page remplit la largeur ; son bas sort de la vue, l'ascenseur y mène
+    expect(cam).toEqual(fitWidth(1000, 800, 1920, 0.95, 16));
+    expect(cam.zoom * ((1920 * 16) / 9)).toBeGreaterThan(800);
+  });
+
+  describe("ascenseur du portrait (OG24)", () => {
+    const portrait = () => {
+      const s = setup({ fitTop: () => 100 });
+      s.engine.resize(1000, 800, 1);
+      s.engine.setPageMode("portrait");
+      return s;
+    };
+    const pageBottom = (c: Camera): number => c.ty + ((1920 * 16) / 9) * c.zoom;
+    it("ajustée : haut de page, une part de la page visible", () => {
+      const { engine } = portrait();
+      const s = engine.pageScroll()!;
+      expect(s.at).toBe(0);
+      expect(s.top).toBe(100);
+      expect(s.span).toBe(800 - 100 - 16);
+      expect(s.visible).toBeGreaterThan(0.2);
+      expect(s.visible).toBeLessThan(0.5);
+    });
+    it("paysage et infini : aucun ascenseur", () => {
+      const { engine } = setup();
+      engine.resize(1000, 800, 1);
+      expect(engine.pageScroll()).toBeNull();
+      expect(engine.scrollPageBy(100)).toBe(false);
+      engine.setPageMode("infinite");
+      expect(engine.pageScroll()).toBeNull();
+    });
+    it("scrollPageTo(1) : bas de page à 16 px du bas ; scrollPageTo(0) : haut de page sous les îlots", () => {
+      const { engine } = portrait();
+      expect(engine.scrollPageTo(1)).toBe(true);
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.pageScroll()!.at).toBeCloseTo(1, 6);
+      engine.scrollPageTo(0);
+      expect(engine.camera().ty).toBeCloseTo(100, 6);
+    });
+    it("scrollPageBy borné à la page ; zoom et décalage horizontal gardés", () => {
+      const { engine } = portrait();
+      const before = engine.camera();
+      engine.scrollPageBy(1e6);
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.camera()).toMatchObject({ zoom: before.zoom, tx: before.tx });
+      engine.scrollPageBy(-1e6);
+      expect(engine.camera().ty).toBeCloseTo(100, 6);
+      expect(engine.scrollPageBy(-10)).toBe(false);
+    });
+    it("molette en portrait : défilement vertical borné, horizontal libre ; Ctrl+molette zoome", () => {
+      const { engine } = portrait();
+      const before = engine.camera();
+      engine.wheel({ x: 0, y: 0, deltaX: 0, deltaY: -500, ctrlKey: false });
+      expect(engine.camera()).toEqual(before);
+      engine.wheel({ x: 0, y: 0, deltaX: 30, deltaY: 1e6, ctrlKey: false });
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.camera().tx).toBeCloseTo(before.tx - 30, 6);
+      engine.wheel({ x: 500, y: 400, deltaX: 0, deltaY: -100, ctrlKey: true });
+      expect(engine.camera().zoom).toBeGreaterThan(before.zoom);
+    });
+    it("scrollShortcut : flèches, Maj+flèches, Début, Fin ; rien hors portrait ni dans un champ", () => {
+      const { engine } = portrait();
+      const k = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...o });
+      expect(scrollShortcut(k("ArrowUp"), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown"), engine)).toBe(true);
+      const line = 100 - engine.camera().ty;
+      expect(line).toBeGreaterThan(40);
+      expect(scrollShortcut(k("ArrowDown", { shiftKey: true }), engine)).toBe(true);
+      expect(100 - engine.camera().ty).toBeGreaterThan(line * 4);
+      expect(scrollShortcut(k("End"), engine)).toBe(true);
+      expect(engine.pageScroll()!.at).toBeCloseTo(1, 6);
+      expect(scrollShortcut(k("Home"), engine)).toBe(true);
+      expect(engine.pageScroll()!.at).toBe(0);
+      expect(scrollShortcut(k("ArrowDown", { target: { tagName: "TEXTAREA" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { target: { tagName: "INPUT", type: "range" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("End", { target: { tagName: "SELECT" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { altKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { metaKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { isComposing: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { ctrlKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("PageDown"), engine)).toBe(false);
+      expect(engine.pageScroll()!.at).toBe(0);
+      engine.setPageMode("landscape");
+      expect(scrollShortcut(k("ArrowDown"), engine)).toBe(false);
+    });
   });
 
   it("pageMode / pageLayout dans l'état", () => {
@@ -1363,7 +1459,7 @@ describe("moteur — pot (C6a)", () => {
     expect(fit).toHaveBeenCalledTimes(1);
   });
 
-  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : cadre entier (décision 10, T18)", () => {
+  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : largeur aussi (décision 10, T18 ; OG24)", () => {
     const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
     const mk = (doc: typeof pdf) => createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) } });
     const view = pdf.page(pdf.pageIds()[0]!)!;
@@ -1377,6 +1473,82 @@ describe("moteur — pot (C6a)", () => {
     engine.setPageMode("portrait");
     const portrait = fitFor("portrait", 1000, 800, { x0: 0, y0: 0, x1: 1920, y1: (1920 * 16) / 9 }, null, 16);
     expect(engine.camera().zoom).toBeCloseTo(portrait.zoom, 6);
+  });
+
+  it("page paysage au fond PDF A4 : affichée portrait, elle a l'ascenseur ; bas du fond à 16 px du bas (OG27, P2 de la PR 68)", () => {
+    const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
+    const e = createEngine({ doc: pdf, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) }, fitTop: () => 100 });
+    e.resize(1000, 800, 1);
+    expect(e.state().pageLayout).toBe("portrait");
+    expect(e.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 100));
+    const s = e.pageScroll()!;
+    expect(s).not.toBeNull();
+    expect(s.at).toBe(0);
+    expect(e.scrollPageTo(1)).toBe(true);
+    const view = pdf.page(pdf.pageIds()[0]!)!;
+    const cam = e.camera();
+    expect(cam.ty + view.backdrop!.rect!.y1 * cam.zoom).toBeCloseTo(800 - 16, 6);
+  });
+
+  describe("îlot du haut déplacé : ajustement et ascenseur recalés (OG27)", () => {
+    const moving = () => {
+      let top = 100;
+      const s = setup({ fitTop: () => top });
+      s.engine.resize(1000, 800, 1);
+      s.engine.setPageMode("portrait");
+      s.engine.fitPage();
+      return { ...s, setTop: (t: number) => (top = t) };
+    };
+    it("vue encore ajustée : réajustée sous le nouveau haut, l'ascenseur suit", () => {
+      const { engine, setTop } = moving();
+      setTop(40);
+      expect(engine.topChanged()).toBe(true);
+      expect(engine.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 40));
+      expect(engine.pageScroll()).toMatchObject({ at: 0, top: 40, span: 800 - 40 - 16 });
+    });
+    it("vue défilée : caméra gardée, l'ascenseur relit ses bornes", () => {
+      const { engine, setTop } = moving();
+      engine.scrollPageBy(200);
+      const before = engine.camera();
+      const at = engine.pageScroll()!.at;
+      setTop(40);
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toEqual(before);
+      expect(engine.pageScroll()!.top).toBe(40);
+      expect(engine.pageScroll()!.at).not.toBe(at);
+    });
+    it("page quittée encore ajustée : réajustée à son retour", () => {
+      const { engine, setTop } = moving();
+      const p1 = engine.state().page;
+      engine.addPage();
+      setTop(40);
+      engine.topChanged();
+      engine.showPage(p1);
+      expect(engine.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 40));
+    });
+    it("vue ajustée : seul le haut se décale ; zoom gardé après un redimensionnement (HL3-6)", () => {
+      const { engine, setTop } = moving();
+      engine.resize(1400, 800, 1);
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(true);
+      expect(engine.camera()).toEqual({ ...before, ty: before.ty - 60 });
+    });
+    it("Infini : rien (l'ajustement suit le contenu, aucun ascenseur)", () => {
+      const { engine, setTop } = moving();
+      engine.setPageMode("infinite");
+      engine.fitPage();
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toBe(before);
+    });
+    it("haut inchangé : rien", () => {
+      const { engine } = moving();
+      const before = engine.camera();
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toBe(before);
+    });
   });
 
   it("setFillColor : défaut rouge, couleur valide gardée, invalide ignorée, null = « Aucune » ; le stylo ne change pas (D16)", () => {
@@ -1715,6 +1887,12 @@ describe("moteur — C5 (retouche d'image)", () => {
     expect(engine.key(key("Enter"))).toBe(true);
     expect(image().image.crop).toEqual([0, 0, 160, 120]);
   });
+  it("T37 Ctrl+K pendant le rognage : avalé, l'éditeur de lien ne s'ouvre pas", () => {
+    const { engine, id, ctrl } = c5();
+    engine.editImage(id)!.startCrop();
+    expect(engine.key(ctrl("k"))).toBe(true);
+    expect(engine.state().linkEditing).toBeNull();
+  });
   it("C5 annuler après Tourner avec brouillon : aperçu sans brouillon, matrice du document (I31)", () => {
     const { engine, renderer, id } = c5();
     const edit = engine.editImage(id)!;
@@ -1821,6 +1999,17 @@ describe("moteur — C5 (retouche d'image)", () => {
     const v = doc.version();
     engine.report("retouches de l'image non affichées : x");
     expect([engine.state().error, doc.version()]).toEqual(["retouches de l'image non affichées : x", v]);
+  });
+
+  it("OG25 gesturesToTools : vrai retouche au repos, faux pendant le rognage, vrai après", () => {
+    const { engine, id } = c5();
+    expect(engine.gesturesToTools()).toBe(true);
+    const edit = engine.editImage(id)!;
+    expect(engine.gesturesToTools()).toBe(true);
+    edit.startCrop();
+    expect(engine.gesturesToTools()).toBe(false);
+    edit.finishCrop(false);
+    expect(engine.gesturesToTools()).toBe(true);
   });
 });
 
@@ -1954,10 +2143,19 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     engine.dispose();
     expect(closed).toHaveBeenCalledTimes(2);
   });
+
+  it("OG25 gesturesToTools : faux tant qu'une orbite est ouverte", () => {
+    const { engine, open } = c15();
+    expect(engine.gesturesToTools()).toBe(true);
+    const o = open();
+    expect(engine.gesturesToTools()).toBe(false);
+    o?.close();
+    expect(engine.gesturesToTools()).toBe(true);
+  });
 });
 
 describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
-  function styleSetup(deps: Partial<Pick<EngineDeps, "itemStyle" | "penStyle">> = {}) {
+  function styleSetup(deps: Partial<Pick<EngineDeps, "itemStyle" | "penStyle" | "openLink">> = {}) {
     const doc = fakeCore.blank();
     const frames = new Frames();
     const renderer = new FakeRenderer();
@@ -2111,6 +2309,68 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(engine.state().elementCount).toBe(1);
   });
 
+  describe("Disposition (T15)", () => {
+    const three = () => {
+      const s = styleSetup();
+      const [a, b, c] = [s.addRect(), s.addRect(), s.addRect()] as [string, string, string];
+      const order = (): string[] => s.doc.elementIds(s.engine.state().page);
+      return { ...s, a, b, c, order };
+    };
+    it("bringToFront une étape, ordre lu", () => {
+      const { engine, doc, a, b, c, order, sel } = three();
+      sel().setSelection([a]);
+      const v = doc.version();
+      expect(engine.bringToFront()).toBe(true);
+      expect(order()).toEqual([b, c, a]);
+      expect(doc.version()).toBe(v + 1);
+      engine.undo();
+      expect(order()).toEqual([a, b, c]);
+    });
+    it("sendToBack, reorder up, reorder down : un rang à la fois", () => {
+      const { engine, a, b, c, order, sel } = three();
+      sel().setSelection([c]);
+      expect(engine.sendToBack()).toBe(true);
+      expect(order()).toEqual([c, a, b]);
+      expect(engine.reorder("up")).toBe(true);
+      expect(order()).toEqual([a, c, b]);
+      expect(engine.reorder("down")).toBe(true);
+      expect(order()).toEqual([c, a, b]);
+    });
+    it("déjà au bout ou sans sélection : faux, aucune étape", () => {
+      const { engine, doc, a, c, sel } = three();
+      sel().setSelection([c]);
+      let v = doc.version();
+      expect(engine.bringToFront()).toBe(false);
+      expect(engine.reorder("up")).toBe(false);
+      sel().setSelection([a]);
+      expect(engine.reorder("down")).toBe(false);
+      sel().setSelection([]);
+      expect(engine.sendToBack()).toBe(false);
+      expect(doc.version()).toBe(v);
+    });
+    it("bloc de deux objets : l'ordre relatif est gardé", () => {
+      const { engine, a, b, c, order, sel } = three();
+      sel().setSelection([a, b]);
+      expect(engine.reorder("up")).toBe(true);
+      expect(order()).toEqual([c, a, b]);
+    });
+    it("Avancer saute un groupe voisin entier, sans le couper (stepTarget d'OG4)", () => {
+      const { engine, doc, a, b, c, order, sel } = three();
+      doc.apply({ type: "Group", ids: [b, c] });
+      sel().setSelection([a]);
+      expect(engine.reorder("up")).toBe(true);
+      expect(order()).toEqual([b, c, a]);
+    });
+    it("Ctrl+Maj+↑ premier plan, Ctrl+↓ recule", () => {
+      const { engine, a, b, c, order, sel } = three();
+      sel().setSelection([a]);
+      expect(engine.key(key("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBe(true);
+      expect(order()).toEqual([b, c, a]);
+      expect(engine.key(key("ArrowDown", { ctrlKey: true }))).toBe(true);
+      expect(order()).toEqual([b, a, c]);
+    });
+  });
+
   it("duplicateSelection sans sélection : faux, rien d'écrit", () => {
     const { engine, doc } = styleSetup();
     const v = doc.version();
@@ -2123,6 +2383,90 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     sel().setSelection([addRect()]);
     expect(engine.key(key("d", { ctrlKey: true }))).toBe(true);
     expect(engine.state().elementCount).toBe(2);
+  });
+
+  it("T18 Ctrl+K avec un seul élément : ouvre l'éditeur de lien (linkEditing), rien d'écrit", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    const v = doc.version();
+    expect(engine.state().linkEditing).toBeNull();
+    expect(engine.key(key("k", { ctrlKey: true }))).toBe(true);
+    expect(engine.state().linkEditing).toBe(a);
+    expect(doc.version()).toBe(v);
+  });
+
+  it("T18 Ctrl+K avec deux éléments ou aucun : rien, la touche passe", () => {
+    const { engine, addRect, sel } = styleSetup();
+    expect(engine.key(key("k", { ctrlKey: true }))).toBe(false);
+    sel().setSelection([addRect(), addRect()]);
+    expect(engine.key(key("k", { ctrlKey: true }))).toBe(false);
+    expect(engine.state().linkEditing).toBeNull();
+  });
+
+  it("T18 setLink : un SetStyle { link }, une étape, n'entre pas dans le style courant", () => {
+    const { engine, doc, addRect, sel, lookOf } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    engine.key(key("k", { ctrlKey: true }));
+    const v = doc.version();
+    expect(engine.setLink("https://example.org")).toBe(true);
+    expect(lookOf(a)?.["link"]).toBe("https://example.org");
+    expect(doc.version()).toBe(v + 1);
+    expect(engine.state().linkEditing).toBeNull();
+    expect("link" in engine.itemStyle()).toBe(false);
+    engine.undo();
+    expect(lookOf(a)?.["link"]).toBeUndefined();
+  });
+
+  it("T18 setLink(null) retire le lien ; javascript: refusé par le cœur, rien d'écrit", () => {
+    const { engine, doc, addRect, sel, lookOf } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    engine.setLink("mailto:a@example.org");
+    const v = doc.version();
+    expect(engine.setLink("javascript:alert(1)")).toBe(false);
+    expect(doc.version()).toBe(v);
+    expect(lookOf(a)?.["link"]).toBe("mailto:a@example.org");
+    expect(engine.setLink(null)).toBe(true);
+    expect(lookOf(a)?.["link"]).toBeUndefined();
+  });
+
+  it("T18 toucher du badge avec l'outil Sélection : ouvre le lien une fois ; glisser ou autre outil : rien", () => {
+    const openLink = vi.fn();
+    const { engine, doc, addRect, sel } = styleSetup({ openLink });
+    const a = addRect();
+    sel().setSelection([a]);
+    expect(engine.setLink("https://example.org")).toBe(true);
+    expect(openLink).not.toHaveBeenCalled();
+    sel().setSelection([]);
+    const badge = linkBadgeBox(doc.bounds([a])!, engine.camera());
+    const at = (dx = 0, dy = 0) => [{ x: badge.x + 8 + dx, y: badge.y + 8 + dy, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }];
+    engine.setTool("pen");
+    engine.sink.begin(1, "pen", at(), "touch");
+    engine.sink.close(1, "end");
+    expect(openLink).not.toHaveBeenCalled();
+    engine.setTool("select");
+    engine.sink.begin(2, "select", at(), "touch");
+    engine.sink.extend(2, at(30, 30), []);
+    engine.sink.close(2, "end");
+    engine.sink.begin(3, "select", at(), "touch");
+    engine.sink.close(3, "cancel");
+    expect(openLink).not.toHaveBeenCalled();
+    // Dans la zone de 44 px, hors du dessin de 16 px.
+    engine.sink.begin(4, "select", at(18, -18), "touch");
+    engine.sink.close(4, "end");
+    expect(openLink.mock.calls).toEqual([["https://example.org"]]);
+  });
+
+  it("T18 Échap ferme l'éditeur de lien sans vider la sélection", () => {
+    const { engine, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    engine.key(key("k", { ctrlKey: true }));
+    engine.closeLink();
+    expect(engine.state().linkEditing).toBeNull();
+    expect(engine.state().selection).toEqual([a]);
   });
 
   it("setItemStyle : style courant déjà égal, la sélection est quand même écrite", () => {
@@ -2282,5 +2626,155 @@ describe("moteur — ordre des objets (lot 2)", () => {
     expect(pageShortcut(ev("P"), eng, (t) => seen.push(t))).toBe(true);
     expect(seen).toEqual(["calques", "pages"]);
     expect(pageShortcut(ev("L"), eng)).toBe(false);
+  });
+});
+
+describe("moteur — style courant du texte et alignement en saisie (T31)", () => {
+  function build(editingId: string | null) {
+    const doc = fakeCore.blank();
+    const applied: unknown[] = [];
+    const real = doc.apply.bind(doc);
+    doc.apply = ((c: never) => { applied.push(c); return real(c); }) as typeof doc.apply;
+    const log: string[] = [];
+    const styles: { text?: () => TextStyle; table?: () => TextStyle } = {};
+    const base = fakeTextTool({ stateChanged: () => undefined } as ToolContext, log).tool;
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", log, ctx),
+      eraser: (ctx) => fakeTool("eraser", log, ctx),
+      table: (ctx, style) => { styles.table = style; return fakeTableTool(ctx, log).tool; },
+      text: (_ctx, style) => ({ ...(styles.text = style, base), editing: () => (editingId === null ? null : ({ id: editingId, page: "p", matrix: [1, 0, 0, 1, 0, 0], boxWidth: 600, color: "#000000", size: 36, initial: "x", spans: plainSpans("x") } as TextEditSession)) }),
+    };
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
+    return { engine, applied, styles };
+  }
+  it("police et taille choisies sans texte : style courant, aucune commande, textStyle les porte", () => {
+    const { engine, applied, styles } = build(null);
+    engine.setTool("text");
+    engine.setItemStyle({ font: "Georgia", fontSize: 48 });
+    expect(applied).toEqual([]);
+    expect(engine.itemStyle()).toMatchObject({ font: "Georgia", fontSize: 48 });
+    expect(styles.text?.()).toMatchObject({ size: 48, font: "Georgia" });
+  });
+  it("T32 : l'outil Tableau et l'import gardent la taille par défaut et aucune police", () => {
+    const { engine, styles } = build(null);
+    engine.setItemStyle({ font: "Georgia", fontSize: 48, textAlign: "center" });
+    expect(styles.table?.()).toEqual({ color: "#000000", size: DEFAULT_TEXT_SIZE, textAlign: "center" });
+    expect(engine.textStyle()).toEqual({ color: "#000000", size: DEFAULT_TEXT_SIZE, textAlign: "center" });
+  });
+  it("texte rouvert en saisie : Droite écrit un SetStyle sur ce texte", () => {
+    const { engine, applied } = build("t1");
+    engine.setTool("text");
+    engine.setItemStyle({ textAlign: "right" });
+    expect(applied).toContainEqual({ type: "SetStyle", ids: ["t1"], patch: { textAlign: "right" } });
+  });
+  it("texte neuf en saisie : Droite ne change que le style courant", () => {
+    const { engine, applied } = build(null);
+    engine.setTool("text");
+    engine.setItemStyle({ textAlign: "right" });
+    expect(applied).toEqual([]);
+    expect(engine.itemStyle().textAlign).toBe("right");
+  });
+});
+
+describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () => {
+  function texts() {
+    const { doc, engine, renderer } = setup();
+    const page = engine.state().page;
+    const add = (x: number, content: string): string =>
+      doc.apply({ type: "SetText", page, id: null, x, y: 10, content, color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 }).ids[0] ?? "";
+    const ids = [add(0, "un"), add(300, "deux"), add(600, "trois")];
+    const lenOf = (id: string): number => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.content.length : 0;
+    };
+    const fmt = (attrs: { font?: string | null; size?: number }) =>
+      ids.map((id) => ({ type: "FormatText" as const, id, start: 0, len: lenOf(id), attrs }));
+    const fontOf = (id: string): string | undefined => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.spans[0]?.attrs.font : undefined;
+    };
+    const sizeOf = (id: string): number | undefined => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.spans[0]?.attrs.size : undefined;
+    };
+    return { doc, engine, renderer, ids, fmt, fontOf, sizeOf };
+  }
+  it("runAll Police : un seul annuler les rétablit tous, un seul rétablir les refait", () => {
+    const { engine, ids, fmt, fontOf } = texts();
+    expect(engine.runAll(fmt({ font: "Georgia" }))).not.toBeNull();
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+    engine.redo();
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+  });
+  it("runAll Taille : un seul annuler les rétablit tous", () => {
+    const { engine, ids, fmt, sizeOf } = texts();
+    engine.runAll(fmt({ size: 48 }));
+    for (const id of ids) expect(sizeOf(id)).toBe(48);
+    engine.undo();
+    for (const id of ids) expect(sizeOf(id)).not.toBe(48);
+  });
+  it("runAll n'efface pas l'étape d'avant : un second annuler défait l'écriture précédente", () => {
+    const { doc, engine, ids, fmt, fontOf } = texts();
+    engine.runAll(fmt({ font: "Georgia" }));
+    engine.runAll(fmt({ font: "Courier New" }));
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+    expect(doc.canUndo()).toBe(true);
+  });
+  it("rétablir sans rien à rétablir ne jette pas la pile : un annuler défait encore tout le lot", () => {
+    const { engine, ids, fmt, fontOf } = texts();
+    engine.runAll(fmt({ font: "Georgia" }));
+    engine.redo();
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+  });
+  it("un annuler de trop (pile vide) ne jette pas la pile de rétablir : un rétablir refait tout le lot", () => {
+    const { doc, engine } = setup();
+    const page = engine.state().page;
+    const add = (x: number) => ({ type: "SetText" as const, page, id: null, x, y: 10, content: "t", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    engine.runAll([add(0), add(300), add(600)]);
+    expect(doc.elementIds(page).length).toBe(3);
+    engine.undo();
+    expect(doc.elementIds(page).length).toBe(0);
+    engine.undo();
+    engine.redo();
+    expect(doc.elementIds(page).length).toBe(3);
+  });
+  it("une écriture hors commit puis une écriture par commit : les piles sont jetées, l'annuler retombe sur une étape", () => {
+    const { doc, engine, ids, fmt, fontOf } = texts();
+    const page = engine.state().page;
+    engine.runAll(fmt({ font: "Georgia" }));
+    doc.apply({ type: "SetText", page, id: null, x: 0, y: 400, content: "hors", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    engine.run({ type: "SetText", page, id: null, x: 0, y: 500, content: "via", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    const count = doc.elementIds(page).length;
+    engine.undo();
+    expect(doc.elementIds(page).length).toBe(count - 1);
+    engine.undo();
+    expect(doc.elementIds(page).length).toBe(count - 2);
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+  });
+  it("runAll refusé au milieu : écritures gardées, scène invalidée, un annuler défait la première", () => {
+    const { engine, renderer, ids, fmt, fontOf } = texts();
+    const cmds = [...fmt({ font: "Georgia" }).slice(0, 1), { type: "FormatText" as const, id: "absent", start: 0, len: 1, attrs: { font: "Georgia" } }];
+    const seen = renderer.changes.length;
+    expect(engine.runAll(cmds)).toBeNull();
+    expect(engine.state().error).not.toBeNull();
+    expect(fontOf(ids[0] ?? "")).toBe("Georgia");
+    expect(renderer.changes.length).toBeGreaterThan(seen);
+    engine.undo();
+    expect(fontOf(ids[0] ?? "")).toBeUndefined();
+  });
+  it("runAll d'une seule commande ou d'une liste vide : comme run, sans erreur", () => {
+    const { engine, ids, fmt, fontOf } = texts();
+    expect(engine.runAll([])).toBeNull();
+    engine.runAll(fmt({ font: "Georgia" }).slice(0, 1));
+    engine.undo();
+    expect(fontOf(ids[0] ?? "")).toBeUndefined();
   });
 });

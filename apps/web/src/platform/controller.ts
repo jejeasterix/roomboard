@@ -20,7 +20,7 @@ export interface VersionSource {
   onState(cb: (s: { readonly version: number }) => void): () => void;
 }
 
-export type FileCommand = "open" | "save" | "saveAs" | "new" | "import";
+export type FileCommand = "open" | "save" | "saveAs" | "new" | "import" | "exportPdf";
 
 export interface FileKey {
   readonly key: string;
@@ -49,6 +49,8 @@ export interface FileControllerDeps {
   readonly appVersion: string;
   /** Octets du fichier, appelé par l'hôte après le choix de la cible (R11). */
   encode(now: string, appVersion: string): Promise<Uint8Array>;
+  /** Ctrl+Maj+E : « Exporter en PDF… » de l'onglet ; absent (tests) : sans effet. */
+  exportPdf?(): Promise<boolean>;
   /** « Importer » : fichiers choisis dans la boîte, vers l'entrée unique (R18). */
   importFiles(files: readonly DroppedFile[]): Promise<unknown>;
   /** Message si l'enregistrement est refusé (onglet aux images non lues, R30), sinon null. */
@@ -75,6 +77,7 @@ export function fileCommandOf(e: FileKey): FileCommand | null {
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
   const k = e.key.toLowerCase();
   if (k === "s") return e.shiftKey ? "saveAs" : "save";
+  if (k === "e") return e.shiftKey ? "exportPdf" : null;
   if (e.shiftKey) return null;
   if (k === "o") return "open";
   if (k === "n") return "new";
@@ -190,6 +193,7 @@ export function createFileController(d: FileControllerDeps): FileController {
       if (cmd === "save") return await save(false);
       if (cmd === "saveAs") return await save(true);
       if (cmd === "import") return await importPicked();
+      if (cmd === "exportPdf") return (await d.exportPdf?.()) === true;
       if (cmd === "open") return await open();
       return await newDocument();
     } catch (e) {

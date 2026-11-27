@@ -329,3 +329,14 @@ describe("empilement et calage du panneau d'options (T22)", () => {
     expect(z(".rb-tip")).toBeGreaterThan(z(".rb-islands"));
   });
 });
+
+describe("rb.css (T33)", () => {
+  it("bouton de l'éditeur de lien : le style des boutons d'îlot, pas celui du navigateur", () => {
+    const r = rule(".rb-options .rb-opt-btn, .rb-link-pop .rb-opt-btn");
+    for (const d of ["border: 0", "background: transparent", "border-radius: var(--rf-radius-lg)", "color: var(--rf-navy-500)"]) expect(r, d).toContain(d);
+    expect(rule(".rb-options .rb-opt-btn:hover, .rb-options .rb-pick:hover, .rb-link-pop .rb-opt-btn:hover")).toContain("background: var(--rf-gray-50)");
+  });
+  it("choix de texte du panneau : marge intérieure de 8 px de chaque côté", () => {
+    expect(rule('.rb-options .rb-radios[data-look="segment"] .rb-radio:not(:has(.rb-icon))')).toContain("padding-inline: 8px");
+  });
+});

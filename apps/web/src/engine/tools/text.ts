@@ -5,7 +5,7 @@
  * `compositionend` (porte partagée, `commit-gate.ts`) ; rien n'est écrit pendant la composition. Clic pendant l'édition : valide seulement.
  */
 import type { Matrix, TextSpan } from "../../core/api";
-import { opacityLook, type Look } from "../../core/look";
+import { lookFrom, type Look } from "../../core/look";
 import { plainSpans, sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { screenToWorld, type Camera } from "../camera";
@@ -20,6 +20,10 @@ export interface TextStyle {
   readonly size: number;
   /** OG11 : transparence du style courant (0..100) pour une boîte neuve ; absente : opaque. */
   readonly opacity?: number;
+  /** T28 : alignement du style courant ; absent ou `left` : rien écrit. */
+  readonly textAlign?: "left" | "center" | "right";
+  /** T31 : police du style courant (absente : la normale) ; portée par les segments d'une boîte neuve. */
+  readonly font?: string;
 }
 
 export interface TextEditSession {
@@ -36,6 +40,8 @@ export interface TextEditSession {
   readonly spans: readonly TextSpan[];
   /** Fond opaque de la zone (cellule de tableau, C10a HC10-10) ; absent : transparent. */
   readonly background?: string;
+  /** T32 : police du style courant d'une boîte neuve, pour que la zone la montre pendant la frappe ; absente : la normale. */
+  readonly font?: string;
 }
 
 /** Zone de saisie de la page (DOM, T56 ; riche en C7b, R18) : le moteur n'en connaît que ceci. */
@@ -68,8 +74,11 @@ export interface TextTool extends GestureTool {
 export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: () => TextStyle, measure: Measure): TextTool {
   let session: TextEditSession | null = null;
   let live: LivePart = NO_LIVE;
-  /** OG11 : aspect de la boîte neuve ouverte (transparence du style courant à l'ouverture) ; texte existant : aucun. */
-  let newLook: Look | undefined;
+  /** Aspect du style courant pour une boîte neuve (transparence, alignement) ; relu à la validation pour que le panneau agisse pendant la saisie. */
+  const currentLook = (): Look | undefined => {
+    const st = style();
+    return lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: st.opacity ?? 100, textAlign: st.textAlign ?? "left" }, null);
+  };
   /** Porte IME (CL4-3), partagée avec l'outil Tableau : toute validation attend la fin d'une composition. */
   const gate = createCommitGate(() => commit(), () => session !== null);
 
@@ -79,7 +88,9 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     const s = session;
     if (!s) return;
     const content = host.value();
-    const spans = host.spans();
+    const typed = host.spans();
+    const font = s.font;
+    const spans = s.id === null && font !== undefined ? typed.map((x) => (x.attrs.font === undefined ? { ...x, attrs: { ...x.attrs, font } } : x)) : typed;
     const hadHidden = live.hidden.size > 0;
     session = null;
     gate.reset();
@@ -91,8 +102,9 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     if (s.id === null && content === "") return;
     // R6 : texte et segments inchangés : aucune commande ; mise en forme seule (S6) : la commande part.
     if (s.id !== null && content === s.initial && sameSpans(spans, s.spans)) return;
+    const look = s.id === null ? currentLook() : undefined;
     const boxHeight = richBoxHeight(layoutRich(spans, { size: s.size }, s.boxWidth, measure));
-    ctx.run({ type: "SetText", page: s.page, id: s.id, x: s.matrix[4], y: s.matrix[5], content, color: s.color, size: s.size, boxWidth: s.boxWidth, boxHeight, spans, ...(s.id === null && newLook ? { look: newLook } : {}) });
+    ctx.run({ type: "SetText", page: s.page, id: s.id, x: s.matrix[4], y: s.matrix[5], content, color: s.color, size: s.size, boxWidth: s.boxWidth, boxHeight, spans, ...(s.id === null && look ? { look } : {}) });
   };
 
   const open = (x: number, y: number): void => {
@@ -112,11 +124,9 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
         spans: el.text.spans,
       };
       live = { ...NO_LIVE, hidden: new Set([el.id]) };
-      newLook = undefined;
     } else {
       const st = style();
-      newLook = opacityLook(st.opacity ?? 100);
-      session = { page, id: null, matrix: [1, 0, 0, 1, x, y], boxWidth: DEFAULT_TEXT_BOX_WIDTH, color: st.color, size: st.size, initial: "", spans: plainSpans("") };
+      session = { page, id: null, matrix: [1, 0, 0, 1, x, y], boxWidth: DEFAULT_TEXT_BOX_WIDTH, color: st.color, size: st.size, initial: "", spans: plainSpans(""), ...(st.font !== undefined ? { font: st.font } : {}) };
       live = NO_LIVE;
     }
     gate.reset();

@@ -131,10 +131,15 @@ export interface DocumentPayload {
   readonly opaque?: boolean;
   /** design-l4 (L4-13) : cadre violet de l'annotation ; absent : vrai (charge d'avant L4). */
   readonly frame?: boolean;
+  /** OG25 (déc. 30) : gomme automatique à la paume de l'appareil ; absent : active (charge d'avant OG25). */
+  readonly palmEraser?: boolean;
 }
 /** design-l4 (L4-13) : champ `frame` d'une charge, écrit seulement s'il est donné (patron `opaque`) ; même code pour la
  *  coque et le faux hôte. */
 export const frameField = (o: { readonly frame?: boolean }): { readonly frame?: boolean } => (o.frame === undefined ? {} : { frame: o.frame });
+/** OG25 (déc. 30) : champ `palmEraser` d'une charge, écrit seulement s'il est donné (patron `frameField`). */
+export const palmEraserField = (o: { readonly palmEraser?: boolean }): { readonly palmEraser?: boolean } =>
+  o.palmEraser === undefined ? {} : { palmEraser: o.palmEraser };
 export interface CollectPayload {
   readonly id: number;
 }
@@ -172,9 +177,9 @@ export interface AnnotationWindows {
   /** Crée ou montre `annotate`, place les deux fenêtres, attend `ready`, envoie le profil puis le document ; rend l'écran retenu.
    *  C11b (P15) : `opaque` vrai : bureau figé (absent : transparent). design-l4 (L4-13) : `frame` faux : cadre masqué ;
    *  absent : affiché. */
-  enter(o: AnnotationPlace & { readonly document: Uint8Array; readonly profile: Profile; readonly opaque?: boolean; readonly frame?: boolean }): Promise<number>;
+  enter(o: AnnotationPlace & { readonly document: Uint8Array; readonly profile: Profile; readonly opaque?: boolean; readonly frame?: boolean; readonly palmEraser?: boolean }): Promise<number>;
   /** C11b (P14, P28) : renvoie le document seul (bascule figé / vivant), sans replacer les fenêtres. */
-  load(o: { readonly document: Uint8Array; readonly opaque: boolean; readonly frame?: boolean }): Promise<void>;
+  load(o: { readonly document: Uint8Array; readonly opaque: boolean; readonly frame?: boolean; readonly palmEraser?: boolean }): Promise<void>;
   /** C11b (P22, P27) : capture de l'écran de l'annotation sans nos fenêtres ; refus en raison connue, jamais de rejet. */
   capture(o: AnnotationPlace): Promise<CaptureOutcome>;
   /** Replace les deux fenêtres (écran suivant) sans renvoyer le document ; rend l'écran retenu. */

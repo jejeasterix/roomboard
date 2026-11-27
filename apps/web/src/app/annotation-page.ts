@@ -94,6 +94,8 @@ export interface AnnotationPageDeps {
   ignore(on: boolean): Promise<void>;
   /** design-l4 (L4-12, L4-13) : cadre violet montré (vrai) ou caché, appliqué à chaque document reçu ; absent : rien. */
   frame?(on: boolean): void;
+  /** OG25 (déc. 30) : gomme automatique à la paume reçue avec chaque document (absent de la charge : active) ; absent : rien. */
+  palmEraser?(on: boolean): void;
   readonly every?: (ms: number, cb: () => void) => () => void;
 }
 
@@ -148,6 +150,8 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
     importFiles: () => undefined,
     toggle: () => undefined,
     insertPages: () => undefined,
+    pageElementIds: () => [],
+    confirm: async () => false,
     selection: () => undefined,
   };
   const host = createLocalToolbarHost(targets, () => profile);
@@ -212,6 +216,7 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
       return;
     }
     d.frame?.(p?.frame !== false);
+    d.palmEraser?.(p?.palmEraser !== false);
     const gen = ++loadGen;
     busy = true;
     try {

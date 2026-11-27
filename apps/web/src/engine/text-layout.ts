@@ -19,9 +19,16 @@ export interface Face {
   readonly font?: string;
 }
 
-/** `[italic ][bold ]<taille>px <famille>` ; une police nommée passe devant Atkinson, qui reste le repli (T15, D27). */
-export const textFont = (size: number, face?: Face): string =>
-  `${face?.italic ? "italic " : ""}${face?.bold ? "bold " : ""}${size}px ${face?.font ? `"${face.font}", ${TEXT_FONT_FAMILY}` : TEXT_FONT_FAMILY}`;
+/** Polices à repli générique (OG11, lot 2) : la famille générique remplace Atkinson pour ces deux polices seulement. */
+const GENERIC_FALLBACK: Readonly<Record<string, string>> = { Georgia: "Georgia, serif", "Courier New": '"Courier New", monospace' };
+
+/** `[italic ][bold ]<taille>px <famille>` ; une police nommée passe devant Atkinson, qui reste le repli (T15, D27) ;
+ *  Georgia et Courier New se replient sur `serif` et `monospace` ; sans police : chaîne inchangée. */
+export const textFont = (size: number, face?: Face): string => {
+  const f = face?.font;
+  const family = f ? (GENERIC_FALLBACK[f] ?? `"${f}", ${TEXT_FONT_FAMILY}`) : TEXT_FONT_FAMILY;
+  return `${face?.italic ? "italic " : ""}${face?.bold ? "bold " : ""}${size}px ${family}`;
+};
 
 /** Largeur d'un texte à une taille et une face, en unités monde (= px CSS de la police à cette taille). */
 export type Measure = (text: string, size: number, face?: Face) => number;

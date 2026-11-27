@@ -1,17 +1,17 @@
 # État — personnalisation-2
 
-Statut : arrêté (borne horaire) — lot 1 clos et fusionné (PR #63, main 23b23c1) + correctif T30 ; lot 2 sur feat/personnalisation-2b, non fusionné
+Statut : livré — PR #67 fusionnée par merge --no-ff local (main cddbde4), poussée ; fichier mis à jour par OG27
 Gabarit : chantier (18 tâches : lot 1 = 10, lot 2 = 8 ; lot 1 fusionnable seul)
 Objectif : RoomBoard reçoit un panneau d'options par outil et un menu général ☰ copiés du comportement d'Excalidraw, remplis de nos commandes, tactile d'abord et clavier ensuite.
-Avancement : lot 1 clos (T1–T11 + correctifs T2b, T4b, T8b, T9b, T20–T27) ; lot 2 : T12–T17 + T28 fusionnés dans feat/personnalisation-2b, T18 (lien) non fait, T19 en cours
-Étage : 4 — depuis 2026-11-27 14:15
+Avancement : 2/2 lots clos (lot 1 : PR #63, #64 ; lot 2 : T12–T19, T28, T13r, T31–T41)
+Étage : 4 — clos le 2026-11-27 (fusion cddbde4)
 Lot : —
 Tâche : —
 Questions à Jérôme : —
-Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2   Branche : feat/personnalisation-2   Base : origin/main @ 45484db
+Worktree : — (retiré à la clôture)   Branche : feat/personnalisation-2b   Base : origin/main @ f61d2c4
 Branche principale locale au lancement : 45484db
 Cadrage : docs/plans/personnalisation-2-cadrage.md   Plan(s) : docs/plans/personnalisation-2-PLAN.md
-Arrêt ferme : 2026-11-27 15:21 (bilan et poussée à 15:11)
+Arrêt ferme : 2026-11-27 21:19 (OG14 ; bilan et poussée à 21:09)
 
 ## Référence
 Rapide : voir complète
@@ -27,12 +27,21 @@ PR #63 fusionnée par merge --no-ff local, main 23b23c1. verifier.sh --e2e sur 0
 Correctif T30 (panneau sous la rangée de contexte d'OG4) : branche fix/options-panel-context-row, voir sa PR.
 Restes : captures apres-mixte et apres-replie d'avant OG4 (le mode --captures échoue sur la vue mixte) ; 22 commits poussés portent Co-Authored-By Sonnet.
 
-## Lot 2 — reprise
+## Lot 2 — reprise (OG14)
+T13r : fusion origin/main 42af8b2, rouge 309b56d, Restack d'OG4 seule 0bbfc74, suites d0d0541 — rejoué sur d0d0541 : cargo 952 (+6 ignorés ; 959 déclarés contre 948 dans main), web 4112 (197), cli 284 (30), CLI : OK ; Wasm principal 1 440 034 o, formats 2 794 527 o (sortie wasm-bindgen). BadOrder et order.rs retirés, rang non entier refusé par le pont d'OG4. Hors périmètre : rang de MovePage non contrôlé dans wasm-core.ts.
 Branche poussée : feat/personnalisation-2b (c98c9b2), base lot 1 avant l'intégration d'OG4/OG5. Contient T12 (champs fillStyle, pointes, textAlign, link), T13 (Restack minimal), T14 (rendu hachures, pointes, alignement, polices), T15 (panneau : Remplissage, Texte, Pointes, Disposition, raccourcis Ctrl+(Maj+)↑/↓), T16 (sélecteur de couleur, S et G), T17 (Aide « ? », Effacer la page, Ctrl+Maj+E export PDF), T28 (outils de création lisent le style lot 2). Preuves rejouées par tâche ; aucune suite complète, aucune relecture de lot.
 Prochaine tâche exacte : 1) `git merge origin/main` dans feat/personnalisation-2b ; **retirer le `Restack` de T13 (order.rs, BadOrder, pont, faux cœur, CLI) et brancher Disposition (T15) sur le `Restack { ids, to }` d'OG4 et ses raccourcis d'ordre** (OG4 a déjà des raccourcis d'ordre et la rangée Sélection Premier plan/Arrière-plan : garder un seul jeu, celui d'OG4, et l'afficher dans le panneau) ; 2) T18 lien (non commencé) ; 3) T19 essai navigateur S6–S8 + captures ; 4) double relecture du lot ; 5) verifier.sh --e2e ; 6) PR et fusion.
 
+## Fin du lot 2 (OG14)
+- T13r : fusion origin/main (42af8b2), Restack d'OG4 seule (0bbfc74, d0d0541).
+- T18 lien (5bba1fa) ; T19 essai lot 2, captures (3e88acd) ; T31–T34 écarts vus à l'essai et à la critique de rendu (S7.1 police avant saisie, focus, sélecteur borné et ancré, calage strict, éditeur de lien, Aide, panneaux passagers) ; T35 lien ouvert par roomboard-shell, sans plugin opener (règle C16).
+- Double relecture tour 1 (conformité + qualité en 3 zones) : 0 blocker, 3 major → T36–T39 ; tour 2 : 0 blocker, 2 major (alerte web à tort, piles de runAll) → T40, T41. Correctifs de fin : 2/2.
+- Preuves rejouées : verifier.sh --e2e OK sur a8e31c5, e5f0f7e, puis la tête finale (voir PR).
+- Constats d'architecture : tests Disposition en double dans engine.test.ts:2104 (laissés) ; regroupement d'annulation côté moteur (`runAll`) faute d'un lot atomique dans le cœur — à porter dans le cœur si d'autres gestes en ont besoin.
+- Hors périmètre gardé : comportements des flèches communs avec Excalidraw (courbure, liaison, édition des points) → OG12.
+
 ## Compteurs
-contre-relecture cadrage 1/2 (aucun bloquant, 7 importantes arbitrées) · relecture plan 1/3 (1 bloquant + 7 importants corrigés ; tour 2 sauté faute de temps, lot 1 relu en entier) · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 · relecture plan 1/3 · vagues sans progrès 0/2 · correctifs de fin 2/2 (lot 2)
 
 ## Tâches
 Table complète : en tête de docs/plans/personnalisation-2-PLAN.md. Vagues : V1 T1,T3,T7 · V2 T2,T6,T8 · V3 T4 · V4 T5,T9 · V5 T10 · V6 T11 | lot 2 : V7 T12 · V8 T13,T14 · V9 T15 · V10 T16,T17 · V11 T18 · V12 T19
@@ -65,5 +74,9 @@ ouvertes : — · passées : aucune (merge sans go, profil « Porte avant merge 
 - Wasm ignoré par git : posé par l'orchestrateur dans chaque worktree de tâche (copie de apps/web/src/wasm*).
 - Prémisses démenties : menu ☰ existe déjà (MenuBar) ; WebGL2 ne peint que la couche vive ; aucune commande d'ordre dans main.
 
+## Livraison
+- PR #67 (`feat/personnalisation-2b`) fusionnée dans `main` par `git merge --no-ff` local : cddbde4, poussée sans `--force`. Preuve : `verifier.sh --e2e` OK sur la tête c5f22192 (voir la PR) ; cargo 1523, web 4218, CLI 284 ; Wasm principal 1 440 761 o, formats 2 794 527 o.
+- Restes connus, repris ailleurs : `ariaKeys` du menu et `ariaShortcut` de la barre fusionnés par OG27 ; tests Disposition en double dans `engine.test.ts` (laissés, voir « Fin du lot 2 »).
+
 ## Notes du coffre à poser
-(à la clôture)
+Dans la description de la PR #67 (posées par le canal).

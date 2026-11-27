@@ -102,8 +102,19 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       const st: ItemStyle = { ...DEFAULT_ITEM_STYLE, ...style() };
       // Graine tirée au début du geste et gardée dans le brouillon, jamais au relâché (déc. 12).
       const seed = st.roughness > 0 ? newSeed() : null;
-      const look = lookFrom(kind === "rect" ? st : { ...st, roundness: "sharp" }, seed);
       const fill = kind === "rect" || kind === "ellipse" ? st.background : null;
+      const linear = kind === "arrow";
+      const look = lookFrom(
+        {
+          ...st,
+          roundness: kind === "rect" ? st.roundness : "sharp",
+          fillStyle: fill === null ? "solid" : st.fillStyle,
+          startArrowhead: linear ? st.startArrowhead : DEFAULT_ITEM_STYLE.startArrowhead,
+          endArrowhead: linear ? st.endArrowhead : DEFAULT_ITEM_STYLE.endArrowhead,
+          textAlign: "left",
+        },
+        seed,
+      );
       drafts.set(pointerId, { page, style: { color: st.color, width: st.width }, fill, look, seed, x0: x, y0: y, x1: x, y1: y, zoom: cam.zoom, start: snap(page, x, y), startAlt });
     },
     extend(pointerId, samples) {

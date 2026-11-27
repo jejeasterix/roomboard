@@ -15,6 +15,7 @@ use serde::Serialize;
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, RunEvent, Runtime, State, WindowEvent};
 use roomboard_shell::annotation::{self as ann, Rect as AnnRect, RestoreStep};
 use roomboard_shell::capture;
+use roomboard_shell::links;
 use tauri::{PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_fs::FsExt;
 
@@ -190,6 +191,14 @@ async fn convert_office(app: AppHandle, path: String) -> Result<ConvertedPayload
 #[tauri::command]
 fn release_conversion(office: State<'_, Office>, granted: State<'_, GrantedPaths>, id: String) {
     office::release_conversion(&granted, &office.root, &id);
+}
+
+/// T35 (correctif de T18, H5) : lien d'élément ouvert par l'application du système ; schéma contrôlé et ouverture dans
+/// `roomboard_shell::links` (crate `open`, ShellExecuteW sous Windows), jamais par un plugin opener ; aucune
+/// permission pour la page.
+#[tauri::command]
+async fn open_link(url: String) -> Result<(), String> {
+    links::open_link(&url).map_err(|e| e.to_string())
 }
 
 /// O20 : octets de l'original en corps brut, nom dans l'en-tête `x-roomboard-name` ; copie contrôlée par
@@ -618,7 +627,8 @@ fn main() {
             annotation_cursor,
             relaunch_compat,
             annotation_capture,
-            release_capture
+            release_capture,
+            open_link
         ])
         .on_window_event(|window, event| match event {
             // C11a (P18) : seuls les dépôts de `main` (réduite à la barre en annotation) sont accordés et émis.

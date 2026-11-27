@@ -348,3 +348,109 @@ describe("outil Texte : transparence (OG11 T9b)", () => {
     expect(runs[0]).toMatchObject({ type: "SetText", look: { opacity: 40 } });
   });
 });
+
+describe("outil Texte : alignement (T28)", () => {
+  const build = (st: { textAlign?: "center" | "right" | "left" }) => {
+    const { ctx, runs } = ((): { ctx: ToolContext; runs: Command[] } => {
+      const doc = fakeCore.blank();
+      const page = doc.pageIds()[0] ?? "";
+      const runs: Command[] = [];
+      return { runs, ctx: { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } } };
+    })();
+    const host = new FakeHost();
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36, ...st }), narrow);
+    return { host, tool, runs };
+  };
+  it("texte neuf : alignement", () => {
+    const b = build({ textAlign: "center" });
+    b.tool.begin(1, [at(100, 200)]);
+    b.tool.close(1, "end");
+    b.host.text = "Bonjour";
+    b.tool.requestCommit();
+    expect(b.runs[0]).toMatchObject({ type: "SetText", look: { textAlign: "center" } });
+  });
+  it("texte neuf : le gauche n'écrit rien", () => {
+    const b = build({ textAlign: "left" });
+    b.tool.begin(1, [at(100, 200)]);
+    b.tool.close(1, "end");
+    b.host.text = "Bonjour";
+    b.tool.requestCommit();
+    expect(b.runs[0]).not.toHaveProperty("look");
+  });
+  it("saisie en cours : l'alignement choisi dans le panneau s'applique", () => {
+    let align: "left" | "right" = "left";
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const runs: Command[] = [];
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } };
+    const host = new FakeHost();
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36, textAlign: align }), narrow);
+    tool.begin(1, [at(100, 200)]);
+    tool.close(1, "end");
+    host.text = "Bonjour";
+    align = "right";
+    tool.requestCommit();
+    expect(runs[0]).toMatchObject({ look: { textAlign: "right" } });
+  });
+});
+
+describe("outil Texte : police et taille du style courant (T31)", () => {
+  it("texte neuf : la taille du style est celle de la boîte et la police est portée par chaque segment", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const runs: Command[] = [];
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } };
+    const host = new FakeHost();
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 48, font: "Georgia" }), narrow);
+    tool.begin(1, [at(100, 200)]);
+    tool.close(1, "end");
+    expect(tool.editing()).toMatchObject({ size: 48, font: "Georgia" });
+    host.text = "Bonjour";
+    tool.requestCommit();
+    expect(runs[0]).toMatchObject({ type: "SetText", size: 48, spans: [{ text: "Bonjour", attrs: { font: "Georgia" } }] });
+  });
+  it("police du style absente : aucune police posée sur les segments", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const runs: Command[] = [];
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } };
+    const host = new FakeHost();
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36 }), narrow);
+    tool.begin(1, [at(0, 0)]);
+    tool.close(1, "end");
+    host.text = "ab";
+    tool.requestCommit();
+    const c = runs[0];
+    if (c?.type !== "SetText") throw new Error("SetText attendue");
+    for (const sp of c.spans ?? []) expect(sp.attrs).not.toHaveProperty("font");
+  });
+  it("T37 : la police écrite est celle de l'ouverture, pas celle du style à la validation", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const runs: Command[] = [];
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } };
+    const host = new FakeHost();
+    let font = "Georgia";
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36, font }), narrow);
+    tool.begin(1, [at(0, 0)]);
+    tool.close(1, "end");
+    font = "Courier New";
+    host.text = "ab";
+    tool.requestCommit();
+    expect(runs[0]).toMatchObject({ type: "SetText", spans: [{ text: "ab", attrs: { font: "Georgia" } }] });
+  });
+  it("police du style absente : segments inchangés ; segment qui a déjà sa police : gardée", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const runs: Command[] = [];
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } };
+    const host = new FakeHost();
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36, font: "Georgia" }), narrow);
+    tool.begin(1, [at(0, 0)]);
+    tool.close(1, "end");
+    host.text = "ab";
+    host.rich = [{ text: "ab", attrs: { font: "Courier New" } }];
+    tool.requestCommit();
+    expect(runs[0]).toMatchObject({ spans: [{ text: "ab", attrs: { font: "Courier New" } }] });
+  });
+});

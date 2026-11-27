@@ -7,6 +7,7 @@ import {
   CURSOR_POLL_MS,
   EXIT_TIMEOUT_MS,
   isViewport,
+  palmEraserField,
   NOTHING_TO_SEND_MESSAGE,
   SENT_TO_BOARD,
   sendTarget,
@@ -74,5 +75,13 @@ describe("avis d'envoi (C11b P12, design-l4 L4-16)", () => {
     expect(sentToBoardToast(2)).toEqual({ text: "Envoyé au tableau :", strong: "page 2" });
     const t = sentToBoardToast(12);
     expect(`${t.text} ${t.strong}`.toLowerCase()).toBe(sentToBoardMessage(12));
+  });
+});
+
+describe("gomme automatique à la paume dans la charge (OG25, déc. 30)", () => {
+  it("OG25 : palmEraserField écrit le champ seulement s'il est donné", () => {
+    expect(palmEraserField({})).toEqual({});
+    expect(palmEraserField({ palmEraser: false })).toEqual({ palmEraser: false });
+    expect(palmEraserField({ palmEraser: true })).toEqual({ palmEraser: true });
   });
 });

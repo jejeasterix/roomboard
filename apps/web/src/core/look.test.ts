@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { newSeed, STROKE_STYLES, lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
+import { ARROWHEADS, endArrowheadOf, FILL_STYLES, fillStyleOf, LINK_MAX_CHARS, startArrowheadOf, TEXT_ALIGNS, textAlignOf, validLink } from "./look";
 
 describe("look", () => {
   it("toLook : absent ou vide → undefined", () => {
@@ -37,5 +38,36 @@ describe("STROKE_STYLES, newSeed", () => {
   it("newSeed : entier 32 bits non signé", () => {
     const s = newSeed();
     expect(Number.isInteger(s) && s >= 0 && s <= 0xffffffff).toBe(true);
+  });
+});
+
+describe("look — lot 2 (T12)", () => {
+  it("toLook : champs du lot 2 lisibles gardés, défauts de pointe et hors domaine neutres", () => {
+    expect(toLook({ fillStyle: "hachure", startArrowhead: "triangle", endArrowhead: "none", textAlign: "right", link: "https://example.org" })).toEqual({
+      fillStyle: "hachure", startArrowhead: "triangle", endArrowhead: "none", textAlign: "right", link: "https://example.org",
+    });
+    expect(toLook({ fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", link: "javascript:alert(1)" })).toBeUndefined();
+    expect(toLook({ fillStyle: 3, startArrowhead: "circle", endArrowhead: null, textAlign: "justify", link: 42 })).toBeUndefined();
+  });
+  it("validLink : refuse blancs, guillemet, chevrons, antislash et caractères de contrôle ; accepte %20", () => {
+    for (const ko of ['mailto:a@b" /a "C:\\x"', "https://example.org/a b", "https://example.org/a\tb", "https://example.org/a\nb", 'https://example.org/a"b', "https://example.org/<b>", "https://example.org/a\\b", "https://example.org/a\u007fb", "https://example.org/a\u0000b"]) {
+      expect(validLink(ko), JSON.stringify(ko)).toBe(false);
+    }
+    expect(validLink("https://example.org/a%20b")).toBe(true);
+  });
+  it("validLink : trois schémas, casse exacte, 2 048 caractères au plus (points de code)", () => {
+    for (const ok of ["http://x", "https://example.org", "mailto:a@example.org", `https://${"é".repeat(LINK_MAX_CHARS - 8)}`]) expect(validLink(ok), ok).toBe(true);
+    for (const ko of ["javascript:alert(1)", "JavaScript:alert(1)", "HTTPS://x", " https://x", "ftp://x", "data:text/html,x", "https:x", "", `https://${"h".repeat(LINK_MAX_CHARS - 7)}`]) {
+      expect(validLink(ko), ko.slice(0, 30)).toBe(false);
+    }
+  });
+  it("lecteurs du lot 2 : défauts", () => {
+    expect([fillStyleOf(undefined), startArrowheadOf(undefined), endArrowheadOf(undefined), textAlignOf(undefined)]).toEqual(["solid", "none", "arrow", "left"]);
+    expect([fillStyleOf({ fillStyle: "cross-hatch" }), startArrowheadOf({ startArrowhead: "arrow" }), endArrowheadOf({ endArrowhead: "none" }), textAlignOf({ textAlign: "center" })]).toEqual(["cross-hatch", "arrow", "none", "center"]);
+  });
+  it("domaines du lot 2", () => {
+    expect(FILL_STYLES).toEqual(["hachure", "cross-hatch"]);
+    expect(ARROWHEADS).toEqual(["none", "arrow", "triangle", "triangle_outline"]);
+    expect(TEXT_ALIGNS).toEqual(["center", "right"]);
   });
 });

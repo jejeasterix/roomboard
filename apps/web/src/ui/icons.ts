@@ -30,6 +30,12 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "prev": [["path", { d: "m15 18-6-6 6-6" }]],
   "next": [["path", { d: "m9 18 6-6-6-6" }]],
   "plus": [["path", { d: "M5 12h14" }], ["path", { d: "M12 5v14" }]],
+  // Lucide link (ISC), T18 : lien d'un élément (bouton Lien, éditeur ; le badge du canvas reprend les mêmes tracés)
+  // Lucide external-link (ISC), T39 : « Ouvrir le lien » de l'éditeur de lien
+  "external-link": [["path", { d: "M15 3h6v6" }], ["path", { d: "M10 14 21 3" }], ["path", { d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" }]],
+  "link": [["path", { d: "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" }], ["path", { d: "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" }]],
+  // Lucide circle-help (ISC), lu au même commit que les autres
+  "circle-help": [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M9 9.5a3 2.5 0 016 0c0 2-2 2-3 3.5" }], ["path", { d: "M12 17h.01" }]],
   "trash": [["path", { d: "M10 11v6" }], ["path", { d: "M14 11v6" }], ["path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" }], ["path", { d: "M3 6h18" }], ["path", { d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }]],
   "file-import": [["path", { d: "M4 11V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1" }], ["path", { d: "M14 2v5a1 1 0 0 0 1 1h5" }], ["path", { d: "M2 15h10" }], ["path", { d: "m9 18 3-3-3-3" }]],
   "pdf": [["path", { d: "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" }], ["path", { d: "M14 2v5a1 1 0 0 0 1 1h5" }], ["path", { d: "M12 18v-6" }], ["path", { d: "m9 15 3 3 3-3" }]],
@@ -124,6 +130,21 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "sloppiness-2": [["path", { d: "M4 15c2-6 4-7 5-4s2 4 4 1 3-5 4-2 2 4 3 5" }]],
   "corner-sharp": [["path", { d: "M6 18V6h12" }]],
   "corner-round": [["path", { d: "M6 18v-6a6 6 0 0 1 6-6h6" }]],
+  // OG11 lot 2 (T15) : Lucide @7981a0798a, ISC (chevron-up, chevron-down, align-left, align-center, align-right).
+  "chevron-up": [["path", { d: "m18 15-6-6-6 6" }]],
+  "chevron-down": [["path", { d: "m6 9 6 6 6-6" }]],
+  "align-left": [["path", { d: "M21 5H3" }], ["path", { d: "M15 12H3" }], ["path", { d: "M17 19H3" }]],
+  "align-center": [["path", { d: "M21 5H3" }], ["path", { d: "M17 12H7" }], ["path", { d: "M19 19H5" }]],
+  "align-right": [["path", { d: "M21 5H3" }], ["path", { d: "M21 12H9" }], ["path", { d: "M21 19H7" }]],
+  // Dessinées pour RoomBoard (même grille, trait 1,5) : trois remplissages et quatre pointes (la pointe de début est la
+  // même icône retournée par la feuille de style).
+  "fill-solid": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M8 8h8v8H8z" }], ["path", { d: "M12 12h.01" }]],
+  "fill-hachure": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M3 9 9 3" }], ["path", { d: "M3 17 17 3" }], ["path", { d: "M7 21 21 7" }], ["path", { d: "M15 21 21 15" }]],
+  "fill-cross": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M3 9 9 3" }], ["path", { d: "M3 17 17 3" }], ["path", { d: "M7 21 21 7" }], ["path", { d: "M15 21 21 15" }], ["path", { d: "M21 9 15 3" }], ["path", { d: "M21 17 7 3" }], ["path", { d: "M17 21 3 7" }], ["path", { d: "M9 21 3 15" }]],
+  "head-none": [["path", { d: "M4 12h16" }]],
+  "head-arrow": [["path", { d: "M4 12h16" }], ["path", { d: "m14 6 6 6-6 6" }]],
+  "head-triangle": [["path", { d: "M4 12h10" }], ["path", { d: "M14 7v10l6-5z" }], ["path", { d: "M16 10.5v3l2-1.5z" }]],
+  "head-triangle-outline": [["path", { d: "M4 12h10" }], ["path", { d: "M14 7v10l6-5z" }]],
 });
 
 /** Outil → icône (§ 2 bis). */
@@ -164,6 +185,8 @@ export const ACTION_ICONS: Readonly<Record<ActionId, string>> = Object.freeze({
   "file-save": "save",
   "file-save-as": "save",
   settings: "settings",
+  help: "circle-help",
+  "page-clear": "eraser",
   profiles: "profile",
   grid: "grid",
   library: "library",

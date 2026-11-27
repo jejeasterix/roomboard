@@ -17,6 +17,12 @@ export const RELOAD_DIRTY_MESSAGE = "Recharger : les onglets non enregistrés se
 /** design-l4 (L4-14) : libellés du bouton du cadre de l'annotation. */
 export const FRAME_LABELS = Object.freeze({ on: "Cadre de l'annotation : affiché", off: "Cadre de l'annotation : masqué" });
 
+/** OG25 (déc. 26, 27) : libellés du bouton de la gomme automatique à la paume, repris par l'avis de Ctrl+Maj+H. */
+export const PALM_ERASER_LABELS = Object.freeze({
+  on: "Gomme automatique à la paume : active",
+  off: "Gomme automatique à la paume : coupée",
+});
+
 export interface SettingsPanelProps {
   readonly store: SettingsStore;
   readonly effective: Accessor<EffectiveEchelons>;
@@ -29,6 +35,8 @@ export interface SettingsPanelProps {
   /** design-l4 (L4-14) : réglages de l'appareil ; donnés seulement avec la capacité d'annotation (H10) ; absents : aucun
    *  bouton du cadre. */
   readonly device?: DeviceSettings;
+  /** OG25 (déc. 26) : réglage de la gomme automatique à la paume, sur toutes les plateformes ; absent : aucun bouton. */
+  readonly palmEraser?: DeviceSettings;
 }
 
 const WEBGL_WORDS = { on: "actif", off: "coupé", repli: "repli Canvas 2D" } as const;
@@ -39,6 +47,9 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
   const device = props.device;
   const [frame, setFrameShown] = createSignal(device?.frame() ?? true);
   if (device !== undefined) onCleanup(device.onChange(() => setFrameShown(device.frame())));
+  const palmDevice = props.palmEraser;
+  const [palmOn, setPalmOn] = createSignal(palmDevice?.palmEraser() ?? true);
+  if (palmDevice !== undefined) onCleanup(palmDevice.onChange(() => setPalmOn(palmDevice.palmEraser())));
 
   const click = async (key: SettingKey): Promise<void> => {
     const next = cycleSetting(props.store.get(), key);
@@ -76,6 +87,13 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
         {(dev) => (
           <button type="button" data-reglage="cadre" onClick={() => void dev().setFrame(!dev().frame())}>
             {frame() ? FRAME_LABELS.on : FRAME_LABELS.off}
+          </button>
+        )}
+      </Show>
+      <Show when={palmDevice}>
+        {(dev) => (
+          <button type="button" data-reglage="gomme-paume" onClick={() => void dev().setPalmEraser(!dev().palmEraser())}>
+            {palmOn() ? PALM_ERASER_LABELS.on : PALM_ERASER_LABELS.off}
           </button>
         )}
       </Show>

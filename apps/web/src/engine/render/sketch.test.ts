@@ -116,3 +116,37 @@ describe("sketch (OG11, DA-3)", () => {
     expect(src).toMatch(/rough\.generator\(\)/);
   });
 });
+
+describe("sketch lot 2 : hachures et pointes", () => {
+  const filled = { shape: "rect" as const, w: 100, h: 50, fill: "#fef08a" };
+  const run = (shape: Parameters<typeof sketchShape>[1], look: Parameters<typeof sketchShape>[3]): number[] => {
+    const r = rec();
+    sketchShape(ctx(r), shape, pen, look, 3);
+    return ops(r);
+  };
+  it("hachures déterministes", () => {
+    const a = run(filled, { fillStyle: "hachure" });
+    expect(a.length).toBeGreaterThan(0);
+    expect(run(filled, { fillStyle: "hachure" })).toEqual(a);
+  });
+  it("hachures et hachures croisées diffèrent du plein et entre elles", () => {
+    const solid = run(filled, {});
+    const h = run(filled, { fillStyle: "hachure" });
+    const c = run(filled, { fillStyle: "cross-hatch" });
+    expect(h).not.toEqual(solid);
+    expect(c).not.toEqual(h);
+    expect(c.length).toBeGreaterThan(h.length);
+  });
+  it("pointes : aucune, flèche, triangle, triangle vide, deux bouts, toutes distinctes", () => {
+    const arrow = { shape: "arrow" as const, w: 100, h: 0, fill: null };
+    const none = run(arrow, { endArrowhead: "none" });
+    const def = run(arrow, {});
+    const tri = run(arrow, { endArrowhead: "triangle" });
+    const out = run(arrow, { endArrowhead: "triangle_outline" });
+    const both = run(arrow, { startArrowhead: "arrow" });
+    const all = [none, def, tri, out, both].map((o) => JSON.stringify(o));
+    expect(new Set(all).size).toBe(5);
+    expect(none.length).toBeLessThan(def.length);
+    expect(both.length).toBeGreaterThan(def.length);
+  });
+});

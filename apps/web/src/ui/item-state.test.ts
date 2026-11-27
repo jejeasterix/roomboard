@@ -34,6 +34,10 @@ describe("itemState", () => {
     expect(itemState(action("redo"), view({ canRedo: false })).disabled).toBe(true);
     expect(itemState(action("redo"), view()).disabled).toBe(false);
   });
+  it("page-clear : grisé sur une page vide, actif dès qu'elle porte un objet (T41)", () => {
+    expect(itemState(action("page-clear"), view({ elementCount: 0 })).disabled).toBe(true);
+    expect(itemState(action("page-clear"), view({ elementCount: 3 })).disabled).toBe(false);
+  });
   it("page-prev désactivé sur la première page", () => {
     expect(itemState(action("page-prev"), view({ pageIndex: 0 })).disabled).toBe(true);
     expect(itemState(action("page-prev"), view()).disabled).toBe(false);

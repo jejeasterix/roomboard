@@ -53,10 +53,10 @@ export async function startDocument(core: CoreFactory, pending: PendingStore): P
 export async function prepareHost(w: Window): Promise<PreparedHost> {
   const kind = chooseHostKind(detectHostEnvironment(w), parseHostChoice(w.location.search));
   if (kind === "tauri") {
-    const { createTauriHost, createTauriShell, loadTauriPorts } = await import("./host-tauri");
+    const { createTauriHost, createTauriShell, loadTauriPorts, openLink } = await import("./host-tauri");
     const p = await loadTauriPorts();
     const host = createTauriHost(p.dialog, p.fs, p.ipc, () => w.devicePixelRatio || 1);
-    return { kind, host, shell: createTauriShell(p.dialog, p.win), dropReady: () => host.dropListening() };
+    return { kind, host, shell: createTauriShell(p.dialog, p.win, undefined, (url) => openLink(p.ipc, url)), dropReady: () => host.dropListening() };
   }
   const shell = createWebShell({
     confirm: (m) => w.confirm(m),
@@ -64,6 +64,7 @@ export async function prepareHost(w: Window): Promise<PreparedHost> {
     addEventListener: (t, cb) => w.addEventListener(t, cb),
     removeEventListener: (t, cb) => w.removeEventListener(t, cb),
     document: w.document,
+    open: (u, t, f) => w.open(u, t, f),
   });
   const host =
     kind === "fsa"

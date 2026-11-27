@@ -4,6 +4,8 @@
  * contact `touch` ne trace tant qu'un stylet touche, qu'il soit posé avant ou après la pointe.
  */
 
+import { contactGeometry, type ContactGeometry } from "./contact";
+
 export interface InputSample {
   readonly x: number;
   readonly y: number;
@@ -24,6 +26,8 @@ export interface GestureEvent {
   readonly predicted: readonly InputSample[];
   /** Vrai sur le `cancel` d'un contact `touch` annulé parce que le stylet touche (paume, D18). */
   readonly palm?: boolean;
+  /** OG25 (déc. 2) : taille du contact en px CSS, lue de l'événement envoyé ; absente sans géométrie (déc. 3). */
+  readonly contact?: ContactGeometry;
 }
 
 export interface SamplerOptions {
@@ -58,6 +62,9 @@ export interface PointerLike {
   readonly tiltY: number;
   readonly buttons: number;
   readonly timeStamp: number;
+  /** OG25 : `PointerEvent.width` / `height` (px CSS ; 1 par défaut, 0 sous Windows sans géométrie). */
+  readonly width?: number;
+  readonly height?: number;
   getCoalescedEvents?(): PointerLike[];
   getPredictedEvents?(): PointerLike[];
   preventDefault(): void;
@@ -72,6 +79,8 @@ export interface PointerSurface {
 
 export interface Sampler {
   onGesture(cb: (g: GestureEvent) => void): () => void;
+  /** Un stylet touche la surface (rejet de paume, D18) ; lu aussi par l'ascenseur du portrait (OG24). */
+  penInContact(): boolean;
   stats(): SamplerStats;
   dispose(): void;
 }
@@ -87,6 +96,12 @@ const NON_PEN_PRESSURE = 0.5;
 export function pressureOf(pointerType: string, pressure: number): number {
   return pointerType === "pen" ? pressure : NON_PEN_PRESSURE;
 }
+
+/** OG25 : champ `contact` d'un geste, écrit seulement quand l'événement porte une géométrie (patron du champ `palm`). */
+const contactOf = (e: PointerLike): { readonly contact?: ContactGeometry } => {
+  const c = contactGeometry(e.width, e.height);
+  return c === null ? {} : { contact: c };
+};
 
 interface ActiveGesture {
   readonly pointerType: string;
@@ -189,6 +204,7 @@ export function createSampler(target: PointerSurface, opts: SamplerOptions): Sam
       eraserButton: g.eraser,
       samples: [toSample(e, g)],
       predicted: [],
+      ...contactOf(e),
     });
   };
 
@@ -214,6 +230,7 @@ export function createSampler(target: PointerSurface, opts: SamplerOptions): Sam
       eraserButton: g.eraser,
       samples: source.map((s) => toSample(s, g)),
       predicted: predicted.map((s) => toSample(s, g)),
+      ...contactOf(e),
     });
   };
 
@@ -253,6 +270,7 @@ export function createSampler(target: PointerSurface, opts: SamplerOptions): Sam
   for (const [type, listener] of bindings) target.addEventListener(type, listener);
 
   return {
+    penInContact,
     onGesture(cb) {
       listeners.add(cb);
       return () => {

@@ -112,6 +112,26 @@ describe("objectKey (OG11)", () => {
   });
 });
 
+describe("objectKey : S et G (OG11, T16)", () => {
+  it("S ouvre le trait", () => {
+    expect(objectKey(k("s"))).toBe("stroke-picker");
+    expect(objectKey(k("S"))).toBe("stroke-picker");
+  });
+  it("G ouvre le fond", () => {
+    expect(objectKey(k("g"))).toBe("fill-picker");
+  });
+  it("S et G : rien avec modificateur, en champ ou en composition", () => {
+    for (const key of ["s", "g"]) {
+      expect(objectKey(k(key, { ctrlKey: true }))).toBeNull();
+      expect(objectKey(k(key, { metaKey: true }))).toBeNull();
+      expect(objectKey(k(key, { shiftKey: true }))).toBeNull();
+      expect(objectKey(k(key, { altKey: true }))).toBeNull();
+      expect(objectKey(k(key, { target: { tagName: "INPUT", type: "text" } }))).toBeNull();
+      expect(objectKey(k(key, { isComposing: true }))).toBeNull();
+    }
+  });
+});
+
 describe("keyAction : réglette et cases (le focus y reste après un réglage)", () => {
   it("Ctrl+Z sur un input range, checkbox, radio, button : annuler", () => {
     for (const type of ["range", "checkbox", "radio", "button", "color"]) {
@@ -182,6 +202,14 @@ describe("appShortcut (personnalisation-1b, Q28)", () => {
   });
   it("Ctrl+Maj+F n'est pas une touche du moteur (annuler, grouper)", () => {
     expect(keyAction(k("F", { ctrlKey: true, shiftKey: true }))).toBeNull();
+  });
+  it("OG25 : Ctrl+Maj+H et Cmd+Maj+H → palm-eraser ; hors champ, hors composition, jamais avec Alt ni sans Maj", () => {
+    expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true }))).toBe("palm-eraser");
+    expect(appShortcut(k("h", { metaKey: true, shiftKey: true }))).toBe("palm-eraser");
+    expect(appShortcut(k("h", { ctrlKey: true }))).toBeNull();
+    expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true, altKey: true }))).toBeNull();
+    expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true, isComposing: true }))).toBeNull();
+    expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true, target: { tagName: "INPUT" } }))).toBeNull();
   });
 });
 

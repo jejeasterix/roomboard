@@ -2,6 +2,7 @@
  * Gomme (D12, D38) : aperçu sans écriture, une seule commande Erase au relâché ; "cancel" et "abort" n'écrivent rien
  * (D39). Gomme d'objet : hitTestPath (lecture seule) sur le segment nouveau à chaque image, traits touchés masqués.
  * Rayon constant à l'écran (HL3-1), converti en unités monde au début du geste. Mode figé au début du geste.
+ * OG25 : `resize` agrandit le rayon d'un passage (le plus grand vu) ; une seule Erase au rayon final.
  */
 import type { EraseMode } from "../../core/api";
 import { screenToWorld } from "../camera";
@@ -15,7 +16,7 @@ export const ERASER_RADIUS_PX = 12;
 interface Pass {
   readonly page: string;
   readonly mode: EraseMode;
-  readonly radius: number;
+  radius: number;
   /** Paires x, y monde. */
   readonly path: number[];
   /** Paires déjà soumises à hitTestPath. */
@@ -73,6 +74,15 @@ export function createEraserTool(
       passes.delete(pointerId);
       if (how !== "end" || p.path.length < 2) return;
       ctx.run({ type: "Erase", page: p.page, path: new Float32Array(p.path), radius: p.radius, mode: p.mode });
+    },
+    resize(pointerId: number, radiusPx: number) {
+      const p = passes.get(pointerId);
+      if (!p || !Number.isFinite(radiusPx) || radiusPx <= 0) return;
+      const r = radiusPx / ctx.camera().zoom;
+      if (!(r > p.radius)) return;
+      p.radius = r;
+      // Gomme d'objet : le chemin déjà passé est sondé de nouveau, au rayon nouveau.
+      if (p.mode === "object") p.checked = 0;
     },
     live(): LivePart {
       const erasers: EraserPreview[] = [];
