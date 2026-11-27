@@ -49,7 +49,13 @@ const settle = async (page) => {
 };
 const look = (page) => page.getAttribute("#stage", "data-look");
 const ids = (page) => page.$$eval(`${DIALOG} button[data-fond]`, (bs) => bs.map((b) => b.dataset.fond));
-const toast = (page, text) => page.waitForSelector(`.rb-toast:has-text("${text}")`, { timeout: 15000 });
+// Hors de la coque, l'avis passe par la boîte du navigateur (`window.alert`) : on les relève et on les accepte.
+const dialogs = [];
+const toast = async (page, text) => {
+  for (let i = 0; i < 150 && !dialogs.some((m) => m.includes(text)); i++) await page.waitForTimeout(100);
+  if (!dialogs.some((m) => m.includes(text))) throw new Echec(`avis « ${text} » jamais montré (${dialogs.join(" | ")})`);
+  console.log(`ok — avis : ${text}`);
+};
 const blur = (page) => page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
 const cli = (args) => {
   const r = spawnSync("node", [BIN, ...args], { encoding: "utf8", env: { ...process.env, ROOMBOARD_NOW: "1700000000000" } });
@@ -337,6 +343,10 @@ async function main() {
     });
     const page = await context.newPage();
     const errors = [];
+    page.on("dialog", (d) => {
+      dialogs.push(d.message());
+      void d.accept();
+    });
     page.on("pageerror", (e) => errors.push(String(e)));
     page.on("console", (m) => (m.type() === "error" ? errors.push(m.text()) : undefined));
     await page.clock.setFixedTime(FIXED);
