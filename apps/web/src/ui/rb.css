@@ -514,3 +514,12 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-options [data-option="align"] .rb-opt-btn, .rb-options [data-option="transform"] .rb-opt-btn { min-inline-size: 44px; min-block-size: 44px; }
 .rb-options [data-option="align"] .rb-opt-body, .rb-options [data-option="align"] .rb-opt-body > * { gap: 4px; }
 .rb-options [data-option="pressure"] .rb-radio { min-inline-size: 44px; min-block-size: 44px; }
+/* OG23 (T13) : section Image (boutons pleine largeur à icône) et bascule « Glisser une copie ». */
+.rb-options .rb-opt-stack { display: grid; gap: 4px; }
+.rb-options .rb-opt-wide, .rb-options .rb-opt-toggle { display: flex; align-items: center; gap: 8px; inline-size: 100%; min-block-size: max(44px, var(--rb-btn-size)); padding: 0 8px; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; font-size: 14px; line-height: 20px; text-align: start; cursor: pointer; }
+.rb-options .rb-opt-toggle { flex: 1 1 100%; }
+.rb-options .rb-opt-wide:hover, .rb-options .rb-opt-toggle:hover:not(:disabled) { background: var(--rf-gray-50); }
+.rb-options .rb-opt-toggle[aria-pressed="true"] { background: var(--rf-violet-50, var(--rf-gray-50)); color: var(--rf-violet-600); }
+.rb-options .rb-opt-toggle[aria-pressed="mixed"] { background: var(--rf-gray-50); color: var(--rf-navy-500); box-shadow: inset 0 0 0 1.5px var(--rf-violet-600); }
+.rb-options .rb-opt-toggle:disabled { color: var(--rf-gray-500); cursor: default; }
+.rb-opt-wide-label { color: var(--rf-gray-800); }

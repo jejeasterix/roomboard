@@ -7,7 +7,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type Accessor, type JSX } from "solid-js";
 import type { Command, ElementView, TextAttrsPatch } from "../core/api";
 import {
-  endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, variabilityOf,
+  dragCopyOf, endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, variabilityOf,
   type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
 } from "../core/look";
 import type { DeviceSettings } from "../device-settings";
@@ -25,7 +25,7 @@ import { createTip } from "./tooltip";
 import { BUTTON_PX, optionsWidth, placeLinkAvoiding, placeOptions, topRowBottom, type Box, type Rect } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import {
-  DISTRIBUTE_MIN_UNITS, FONTS, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionOpen, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
+  DISTRIBUTE_MIN_UNITS, FONTS, admitsDragCopy, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionOpen, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
 } from "./tool-options";
 
 export interface OptionsPanelProps {
@@ -47,6 +47,8 @@ export interface OptionsPanelProps {
   readonly hidden?: Accessor<boolean>;
   /** T39 : ouverture sûre d'un lien (`ShellPort.openLink`), pour « Ouvrir le lien » de l'éditeur de lien. */
   readonly openLink?: (url: string) => void;
+  /** OG23 (T13) : ouvre le panneau de l'image ; `start` arme le rognage ou la baguette, `null` : ouverture simple. */
+  readonly openImage?: (start: "crop" | "background" | null) => void;
 }
 
 const LABEL: Readonly<Record<OptionKey, string>> = {
@@ -63,6 +65,7 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   textAlign: "Alignement du texte",
   arrowheads: "Pointes",
   opacity: "Transparence",
+  image: "Image",
   layers: "Disposition",
   align: "Aligner",
   transform: "Transformer",
@@ -122,6 +125,12 @@ const TRANSFORMS: readonly ArrangeButton[] = [
   { value: "flip-v", label: "Retourner verticalement", icon: "flip-vertical" },
   { value: "rotate-ccw", label: "Tourner de 90° à gauche", icon: "rotate-ccw-square" },
   { value: "rotate-cw", label: "Tourner de 90° à droite", icon: "rotate-cw-square" },
+];
+interface ImageAction { readonly value: string; readonly label: string; readonly icon: string; readonly start: "crop" | "background" | null }
+const IMAGE_ACTIONS: readonly ImageAction[] = [
+  { value: "panel-crop", label: "Rogner", icon: "crop", start: "crop" },
+  { value: "panel-background", label: "Effacer le fond", icon: "eraser", start: "background" },
+  { value: "panel-retouch", label: "Retouches…", icon: "sliders-horizontal", start: null },
 ];
 const FONT_OPTIONS: readonly RadioOption<string>[] = FONTS.map((f) => ({ value: f.value, label: f.label }));
 const SIZE_OPTIONS: readonly RadioOption<string>[] = TEXT_SIZES.map((n) => ({ value: String(n), label: String(n) }));
@@ -393,6 +402,36 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     const v = value("opacity");
     return typeof v === "number" ? v : null;
   };
+  /** OG23 : « Glisser une copie », `aria-pressed` vrai, faux ou `mixed` ; mixte : un clic pose partout. Grisée sans cible admise. */
+  const dragCopyToggle = (): JSX.Element => {
+    const tip = createTip();
+    let button: HTMLButtonElement | undefined;
+    const eligible = (): readonly ElementView[] => targets().filter(admitsDragCopy);
+    const all = (): boolean => eligible().length > 0 && eligible().every((e) => dragCopyOf(e.look));
+    const some = (): boolean => eligible().some((e) => dragCopyOf(e.look));
+    return (
+      <>
+        <button
+          ref={button}
+          type="button"
+          class="rb-opt-toggle"
+          data-option-value="drag-copy"
+          data-mixed={some() && !all() ? "" : undefined}
+          aria-pressed={all() ? "true" : some() ? "mixed" : "false"}
+          aria-label="Glisser une copie"
+          disabled={eligible().length === 0}
+          {...tipPointerHandlers(tip)}
+          onPointerDown={(e) => { keep(e); tip.down(e.pointerType); }}
+          onMouseDown={keep}
+          onClick={() => void props.engine().setDragCopy(!all())}
+        >
+          <Icon name="copy" />
+          <span class="rb-opt-wide-label">Glisser une copie</span>
+        </button>
+        <TipBubble tip={tip} label="Glisser une copie : le glissement laisse l'original et déplace une copie" anchor={() => button!} />
+      </>
+    );
+  };
   /** Une rangée de boutons `Engine.arrange` : cible 44 px (`rb-opt-btn`), raccourci dans l'infobulle et `aria-keyshortcuts` ; Répartir demande 3 unités. */
   const arrangeRow = (row: readonly ArrangeButton[]): JSX.Element => (
     <For each={row.filter((b) => !b.value.startsWith("distribute") || (props.state().selectionUnits ?? 0) >= DISTRIBUTE_MIN_UNITS)}>
@@ -484,8 +523,21 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       </>
     ),
     transform: () => <div class="rb-pick-row">{arrangeRow(TRANSFORMS)}</div>,
+    image: () => (
+      <div class="rb-opt-stack">
+        <For each={IMAGE_ACTIONS}>
+          {(a) => (
+            <IconButton keepFocus icon={null} label={a.label} attrs={{ "data-image-action": a.value, class: "rb-opt-btn rb-opt-wide" }} onPress={() => props.openImage?.(a.start)}>
+              <Icon name={a.icon} />
+              <span class="rb-opt-wide-label" aria-hidden="true">{a.label}</span>
+            </IconButton>
+          )}
+        </For>
+      </div>
+    ),
     actions: () => (
       <div class="rb-pick-row">
+        {dragCopyToggle()}
         <Show when={props.state().selection.length === 1}>
           <IconButton keepFocus icon="link" label="Lien (Ctrl+K)" attrs={{ "data-option-value": "link", class: "rb-opt-btn" }} onPress={() => void props.engine().editLink()} />
         </Show>
