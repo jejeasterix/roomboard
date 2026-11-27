@@ -14,6 +14,7 @@
  * pleins par `tabs.full()` ; messages et canaux de la CLI inchangés.
  */
 import { basename } from "node:path";
+import type { PackFiles } from "../../web/src/app/backgrounds-apply";
 import type { BoardPorts, BoardSourceFormat } from "../../web/src/app/board-io";
 import type { FragmentOps } from "../../web/src/app/fragments";
 import { createContainerIO, type ContainerIO, type ReadKind, type ReadResult } from "../../web/src/app/container-io";
@@ -30,6 +31,7 @@ import { convertFailureMessage, officeErrorCode } from "../../web/src/platform/o
 import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import type { Point } from "../../web/src/platform/files";
 import { nodeBoardPorts } from "./board-node";
+import { backgroundOp, diskPackFiles, packDir } from "./backgrounds";
 import { asCliError, CliError, type CliIO } from "./contract";
 import { nowOf, readBytes, writeAtomic } from "./disk";
 import { checkNotSource, exportFragment, exportWhole, isBoardOut, isPdfOut } from "./exporter";
@@ -66,6 +68,8 @@ export interface SessionDeps {
   readonly pdfWriter: PdfWriter;
   /** cli-lot4 (D55, D56) : variables du processus (`ROOMBOARD_OFFICE`, `XDG_CACHE_HOME`) ; absent : `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>;
+  /** personnalisation-1b (Q32) : fichiers du pack de fonds, lus sur disque (`diskPackFiles`) ; absent : opération refusée. */
+  readonly backgrounds?: PackFiles;
   /** D29 : vrai après une panique du module des formats dans ce processus. */
   interrupted(): boolean;
   now(): string;
@@ -319,6 +323,12 @@ export function createSession(deps: SessionDeps): Session {
         if (report.failed.length + report.refused.length > 0) throw new CliError("command", partialMessage(report), { ...report });
         return { ...report };
       }
+      case "background": {
+        const tab = active();
+        const files = deps.backgrounds;
+        if (files === undefined) throw new CliError("command", "pack de fonds absent de cette session");
+        return { change: tab.doc.apply(await backgroundOp(tab, args, files)) };
+      }
       case "export": {
         const to = needString(args, "to");
         if (isBoardOut(to) || isPdfOut(to)) {
@@ -437,5 +447,6 @@ export async function nodeSession(io: TestableIO): Promise<Session> {
     pdfWriter: nodePdfWriter(io.formats ?? formats, onPanic),
     interrupted: () => interrupted,
     env: io.env,
+    backgrounds: diskPackFiles(packDir(io.env, io.wasmDir)),
   });
 }

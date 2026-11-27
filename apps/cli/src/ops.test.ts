@@ -39,9 +39,9 @@ describe("lecture d'une opération (D6)", () => {
     expect(codeOf(() => parseOp({ type: "CommitStroke", page: "p", points: [1, "a"], style }, ctx()))).toBe("usage");
     expect(codeOf(() => parseOp({ type: "Erase", page: "p", path: "0,0", radius: 4, mode: "object" }, ctx()))).toBe("usage");
   });
-  it("COMMAND_TYPES couvre les 30 commandes de Command, sans doublon", () => {
+  it("COMMAND_TYPES couvre les 31 commandes de Command, sans doublon", () => {
     expect(ALL_COMMANDS).toBe(true);
-    expect(new Set(COMMAND_TYPES).size).toBe(30);
+    expect(new Set(COMMAND_TYPES).size).toBe(31);
   });
 });
 
