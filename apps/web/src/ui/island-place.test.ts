@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { Toolbar as Bar } from "../toolbar";
 import {
-  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, sheetLane, tabsWidth,
-  type Corners,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, sheetLane, tabsWidth,
+  type Anchor, type Corners,
 } from "./island-place";
 
 const MID = { w: 1280, h: 900 };
@@ -10,16 +11,22 @@ const TOP: Corners = { start: 56 + 8 + 144, end: 108, band: 56 };
 /** Rangée du bas : historique 160 ; rien à droite. */
 const BOTTOM: Corners = { start: 160, end: 0, band: 56 };
 const TOOLS = { w: 770, h: 56 };
+const barOf = (role: string, anchor?: Anchor): Bar => ({ id: role, role, dock: "floating", collapsed: false, groups: [], rest: {}, ...(anchor !== undefined ? { anchor } : {}) });
 
 describe("island-place : ancres (design-l2 L2-5, H11)", () => {
-  it("design-l2 L2-5 : menu haut-gauche, outils haut-centre, panneaux haut-droite, historique bas-gauche, pages bas-centre", () => {
-    expect(["menu", "tools", "panels", "history", "pages"].map(anchorOf)).toEqual(["top-start", "top-center", "top-end", "bottom-start", "bottom-center"]);
+  it("design-l2 L2-5 : menu haut-gauche, outils haut-centre, panneaux haut-droite, historique bas-gauche, pages côté gauche (personnalisation-1a)", () => {
+    expect(["menu", "tools", "panels", "history", "pages"].map((r) => anchorOf(barOf(r)))).toEqual(["top-start", "top-center", "top-end", "bottom-start", "side-start"]);
   });
   it("design-l2 H11 : rôle inconnu ou clé héritée : haut-droite", () => {
-    for (const r of ["zoom", "", "__proto__", "toString"]) expect(anchorOf(r), r).toBe("top-end");
+    for (const r of ["zoom", "", "__proto__", "toString"]) expect(anchorOf(barOf(r)), r).toBe("top-end");
+  });
+  it("personnalisation-1a : pages → side-start par défaut ; bar.anchor side-end prime sur le rôle", () => {
+    expect(anchorOf(barOf("pages"))).toBe("side-start");
+    expect(anchorOf(barOf("pages", "side-end"))).toBe("side-end");
+    expect(anchorOf(barOf("tools", "bottom-start"))).toBe("bottom-start");
   });
   it("isCentered : seulement top-center et bottom-center", () => {
-    expect((["top-start", "top-center", "top-end", "bottom-start", "bottom-center"] as const).map(isCentered)).toEqual([false, true, false, false, true]);
+    expect((["top-start", "top-center", "top-end", "bottom-start", "bottom-center", "side-start", "side-end"] as const).map(isCentered)).toEqual([false, true, false, false, true, false, false]);
   });
   it("constantes : marges 16, écart 8, onglets 144, panneau 600, boutons 44 / 48 / 64", () => {
     expect([EDGE, GAP, TABS_MIN, SHEET_W]).toEqual([16, 8, 144, 600]);
@@ -43,8 +50,24 @@ describe("island-place : voies (design-l2 L2-30, L2-12)", () => {
     expect(Number.isInteger(l.x) && Number.isInteger(l.y)).toBe(true);
     expect(l.x).toBe(Math.round((1280 - 771) / 2));
   });
-  it("design-l2 L2-30 (b) : pages centrées sur la rangée du bas, à droite de l'historique", () => {
+  it("design-l2 L2-30 (b) : un îlot centré du bas se pose sur la rangée du bas, à droite de l'historique", () => {
     expect(laneOf("bottom-center", { w: 400, h: 56 }, MID, BOTTOM)).toEqual({ x: 440, y: 900 - 16 - 56, maxWidth: 912 });
+  });
+  it("personnalisation-1a : laneOf side-start : sous la rangée du haut, au-dessus de celle du bas, maxHeight borné", () => {
+    const c: Corners = { ...TOP, foot: 56 };
+    // y = 16 + 56 + 8 = 80 ; maxHeight = 900 - 80 - (16 + 56 + 8) = 740
+    expect(laneOf("side-start", { w: 56, h: 300 }, MID, c)).toEqual({ x: 16, y: 80, maxWidth: 1248, maxHeight: 740 });
+  });
+  it("personnalisation-1a : laneOf side-end : collé à 16 du bord droit ; sans rangée du bas, maxHeight jusqu'à 16 du bord", () => {
+    expect(laneOf("side-end", { w: 56, h: 300 }, MID, TOP)).toEqual({ x: 1280 - 16 - 56, y: 80, maxWidth: 1248, maxHeight: 900 - 80 - 16 });
+  });
+  it("personnalisation-1a : laneOf side-* sur une case vide : aucune valeur négative", () => {
+    const l = laneOf("side-start", { w: 56, h: 300 }, { w: 0, h: 0 }, { ...TOP, foot: 56 });
+    expect(l.maxHeight).toBe(0);
+    expect(l.y).toBeGreaterThanOrEqual(0);
+  });
+  it("personnalisation-1a : MOVABLE_ROLES = tools et pages", () => {
+    expect([...MOVABLE_ROLES].sort()).toEqual(["pages", "tools"]);
   });
   it("design-l2 L2-18 : trente pages : voie au-dessus de la rangée du bas, toute la largeur, sans recouvrir l'historique", () => {
     const l = laneOf("bottom-center", { w: 1900, h: 56 }, MID, BOTTOM);
