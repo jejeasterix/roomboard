@@ -163,3 +163,33 @@ describe("écouteur de collage : tableau avant images (F19, PC9, constat T13)", 
     expect(s.calls).toHaveLength(1);
   });
 });
+
+describe("collage d'un texte tabulé (point 15)", () => {
+  const tsv = "a\tb\nc\td";
+  const mk = (text: string, html = "", f: File[] = []) => ({
+    target: document.body,
+    clipboardData: { files: f, getData: (t: string) => (t === "text/plain" ? text : t === "text/html" ? html : "") },
+  });
+  const sink = () => ({ ...sinkOf(), pasteText: vi.fn(async (_t: string) => true) });
+  it("texte à tabulations sans HTML : pasteText", async () => {
+    const s = sink();
+    await handlePaste(mk(tsv), s);
+    expect(s.pasteText).toHaveBeenCalledWith(tsv);
+    expect(s.pasteTable).not.toHaveBeenCalled();
+  });
+  it("HTML prioritaire : pasteTable, pas pasteText", async () => {
+    const s = sink();
+    await handlePaste(mk(tsv, "<table><tr><td>a</td></tr></table>"), s);
+    expect(s.pasteTable).toHaveBeenCalledTimes(1);
+    expect(s.pasteText).not.toHaveBeenCalled();
+  });
+  it("texte sans tabulation : null, comportement inchangé", () => {
+    const s = sink();
+    expect(handlePaste(mk("bonjour\nmonde"), s)).toBeNull();
+    expect(s.pasteText).not.toHaveBeenCalled();
+  });
+  it("cible éditable : null", () => {
+    const area = document.createElement("textarea");
+    expect(handlePaste({ ...mk(tsv), target: area }, sink())).toBeNull();
+  });
+});

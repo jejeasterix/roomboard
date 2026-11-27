@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { tableFromHtml } from "./html-table";
+import { tableFromHtml, tsvGrid } from "./html-table";
 
 const parse = (s: string): Document => new DOMParser().parseFromString(s, "text/html");
 const grid = (html: string) => tableFromHtml(html, parse);
@@ -62,5 +62,33 @@ describe("tableau HTML collé (F19, F20)", () => {
     expect(long?.cutCells).toBe(true);
     expect(Array.from(long?.cells[0] ?? "")).toHaveLength(2001);
     expect(long?.cells[0]?.endsWith("…")).toBe(true);
+  });
+});
+
+describe("texte tabulé collé (point 15, D22)", () => {
+  it("2 × 2 : cellules, aucune fusion, source comptée", () => {
+    expect(tsvGrid("a\tb\nc\td")).toEqual({ rows: 2, cols: 2, cells: ["a", "b", "c", "d"], merges: [], sourceRows: 2, sourceCols: 2, cutCells: false });
+  });
+  it("guillemets d'Excel : saut de ligne, tabulation et guillemet doublé dans la cellule", () => {
+    const g = tsvGrid('"a\nb"\t"x""y"\tz\n1\t"2\t3"\t4');
+    expect(g?.cells).toEqual(["a\nb", 'x"y', "z", "1", "2\t3", "4"]);
+    expect([g?.rows, g?.cols]).toEqual([2, 3]);
+  });
+  it("fin de ligne \\r\\n, lignes vides de fin ignorées, lignes courtes complétées", () => {
+    const g = tsvGrid("a\tb\tc\r\nd\te\r\n\r\n\r\n");
+    expect(g?.cells).toEqual(["a", "b", "c", "d", "e", ""]);
+    expect(g?.rows).toBe(2);
+  });
+  it("sans tabulation, ou vide : null ; une seule cellule : null", () => {
+    expect(tsvGrid("bonjour\nmonde")).toBeNull();
+    expect(tsvGrid("")).toBeNull();
+    expect(tsvGrid("\t")).not.toBeNull();
+  });
+  it("bornes : 64 × 64 gardées, source comptée ; texte coupé signalé", () => {
+    const line = Array.from({ length: 70 }, () => "v").join("\t");
+    const g = tsvGrid(Array.from({ length: 70 }, () => line).join("\n"));
+    expect([g?.rows, g?.cols, g?.sourceRows, g?.sourceCols, g?.cells.length]).toEqual([64, 64, 70, 70, 4096]);
+    const cut = tsvGrid(`${"x".repeat(2001)}\tb`);
+    expect([cut?.cutCells, Array.from(cut?.cells[0] ?? "").length]).toEqual([true, 2001]);
   });
 });

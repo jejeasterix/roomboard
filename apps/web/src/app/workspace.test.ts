@@ -874,6 +874,18 @@ describe("espace de travail : tableau collé et classeur (C10b)", () => {
     expect(tables(ws)).toHaveLength(0);
   });
 
+  it("pasteText : texte tabulé 2 × 3 : un tableau avec ses textes ; texte sans tabulation : false", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pasteText("a\tb\tc\nd\te\tf")).toBe(true);
+    const t = tables(ws);
+    expect(t).toHaveLength(1);
+    const v = t[0];
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect([v.table.rows.length, v.table.cols.length, v.table.cells.map((c) => c.text)]).toEqual([2, 3, ["a", "b", "c", "d", "e", "f"]]);
+    expect(await ws.pasteText("bonjour")).toBe(false);
+    expect(tables(ws)).toHaveLength(1);
+  });
+
   it("S4 : .xlsx importé par le lecteur de classeur : un tableau dans l'onglet actif, message de troncature", async () => {
     const grid = { rows: 64, cols: 6, cells: new Array<string>(384).fill("v"), merges: [{ row: 1, col: 0, rows: 1, cols: 2 }], sourceRows: 70, sourceCols: 6, cutCells: false };
     const ws = await setupWorkspace({ readSheet: async () => grid });
