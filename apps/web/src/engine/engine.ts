@@ -7,19 +7,19 @@
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
 import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type EraseMode, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
-import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
+import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, scrollBounds, scrollTo, zoomAt as zoomCamera, type Camera, type ScrollBounds } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
+import { editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, scrollKey, type KeyLike } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import type { LookPatch } from "../core/look";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
 import { validColor } from "../core/rich-text";
-import { PAGE_BACKGROUND, pageFrame, pageLayoutOf, type PageRect } from "./page";
+import { PAGE_BACKGROUND, pageFrame, pageLayoutOf, type FrameLayout, type FrameSource, type PageRect } from "./page";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
@@ -149,6 +149,39 @@ export function pageShortcut(
   }
 }
 
+/** OG24 : marge sous le bas d'une page portrait défilée jusqu'en bas, en px de scène (le haut garde `fitTop`). */
+export const SCROLL_BOTTOM = 16;
+
+/** Ascenseur de la page portrait montrée (OG24) : `at` 0 = haut de page, 1 = bas ; `visible` = part de la page à
+ *  l'écran (0-1) ; `top` = haut de page ajustée, px de scène ; `span` = hauteur d'écran, px, de `top` à la marge du bas. */
+export interface PageScroll {
+  readonly at: number;
+  readonly visible: number;
+  readonly top: number;
+  readonly span: number;
+}
+
+/**
+ * Touches de l'ascenseur (OG24), prises seulement si la vue bouge : ↑ ↓ d'un huitième de `span`, Maj+↑ ↓ de 90 % de
+ * `span`, Début et Fin aux bords. Hors portrait (ou page qui tient dans la vue) : rien, la touche passe.
+ */
+export function scrollShortcut(e: KeyLike, engine: Pick<Engine, "pageScroll" | "scrollPageBy" | "scrollPageTo">): boolean {
+  const k = scrollKey(e);
+  const s = k === null ? null : engine.pageScroll();
+  if (s === null) return false;
+  switch (k) {
+    case "top":
+      return engine.scrollPageTo(0);
+    case "bottom":
+      return engine.scrollPageTo(1);
+    case "up":
+    case "down":
+      return engine.scrollPageBy((k === "up" ? -1 : 1) * (s.span / 8));
+    default:
+      return engine.scrollPageBy((k === "screen-up" ? -1 : 1) * s.span * 0.9);
+  }
+}
+
 export interface OrbitOptions {
   readonly view: ModelCamera;
   onView(v: ModelCamera): void;
@@ -213,6 +246,12 @@ export interface Engine {
   nextPage(): boolean;
   /** « Ajuster la page » (D5 amendée) : largeur cadrée, haut de page en haut de la vue. */
   fitPage(): void;
+  /** OG24 : ascenseur de la page portrait montrée ; null en paysage, en infini, ou si la page tient dans la vue. */
+  pageScroll(): PageScroll | null;
+  /** OG24 : fait défiler la page portrait de `dy` px d'écran (positif : vers le bas de la page), borné à la page ; faux si rien ne bouge. */
+  scrollPageBy(dy: number): boolean;
+  /** OG24 : place la page portrait à `at` (0 = haut, 1 = bas, borné) ; faux si rien ne bouge. */
+  scrollPageTo(at: number): boolean;
   /** Redessine la scène à la prochaine image (bitmap d'une image arrivé, R16). */
   redraw(): void;
   /** Aperçu d'une grille non enregistrée sur la page montrée (C9 éditeur, DAE1) : rien n'est écrit ; null = aucune grille. */
@@ -342,14 +381,16 @@ export function createEngine(deps: EngineDeps): Engine {
   let fillColor: string | null = DEFAULT_FILL_COLOR;
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
+  // décision 10 : page plus haute que large (portrait choisi) = portrait. Le cadre d'un fond PDF A4 ne le décide pas.
+  const fitLayout = (view: FrameSource): FrameLayout => (pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape");
   /** « Ajuster la page » : selon la disposition de la page montrée ; en Infini, contenu ∪ fond. */
+  const fitTop = (): number => deps.fitTop?.() ?? 16;
   const fit = (w: number, h: number): Camera => {
     const view = doc.page(pageId);
-    const top = deps.fitTop?.() ?? 16;
+    const top = fitTop();
     if (view === null) return fitFor("landscape", w, h, null, null, top);
-    // décision 10 : Infini = contenu ∪ fond ; page plus haute que large (portrait choisi) = cadre entier ; sinon largeur.
-    // Le cadre d'un fond PDF A4 dépasse la hauteur de page : il ne décide pas de l'ajustement.
-    const layout = pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape";
+    // décision 10 : Infini = contenu ∪ fond ; sinon largeur (OG24 : le portrait aussi, il défile).
+    const layout = fitLayout(view);
     return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(view.backdrop?.rect ?? null) : null, top);
   };
   const contentRect = (backdrop: Bounds | null): PageRect | null => {
@@ -376,6 +417,22 @@ export function createEngine(deps: EngineDeps): Engine {
   const fitted = new Set<string>();
   let viewW = 0;
   let viewH = 0;
+  /** OG24 : bornes de l'ascenseur de la page montrée ; null hors portrait, ou si la page tient dans la vue. */
+  const scrollState = (): { readonly bounds: ScrollBounds; readonly top: number; readonly height: number } | null => {
+    const view = doc.page(pageId);
+    const frame = view === null || fitLayout(view) !== "portrait" ? null : pageFrame(view);
+    if (frame === null || !(viewH > 0)) return null;
+    const top = fitTop();
+    const bounds = scrollBounds(camera, frame, viewH, top, SCROLL_BOTTOM);
+    return bounds === null ? null : { bounds, top, height: (frame.y1 - frame.y0) * camera.zoom };
+  };
+  /** Caméra défilée à `ty` (bornée) ; vrai si elle a bougé. */
+  const scrollCamera = (next: Camera): boolean => {
+    if (next.ty === camera.ty && next.tx === camera.tx) return false;
+    setCamera(next);
+    requestScene();
+    return true;
+  };
   let tool: ToolChoice = "pen";
   let spaceHeld = false;
   let shiftHeld = false;
@@ -1171,6 +1228,23 @@ export function createEngine(deps: EngineDeps): Engine {
       const prev = i > 0 ? ids[i - 1] : undefined;
       return prev !== undefined && engine.showPage(prev);
     },
+    pageScroll() {
+      const s = scrollState();
+      if (s === null) return null;
+      const { min, max } = s.bounds;
+      const span = viewH - s.top - SCROLL_BOTTOM;
+      return { at: Math.min(1, Math.max(0, (max - camera.ty) / (max - min))), visible: Math.min(1, span / s.height), top: s.top, span };
+    },
+    scrollPageBy(dy) {
+      const s = scrollState();
+      return s !== null && scrollCamera(scrollTo(camera, camera.ty - dy, s.bounds));
+    },
+    scrollPageTo(at) {
+      const s = scrollState();
+      if (s === null || !Number.isFinite(at)) return false;
+      const { min, max } = s.bounds;
+      return scrollCamera({ ...camera, ty: max - Math.min(1, Math.max(0, at)) * (max - min) });
+    },
     fitPage() {
       if (viewW > 0 && viewH > 0) {
         setCamera(fit(viewW, viewH));
@@ -1303,8 +1377,14 @@ export function createEngine(deps: EngineDeps): Engine {
       };
     },
     wheel(e) {
-      if (e.ctrlKey) view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
-      else view.panBy(-e.deltaX, -e.deltaY);
+      if (e.ctrlKey) {
+        view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
+        return;
+      }
+      // OG24 : en portrait, la molette défile la page, bornée comme l'ascenseur ; le glisser à deux doigts reste libre.
+      const s = scrollState();
+      if (s === null) view.panBy(-e.deltaX, -e.deltaY);
+      else scrollCamera(scrollTo(panCamera(camera, -e.deltaX, 0), camera.ty - e.deltaY, s.bounds));
     },
     resize(width, height, dpr) {
       renderer.resize(width, height, dpr);

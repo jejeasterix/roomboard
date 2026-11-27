@@ -11,6 +11,7 @@ import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
 import { GAP } from "../ui/island-place";
+import { createPageScrollbar } from "./page-scrollbar";
 import { createEngine, type Engine, type EngineState } from "../engine/engine";
 import type { ItemStyle } from "../engine/item-style";
 import { createMiddlePan } from "../engine/input/middle-pan";
@@ -464,8 +465,12 @@ async function buildBoardSession(
 
   // Taille CSS de la case (le rendu Canvas 2D la retient, page infinie) et devicePixelRatio suivis : l'encre reste sous
   // la pointe. Jamais la taille de la fenêtre.
+  // OG24 : l'ascenseur d'une page portrait suit la caméra, la page montrée, son mode et la taille de la vue.
+  const scrollbar = createPageScrollbar(stage, engine, () => sampler.penInContact());
+  undo.push(() => scrollbar.element.remove());
   const fit = (): void => {
     engine.resize(stage.clientWidth, stage.clientHeight, window.devicePixelRatio || 1);
+    scrollbar.update();
   };
   const resizes = new ResizeObserver(() => fit());
   undo.push(() => resizes.disconnect());
@@ -741,7 +746,14 @@ async function buildBoardSession(
     stage.dataset["zoneMs"] = tags.zoneMs;
     stage.dataset["zoneCells"] = tags.zoneCells;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
+    // OG24 : page montrée ou disposition changée (Ctrl+Z d'un mode) ; la caméra, elle, passe par onCamera.
+    const shown = `${s.page}|${s.pageLayout}`;
+    if (shown !== scrollShown) {
+      scrollShown = shown;
+      scrollbar.update();
+    }
   };
+  let scrollShown = "";
   mark(engine.state());
   const offState = engine.onState(mark);
   remark = () => mark(engine.state());
@@ -753,6 +765,7 @@ async function buildBoardSession(
   // La zone de texte suit le zoom (T90) ; la caméra est publiée pour les essais (S5b).
   const onCamera = (c: Camera): void => {
     editor.follow(c);
+    scrollbar.update();
     stage.dataset["camera"] = cameraTag(c);
   };
   stage.dataset["camera"] = cameraTag(engine.camera());

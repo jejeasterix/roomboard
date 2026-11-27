@@ -183,6 +183,17 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-stage { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
 .rb-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; pointer-events: none; }
 .rb-stage[hidden] { display: none; }
+/* OG24 : ascenseur d'une page portrait. Seul le curseur prend les pointeurs (le rail laisse dessiner au bord de la page).
+   Cible de 44 px de large (D-DS3), dessin fin : un trait arrondi de 4 px au repos,
+   6 px sous le pointeur, accent violet pendant la saisie ; aucun rail visible. Haut et bas posés par page-scrollbar.ts. */
+.rb-scrollbar { position: absolute; inset-inline-end: 0; inline-size: var(--rb-btn-s); pointer-events: none; user-select: none; -webkit-user-select: none; }
+.rb-scrollbar[hidden] { display: none; }
+.rb-scrollbar-thumb { position: absolute; inset-inline: 0; top: 0; min-block-size: var(--rb-btn-s); pointer-events: auto; touch-action: none; cursor: default; }
+.rb-scrollbar-thumb::before { content: ""; position: absolute; inset-block: 2px; inset-inline-end: var(--rf-space-sm); inline-size: 4px; border-radius: 999px; background: var(--rf-navy-500); opacity: 0.32; transition: inline-size 120ms ease, opacity 120ms ease, background-color 120ms ease; }
+.rb-scrollbar-thumb:hover::before { inline-size: 6px; opacity: 0.5; }
+.rb-scrollbar[data-drag="1"] .rb-scrollbar-thumb::before { inline-size: 6px; background: var(--rf-violet-600); opacity: 1; }
+@media (pointer: coarse) { .rb-scrollbar-thumb::before { inline-size: 6px; opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .rb-scrollbar-thumb::before { transition: none; } }
 /* Barre des pages (T101) : même allure que la barre d'outils ; compteur lisible, chiffres de largeur fixe. */
 .rb-bar button[aria-current="page"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
 .rb-bar button.rb-pages-count { display: inline-flex; align-items: center; gap: calc(var(--rb-gap) / 2); }
