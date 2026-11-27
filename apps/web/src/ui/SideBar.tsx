@@ -1,13 +1,16 @@
 /**
  * Barre latérale (personnalisation-1a, décisions 19, 22, 23, 24, 26) : la barre de rôle `pages`, en îlot flottant et
- * repliable. En-tête d'onglets (Pages seul au lot 1 ; Calques s'y ajoutera au lot 2), rangée d'actions de la barre,
- * mode de la page montrée, liste verticale des miniatures, taille des miniatures. Repliée : poignée, onglet et Déplier
- * restent visibles ; la rangée et la liste sont cachées mais restent dans le DOM.
+ * repliable. En-tête d'onglets (Pages ; Calques au lot 2, seulement si l'application branche `layers`), rangée d'actions
+ * de la barre, mode de la page montrée, liste verticale des miniatures, taille des miniatures ; onglet Calques : les
+ * objets de la page, premier plan en haut (décisions 16 et 17). Repliée : poignée, onglets et Déplier restent visibles ;
+ * la rangée et les listes sont cachées mais restent dans le DOM.
  *
  * Gestes : toucher montre la page ; glisser (événements de pointeur, jamais le glisser HTML5) la déplace ; appui long
- * (`TIP_HOLD_MS`) ou Maj+F10 ouvre le menu de la page. Clavier : voir `onThumbKey`.
+ * (`TIP_HOLD_MS`) ou Maj+F10 ouvre le menu de la page. Clavier : voir `onThumbKey`. Calques : toucher une ligne
+ * sélectionne l'objet (Ctrl, Cmd ou Maj : ajoute ou retire) ; glisser une ligne (`startSortDrag`) la réordonne.
  */
 import { For, Show, createEffect, createSignal, onCleanup, type Accessor, type JSX } from "solid-js";
+import type { LayerRow } from "../app/layer-list";
 import type { ToolbarHost } from "../app/toolbar-host";
 import type { PageLayout } from "../core/api";
 import type { DeviceSettings, SidebarState } from "../device-settings";
@@ -35,6 +38,18 @@ export interface PagesPort {
   thumb(id: string, width: number): Promise<string | null>;
 }
 
+/** Ce que l'onglet Calques sait de la page : branché sur le moteur par l'application. */
+export interface LayersPort {
+  /** Lignes de la page montrée, premier plan d'abord ; lues seulement onglet montré (H14). */
+  readonly rows: Accessor<readonly LayerRow[]>;
+  /** Ids sélectionnés dans la scène. */
+  readonly selected: Accessor<readonly string[]>;
+  /** Remplace la sélection (outil Sélection). */
+  select(ids: readonly string[]): void;
+  /** Lâcher de la ligne `key` au rang `slot` des lignes mobiles, ligne tirée exclue (premier plan = 0). */
+  drop(key: string, slot: number): void;
+}
+
 export type SideBarStore = Pick<DeviceSettings, "sidebar" | "setSidebar">;
 
 export interface SideBarProps {
@@ -43,6 +58,8 @@ export interface SideBarProps {
   readonly view: Accessor<ToolbarView>;
   readonly host: ToolbarHost;
   readonly pages: PagesPort;
+  /** Onglet Calques (lot 2) ; absent : la barre n'a que l'onglet Pages. */
+  readonly layers?: LayersPort;
   /** Onglet et taille des miniatures gardés sur l'appareil ; absent : mémoire seule. */
   readonly store?: SideBarStore;
   readonly size?: Accessor<ButtonSize>;
@@ -63,6 +80,19 @@ const SIZES = [
   { value: "m", label: "Moyennes", icon: "rows-3" },
   { value: "l", label: "Grandes", icon: "rows-4" },
 ] as const;
+
+/** Icône d'une ligne de calque, par sorte (table). */
+const LAYER_ICONS: Readonly<Record<string, string>> = {
+  stroke: "pen",
+  shape: "rect",
+  text: "text",
+  table: "table",
+  fill: "fill",
+  image: "library",
+  group: "layers",
+  grid: "grid",
+  backdrop: "rectangle-horizontal",
+};
 
 interface MenuAt {
   readonly id: string;
@@ -91,10 +121,18 @@ export function SideBar(props: SideBarProps): JSX.Element {
   const pages = props.pages;
   const [thumbSize, setThumbSize] = createSignal<SidebarState["thumb"]>(props.store?.sidebar().thumb ?? "m");
   const [menu, setMenu] = createSignal<MenuAt | null>(null);
+  const layers = props.layers;
+  const [tab, setTab] = createSignal<SidebarState["tab"]>(layers !== undefined && props.store?.sidebar().tab === "calques" ? "calques" : "pages");
+  const showLayers = (): boolean => layers !== undefined && tab() === "calques";
   let root: HTMLElement | undefined;
   let list: HTMLDivElement | undefined;
+  let layerList: HTMLDivElement | undefined;
   let stopHold: (() => void) | null = null;
-  onCleanup(() => stopHold?.());
+  let stopLayer: (() => void) | null = null;
+  onCleanup(() => {
+    stopHold?.();
+    stopLayer?.();
+  });
 
   const actions = () => sideActions(props.bar).filter((it) => it.hidden !== true && it.kind === "action");
   const rows = (): HTMLElement[] => [...(list?.querySelectorAll<HTMLElement>("[data-page-id]") ?? [])];
@@ -204,8 +242,58 @@ export function SideBar(props: SideBarProps): JSX.Element {
 
   const choose = (v: SidebarState["thumb"]): void => {
     setThumbSize(v);
-    props.store?.setSidebar({ tab: "pages", thumb: v });
+    props.store?.setSidebar({ tab: tab(), thumb: v });
   };
+  const openTab = (t: SidebarState["tab"]): void => {
+    if (t === "calques" && layers === undefined) return;
+    closeMenu();
+    setTab(t);
+    props.store?.setSidebar({ tab: t, thumb: thumbSize() });
+  };
+  const onTabActivate = (e: KeyboardEvent, t: SidebarState["tab"]): void => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    stop(e);
+    openTab(t);
+  };
+
+  const layerEls = (): HTMLElement[] => [...(layerList?.querySelectorAll<HTMLElement>("[data-layer]:not([data-fixed])") ?? [])];
+  const pickLayer = (row: LayerRow, add: boolean): void => {
+    if (layers === undefined || row.fixed) return;
+    const now = layers.selected();
+    if (!add) return layers.select(row.ids);
+    const all = row.ids.every((id) => now.includes(id));
+    layers.select(all ? now.filter((id) => !row.ids.includes(id)) : [...now, ...row.ids.filter((id) => !now.includes(id))]);
+  };
+  const onLayerDown = (e: PointerEvent, row: LayerRow): void => {
+    if (layers === undefined || row.fixed) return;
+    stopLayer?.();
+    const add = e.ctrlKey || e.metaKey || e.shiftKey;
+    stopLayer = startSortDrag(e, {
+      rows: layerEls,
+      scroller: layerList!,
+      from: layerEls().findIndex((r) => r.dataset["layer"] === row.key),
+      moved: () => undefined,
+      drop: (to) => layers.drop(row.key, to),
+      tap: () => pickLayer(row, add),
+      cancel: () => undefined,
+    });
+  };
+  const onLayerKey = (e: KeyboardEvent): void => {
+    const mod = e.ctrlKey || e.metaKey;
+    const el = e.currentTarget as HTMLElement;
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !mod) {
+      stop(e);
+      const els = layerEls();
+      els[els.indexOf(el) + (e.key === "ArrowUp" ? -1 : 1)]?.focus();
+    } else if (e.key === "Escape") {
+      stop(e);
+      const scene = el.ownerDocument.querySelector<HTMLElement>(".rb-stage[tabindex], main.rb-stages [tabindex]");
+      if (scene !== null) scene.focus({ preventScroll: true });
+      else el.blur();
+    }
+  };
+  /** Lignes calculées seulement onglet montré et barre dépliée (H14). */
+  const layerRows = (): readonly LayerRow[] => (showLayers() && !props.collapsed() ? layers!.rows() : []);
   const onTabKey = (e: KeyboardEvent): void => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     e.preventDefault();
@@ -249,12 +337,18 @@ export function SideBar(props: SideBarProps): JSX.Element {
       aria-label="Pages"
     >
       <div role="tablist" class="rb-side-tabs" aria-label="Barre latérale" onKeyDown={onTabKey}>
-        <div class="rb-tab" role="tab" tabIndex={0} data-tab="pages" aria-selected="true">
+        <div class="rb-tab" role="tab" tabIndex={0} data-tab="pages" aria-selected={tab() === "pages" ? "true" : "false"} onClick={() => openTab("pages")} onKeyDown={(e) => onTabActivate(e, "pages")}>
           <Icon name="panel-left" />
           <span class="rb-tab-title">Pages</span>
         </div>
+        <Show when={layers !== undefined}>
+          <div class="rb-tab" role="tab" tabIndex={0} data-tab="calques" aria-selected={tab() === "calques" ? "true" : "false"} onClick={() => openTab("calques")} onKeyDown={(e) => onTabActivate(e, "calques")}>
+            <Icon name="layers" />
+            <span class="rb-tab-title">Calques</span>
+          </div>
+        </Show>
       </div>
-      <div class="rb-side-actions" hidden={props.collapsed()}>
+      <div class="rb-side-actions" hidden={props.collapsed() || tab() !== "pages"}>
         <For each={actions()}>
           {(item) => (
             <IconButton
@@ -268,6 +362,7 @@ export function SideBar(props: SideBarProps): JSX.Element {
         </For>
       </div>
       <div class="rb-side-body" hidden={props.collapsed()}>
+        <div class="rb-side-pane" data-pane="pages" hidden={tab() !== "pages"}>
         <div class="rb-side-group" data-side-mode title={pages.fixedByBackdrop() ? FIXED_BY_BACKDROP : undefined}>
           <span class="rb-side-label">Mode</span>
           <RadioChoices<PageLayout> name="page-mode" label="Mode de la page" look="segment" options={MODES} value={pages.layout()} choose={(m) => pages.setLayout(m)} />
@@ -293,7 +388,7 @@ export function SideBar(props: SideBarProps): JSX.Element {
               >
                 <span class="rb-page-num">{n() + 1}</span>
                 <span class="rb-page-img">
-                  <Thumb id={id} width={bufferWidth} live={() => !props.collapsed()} pages={pages} version={() => (props.view() as { version?: number }).version} />
+                  <Thumb id={id} width={bufferWidth} live={() => !props.collapsed() && tab() === "pages"} pages={pages} version={() => (props.view() as { version?: number }).version} />
                 </span>
               </button>
             )}
@@ -303,6 +398,40 @@ export function SideBar(props: SideBarProps): JSX.Element {
           <span class="rb-side-label">Taille</span>
           <RadioChoices<SidebarState["thumb"]> name="page-thumb" label="Taille des miniatures" look="segment" options={SIZES} value={thumbSize()} choose={choose} />
         </div>
+        </div>
+        <Show when={layers !== undefined}>
+          <div class="rb-side-pane" data-pane="calques" hidden={!showLayers()}>
+            <div ref={layerList} class="rb-layers-list" role="group" aria-label="Objets de la page, du premier plan à l'arrière-plan">
+              <For each={layerRows()}>
+                {(row) => (
+                  <Show
+                    when={!row.fixed}
+                    fallback={
+                      <div class="rb-layer" data-layer={row.key} data-fixed="1" data-kind={row.kind}>
+                        <Icon name={LAYER_ICONS[row.kind] ?? "rect"} />
+                        <span class="rb-layer-name">{row.label}</span>
+                      </div>
+                    }
+                  >
+                    <button
+                      type="button"
+                      class="rb-layer"
+                      data-layer={row.key}
+                      data-kind={row.kind}
+                      aria-pressed={row.ids.every((id) => layers!.selected().includes(id)) ? "true" : "false"}
+                      onPointerDown={(e) => onLayerDown(e, row)}
+                      onClick={(e) => e.detail === 0 && pickLayer(row, e.ctrlKey || e.metaKey || e.shiftKey)}
+                      onKeyDown={onLayerKey}
+                    >
+                      <Icon name={LAYER_ICONS[row.kind] ?? "rect"} />
+                      <span class="rb-layer-name">{row.label}</span>
+                    </button>
+                  </Show>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
       </div>
       <Show when={menu()}>
         {(m) => (

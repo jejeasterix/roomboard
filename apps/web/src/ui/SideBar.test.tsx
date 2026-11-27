@@ -231,16 +231,20 @@ describe("SideBar — onglet Calques (T14)", () => {
     const r = render(() => <SideBar bar={bar} collapsed={() => o.collapsed ?? false} view={() => view()} host={host} pages={base.pages} layers={layers} store={store} />);
     const lines = (): HTMLElement[] => [...r.container.querySelectorAll<HTMLElement>(".rb-layers-list [data-layer]")];
     const movable = (): HTMLElement[] => lines().filter((l) => !l.hasAttribute("data-fixed"));
-    movable().forEach((b, i) => {
-      b.getBoundingClientRect = () => new DOMRect(0, i * ROW, 160, ROW);
-      b.setPointerCapture = vi.fn();
-      b.releasePointerCapture = vi.fn();
-    });
     const list = r.container.querySelector<HTMLElement>(".rb-layers-list")!;
     Object.defineProperty(list, "scrollTop", { get: () => 0, set: () => undefined });
     list.getBoundingClientRect = () => new DOMRect(0, 0, 160, 4 * ROW);
     const tab = (): HTMLElement => r.container.querySelector<HTMLElement>('[data-tab="calques"]')!;
-    return { ...r, layers, store, lines, movable, tab, rows };
+    /** Montre l'onglet, puis pose les rectangles que happy-dom ne calcule pas (ligne i : [i × 100, i × 100 + 100[). */
+    const open = (): void => {
+      fireEvent.click(tab());
+      movable().forEach((b, i) => {
+        b.getBoundingClientRect = () => new DOMRect(0, i * ROW, 160, ROW);
+        b.setPointerCapture = vi.fn();
+        b.releasePointerCapture = vi.fn();
+      });
+    };
+    return { ...r, layers, store, lines, movable, tab, rows, open };
   }
 
   it("onglet Calques : icône layers, Pages d'abord ; toucher l'onglet montre la liste, cache les miniatures, retient l'onglet", () => {
@@ -271,8 +275,8 @@ describe("SideBar — onglet Calques (T14)", () => {
   });
 
   it("toucher une ligne sélectionne ses ids ; Ctrl+toucher ajoute, puis retire ; une ligne fixe ne fait rien", () => {
-    const { tab, movable, lines, layers } = withLayers();
-    fireEvent.click(tab());
+    const { open, movable, lines, layers } = withLayers();
+    open();
     const [text, group] = movable();
     text!.dispatchEvent(ptr("pointerdown", 50));
     text!.dispatchEvent(ptr("pointerup", 50));
@@ -310,8 +314,8 @@ describe("SideBar — onglet Calques (T14)", () => {
   });
 
   it("glisser la ligne du groupe au-dessus du texte : drop(clé, 0), aux événements de pointeur, sans toucher", () => {
-    const { tab, movable, layers } = withLayers();
-    fireEvent.click(tab());
+    const { open, movable, layers } = withLayers();
+    open();
     const group = movable()[1]!;
     group.dispatchEvent(ptr("pointerdown", 150));
     group.dispatchEvent(ptr("pointermove", 20));

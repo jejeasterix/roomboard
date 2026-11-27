@@ -193,6 +193,19 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-page-num { padding-block-start: 4px; font-size: 13px; font-weight: 500; color: var(--rf-gray-800); text-align: end; font-variant-numeric: tabular-nums; }
 .rb-page-img { display: block; inline-size: var(--rb-thumb); min-block-size: var(--rb-btn-s); box-sizing: border-box; overflow: hidden; background: var(--rf-white); border-radius: var(--rf-radius-sm); box-shadow: 0 0 0 1px var(--rf-gray-300); }
 .rb-page-img img { display: block; inline-size: 100%; block-size: auto; pointer-events: none; -webkit-user-drag: none; }
+/* Onglet Calques (T14) : un panneau par onglet (contents : la liste garde sa place dans la colonne) ; une ligne de 44 px
+   au moins par objet, premier plan en haut ; trait fin (icône 1,5), fond violet 100 sur la sélection de la scène, lignes
+   fixes (grille, fond) sans geste ; touch-action: none pour que le doigt réordonne au lieu de défiler. */
+.rb-side-pane { display: contents; }
+.rb-layers-list { display: flex; flex: 1 1 auto; flex-direction: column; gap: 4px; min-block-size: 0; max-block-size: 480px; padding: 2px; overflow-x: hidden; overflow-y: auto; }
+.rb-side .rb-layer { display: flex; align-items: center; gap: 8px; flex: none; min-block-size: var(--rb-btn-s); box-sizing: border-box; padding: 0 12px; border: 0; border-radius: var(--rf-radius-lg); background: transparent; font: inherit; font-size: 15px; color: var(--rf-gray-800); text-align: start; cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+.rb-side .rb-layer .rb-icon { flex: none; }
+.rb-layer-name { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rb-side .rb-layer:not([data-fixed]):hover { background: var(--rf-gray-50); }
+.rb-side .rb-layer[aria-pressed="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); font-weight: 600; }
+.rb-side .rb-layer[data-dragging] { z-index: 1; background: var(--rf-white); box-shadow: var(--rf-shadow-hover); }
+.rb-side .rb-layer[data-fixed] { color: var(--rf-text-muted-aa); cursor: default; }
+.rb-side .rb-layer:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 .rb-side-menu { position: fixed; z-index: 30; display: grid; gap: 4px; inline-size: max-content; min-inline-size: 224px; box-sizing: border-box; padding: 8px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
 .rb-side-menu button { display: flex; align-items: center; min-block-size: var(--rb-btn-s); padding: 0 12px; border: 0; border-radius: var(--rf-radius-md); background: transparent; font-size: 16px; color: var(--rf-gray-800); text-align: start; white-space: nowrap; cursor: pointer; }
 .rb-side-menu button:disabled { color: var(--rf-text-muted-aa); cursor: default; }
