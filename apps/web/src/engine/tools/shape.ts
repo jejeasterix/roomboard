@@ -95,7 +95,7 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
     const c = corners(d);
     const [x0, y0, x1, y1] = c;
     if (x0 === x1 && y0 === y1) return null;
-    if ((kind === "rect" || kind === "ellipse") && (x0 === x1 || y0 === y1)) return null;
+    if ((kind === "rect" || kind === "ellipse" || kind === "diamond") && (x0 === x1 || y0 === y1)) return null;
     return c;
   };
 
@@ -110,7 +110,7 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       const st: ItemStyle = { ...DEFAULT_ITEM_STYLE, ...style() };
       // Graine tirée au début du geste et gardée dans le brouillon, jamais au relâché (déc. 12).
       const seed = st.roughness > 0 ? newSeed() : null;
-      const fill = kind === "rect" || kind === "ellipse" ? st.background : null;
+      const fill = kind === "rect" || kind === "ellipse" || kind === "diamond" ? st.background : null;
       const touch = ctx.pointerType?.() === "touch";
       const arrow = kind === "arrow";
       const look = lookFrom(

@@ -11,7 +11,7 @@
  */
 import type { Bounds, LinkDir, Matrix, ShapeElement, ElementView } from "../../core/api";
 import { elbowedOf } from "../../core/look";
-import { IDENTITY_MATRIX, isSegment } from "../../core/shapes";
+import { IDENTITY_MATRIX, isPointsShape, isSegment } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import { isDoubleTap, type Tap } from "../input/double-tap";
@@ -71,7 +71,7 @@ interface Drag {
 }
 
 const isLine = (v: ElementView | null): v is ShapeElement => v?.kind === "shape" && isSegment(v.shape.shape);
-const isNode = (v: ElementView | null): boolean => v?.kind === "shape" && (v.shape.shape === "rect" || v.shape.shape === "ellipse");
+const isNode = (v: ElementView | null): boolean => v?.kind === "shape" && isPointsShape(v.shape.shape);
 /** n° 39 : poignées hors édition : les deux bouts ; le milieu si deux points et non coudée. */
 const endHandles = (v: ShapeElement): { pts: [number, number][]; mids: boolean } => {
   const all = worldPoints(v);
@@ -267,7 +267,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
         const id = d.mode === "move" ? d.target ?? null : d.mode === "line-end" || d.mode === "line-mid" ? selection[0] ?? null : null;
         const cur: Tap = { t: d.t, x: d.sx, y: d.sy };
         const view = id === null ? null : ctx.doc.element(id);
-        if (id !== null && lastTap?.id === id && isDoubleTap(lastTap, cur) && isLine(view) && !elbowedOf(view.look)) {
+        if (id !== null && lastTap?.id === id && isDoubleTap(lastTap, cur) && ((isLine(view) && !elbowedOf(view.look)) || (view?.kind === "shape" && isPointsShape(view.shape.shape)))) {
           lastTap = null;
           ctx.editPoints?.(id);
           return;

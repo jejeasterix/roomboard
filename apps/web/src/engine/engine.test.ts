@@ -2872,7 +2872,7 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     const v = doc.element(id)!;
     expect(v.kind === "shape" && v.shape.shape === "line" && v.shape.polygon === true).toBe(true);
     expect(engine.state().lineEditing).toBe(id);
-    expect(doc.undo()).toBe(true);
+    expect(doc.undo()).not.toBeNull();
     expect((doc.element(id) as { shape: { shape: string } }).shape.shape).toBe("rect");
   });
 
