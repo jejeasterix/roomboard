@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, editAction, inEditable, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
+import { appShortcut, arrowMoveKey, toolKey, editAction, inEditable, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -240,5 +240,43 @@ describe("OG12 : lineEditKey, linkedKey, isCtrlKey", () => {
     expect(isCtrlKey({ key: "Control" })).toBe(true);
     expect(isCtrlKey({ key: "Meta" })).toBe(true);
     expect(isCtrlKey({ key: "Shift" })).toBe(false);
+  });
+});
+
+describe("flèches du clavier", () => {
+  it("arrowMoveKey : 1 px, 5 px avec Maj", () => {
+    expect(arrowMoveKey(k("ArrowLeft"))).toEqual({ dx: -1, dy: 0 });
+    expect(arrowMoveKey(k("ArrowRight"))).toEqual({ dx: 1, dy: 0 });
+    expect(arrowMoveKey(k("ArrowUp"))).toEqual({ dx: 0, dy: -1 });
+    expect(arrowMoveKey(k("ArrowDown", { shiftKey: true }))).toEqual({ dx: 0, dy: 5 });
+  });
+  it("arrowMoveKey : rien avec Ctrl, Cmd, Alt, IME, champ ou liste", () => {
+    expect(arrowMoveKey(k("ArrowLeft", { ctrlKey: true }))).toBeNull();
+    expect(arrowMoveKey(k("ArrowLeft", { metaKey: true }))).toBeNull();
+    expect(arrowMoveKey(k("ArrowLeft", { altKey: true, shiftKey: true }))).toBeNull();
+    expect(arrowMoveKey(k("ArrowLeft", { isComposing: true }))).toBeNull();
+    expect(arrowMoveKey(k("ArrowLeft", { target: { tagName: "TEXTAREA" } }))).toBeNull();
+    expect(arrowMoveKey(k("ArrowLeft", { target: { tagName: "SELECT" } }))).toBeNull();
+    expect(arrowMoveKey(k("ArrowLeft", { target: { tagName: "INPUT", type: "range" } }))).toBeNull();
+    expect(arrowMoveKey(k("a"))).toBeNull();
+  });
+});
+
+describe("lettres des outils", () => {
+  it("toolKey : lettres et chiffres d'Excalidraw libres", () => {
+    const m: Record<string, string> = { v: "select", r: "rect", d: "diamond", o: "ellipse", a: "arrow", l: "line", p: "pen", t: "text", e: "eraser", h: "hand", "1": "select", "2": "rect", "3": "diamond", "4": "ellipse", "5": "arrow", "6": "line", "7": "pen", "8": "text", "0": "eraser" };
+    for (const [key, tool] of Object.entries(m)) expect(toolKey(k(key))).toBe(tool);
+    expect(toolKey(k("R"))).toBe("rect");
+  });
+  it("toolKey : S et G restent aux sélecteurs de couleur ; rien avec modificateur, IME ou champ", () => {
+    expect(toolKey(k("s"))).toBeNull();
+    expect(toolKey(k("g"))).toBeNull();
+    expect(toolKey(k("9"))).toBeNull();
+    expect(toolKey(k("r", { ctrlKey: true }))).toBeNull();
+    expect(toolKey(k("r", { metaKey: true }))).toBeNull();
+    expect(toolKey(k("r", { altKey: true }))).toBeNull();
+    expect(toolKey(k("r", { shiftKey: true }))).toBeNull();
+    expect(toolKey(k("r", { isComposing: true }))).toBeNull();
+    expect(toolKey(k("r", { target: { tagName: "INPUT", type: "text" } }))).toBeNull();
   });
 });

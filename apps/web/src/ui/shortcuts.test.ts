@@ -105,3 +105,25 @@ describe("OG12 : raccourcis des lignes", () => {
     expect(ariaShortcut("linked-node", false)).toBeNull();
   });
 });
+
+describe("lettres des outils", () => {
+  it("chaque lettre d'outil figure dans SHORTCUTS avec son nom ARIA", () => {
+    for (const [id, key] of [["tool-select", "V"], ["tool-rect", "R"], ["tool-diamond", "D"], ["tool-ellipse", "O"], ["tool-arrow", "A"], ["tool-line", "L"], ["tool-pen", "P"], ["tool-text", "T"], ["tool-eraser", "E"], ["tool-hand", "H"]] as const) {
+      expect(shortcutText(id, false)).toBe(key);
+      expect(ariaShortcut(id, false)).toBe(key);
+    }
+    expect(shortcutText("tool-rect-num", false)).toBe("2");
+    expect(ariaShortcut("tool-eraser-num", false)).toBe("0");
+  });
+  it("les touches de la table sont uniques parmi les touches seules", () => {
+    const single = SHORTCUTS.filter((x) => x.group === "Outils" && x.id.startsWith("tool-")).map((x) => x.keys);
+    expect(new Set(single).size).toBe(single.length);
+  });
+});
+
+describe("flèches du clavier", () => {
+  it("l'Aide liste le déplacement de la sélection", () => {
+    expect(shortcutText("nudge", false)).toBe("↑ ↓ ← →");
+    expect(shortcutText("nudge-big", false)).toBe("Maj+↑ ↓ ← →");
+  });
+});
