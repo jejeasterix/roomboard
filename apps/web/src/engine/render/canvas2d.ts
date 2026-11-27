@@ -5,6 +5,7 @@
  * grille gardées par `GridLinesCache` (C9 éditeur, E3).
  */
 import { PDF_PAGE_KIND } from "../../core/api";
+import { opacityOf, roughnessOf, roundnessOf, strokeKindOf, type Look } from "../../core/look";
 import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, Model3dData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
 import { arrowWings, normalizeShape } from "../../core/shapes";
@@ -19,6 +20,8 @@ import { GridLinesCache } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
 import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
+import { setLiveOpacity } from "./renderer";
+import { cornerRadius, dashOf, seedOf, sketchShape } from "./sketch";
 import { cellTextBoxes, paintTableGrid, type CellTextBox } from "./table-paint";
 
 export interface PathSink {
@@ -221,10 +224,31 @@ function paintModel3d(
   }
 }
 
-/** Chemin d'une forme dans son repère local (boîte (0, 0)-(w, h) ou segment (0, 0)-(w, h)). */
-export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: number): void {
+/** Quart d'angle arrondi : la quadratique (x0, y0) → (qx, qy) → (x, y) en cubique exacte (`RecordingContext2D`, l'export
+ *  vectoriel, ne connaît pas `quadraticCurveTo`). */
+function corner(ctx: CanvasRenderingContext2D, x0: number, y0: number, qx: number, qy: number, x: number, y: number): void {
+  const k = 2 / 3;
+  ctx.bezierCurveTo(x0 + k * (qx - x0), y0 + k * (qy - y0), x + k * (qx - x), y + k * (qy - y), x, y);
+}
+
+/** Chemin d'une forme dans son repère local (boîte (0, 0)-(w, h) ou segment (0, 0)-(w, h)) ; `round` (OG11) : rectangle
+ *  aux angles arrondis en Bézier (jamais `roundRect`), rayon `cornerRadius`. */
+export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: number, round = false): void {
   ctx.beginPath();
-  if (s.shape === "rect") {
+  if (s.shape === "rect" && round) {
+    const { w, h } = s;
+    const r = cornerRadius(w, h);
+    ctx.moveTo(r, 0);
+    ctx.lineTo(w - r, 0);
+    corner(ctx, w - r, 0, w, 0, w, r);
+    ctx.lineTo(w, h - r);
+    corner(ctx, w, h - r, w, h, w - r, h);
+    ctx.lineTo(r, h);
+    corner(ctx, r, h, 0, h, 0, h - r);
+    ctx.lineTo(0, r);
+    corner(ctx, 0, r, 0, 0, r, 0);
+    ctx.closePath();
+  } else if (s.shape === "rect") {
     ctx.rect(0, 0, s.w, s.h);
   } else if (s.shape === "ellipse") {
     ctx.ellipse(s.w / 2, s.h / 2, s.w / 2, s.h / 2, 0, 0, Math.PI * 2);
@@ -240,17 +264,33 @@ export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: n
   }
 }
 
-function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: StrokeStyle): void {
-  traceShape(ctx, s, style.width);
+/** Forme dans son repère local (OG11) : tracé roughjs si `roughness` > 0 (graine `look.seed`, sinon `seed`) ; sinon le
+ *  tracé net, tirets et angles seulement s'ils sont demandés — aspect absent ou neutre : les appels d'avant OG11, à
+ *  l'identique (`ARCHITECTE_RECT_MAIN`). L'opacité est posée par l'appelant, dans le save/restore de l'élément. */
+export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: StrokeStyle, look?: Look, seed?: number): void {
+  if (roughnessOf(look) > 0) {
+    sketchShape(ctx, s, style, look ?? {}, look?.seed ?? seed ?? 0);
+    return;
+  }
+  traceShape(ctx, s, style.width, roundnessOf(look) === "round");
   if (s.fill !== null && (s.shape === "rect" || s.shape === "ellipse")) {
     ctx.fillStyle = s.fill;
     ctx.fill();
   }
+  const dash = dashOf(strokeKindOf(look), style.width);
+  if (dash.length > 0) ctx.setLineDash(dash);
   ctx.strokeStyle = style.color;
   ctx.lineWidth = style.width;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.stroke();
+  if (dash.length > 0) ctx.setLineDash([]);
+}
+
+/** Opacité d'un aspect (0..100) appliquée au contexte ; 100 (neutre) : aucun appel. */
+function applyOpacity(ctx: CanvasRenderingContext2D, look: Look | undefined): void {
+  const o = opacityOf(look);
+  if (o < 100) ctx.globalAlpha *= Math.max(0, o) / 100;
 }
 
 /** Décalage de ligne de base d'un segment plus petit que sa ligne, position et épaisseur du souligné (HC7-5). */
@@ -455,6 +495,7 @@ export class Canvas2DRenderer implements Renderer {
     if (pre) ctx.transform(pre[0], pre[1], pre[2], pre[3], pre[4], pre[5]);
     const [a, b, c, d, e, f] = el.transform;
     ctx.transform(a, b, c, d, e, f);
+    applyOpacity(ctx, el.look);
     if (el.kind === "stroke" && path) {
       ctx.fillStyle = el.style.color;
       ctx.fill(path, "nonzero");
@@ -463,7 +504,7 @@ export class Canvas2DRenderer implements Renderer {
       ctx.fillStyle = el.fill.color;
       ctx.fill(path, "evenodd");
     } else if (el.kind === "shape") {
-      paintShape(ctx, el.shape, el.style);
+      paintShape(ctx, el.shape, el.style, el.look, el.look === undefined ? undefined : (el.look.seed ?? seedOf(el.id)));
     } else if (el.kind === "text") {
       paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color);
     } else if (el.kind === "image") {
@@ -560,7 +601,8 @@ export class Canvas2DRenderer implements Renderer {
       const n = normalizeShape(s.shape, s.x0, s.y0, s.x1, s.y1);
       ctx.save();
       ctx.transform(1, 0, 0, 1, n.tx, n.ty);
-      paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill }, s.style);
+      applyOpacity(ctx, s.look);
+      paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill }, s.style, s.look, s.seed);
       ctx.restore();
     }
   }
@@ -603,6 +645,7 @@ export class Canvas2DRenderer implements Renderer {
     if (!ctx) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    setLiveOpacity(ctx.canvas, live.opacity);
     if (live.strokes.length === 0 && live.erasers.length === 0) return;
     this.setView(ctx, camera);
     const rect = visiblePageRect(camera, this.cssHeight);

@@ -347,3 +347,17 @@ describe("WebGL2 — fond de page (C6a)", () => {
     expect(gl.draws[1]?.rgba).toEqual(f32([1, 0, 0, 1]));
   });
 });
+
+describe("OG11 (T8) — couche vive WebGL2", () => {
+  it("opacité du trait vif : style.opacity du canvas WebGL2, remise à \"\" sans opacité", () => {
+    const { gl, r } = make();
+    const style = { opacity: "" };
+    Object.assign(gl.canvas, { style });
+    r.drawLive({ ...stroke(U), opacity: 50 } as LiveLayer, IDENTITY);
+    expect(style.opacity).toBe("0.5");
+    r.drawLive({ strokes: [], erasers: [] }, IDENTITY);
+    expect(style.opacity).toBe("");
+    r.drawLive({ ...stroke(U), opacity: 100 } as LiveLayer, IDENTITY);
+    expect(style.opacity).toBe("");
+  });
+});

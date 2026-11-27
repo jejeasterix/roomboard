@@ -248,6 +248,59 @@ démarrage ; `fflate` ne sert qu'au Worker de lecture des ZIP (`apps/web/src/pla
 
 `@types/three` (0.187.0, MIT) ne sert qu'à la compilation et n'entre pas dans `dist`.
 
+## Paquets npm de l'application (OG11, rendu « dessiné à la main »)
+
+`roughjs` calcule le tracé des styles Artiste et Caricaturiste (`apps/web/src/engine/render/sketch.ts`) par
+`rough.generator()` seul, sans DOM ; ses opérations sont rejouées sur le contexte de l'écran ou de l'export. Poids
+mesuré au chantier personnalisation-2 (T8) : `assets/index-*.js` passe de 172 445 à 182 423 octets gzip (+9 978).
+
+| paquet | version | licence | dépôt |
+|---|---|---|---|
+| roughjs | 4.6.6 | MIT | https://github.com/pshihn/rough |
+| hachure-fill | 0.5.2 | MIT | https://github.com/pshihn/hachure-fill |
+| path-data-parser | 0.1.0 | MIT | https://github.com/pshihn/path-data-parser |
+| points-on-curve | 0.2.0 | MIT | https://github.com/pshihn/bezier-points |
+| points-on-path | 0.2.1 | MIT | https://github.com/pshihn/points-on-path |
+
+## Texte de licence : roughjs 4.6.6 (MIT ; hachure-fill, path-data-parser, points-on-curve, points-on-path : même auteur, même licence)
+
+```
+MIT License
+
+Copyright (c) 2019 Preet Shihn
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Code adapté d'Excalidraw (OG11, MIT)
+
+Comportement copié d'Excalidraw (https://github.com/excalidraw/excalidraw, MIT, Copyright (c) 2020 Excalidraw), mention
+MIT en tête de chaque fichier :
+
+- `apps/web/src/engine/render/sketch.ts` : options roughjs (`generateRoughOptions`, tirets sans multi-trait,
+  `packages/element/src/shape.ts`), rectangle arrondi en chemin (`shape.ts`), rayon adaptatif des angles
+  (`packages/element/src/utils.ts`) ;
+- `apps/web/src/ui/tool-options.ts` (T6) : valeur commune ou mixte d'un réglage sur la sélection, adaptée de
+  `getFormValue` (`packages/excalidraw/actions/actionProperties.tsx`).
+
+Texte : MIT (https://opensource.org/licenses/MIT), identique à celui de roughjs ci-dessus, titulaire « Excalidraw ».
+
 ## Crate `roomboard-formats` (C12, PDF vectoriel par krilla)
 
 Crates apportés par `krilla` 0.8 (features `simple-text` et `raster-images` seules, sans les features par défaut) et
