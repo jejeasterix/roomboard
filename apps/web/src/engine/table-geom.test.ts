@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { anchorOf, cellAt, cellContaining, cellContent, cellHeight, cellInnerBox, cellOf, cellRect, expandRange, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -247,5 +247,34 @@ describe("cellContent : fond d'image (T9, S5)", () => {
     const t = { color: "#000000", size: 36, cols: [{ id: "c", width: 240 }], rows: [{ id: "r", height: 64 }], cells: [{ row: "r", col: "c", text: "", fill: null, shade: null, spans: [], bg }], merges: [] };
     expect(cellContent(t, "r", "c").bg).toBe(bg);
     expect("bg" in cellContent({ ...t, cells: [] }, "r", "c")).toBe(false);
+  });
+});
+
+describe("TB1 bordures", () => {
+  const t3 = (): TableData => ({
+    color: "#000", size: 36, merges: [], cells: [],
+    cols: [{ id: "a", width: 240 }, { id: "b", width: 240 }, { id: "c", width: 240 }],
+    rows: [{ id: "r0", height: 64 }, { id: "r1", height: 64 }],
+  });
+  it("TB1 edgeAt : bord droit de la colonne 0 à ± tol ; bord gauche exclu ; bord bas de la ligne 1", () => {
+    expect(edgeAt(t3(), 243, 30, 6)).toEqual({ axis: "col", index: 0 });
+    expect(edgeAt(t3(), 3, 30, 6)).toBeNull();
+    expect(edgeAt(t3(), 100, 131, 6)).toEqual({ axis: "row", index: 1 });
+    expect(edgeAt(t3(), 100, 30, 6)).toBeNull();
+  });
+  it("TB1 cellGrips : milieu du bord droit et du bord bas de la zone", () => {
+    expect(cellGrips(t3(), { row: 1, col: 1 })).toEqual([
+      { kind: "col", x: 480, y: 96, index: 1 },
+      { kind: "row", x: 360, y: 128, index: 1 },
+    ]);
+  });
+  it("TB1 linkedBoxes : boîte locale des objets liés au tableau, `skip` exclu", () => {
+    const doc = {
+      elementIds: () => ["t", "o", "p"],
+      element: (id: string) => (id === "o" ? { cell: ["t", "r1", "b"] } : id === "p" ? { cell: ["x", "r0", "a"] } : {}) as never,
+      bounds: (ids: readonly string[]) => (ids[0] === "o" ? { x0: 1010, y0: 2010, x1: 1110, y1: 2060 } : null),
+    };
+    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] })).toEqual([{ row: "r1", col: "b", w: 100, h: 50 }]);
+    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, ["o"])).toEqual([]);
   });
 });

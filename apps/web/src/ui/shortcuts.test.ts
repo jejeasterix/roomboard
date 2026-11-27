@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, cellKey, editAction, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, cellKey, editAction, isPanKey, keyAction, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -14,8 +14,17 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
   "palm-eraser": ["app", "palm-eraser"],
   "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
+  "table-col-wider": ["table", "col-wider"], "table-col-narrower": ["table", "col-narrower"], "table-row-taller": ["table", "row-taller"], "table-row-shorter": ["table", "row-shorter"],
 };
 const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown" };
+const ARROWS: Readonly<Record<string, string>> = { "→": "ArrowRight", "←": "ArrowLeft", "↑": "ArrowUp", "↓": "ArrowDown" };
+/** Raccourci de l'outil Tableau (Alt ou Ctrl, Maj, lettre par `code`, flèche) lu comme un `KeyLike`. */
+const pressTable = (keys: string): KeyLike => {
+  const parts = keys.split(", ")[0]!.split("+");
+  const k = parts.at(-1)!;
+  const arrow = ARROWS[k];
+  return { key: arrow ?? k.toLowerCase(), code: arrow ?? `Key${k.toUpperCase()}`, ctrlKey: parts.includes("Ctrl"), metaKey: false, shiftKey: parts.includes("Maj"), altKey: parts.includes("Alt"), isComposing: false, target: null };
+};
 const press = (keys: string): KeyLike => {
   const parts = keys.split("+");
   const k = parts.at(-1)!;
@@ -39,6 +48,7 @@ describe("shortcuts", () => {
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
       else if (by === "cell") expect(cellKey({ ...press("Enter"), code: s.keys.endsWith("Entrée") ? "Enter" : `Key${s.keys.slice(-1)}`, altKey: true, shiftKey: s.keys.includes("Maj") }), s.id).toBe(value);
+      else if (by === "table") expect(tableKey(pressTable(s.keys)), s.id).toBe(value);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
       else {
         // Copier, couper, coller (événements natifs) et Ctrl+B (rich-edit) : aucun reconnaisseur ne les vole.

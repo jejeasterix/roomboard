@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, cellKey, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
+import { appShortcut, cellKey, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -223,5 +223,19 @@ describe("cellKey (H12)", () => {
     expect(cellKey(c({ key: "Enter", code: "Enter", ctrlKey: true }))).toBeNull();
     expect(cellKey(c({ key: "Enter", code: "Enter", target: { tagName: "TEXTAREA" } }))).toBeNull();
     expect(cellKey(c({ key: "Enter", code: "Enter", altKey: false }))).toBeNull();
+  });
+});
+
+describe("tableKey (H12)", () => {
+  it("tableKey : Alt+Maj+flèches ; sans Maj, avec Ctrl, en saisie ou en composition : null", () => {
+    const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: false, metaKey: false, shiftKey: true, altKey: true, isComposing: false, target: null, ...o });
+    expect(tableKey(a("ArrowRight"))).toBe("col-wider");
+    expect(tableKey(a("ArrowLeft"))).toBe("col-narrower");
+    expect(tableKey(a("ArrowDown"))).toBe("row-taller");
+    expect(tableKey(a("ArrowUp"))).toBe("row-shorter");
+    expect(tableKey(a("ArrowRight", { shiftKey: false }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { ctrlKey: true }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { isComposing: true }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { target: { isContentEditable: true } }))).toBeNull();
   });
 });

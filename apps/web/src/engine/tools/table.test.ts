@@ -895,3 +895,95 @@ describe("image de fond de case (personnalisation-3 T9, S5)", () => {
     }
   });
 });
+
+describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
+  const sizes = (s: ReturnType<typeof setup>, id: string) => ({ w: s.table(id).cols.map((c) => c.width), h: s.table(id).rows.map((r) => r.height) });
+  /** 3 × 3 en (100, 200), case (1, 1) active, saisie fermée. */
+  const ready = () => {
+    const s = setup();
+    const id = s.create(100, 200, 3, 3);
+    s.tool.requestCommit();
+    s.click(100 + 240 + 120, 200 + 64 + 32);
+    s.tool.requestCommit();
+    return { s, id };
+  };
+  it("S6 : poignée droite tirée de 100 : une SetTableLineSizes au relâché, colonne 1 = 340, une étape", () => {
+    const { s, id } = ready();
+    const n = s.runs.length;
+    s.tool.begin(3, [at(580, 296)]);
+    s.tool.extend(3, [at(630, 296)], []);
+    s.tool.extend(3, [at(680, 296)], []);
+    expect(s.runs.length).toBe(n);
+    s.tool.close(3, "end");
+    expect(s.runs.length).toBe(n + 1);
+    const col = s.table(id).cols[1]?.id ?? "";
+    expect(s.last()).toEqual({ type: "SetTableLineSizes", id, cols: [[col, 340]], rows: [] });
+    expect(sizes(s, id).w).toEqual([240, 340, 240]);
+    s.doc.undo();
+    expect(sizes(s, id).w).toEqual([240, 240, 240]);
+  });
+  it("TB1 : bord intérieur pris à 5 px (souris ou doigt), ligne 0 tirée de 30 vers le bas", () => {
+    const { s, id } = ready();
+    s.tool.begin(3, [at(150, 200 + 64 + 5)]);
+    s.tool.extend(3, [at(150, 200 + 64 + 35)], []);
+    s.tool.close(3, "end");
+    expect(sizes(s, id).h).toEqual([94, 64, 64]);
+  });
+  it("TB1 : jamais sous l'objet logé ; jamais sous 2 × marge + 24", () => {
+    const { s, id } = ready();
+    const o = s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: 100 + 240 + 8, y0: 200 + 64 + 8, x1: 100 + 240 + 208, y1: 200 + 64 + 48, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    const t = s.table(id);
+    s.doc.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: [id, t.rows[1]?.id ?? "", t.cols[1]?.id ?? ""], sizes: [] });
+    s.tool.begin(3, [at(580, 296)]);
+    s.tool.extend(3, [at(300, 296)], []);
+    s.tool.close(3, "end");
+    expect(sizes(s, id).w[1]).toBe((s.doc.bounds([o])?.x1 ?? 0) - (s.doc.bounds([o])?.x0 ?? 0) + 16);
+    s.tool.begin(4, [at(100 + 240, 230)]);
+    s.tool.extend(4, [at(0, 230)], []);
+    s.tool.close(4, "end");
+    expect(sizes(s, id).w[0]).toBe(40);
+  });
+  it("TB1 : colonne rétrécie : les lignes dont le texte se replie regrandissent dans la même commande", () => {
+    const { s, id } = ready();
+    s.click(100 + 120, 200 + 32);
+    s.type("abcde fghij klmno pqrs");
+    s.tool.requestCommit();
+    s.tool.begin(3, [at(100 + 240, 230)]);
+    s.tool.extend(3, [at(100 + 140, 230)], []);
+    s.tool.close(3, "end");
+    const last = s.last();
+    expect(last?.type).toBe("SetTableLineSizes");
+    expect(last?.type === "SetTableLineSizes" ? last.rows.map((r) => r[0]) : []).toEqual([s.table(id).rows[0]?.id]);
+    expect(sizes(s, id).h[0]).toBeGreaterThan(64);
+  });
+  it("TB1 : geste annulé (cancel) : aucune commande ; aucun mouvement : aucune commande, aucune saisie ouverte", () => {
+    const { s } = ready();
+    const n = s.runs.length;
+    const opened = s.host.opened.length;
+    s.tool.begin(3, [at(580, 296)]);
+    s.tool.extend(3, [at(680, 296)], []);
+    s.tool.close(3, "cancel");
+    s.tool.begin(4, [at(580, 296)]);
+    s.tool.close(4, "end");
+    expect(s.runs.length).toBe(n);
+    expect(s.host.opened.length).toBe(opened);
+  });
+  it("TB1 clavier : col-wider + 8, row-shorter jamais sous 64 ; uniform garde les objets", () => {
+    const { s, id } = ready();
+    s.tool.act("col-wider");
+    expect(sizes(s, id).w).toEqual([240, 248, 240]);
+    s.tool.act("row-shorter");
+    expect(sizes(s, id).h).toEqual([64, 64, 64]);
+    const o = s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: 0, y0: 0, x1: 400, y1: 300, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    const t = s.table(id);
+    s.doc.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: [id, t.rows[0]?.id ?? "", t.cols[0]?.id ?? ""], sizes: [] });
+    s.tool.act("uniform");
+    const b = s.doc.bounds([o]);
+    expect(Math.min(...sizes(s, id).w)).toBeGreaterThanOrEqual((b?.x1 ?? 0) - (b?.x0 ?? 0) + 16);
+    expect(Math.min(...sizes(s, id).h)).toBeGreaterThanOrEqual((b?.y1 ?? 0) - (b?.y0 ?? 0) + 16);
+  });
+  it("TB1 live : la case active publie ses deux poignées dans l'aperçu", () => {
+    const { s } = ready();
+    expect(s.tool.live().overlay?.grips).toEqual([{ x: 580, y: 296, kind: "col" }, { x: 460, y: 328, kind: "row" }]);
+  });
+});
