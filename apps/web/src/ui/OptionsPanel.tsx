@@ -41,7 +41,7 @@ export interface OptionsPanelProps {
   readonly sideStart: Accessor<Rect | null>;
   /** Îlots qui surplombent le panneau (îlot d'outils descendu) ; absent : aucun. */
   readonly above?: Accessor<readonly Rect[]>;
-  /** T33 : vrai quand un panneau passager (l'Aide) occupe la même place : le panneau d'options se retire plutôt que de dépasser. */
+  /** T33, T34 : vrai quand un panneau passager (Aide, Grille, Réglages, Profils, Image, Bibliothèque, Fonds) est ouvert : le panneau d'options se retire plutôt que de dépasser. */
   readonly hidden?: Accessor<boolean>;
 }
 
