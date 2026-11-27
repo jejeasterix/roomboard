@@ -20,7 +20,7 @@ const VIEWS = [
 const ARGS = ["--no-sandbox", "--disable-lcd-text", "--force-color-profile=srgb"];
 const SIDE = '[data-island="pages"]';
 const mode = (v) => `[data-side-mode] [data-choice="${v}"]`;
-const BAR = '[data-scrollbar="page"]';
+const BAR = '#stage [data-scrollbar="page"]';
 const THUMB = `${BAR} .rb-scrollbar-thumb`;
 const PORTRAIT_H = (1920 * 16) / 9;
 const BOTTOM = 16;

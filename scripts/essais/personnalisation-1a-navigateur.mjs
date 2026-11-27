@@ -273,7 +273,7 @@ async function s1(browser, base, tmp) {
   const p = await frameBox(page);
   // OG24 (H4 renversée par Jérôme) : la page portrait remplit la largeur, son bas sort de la vue, l'ascenseur y mène.
   check(Math.abs(p.w - p.canvasW * 0.95) < 4 && p.y > 0 && p.y + p.h >= p.canvasH, `Portrait : la page remplit la largeur (${p.w} sur ${p.canvasW} px), son bas sort de la vue`);
-  check(await page.isVisible('[data-scrollbar="page"]'), "Portrait : ascenseur visible");
+  check(await page.isVisible('#stage [data-scrollbar="page"]'), "Portrait : ascenseur visible (onglet montré)");
   // Ctrl+Z : retour paysage en une étape.
   await page.keyboard.press("Control+z");
   await waitAttr(page, "data-page-mode", "landscape");
