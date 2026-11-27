@@ -429,6 +429,7 @@ function setupLines(pointer: "touch" | "mouse" = "touch") {
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
   const edits: string[] = [];
+  let copie = "";
   vi.spyOn(doc, "bindTarget").mockImplementation((_p, x) => (x < 150 ? HIT_A : x > 350 ? HIT_B : null));
   const ctx: ToolContext = {
     doc,
@@ -436,7 +437,12 @@ function setupLines(pointer: "touch" | "mouse" = "touch") {
     camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
     run: (cmd) => {
       runs.push(cmd);
-      if (cmd.type === "AddLinked") return { pages: [], ids: ["copie", "fleche"], removed: [], full: false, version: 1 };
+      if (cmd.type === "AddLinked") {
+        // Un segment d'abord, puis la copie : l'aide lit le document, pas l'ordre des ids.
+        const fleche = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 0, y0: 0, x1: 10, y1: 0, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+        copie = doc.apply({ type: "AddShape", page, shape: "rect", x0: 200, y0: 0, x1: 300, y1: 50, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+        return { pages: [], ids: [fleche, copie], removed: [], full: false, version: 1 };
+      }
       try {
         return doc.apply(cmd);
       } catch {
@@ -451,7 +457,7 @@ function setupLines(pointer: "touch" | "mouse" = "touch") {
   const tool = createSelectTool(ctx);
   const add = (shape: "line" | "arrow" | "rect", x0: number, y0: number, x1: number, y1: number): string =>
     doc.apply({ type: "AddShape", page, shape, x0, y0, x1, y1, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
-  return { doc, tool, runs, edits, add };
+  return { doc, tool, runs, edits, add, copie: () => copie };
 }
 
 describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () => {
@@ -505,14 +511,14 @@ describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () =>
   });
 
   it("poignée « + » : AddLinked, la copie devient la sélection", () => {
-    const { tool, runs, add } = setupLines();
+    const { tool, runs, add, copie: getCopie } = setupLines();
     const a = add("rect", 0, 0, 100, 50);
     tool.setSelection([a]);
     expect(tool.live().overlay?.links).toHaveLength(4);
     tool.begin(1, [atT(140, 25, 0)]);
     tool.close(1, "end");
     expect(runs).toEqual([{ type: "AddLinked", id: a, dir: "right" }]);
-    expect(tool.selection()).toEqual(["copie"]);
+    expect(tool.selection()).toEqual([getCopie()]);
   });
 
   it("deux objets sélectionnés : pas de « + »", () => {

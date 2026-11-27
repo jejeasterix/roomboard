@@ -9,15 +9,14 @@
  * C3 (Z2) : un clic prend le groupe extérieur entier, Maj+clic l'ajoute ou le retire entier, le rectangle ne prend un
  * groupe qu'entier (`engine/groups.ts`).
  */
-import type { Bounds, LineBinding, LinkDir, Matrix, ShapeElement, ElementView } from "../../core/api";
+import type { Bounds, LinkDir, Matrix, ShapeElement, ElementView } from "../../core/api";
 import { elbowedOf } from "../../core/look";
 import { IDENTITY_MATRIX, isSegment } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import { isDoubleTap, type Tap } from "../input/double-tap";
 import type { InputSample } from "../input/sampler";
-import { BOUND_DRAG_PX, bindEnd, linkHandles, pickHandle, pickLink, pointHandles, worldPoints, type PointHit } from "./line-points";
-import { constrainEnd } from "./shape";
+import { BOUND_DRAG_PX, dragLine, linkHandles, linkedCopy, pickHandle, pickLink, pointHandles, worldPoints, type DraggedLine, type PointHit } from "./line-points";
 import { EMPTY_OVERLAY, type EditOverlay, type ShapePreview } from "../render/overlay";
 import {
   HANDLE_GRAB_PX,
@@ -116,7 +115,6 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
   let lastTap: (Tap & { id: string }) | null = null;
   let first: InputSample | null = null;
   const one = (): ElementView | null => (selection.length === 1 ? ctx.doc.element(selection[0]!) : null);
-  const binding = (): boolean => (ctx.bindingEnabled?.() ?? true) !== (ctx.ctrl?.() === true);
 
   const world = (s: InputSample): [number, number] => screenToWorld(ctx.camera(), s.x, s.y);
   const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= (d.bound ? BOUND_DRAG_PX : DRAG_THRESHOLD_PX);
@@ -169,34 +167,12 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
     };
   };
 
-  /** Ligne après le glisser d'une poignée : bout déplacé (aimanté, Maj 15°) et lié sous le doigt, ou point inséré. */
-  const draggedLine = (v: ShapeElement, d: Drag): { pts: [number, number][]; start: LineBinding | null; end: LineBinding | null; hint: EditOverlay["bind"] } => {
-    const pts = worldPoints(v);
+  /** Ligne après le glisser d'une poignée : bout déplacé (aimanté, Maj 15°) et lié sous le doigt, ou point inséré. Les
+   *  poignées hors édition n'offrent que les deux bouts : l'indice 1 est le dernier point. */
+  const draggedLine = (v: ShapeElement, d: Drag): DraggedLine => {
     const hit = d.hit!;
-    let idx: number;
-    if (hit.kind === "mid") {
-      idx = hit.index + 1;
-      pts.splice(idx, 0, [d.x, d.y]);
-    } else idx = hit.index === 0 ? 0 : pts.length - 1;
-    const snapped = ctx.alt?.() === true ? [d.x, d.y] : (ctx.doc.snapPoint(ctx.page(), d.x, d.y) ?? [d.x, d.y]);
-    let x = snapped[0]!;
-    let y = snapped[1]!;
-    if (ctx.shift?.() === true) {
-      const nb = pts[idx === 0 ? 1 : idx - 1]!;
-      [x, y] = constrainEnd("line", nb[0], nb[1], x, y);
-    }
-    pts[idx] = [x, y];
-    let start = v.shape.start ?? null;
-    let end = v.shape.end ?? null;
-    let hint: EditOverlay["bind"] = null;
-    if (hit.kind === "point") {
-      const other = idx === 0 ? end : start;
-      const eb = bindEnd(ctx.doc, ctx.page(), x, y, d.zoom, d.touch === true, binding(), other?.id);
-      if (idx === 0) start = eb.bind;
-      else end = eb.bind;
-      hint = eb.hint;
-    }
-    return { pts, start, end, hint };
+    const norm: PointHit = hit.kind === "point" && hit.index !== 0 ? { kind: "point", index: worldPoints(v).length - 1 } : hit;
+    return dragLine(ctx, v, norm, d.x, d.y, d.zoom, d.touch === true);
   };
 
   /** Cellule ombrée sous (x, y) monde du tableau `id` (ancre d'une zone), ou null. */
@@ -287,7 +263,8 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       drag = null;
       if (how !== "end") return;
       if (!moved(d)) {
-        const id = d.mode === "move" ? d.target ?? null : null;
+        // Un relâché sans mouvement sur une poignée de la ligne sélectionnée compte comme un toucher sur la ligne.
+        const id = d.mode === "move" ? d.target ?? null : d.mode === "line-end" || d.mode === "line-mid" ? selection[0] ?? null : null;
         const cur: Tap = { t: d.t, x: d.sx, y: d.sy };
         const view = id === null ? null : ctx.doc.element(id);
         if (id !== null && lastTap?.id === id && isDoubleTap(lastTap, cur) && isLine(view) && !elbowedOf(view.look)) {
@@ -300,7 +277,8 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       if (d.mode === "link") {
         if (!moved(d) && d.link) {
           const ch = ctx.run({ type: "AddLinked", id: selection[0]!, dir: d.link });
-          if (ch && ch.ids[0] !== undefined) selection = [ch.ids[0]];
+          const copy = ch ? linkedCopy(ctx.doc, ch.ids, selection[0]!) : null;
+          if (copy !== null) selection = [copy];
         }
         return;
       }
