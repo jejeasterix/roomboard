@@ -78,12 +78,13 @@ describe("PagesBar (T91)", () => {
     cleanup();
     const b = setup({ pageIndex: 0, pageCount: 1 });
     expect(btn(b.container, '[data-item="page-remove"]').disabled).toBe(true);
-    expect(btn(b.container, '[data-item="page-next"]').disabled).toBe(true);
+    // personnalisation-1a (décision 27) : Suivante n'est jamais grisée (sur la dernière page, elle ajoute une page).
+    expect(btn(b.container, '[data-item="page-next"]').disabled).toBe(false);
   });
 
-  it("suivante désactivée sur la dernière page", () => {
+  it("suivante jamais désactivée, même sur la dernière page (décision 27)", () => {
     const { container } = setup({ pageIndex: 2, pageCount: 3 });
-    expect(btn(container, '[data-item="page-next"]').disabled).toBe(true);
+    expect(btn(container, '[data-item="page-next"]').disabled).toBe(false);
     expect(btn(container, '[data-item="page-prev"]').disabled).toBe(false);
   });
 

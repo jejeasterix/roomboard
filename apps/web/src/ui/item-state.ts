@@ -23,6 +23,8 @@ export interface ToolbarView {
   readonly canRedo: boolean;
   readonly pageIndex: number;
   readonly pageCount: number;
+  /** personnalisation-1a (décision 25) : barre latérale des pages ouverte ; absent : fermée. */
+  readonly sidebarOpen?: boolean;
   /** Cellule active de l'outil Tableau (C10a) ; absente ou null : aucune (PC9). */
   readonly tableCell?: TableCellState | null;
   /** État de la barre de format (C7b, R15) ; absent ou null : aucune séance de saisie (boutons grisés). */
@@ -42,6 +44,9 @@ export interface ToolbarView {
   /** C11a (P6, P8, P15) : absent (tests, coque sans annotation) : tableau. */
   readonly annotation?: AnnotationView;
 }
+/** Compteur « 2 / 5 » de la barre d'outils (action `page-number`). */
+export const pagesLabel = (v: { readonly pageIndex: number; readonly pageCount: number }): string => `${v.pageIndex + 1} / ${v.pageCount}`;
+
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string; readonly icon?: string }
 
 const cells = (r: Range | null | undefined): number => (r ? rangeSize(r) : 0);
@@ -78,7 +83,10 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   undo: (v) => ({ disabled: !v.canUndo }),
   redo: (v) => ({ disabled: !v.canRedo }),
   "page-prev": (v) => ({ disabled: v.pageIndex <= 0 }),
-  "page-next": (v) => ({ disabled: v.pageIndex >= v.pageCount - 1 }),
+  // Décision 27 : Suivante n'est jamais grisée ; sur la dernière page, elle ajoute une page.
+  "page-next": (v) => ({ disabled: false, ...(v.pageIndex >= v.pageCount - 1 ? { label: "Nouvelle page" } : {}) }),
+  "page-duplicate": () => ({ disabled: false }),
+  "page-number": (v) => ({ pressed: v.sidebarOpen === true }),
   "page-remove": (v) => ({ disabled: v.pageCount <= 1 }),
   "table-row-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.rows >= TABLE_MAX_LINES }),
   "table-col-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.cols >= TABLE_MAX_LINES }),

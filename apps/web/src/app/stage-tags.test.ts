@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import type { EngineState } from "../engine/engine";
-import { pagesLabel } from "../ui/PagesBar";
+import { pagesLabel } from "../ui/item-state";
 import { stageTags } from "./stage-tags";
 
 const base: EngineState = {

@@ -3,7 +3,10 @@ import type { ButtonSize, Toolbar, ToolItem } from "../toolbar";
 import { IconButton } from "./IconButton";
 import { iconFor } from "./icons";
 import { padToPixel } from "./Island";
-import { itemState, type ToolbarView } from "./item-state";
+import { itemState, pagesLabel, type ToolbarView } from "./item-state";
+
+/** `pagesLabel` vit dans `item-state.ts` (barre d'outils) ; réexporté tant que cette barre existe (T10). */
+export { pagesLabel };
 
 export interface PagesView {
   readonly pageIndex: number;
@@ -18,8 +21,6 @@ export interface PagesBarProps {
   runAction(id: string): void;
   goTo(index: number): void;
 }
-
-export const pagesLabel = (v: PagesView): string => `${v.pageIndex + 1} / ${v.pageCount}`;
 
 /** Champs de la vue sans effet sur les pages ; l'application passe la vue complète (`ToolbarView`), qui les remplace. */
 const NEUTRAL: Omit<ToolbarView, keyof PagesView> = { tool: "", eraserMode: "partial", canUndo: false, canRedo: false, tableCell: null };
@@ -39,6 +40,9 @@ export function counterAfter(items: readonly ToolItem[]): string | null {
 export function PagesBar(props: PagesBarProps): JSX.Element {
   const numbers = (): number[] => Array.from({ length: Math.max(0, props.view().pageCount) }, (_, i) => i + 1);
   const after = createMemo(() => counterAfter(props.items()));
+  /** `#pages` appartient au bouton `page-number` de la barre d'outils : cette barre ne rend son compteur que si elle porte
+   *  encore Précédente ou Suivante (profil d'avant la navigation en barre d'outils). */
+  const legacyNav = createMemo(() => props.items().some((it) => isAction(it, "page-prev") || isAction(it, "page-next")));
   const counter = (): JSX.Element => (
     <span id="pages" class="rb-pages-count" ref={(el) => onCleanup(padToPixel(el))}>{pagesLabel(props.view())}</span>
   );
@@ -61,7 +65,7 @@ export function PagesBar(props: PagesBarProps): JSX.Element {
               attrs={{ "data-item": item.id }}
               onPress={() => props.runAction(item.action ?? item.id)}
             />
-            <Show when={after() === item.id}>{counter()}</Show>
+            <Show when={legacyNav() && after() === item.id}>{counter()}</Show>
           </>
         )}
       </For>
@@ -80,7 +84,7 @@ export function PagesBar(props: PagesBarProps): JSX.Element {
           )}
         </For>
       </div>
-      <Show when={after() === null}>{counter()}</Show>
+      <Show when={legacyNav() && after() === null}>{counter()}</Show>
     </nav>
   );
 }
