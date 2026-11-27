@@ -81,8 +81,15 @@ fn diamond_hits_inside_not_box_corners() {
     let id = plain(&mut d, ShapeKind::Diamond, [0.0, 0.0, 100.0, 100.0]);
     assert_eq!(view(&d, &id)["shape"]["shape"], "diamond");
     let p = page(&d);
-    assert_eq!(d.hit_test(&p, 50.0, 50.0, 0.0).as_deref(), Some(id.as_str()));
-    assert_eq!(d.hit_test(&p, 8.0, 8.0, 0.0), None, "coin de la boîte hors du losange");
+    assert_eq!(
+        d.hit_test(&p, 50.0, 50.0, 0.0).as_deref(),
+        Some(id.as_str())
+    );
+    assert_eq!(
+        d.hit_test(&p, 8.0, 8.0, 0.0),
+        None,
+        "coin de la boîte hors du losange"
+    );
 }
 
 /// S7, n° 5, 17 : une flèche se lie au sommet haut du losange, pointe à 5 + 4/2 du contour.
@@ -213,13 +220,13 @@ fn rounded_rect_converted_reads_straight() {
 fn polygon_hits_inside_like_the_rect() {
     let mut d = Document::blank();
     let id = plain(&mut d, ShapeKind::Rect, [0.0, 0.0, 100.0, 50.0]);
-    let b0 = d.bounds(&[id.clone()]).expect("bornes");
+    let b0 = d.bounds(std::slice::from_ref(&id)).expect("bornes");
     to_polygon(&mut d, &id).expect("conversion");
     assert_eq!(
         d.hit_test(&page(&d), 50.0, 25.0, 0.0).as_deref(),
         Some(id.as_str())
     );
-    let b1 = d.bounds(&[id.clone()]).expect("bornes");
+    let b1 = d.bounds(std::slice::from_ref(&id)).expect("bornes");
     assert_eq!(b0, b1);
 }
 

@@ -229,11 +229,20 @@ pub struct ShapeView {
     /// OG12 (DA-1) : points intérieurs locaux à plat ; absent = segment du socle.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub points: Option<Vec<f64>>,
+    /// OG12 lot 2a (n° 34) : ligne fermée, fermeture implicite du dernier sommet vers le départ ; absent = ouverte.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub polygon: Option<bool>,
     /// OG12 (DA-2) : liaisons lisibles vers un objet présent ; absentes sinon (lecture tolérante, n° 9).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start: Option<BindingView>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end: Option<BindingView>,
+}
+
+/// OG12 lot 2a (n° 34, U3) : clé `polygon` de premier niveau d'une ligne ; seul `true` la ferme, toute autre valeur se
+/// lit ouverte et reste telle quelle.
+pub(crate) fn read_polygon<T: ReadTxn>(txn: &T, e: &MapRef) -> bool {
+    matches!(e.get(txn, "polygon"), Some(Out::Any(Any::Bool(true))))
 }
 
 /// Liaison d'une extrémité dans la vue : id de l'objet et rapport de sa boîte.
