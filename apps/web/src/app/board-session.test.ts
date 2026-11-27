@@ -15,6 +15,7 @@ import { readSelection, readText, setSelection } from "./rich-dom";
 import type { WorkerLike } from "../platform/sheet-reader";
 import { stageTags } from "./stage-tags";
 import { createBoardSession, type SessionShared } from "./board-session";
+import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../engine/item-style";
 import { DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW } from "../core/api";
 import { createModelViewLoader, snapshotSize, type ModelView, type PixelSize } from "../platform/model-view";
 import { FILL_ABANDONED_MESSAGE, FILL_NO_RUNNER, fillFailure } from "./image-fill";
@@ -1325,5 +1326,20 @@ describe("session — pot sur image (C6b, B13, B21)", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("session : style courant (OG11 T9)", () => {
+  it("session : style courant passé au moteur, et chaque changement rendu à shared.onItemStyle", async () => {
+    const dashed = { ...DEFAULT_ITEM_STYLE, strokeStyle: "dashed" as const };
+    const seen: ItemStyle[] = [];
+    const s = await createBoardSession(fakeCore.blank(), { ...shared, itemStyle: () => dashed, onItemStyle: (st) => seen.push(st) });
+    expect(s.engine.itemStyle().strokeStyle).toBe("dashed");
+    s.engine.setItemStyle({ opacity: 40 });
+    expect(seen[seen.length - 1]).toMatchObject({ strokeStyle: "dashed", opacity: 40 });
+  });
+  it("session : style courant absent ou illisible (null) : style par défaut", async () => {
+    const s = await createBoardSession(fakeCore.blank(), { ...shared, itemStyle: () => null });
+    expect(s.engine.itemStyle()).toEqual(DEFAULT_ITEM_STYLE);
   });
 });

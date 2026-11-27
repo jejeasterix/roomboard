@@ -5,6 +5,7 @@ import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, worldToScreen, type Camera } from "./camera";
 import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
+import { DEFAULT_ITEM_STYLE, type ItemStyle } from "./item-style";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
@@ -1791,5 +1792,205 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     expect(closed).toHaveBeenCalledTimes(1);
     engine.dispose();
     expect(closed).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
+  function styleSetup(deps: Partial<Pick<EngineDeps, "itemStyle" | "penStyle">> = {}) {
+    const doc = fakeCore.blank();
+    const frames = new Frames();
+    const renderer = new FakeRenderer();
+    let select: ReturnType<typeof createSelectTool> | null = null;
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", [], ctx),
+      eraser: (ctx) => fakeTool("eraser", [], ctx),
+      select: (ctx) => {
+        select = createSelectTool(ctx);
+        return select;
+      },
+      shape: (ctx, kind, style) => createShapeTool(ctx, kind, style),
+    };
+    const engine = createEngine({ doc, renderer, frames, tools, ...deps });
+    const page = engine.state().page;
+    let n = 0;
+    const addRect = (): string => {
+      const x = 100 + 200 * n++;
+      return doc.apply({ type: "AddShape", page, shape: "rect", x0: x, y0: 100, x1: x + 50, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
+    };
+    const sel = () => {
+      if (!select) throw new Error("outil Sélection absent");
+      return select;
+    };
+    const colorOf = (id: string): string | undefined => {
+      const el = doc.element(id);
+      return el?.kind === "shape" ? el.style.color : undefined;
+    };
+    const lookOf = (id: string): Record<string, unknown> | undefined => {
+      const el = doc.element(id) as { look?: Record<string, unknown> } | null;
+      return el?.look;
+    };
+    /** Rectangle tracé de (10, 10) à (110, 60) ; deux images pendant le geste ; graines vues dans l'aperçu. */
+    const drawRect = (): { seeds: unknown[]; id: string } => {
+      const seeds: unknown[] = [];
+      const seen = (): void => {
+        const o = renderer.overlays[renderer.overlays.length - 1];
+        const s = o?.shapes[0] as { seed?: unknown } | undefined;
+        if (s !== undefined) seeds.push(s.seed);
+      };
+      engine.sink.begin(1, "rect", [{ ...sample, x: 10, y: 10 }]);
+      engine.sink.extend(1, [{ ...sample, x: 80, y: 40 }], []);
+      frames.tick();
+      seen();
+      engine.sink.extend(1, [{ ...sample, x: 110, y: 60 }], []);
+      frames.tick();
+      seen();
+      engine.sink.close(1, "end");
+      const ids = doc.elementIds(page);
+      return { seeds, id: ids[ids.length - 1] ?? "" };
+    };
+    return { doc, frames, renderer, engine, page, addRect, sel, colorOf, lookOf, drawRect };
+  }
+
+  it("setItemStyle : une étape sur la sélection, et style courant", () => {
+    const { engine, doc, addRect, sel, colorOf } = styleSetup();
+    const a = addRect();
+    const b = addRect();
+    sel().setSelection([a, b]);
+    const v = doc.version();
+    engine.setItemStyle({ color: "#1d4ed8" });
+    expect(colorOf(a)).toBe("#1d4ed8");
+    expect(colorOf(b)).toBe("#1d4ed8");
+    expect(engine.itemStyle().color).toBe("#1d4ed8");
+    expect(engine.state().itemStyle?.color).toBe("#1d4ed8");
+    expect(doc.version()).toBeGreaterThan(v);
+    // Une seule étape : un Annuler rend les deux éléments à leur couleur (deux étapes laisseraient `a` en bleu).
+    engine.undo();
+    expect(colorOf(a)).toBe("#000000");
+    expect(colorOf(b)).toBe("#000000");
+  });
+
+  it("setItemStyle sans sélection : style courant seul, rien d'écrit", () => {
+    const { engine, doc } = styleSetup();
+    const v = doc.version();
+    engine.setItemStyle({ opacity: 40 });
+    expect(engine.itemStyle().opacity).toBe(40);
+    expect(doc.version()).toBe(v);
+    expect(engine.state().canUndo).toBe(false);
+  });
+
+  it("setPenStyle garde la transparence (fusion, S2.4)", () => {
+    const { engine } = styleSetup();
+    engine.setItemStyle({ opacity: 40, strokeStyle: "dashed" });
+    engine.setPenStyle({ color: "#dc2626", width: 4 });
+    expect(engine.itemStyle()).toMatchObject({ color: "#dc2626", width: 4, opacity: 40, strokeStyle: "dashed" });
+  });
+
+  it("setPenStyle (préréglage) n'écrit pas la sélection", () => {
+    const { engine, doc, addRect, sel, colorOf } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    const v = doc.version();
+    engine.setPenStyle({ color: "#dc2626", width: 6 });
+    expect(colorOf(a)).toBe("#000000");
+    expect(doc.version()).toBe(v);
+    expect(engine.itemStyle()).toMatchObject({ color: "#dc2626", width: 6 });
+  });
+
+  it("choisir un outil garde le style courant", () => {
+    const { engine, lookOf, drawRect } = styleSetup();
+    engine.setItemStyle({ color: "#1d4ed8", opacity: 40, strokeStyle: "dashed" });
+    engine.setTool("pen");
+    expect(engine.itemStyle()).toMatchObject({ color: "#1d4ed8", opacity: 40, strokeStyle: "dashed" });
+    engine.setTool("rect");
+    expect(engine.itemStyle()).toMatchObject({ color: "#1d4ed8", opacity: 40, strokeStyle: "dashed" });
+    const { id } = drawRect();
+    expect(lookOf(id)).toMatchObject({ strokeStyle: "dashed", opacity: 40 });
+  });
+
+  it("style courant de départ : deps.itemStyle, sinon penStyle fusionné au défaut", () => {
+    const given = { ...DEFAULT_ITEM_STYLE, strokeStyle: "dotted" as const, opacity: 60 };
+    expect(styleSetup({ itemStyle: given }).engine.itemStyle()).toEqual(given);
+    expect(styleSetup({ penStyle: { color: "#dc2626", width: 6 } }).engine.itemStyle()).toEqual({
+      ...DEFAULT_ITEM_STYLE,
+      color: "#dc2626",
+      width: 6,
+    });
+    expect(styleSetup().engine.itemStyle()).toEqual(DEFAULT_ITEM_STYLE);
+  });
+
+  it("onItemStyle : prévenu à setItemStyle et setPenStyle ; désabonnement", () => {
+    const { engine } = styleSetup();
+    const got: ItemStyle[] = [];
+    const off = engine.onItemStyle((s) => got.push(s));
+    engine.setItemStyle({ opacity: 40 });
+    engine.setPenStyle({ color: "#dc2626", width: 4 });
+    expect(got).toHaveLength(2);
+    expect(got[1]).toMatchObject({ color: "#dc2626", opacity: 40 });
+    off();
+    engine.setItemStyle({ opacity: 50 });
+    expect(got).toHaveLength(2);
+  });
+
+  it("duplicateSelection +10/+10, copie sélectionnée, une étape", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    expect(engine.duplicateSelection()).toBe(true);
+    const s = engine.state().selection;
+    expect(s).toHaveLength(1);
+    const copy = s[0] ?? "";
+    expect(copy).not.toBe(a);
+    const ta = doc.element(a)?.transform ?? [];
+    const tc = doc.element(copy)?.transform ?? [];
+    expect(tc[4]).toBe((ta[4] ?? Number.NaN) + 10);
+    expect(tc[5]).toBe((ta[5] ?? Number.NaN) + 10);
+    expect(engine.state().elementCount).toBe(2);
+    engine.undo();
+    expect(doc.element(copy)).toBeNull();
+    expect(engine.state().elementCount).toBe(1);
+  });
+
+  it("duplicateSelection sans sélection : faux, rien d'écrit", () => {
+    const { engine, doc } = styleSetup();
+    const v = doc.version();
+    expect(engine.duplicateSelection()).toBe(false);
+    expect(doc.version()).toBe(v);
+  });
+
+  it("Ctrl+D duplique", () => {
+    const { engine, addRect, sel } = styleSetup();
+    sel().setSelection([addRect()]);
+    expect(engine.key(key("d", { ctrlKey: true }))).toBe(true);
+    expect(engine.state().elementCount).toBe(2);
+  });
+
+  it("deleteSelection : une étape, faux sans sélection, Annuler resélectionne", () => {
+    const { engine, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    expect(engine.deleteSelection()).toBe(true);
+    expect(engine.state().elementCount).toBe(0);
+    expect(engine.deleteSelection()).toBe(false);
+    engine.undo();
+    expect(engine.state().selection).toEqual([a]);
+  });
+
+  it("seed tiré au début du geste : aperçu et objet posé", () => {
+    const { engine, lookOf, drawRect } = styleSetup();
+    engine.setTool("rect");
+    engine.setItemStyle({ roughness: 1 });
+    const { seeds, id } = drawRect();
+    expect(seeds).toHaveLength(2);
+    expect(typeof seeds[0]).toBe("number");
+    // Même graine sur toutes les images du geste et sur l'objet posé (tirée à l'ouverture, jamais au relâché).
+    expect(seeds[1]).toBe(seeds[0]);
+    expect(lookOf(id)?.["seed"]).toBe(seeds[0]);
+  });
+
+  it("forme au style neutre : aucun look écrit", () => {
+    const { engine, lookOf, drawRect } = styleSetup();
+    engine.setTool("rect");
+    const { id } = drawRect();
+    expect(lookOf(id)).toBeUndefined();
   });
 });

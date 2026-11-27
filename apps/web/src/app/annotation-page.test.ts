@@ -7,7 +7,8 @@ import { ANNOTATION_EVENTS } from "../platform/annotation-port";
 import { toBase64 } from "../platform/clipboard";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { BoardSession } from "./board-session";
-import { createAnnotationPage, passThrough, viewMatrix, type PageChannel } from "./annotation-page";
+import { createAnnotationPage, passThrough, viewMatrix, viewOf, type PageChannel } from "./annotation-page";
+import { DEFAULT_ITEM_STYLE } from "../engine/item-style";
 
 function channel() {
   const listeners = new Map<string, (p: unknown) => void>();
@@ -362,5 +363,19 @@ describe("page annotate (C11b, P13, P15, P16)", () => {
     await flush();
     expect(frames).toEqual([true, false, true]);
     warn.mockRestore();
+  });
+});
+
+describe("viewOf : style courant (OG11 T9)", () => {
+  it("viewOf porte itemStyle, sans autre champ neuf", () => {
+    const itemStyle = { ...DEFAULT_ITEM_STYLE, strokeStyle: "dashed" as const, opacity: 40 };
+    const s = {
+      tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, textFormat: null,
+      selection: ["x"], selectionBounds: null, selectionUnits: 1, selectionGrouped: false, tableCell: null,
+      tableMerges: 0, tableShades: 0, elementCount: 1, version: 3, error: null, page: "p", itemStyle,
+    } as unknown as EngineState;
+    const v = viewOf(s);
+    expect(v.itemStyle).toEqual(itemStyle);
+    expect(Object.keys(v).sort()).toEqual(["canRedo", "canUndo", "eraserMode", "itemStyle", "pageCount", "pageIndex", "textFormat", "tool"]);
   });
 });
