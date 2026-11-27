@@ -891,6 +891,64 @@ fn table_sizes_change_moves_bound_end() {
     assert!(near(world(&d, &f)[1], (205.0, 25.0)), "une étape");
 }
 
+/// C3 : ids des colonnes (`cols`) ou des lignes (`rows`) d'un tableau, lus dans sa vue.
+fn table_lines(d: &Document, t: &str, axis: &str) -> Vec<String> {
+    fn find<'a>(v: &'a serde_json::Value, k: &str) -> Option<&'a serde_json::Value> {
+        match v {
+            serde_json::Value::Object(m) => m.get(k).or_else(|| m.values().find_map(|x| find(x, k))),
+            _ => None,
+        }
+    }
+    let v = view(d, t);
+    find(&v, axis)
+        .and_then(|x| x.as_array())
+        .expect("lignes du tableau")
+        .iter()
+        .map(|l| l["id"].as_str().expect("id").to_string())
+        .collect()
+}
+
+/// C3 (même classe que C1 constat 3) : colonne retirée d'un tableau lié : l'extrémité suit (105, 25), une étape.
+/// Sous le patron fautif (retrait sans `follow`), elle reste en (205, 25).
+#[test]
+fn table_line_removed_moves_bound_end_in_one_step() {
+    use roomboard_core::table::TableAxis;
+    let mut d = Document::blank();
+    let (t, f) = table_with_line(&mut d);
+    let cols = table_lines(&d, &t, "cols");
+    d.apply(Command::RemoveTableLine {
+        id: t.clone(),
+        axis: TableAxis::Col,
+        line: cols[1].clone(),
+        to: None,
+    })
+    .expect("retrait");
+    assert!(near(world(&d, &f)[1], (105.0, 25.0)), "{:?}", world(&d, &f));
+    assert!(d.undo());
+    assert!(near(world(&d, &f)[1], (205.0, 25.0)), "une étape");
+}
+
+/// C3 : `SetTableCell` dont la hauteur exigée agrandit la ligne : le tableau passe à 100 de haut, l'extrémité liée au
+/// milieu du bord droit suit (205, 50), une étape (texte et hauteur annulés ensemble).
+#[test]
+fn table_cell_row_height_moves_bound_end_in_one_step() {
+    let mut d = Document::blank();
+    let (t, f) = table_with_line(&mut d);
+    let (rows, cols) = (table_lines(&d, &t, "rows"), table_lines(&d, &t, "cols"));
+    d.apply(Command::SetTableCell {
+        id: t.clone(),
+        row: rows[0].clone(),
+        col: cols[0].clone(),
+        content: "a".into(),
+        row_height: Some(75.0),
+        spans: None,
+    })
+    .expect("cellule");
+    assert!(near(world(&d, &f)[1], (205.0, 50.0)), "{:?}", world(&d, &f));
+    assert!(d.undo());
+    assert!(near(world(&d, &f)[1], (205.0, 25.0)), "une étape");
+}
+
 /// C1 constat 3 : `SetStyle` qui épaissit la cible (écart 5 + 20 / 2) : le départ lié suit, une étape. `SetStyle` sur la
 /// flèche seule ne rompt pas ses liaisons (la flèche n'est pas une cible : elle n'entre pas dans `moved`).
 #[test]
