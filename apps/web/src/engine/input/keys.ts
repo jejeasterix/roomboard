@@ -137,9 +137,9 @@ export function appShortcut(e: KeyLike): AppShortcut | null {
 }
 
 /** OG23 (déc. 24) : avec Alt, la lettre est lue par `code` (Option+H donne « ˙ » sous macOS), sinon par `key` ; H, V, R
- *  sont à la même place en AZERTY, QWERTY et QWERTZ. Jamais avec Ctrl ni Cmd, hors champ, hors composition. */
+ *  sont à la même place en AZERTY, QWERTY et QWERTZ. Jamais avec Ctrl ni Cmd, hors champ et contrôle de l'interface (comme `nudgeKey`), hors composition, ni si déjà traité. */
 export function arrangeKey(e: KeyLike): ArrangeHow | null {
-  if (e.isComposing || e.ctrlKey || e.metaKey || inEditable(e.target)) return null;
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.defaultPrevented === true || inEditable(e.target) || inControl(e.target)) return null;
   const letter = e.altKey ? (e.code ?? "").replace(/^Key/, "").toLowerCase() : e.key.toLowerCase();
   if (e.altKey && e.shiftKey) {
     if (e.key === "ArrowLeft") return "align-left";

@@ -619,7 +619,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
           <For each={keys()}>
             {(k) => (
               <section class="rb-options-sec" data-option={k} data-open={isOpen(k) ? "" : undefined} data-mixed={mixed(k) ? "" : undefined} data-disabled={off(k) ? "" : undefined}>
-                <h3 class="rb-opt-h" style={{ margin: "0", font: "inherit" }}>
+                <h3 class="rb-opt-h">
                 <button
                   type="button"
                   class="rb-opt-head"
