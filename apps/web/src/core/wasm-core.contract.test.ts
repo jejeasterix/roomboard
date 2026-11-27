@@ -129,9 +129,10 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     ).toThrow("Change invalide");
     expect(() => d.apply({ type: "Transform", ids: ["e1", "e2"], matrix: [2, 0, 0, 2, 10, 20] })).toThrow("Change invalide");
     expect(calls).toEqual([
-      // OG11 : les cinq derniers arguments sont l'aspect (stroke_style, roughness, seed, roundness, opacity), absents ici.
-      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000", undefined, undefined, undefined, undefined, undefined],
-      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined, undefined, undefined, undefined, undefined, undefined],
+      // OG11 : les dix derniers arguments sont l'aspect (stroke_style, roughness, seed, roundness, opacity, puis au lot 2
+      // fill_style, start_arrowhead, end_arrowhead, text_align, link), absents ici.
+      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
+      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
       ["transform", ["e1", "e2"], new Float64Array([2, 0, 0, 2, 10, 20])],
     ]);
   });
@@ -2212,7 +2213,7 @@ describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
     const spansArgOf = (a: unknown[], i: number): unknown => (i < 2 ? a[9] : a.at(-1));
     expect(calls.map(spansArgOf)).toEqual([[{ text: "a", attrs: { bold: true } }], undefined, [{ text: "a", attrs: { bold: true } }]]);
     expect((calls[0]?.[9] as { attrs: unknown }[])[0]?.attrs).toStrictEqual({ bold: true });
-    expect(calls[0]?.slice(10)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    expect(calls[0]?.slice(10)).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]); // aspect absent (lots 1 et 2)
   });
 });
 
