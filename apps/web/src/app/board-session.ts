@@ -12,6 +12,7 @@ import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
 import { GAP } from "../ui/island-place";
 import { createEngine, DEFAULT_PEN_STYLE, type Engine, type EngineState } from "../engine/engine";
+import type { ItemStyle } from "../engine/item-style";
 import { createMiddlePan } from "../engine/input/middle-pan";
 import { type PredictionSource, withPrediction } from "../engine/input/predict";
 import { createRouter, SECOND_FINGER_MS, type RouterOptions } from "../engine/input/router";
@@ -81,6 +82,10 @@ export interface SessionShared {
   readonly modelView?: ModelViewLoader;
   /** C11a (P14) : fenêtre `annotate` : rendu Canvas 2D transparent, jamais WebGL2 ; absent : rendu ordinaire. */
   readonly transparent?: boolean;
+  /** OG11 (déc. 23) : style courant gardé sur l'appareil, lu à la création du moteur ; absent ou null : style par défaut. */
+  readonly itemStyle?: () => ItemStyle | null;
+  /** OG11 : chaque changement du style courant, pour le garder sur l'appareil. */
+  readonly onItemStyle?: (s: ItemStyle) => void;
 }
 
 /** Réglages de lecture d'un média du document. */
@@ -342,7 +347,10 @@ async function buildBoardSession(
       },
       fill: (ctx, color, tolerance) => createFillTool(ctx, color, measure, { tolerance, submit: (r, run) => fillQueue.submit(r, zoneMarks.timed(run)) }),
     },
+    ...(shared.itemStyle ? { itemStyle: shared.itemStyle() ?? undefined } : {}),
   });
+  // OG11 (déc. 23) : le style courant est gardé sur l'appareil à chaque changement.
+  if (shared.onItemStyle) undo.push(engine.onItemStyle(shared.onItemStyle));
 
   activeTool = () => engine.tool();
   undo.push(() => engine.dispose());

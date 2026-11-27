@@ -1861,7 +1861,7 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(colorOf(a)).toBe("#1d4ed8");
     expect(colorOf(b)).toBe("#1d4ed8");
     expect(engine.itemStyle().color).toBe("#1d4ed8");
-    expect(engine.state().itemStyle.color).toBe("#1d4ed8");
+    expect(engine.state().itemStyle?.color).toBe("#1d4ed8");
     expect(doc.version()).toBeGreaterThan(v);
     // Une seule étape : un Annuler rend les deux éléments à leur couleur (deux étapes laisseraient `a` en bleu).
     engine.undo();

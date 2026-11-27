@@ -224,6 +224,9 @@ async function start(): Promise<void> {
   const shared: SessionShared = {
     container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker, modelView,
     ...(ports === null ? {} : { mediaUrl: ports.assetUrl }),
+    // OG11 (déc. 23) : style courant gardé sur l'appareil ; `device` (plus bas) n'est lu qu'à la création d'une session.
+    itemStyle: () => device.itemStyle(),
+    onItemStyle: (s) => void device.setItemStyle(s),
   };
 
   // C16 (O24) : capacité `officeConverter` lue de la coque avant le profil (convertisseur cherché une fois au lancement).

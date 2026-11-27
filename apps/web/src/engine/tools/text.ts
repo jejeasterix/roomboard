@@ -5,6 +5,7 @@
  * `compositionend` (porte partagée, `commit-gate.ts`) ; rien n'est écrit pendant la composition. Clic pendant l'édition : valide seulement.
  */
 import type { Matrix, TextSpan } from "../../core/api";
+import { lookFrom, type Look } from "../../core/look";
 import { plainSpans, sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { screenToWorld, type Camera } from "../camera";
@@ -17,6 +18,8 @@ export const TEXT_HIT_TOL_PX = 6;
 export interface TextStyle {
   readonly color: string;
   readonly size: number;
+  /** OG11 : transparence du style courant (0..100) pour une boîte neuve ; absente : opaque. */
+  readonly opacity?: number;
 }
 
 export interface TextEditSession {
@@ -65,6 +68,8 @@ export interface TextTool extends GestureTool {
 export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: () => TextStyle, measure: Measure): TextTool {
   let session: TextEditSession | null = null;
   let live: LivePart = NO_LIVE;
+  /** OG11 : aspect de la boîte neuve ouverte (transparence du style courant à l'ouverture) ; texte existant : aucun. */
+  let newLook: Look | undefined;
   /** Porte IME (CL4-3), partagée avec l'outil Tableau : toute validation attend la fin d'une composition. */
   const gate = createCommitGate(() => commit(), () => session !== null);
 
@@ -87,7 +92,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     // R6 : texte et segments inchangés : aucune commande ; mise en forme seule (S6) : la commande part.
     if (s.id !== null && content === s.initial && sameSpans(spans, s.spans)) return;
     const boxHeight = richBoxHeight(layoutRich(spans, { size: s.size }, s.boxWidth, measure));
-    ctx.run({ type: "SetText", page: s.page, id: s.id, x: s.matrix[4], y: s.matrix[5], content, color: s.color, size: s.size, boxWidth: s.boxWidth, boxHeight, spans });
+    ctx.run({ type: "SetText", page: s.page, id: s.id, x: s.matrix[4], y: s.matrix[5], content, color: s.color, size: s.size, boxWidth: s.boxWidth, boxHeight, spans, ...(s.id === null && newLook ? { look: newLook } : {}) });
   };
 
   const open = (x: number, y: number): void => {
@@ -107,8 +112,10 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
         spans: el.text.spans,
       };
       live = { ...NO_LIVE, hidden: new Set([el.id]) };
+      newLook = undefined;
     } else {
       const st = style();
+      newLook = lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: st.opacity ?? 100 }, null);
       session = { page, id: null, matrix: [1, 0, 0, 1, x, y], boxWidth: DEFAULT_TEXT_BOX_WIDTH, color: st.color, size: st.size, initial: "", spans: plainSpans("") };
       live = NO_LIVE;
     }
