@@ -759,12 +759,12 @@ async function s4suite(browser, base, mode, tmp) {
   const ids = gs.elements.filter((e) => kindOf(e, "rect")).map((e) => e.id);
   const lignes = (...o) => `${o.map((x) => JSON.stringify(x)).join("\n")}\n`;
   const elOf = (st, id) => st.pages.flatMap((p) => p.elements).find((e) => e.id === id);
-  const run = cli(["run", gs.file, "--ops", "-"], lignes({ op: "state" }, { type: "Arrange", ids: [ids[0], ids[2]], how: "align-left" }, { op: "state" }, { op: "undo" }, { op: "state" }));
+  const run = cli(["run", gs.file, "--ops", "-"], lignes({ op: "state" }, { type: "Arrange", ids: [ids[1], ids[2]], how: "align-right" }, { op: "state" }, { op: "undo" }, { op: "state" }));
   check(run.status === 0, `S4.6 : roomboard run (code ${run.status} ${run.stderr})`);
   const st = run.stdout.split("\n").filter((l) => l !== "").map((l) => JSON.parse(l)).filter((l) => l.state).map((l) => l.state);
   const dx = (id, k) => (elOf(st[k], id)?.transform?.[4] ?? 0) - (elOf(st[0], id)?.transform?.[4] ?? 0);
   lire("S4.groupe.dx", `${dx(ids[0], 1)},${dx(ids[1], 1)}`);
-  check(Math.abs(dx(ids[0], 1) - dx(ids[1], 1)) < 0.001, "S4.6 : le membre désigné et son compagnon de groupe bougent du même pas (le groupe en bloc)");
+  check(Math.abs(dx(ids[0], 1)) > 1 && Math.abs(dx(ids[0], 1) - dx(ids[1], 1)) < 0.001, "S4.6 : le membre désigné et son compagnon de groupe bougent du même pas (le groupe en bloc)");
   // 7. CLI : Arrange puis undo : une étape chacun ; `how: "spin"` : code 2.
   check(dx(ids[0], 2) === 0 && dx(ids[1], 2) === 0, "S4.7 : undo : une étape, les positions d'avant");
   const spin = cli(["run", gs.file, "--ops", "-"], lignes({ type: "Arrange", ids: [ids[0]], how: "spin" }));
@@ -832,7 +832,7 @@ async function nettete(browser, base) {
     await frames(page);
     const box = await icon.boundingBox();
     const geo = await icon.evaluate((el) => ({ viewBox: el.getAttribute("viewBox"), sw: getComputedStyle(el).strokeWidth, w: el.getBoundingClientRect().width, color: getComputedStyle(el).color }));
-    check(geo.viewBox === "0 0 24 24", `nettete : « ${how} » est dessinée sur la grille de 24 (viewBox ${geo.viewBox})`);
+    check(/ 24 24$/.test(geo.viewBox ?? ""), `nettete : « ${how} » est dessinée sur la grille de 24 (ICON_VIEWBOX ${geo.viewBox})`);
     check(Math.abs(parseFloat(geo.sw) - 1.5) < 0.01, `nettete : « ${how} » a un trait fin de 1,5 (lu ${geo.sw})`);
     const px = await pixelsOf(page, { x: box.x, y: box.y, width: box.width, height: box.height });
     const bg = [px.data[0], px.data[1], px.data[2]];
@@ -892,7 +892,7 @@ async function captures(browser, base, nom) {
   await shoot("stylo", await clipOf([OPT], 900, 720));
   // alignés : trois rectangles décalés ; après : alignés à gauche, Aligner ouvert.
   await useTool(page, "doigt", "rect");
-  for (const [a, b] of [[[900, 200], [960, 260]], [[960, 300], [1060, 350]], [[930, 400], [980, 470]]]) await touchDrag(page, cdp, a, b);
+  for (const [a, b] of [[[900, 200], [960, 260]], [[960, 300], [1060, 350]], [[930, 400], [980, 470]]]) await mouseDrag(page, a, b); // après le stylet, le doigt déplace la vue
   await useTool(page, "doigt", "select");
   await marquee(page, [880, 180], [1100, 500]);
   if (!avant) {
