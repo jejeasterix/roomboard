@@ -33,7 +33,7 @@ import { createPdfEngine } from "./platform/pdf-render";
 import { createModelViewLoader } from "./platform/model-view";
 import { createZipReader, createZipWriter } from "./platform/zip-read";
 import { createWasmCore } from "./core/wasm-core";
-import type { KeyLike } from "./engine/input/keys";
+import { keyOf } from "./key-of";
 import { detectSupport } from "./engine/input/support";
 import { createSettingsStore, parseSettings } from "./engine/settings";
 import { measureOrFallback } from "./engine/text-layout";
@@ -59,18 +59,6 @@ import { showToast } from "./ui/toast";
 import { sentToBoardToast } from "./platform/annotation-port";
 import init, * as wasm from "./wasm/roomboard_wasm";
 import { withConversionMark, type OriginalChange } from "./platform/office-import";
-
-function keyOf(e: KeyboardEvent): KeyLike {
-  return {
-    key: e.key,
-    ctrlKey: e.ctrlKey,
-    metaKey: e.metaKey,
-    shiftKey: e.shiftKey,
-    altKey: e.altKey,
-    isComposing: e.isComposing,
-    target: e.target instanceof HTMLElement ? e.target : null,
-  };
-}
 
 /** C11b (P30) : capture du faux hôte (`?annotation=faux`) : PNG 320 × 180 uni `#3366cc`, peint par un canvas. */
 async function fakeDesktopCapture(): Promise<CaptureOutcome> {
