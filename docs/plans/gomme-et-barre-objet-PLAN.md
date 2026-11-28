@@ -24,9 +24,9 @@ tableau supprimable par son menu de case, et une barre d'objet en icônes, petit
 | T4 | L1 | Essai `gomme-objets` et captures 2x du lot L1 | T1, T2, T3 | scripts/essais/gomme-objets-navigateur.mjs, scripts/verifier.sh, scripts/tests/verifier-e2e.test.sh, docs/design/captures/gomme-et-barre-objet/ | (partagé) | implementeur-tdd | `bash scripts/tests/verifier-e2e.test.sh` → `verifier-e2e.test.sh : OK` ; `node --check` | S1, S2, S3, S4 | #tache-t4 |
 | T5 | L2 | Ce qui entoure le cadre : `overlayKeepOut`, `selectionKeepOut` | T4 | apps/web/src/engine/render/overlay.ts, apps/web/src/engine/render/overlay.test.ts, apps/web/src/engine/tools/handles.ts, apps/web/src/engine/engine.ts, apps/web/src/engine/engine.test.ts | (partagé) | concepteur-critique | vitest overlay.test.ts ≥ 1 test `overlayKeepOut` | S5 | #tache-t5 |
 | T6 | L2 | Placement pur `placeObjectBar` | T4 | apps/web/src/ui/island-place.ts, apps/web/src/ui/island-place.test.ts | isolé | implementeur-tdd | vitest island-place.test.ts ≥ 1 test `placeObjectBar` | S6 | #tache-t6 |
-| T7 | L2 | Composant `ObjectBar` (icônes, « … », clavier, tactile) | T6 | apps/web/src/ui/object-bar.ts, apps/web/src/ui/object-bar.test.ts, apps/web/src/ui/ObjectBar.tsx, apps/web/src/ui/ObjectBar.test.tsx, apps/web/src/ui/icons.ts, apps/web/src/ui/icons.test.ts, apps/web/src/ui/MenuBar.tsx, apps/web/src/ui/rb.css, apps/web/src/ui/rb-css.test.ts, apps/web/src/ui/shortcuts.ts, apps/web/src/ui/shortcuts.test.ts, apps/web/src/engine/input/keys.ts, apps/web/src/engine/input/keys.test.ts, apps/web/src/app/toolbar-host.ts, apps/web/src/app/toolbar-host.test.ts, apps/web/src/app/workspace.ts, apps/web/src/app/workspace.test.ts, THIRD_PARTY_NOTICES.md | (partagé) | concepteur-critique | vitest ObjectBar.test.tsx ≥ 1 test `appui long` | S5, S7 | #tache-t7 |
+| T7 | L2 | Composant `ObjectBar` (icônes, « … », clavier, tactile) | T6 | apps/web/src/ui/object-bar.ts, apps/web/src/ui/object-bar.test.ts, apps/web/src/ui/ObjectBar.tsx, apps/web/src/ui/ObjectBar.test.tsx, apps/web/src/ui/icons.ts, apps/web/src/ui/icons.test.ts, apps/web/src/ui/MenuBar.tsx, apps/web/src/ui/rb.css, apps/web/src/ui/rb-css.test.ts, apps/web/src/ui/shortcuts.ts, apps/web/src/ui/shortcuts.test.ts, apps/web/src/engine/input/keys.ts, apps/web/src/engine/input/keys.test.ts, apps/web/src/app/toolbar-host.ts, apps/web/src/app/toolbar-host.test.ts, apps/web/src/app/workspace.ts, apps/web/src/app/workspace.test.ts, apps/web/src/ui/SelectionRow.tsx, THIRD_PARTY_NOTICES.md | (partagé) | concepteur-critique | vitest ObjectBar.test.tsx ≥ 1 test `appui long` | S5, S7 | #tache-t7 |
 | T8 | L2 | Obstacles des îlots ; Dupliquer et Supprimer quittent le panneau | T4 | apps/web/src/ui/Island.tsx, apps/web/src/ui/Island.test.tsx, apps/web/src/ui/OptionsPanel.tsx, apps/web/src/ui/OptionsPanel.test.tsx | isolé | implementeur-tdd | vitest Island.test.tsx ≥ 1 test `islands()` | S6 | #tache-t8 |
-| T9 | L2 | Montage : barre dans `.rb-stages`, rangée Sélection réduite à « Coller » | T5, T7, T8 | apps/web/src/ui/App.tsx, apps/web/src/ui/App.test.tsx, apps/web/src/ui/SelectionRow.tsx, apps/web/src/ui/SelectionRow.test.tsx, apps/web/src/ui/Toolbar.tsx, apps/web/src/ui/Toolbar.test.tsx, apps/web/src/app/board-session.ts, scripts/essais/c3-groupes-navigateur.mjs, scripts/essais/personnalisation-1a-navigateur.mjs, scripts/essais/personnalisation-2-navigateur.mjs | (partagé) | implementeur-tdd | vitest SelectionRow.test.tsx ≥ 1 test `un seul bouton icône` + App.test.tsx `barre d'objet montée` | S5, S8 | #tache-t9 |
+| T9 | L2 | Montage : barre dans `.rb-stages`, rangée Sélection réduite à « Coller » | T5, T7, T8 | apps/web/src/ui/App.tsx, apps/web/src/ui/App.test.tsx, apps/web/src/ui/SelectionRow.tsx, apps/web/src/ui/SelectionRow.test.tsx, apps/web/src/ui/Toolbar.tsx, apps/web/src/ui/Toolbar.test.tsx, scripts/essais/c3-groupes-navigateur.mjs, scripts/essais/personnalisation-1a-navigateur.mjs, scripts/essais/personnalisation-2-navigateur.mjs | (partagé) | implementeur-tdd | vitest SelectionRow.test.tsx ≥ 1 test `un seul bouton icône` + App.test.tsx `barre d'objet montée` | S5, S8 | #tache-t9 |
 | T10 | L2 | Essai `barre-objet` et captures 2x du lot L2 | T9 | scripts/essais/barre-objet-navigateur.mjs, scripts/verifier.sh, scripts/tests/verifier-e2e.test.sh, docs/design/captures/gomme-et-barre-objet/ | (partagé) | implementeur-tdd | `bash scripts/tests/verifier-e2e.test.sh` → `verifier-e2e.test.sh : OK` ; `node --check` | S5, S6, S7, S8 | #tache-t10 |
 
 Vagues : L1 = {T1, T3} → T2 → T4 ; L2 = {T5, T6, T8} → T7 → T9 → T10. Les lots se ferment l'un après l'autre (L2 part
@@ -1177,7 +1177,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Echec, clickItem, dropFile, frames, item, loadPlaywright, serve, solidPng, stageBox, stageMouse } from "./commun.mjs";
-import { newPage, saved, touchDrag } from "./gestes.mjs";
+import { newPage, pixelAt, saved, touchDrag } from "./gestes.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (name) => {
@@ -1239,7 +1239,7 @@ const tools = (page) => ({
   shot: async (name, sel) => {
     if (!captures) return;
     const path = join(captures, name);
-    const clip = sel ? await page.locator(sel).first().boundingBox() : null;
+    const clip = sel && (await page.locator(sel).count()) > 0 ? await page.locator(sel).first().boundingBox() : null;
     await page.screenshot({ path, ...(clip ? { clip } : {}), animations: "disabled", caret: "hide", scale: "device" });
     console.log(`capture : ${path}`);
   },
@@ -1284,8 +1284,19 @@ try {
     await t.drag([[960, 180], [960, 360]]);
     const n0 = await t.elements();
     lire("data-elements avant la gomme", n0);
+    // Témoins hors du chemin de la gomme (y 258-282, que la traînée repeint) : bord gauche du rectangle, un pixel bleu de l'image.
+    const dark = (px) => px[0] + px[1] + px[2] < 300;
+    const blue = (px) => px[2] > 150 && px[0] < 80;
+    const edge = [200, 235];
+    let pic = null;
+    for (const c of [[480, 235], [480, 305], [530, 300], [540, 330]]) if (blue(await pixelAt(page, ...c))) { pic = c; break; }
+    lire("témoins", `bord ${dark(await pixelAt(page, ...edge))}, image ${pic}`);
     await clickItem(page, "eraser");
     const end = await touchDrag(page, cdp, [150, 270], [1000, 270], { steps: 40, hold: true });
+    const edgeGone = !dark(await pixelAt(page, ...edge));
+    const picGone = pic !== null && !blue(await pixelAt(page, ...pic));
+    lire("pendant le geste", `bord effacé ${edgeGone}, image effacée ${picGone}`);
+    check(edgeGone && picGone, "S2 : pendant le geste, la forme et l'image disparaissent de l'écran (D6)");
     await t.shot("l1-forme-effacee-avant-relache.png");
     await end();
     const n1 = await t.elements();
@@ -1321,15 +1332,19 @@ try {
 
   await scenario("S2 pot et forme vide", async ({ page, cdp }) => {
     const t = tools(page);
+    // Trois traits fermés (triangle, sommets qui se chevauchent), remplis au pot ; un passage croise deux côtés et l'intérieur.
     await clickItem(page, "pen");
-    await t.drag([[300, 300], [500, 300], [500, 450], [300, 450], [300, 300]]);
+    await t.drag([[290, 450], [510, 450]]);
+    await t.drag([[495, 460], [395, 270]]);
+    await t.drag([[405, 270], [305, 460]]);
     await clickItem(page, "fill");
-    await stageMouse(page).click(400, 375);
+    await stageMouse(page).click(400, 400);
     await frames(page);
     await clickItem(page, "eraser");
-    await touchDrag(page, cdp, [250, 375], [550, 375], { steps: 24 });
+    await touchDrag(page, cdp, [300, 400], [500, 400], { steps: 24 });
     const p = await t.kinds("s2-pot");
     check(p.some((e) => e.kind === "fill"), "S2 : le remplissage du pot reste (D30)");
+    check(p.filter((e) => e.kind === "stroke").length >= 5, "S2 : les deux côtés traversés sont coupés (3 traits → 5 morceaux au moins)");
     await clickItem(page, "rect");
     await t.drag([[700, 300], [1000, 450]]);
     await clickItem(page, "pen");
@@ -1338,6 +1353,9 @@ try {
     await touchDrag(page, cdp, [810, 375], [890, 375], { steps: 8 });
     const f = await t.kinds("s2-forme-vide");
     check(f.some((e) => e.kind === "shape"), "S2 : un rectangle sans fond autour du trait gommé reste (D31)");
+    await touchDrag(page, cdp, [750, 330], [950, 330], { steps: 16 }); // intérieur, à 30 px du bord haut et du trait
+    const g = await t.kinds("s2-interieur");
+    check(g.some((e) => e.kind === "shape"), "S2 : un passage dans l'intérieur vide, loin du bord : le rectangle reste (D31)");
   });
 
   // S3 — tableau épargné, contenu traité ; « Supprimer le tableau » ; Suppr.
@@ -1353,6 +1371,9 @@ try {
     await stageMouse(page).click(...ORIGIN);
     await page.waitForSelector(".rb-table-picker:not([hidden])", { timeout: 5000 });
     await page.click('button[aria-label="3 colonnes, 3 lignes"]');
+    await page.keyboard.press("Escape");
+    await frames(page);
+    await stageMouse(page).click(...cell(0, 0)); // patron personnalisation-3-tableau-navigateur.mjs:390
     await page.keyboard.type("Lundi");
     await page.keyboard.press("Escape");
     await frames(page);
@@ -1372,6 +1393,15 @@ try {
     check(!s.some((e) => e.kind === "image"), "S3 : l'image logée en (1, 1) est effacée");
     check(s.filter((e) => e.kind === "stroke").length >= 2, "S3 : le trait de la case (2, 2) est coupé");
     await t.shot("l1-tableau-contenu-efface.png");
+    // Les morceaux du trait gardent leur case : ils suivent le tableau déplacé (Maj+→, 5 px).
+    await clickItem(page, "select");
+    await stageMouse(page).click(...cell(0, 2));
+    const strokes = (els) => JSON.stringify(els.filter((e) => e.kind === "stroke"));
+    const before = strokes(s);
+    await page.keyboard.press("Shift+ArrowRight");
+    await page.keyboard.press("Escape");
+    const moved = await t.kinds("s3-deplace");
+    check(strokes(moved) !== before, "S3 : les morceaux du trait suivent le tableau quand on le déplace");
     // Appui long sur une case, outil Tableau : « Supprimer le tableau ».
     await clickItem(page, "table");
     const [lx, ly] = cell(0, 2);
@@ -1449,6 +1479,10 @@ console.log(failed ? "gomme-objets : ÉCHEC" : "gomme-objets : OK");
 process.exit(failed ? 1 : 0);
 ```
 
+`--avant` est jouable sur `main` : `check` n'y arrête rien, aucun clic ne vise un élément propre à OG41 sans garde (le menu
+« Supprimer le tableau » absent : Échap). Captures en 2x (`newPage(…, { scale: 2 })`, `scale: "device"`), PNG, dans
+`docs/design/captures/gomme-et-barre-objet/avant|apres`.
+
 S4 « import d'un `.rbprofile` qui porte `eraser-mode` » est prouvé par `toolbar.test.ts` (« action retirée lue sans
 avertissement », T1) ; l'essai ne l'importe pas.
 
@@ -1481,7 +1515,9 @@ lien et de copie (DA2). Le moteur l'expose par `selectionKeepOut()` ; la barre d
 
 **Fichiers :**
 - Modifier : `apps/web/src/engine/render/overlay.ts` (ajout en fin de fichier, imports en tête)
-- Modifier : `apps/web/src/engine/tools/handles.ts:51-52` (deux constantes exportées)
+- Modifier : `apps/web/src/engine/tools/handles.ts:51-52` (deux constantes exportées). Écart déclaré à la carte d'impact,
+  qui donne `handles.ts` « non touché » : les portées de « Déplacer » y sont privées ; les exporter évite de les recopier
+  dans `overlay.ts` (DA2, une seule source). Aucune valeur ni comportement ne change.
 - Modifier : `apps/web/src/engine/engine.ts` (interface `Engine` près de `camera(): Camera;`, objet `engine` près de `run, runAll,`)
 - Tests : `apps/web/src/engine/render/overlay.test.ts`, `apps/web/src/engine/engine.test.ts`
 
@@ -1511,7 +1547,8 @@ Attendu : `Test Files  3 passed`, `Tests  N passed` (N ≥ 1), lignes `overlayKe
 depuis `src/ui` dans `src/engine`.
 
 **Critère « terminé » :** commande bornée verte ; `tsc --noEmit` vide ; suite sans nouveau rouge. Rapport :
-`Réutilisation : appelé handlesOf, moveHandlePoint, linkBadgeBox, copyBadgeBox` ou `Réutilisation : écart — <pourquoi>`.
+`Réutilisation : appelé handlesOf, moveHandlePoint, linkBadgeBox, copyBadgeBox` ou `Réutilisation : écart — <pourquoi>` ;
+la ligne d'écart sur `handles.ts` (constantes exportées).
 À signaler au rapport : la poignée de rotation d'OG33 (B4) devra entrer dans `overlayKeepOut`.
 
 **Étapes :**
@@ -1541,6 +1578,11 @@ describe("overlayKeepOut (OG41, DA2)", () => {
     const o = { ...EMPTY_OVERLAY, frame, handles: true, move: true };
     expect(overlayKeepOut(o, IDENTITY, true)).toContainEqual(sq(200, 172, 22));
     expect(overlayKeepOut(o, IDENTITY, false)).toContainEqual(sq(200, 172, 12));
+  });
+  it("overlayKeepOut : ligne seule (sans cadre) : ses points d'extrémité, 22 px au doigt, 12 à la souris", () => {
+    const o = { ...EMPTY_OVERLAY, points: [{ x: 100, y: 100, kind: "point" as const, selected: false }, { x: 300, y: 100, kind: "point" as const, selected: false }] };
+    expect(overlayKeepOut(o, IDENTITY, true)).toEqual([sq(100, 100, 22), sq(300, 100, 22)]);
+    expect(overlayKeepOut(o, IDENTITY, false)).toEqual([sq(100, 100, 12), sq(300, 100, 12)]);
   });
   it("overlayKeepOut : poignées « + », prise de 22 px", () => {
     const r = overlayKeepOut({ ...EMPTY_OVERLAY, frame, handles: true, links: [{ dir: "up", x: 200, y: 160 }] }, IDENTITY, true);
@@ -1599,7 +1641,7 @@ En tête d'`apps/web/src/engine/render/overlay.ts`, remplacer l'import par :
 import type { Bounds, LinkDir, Look, Matrix, ShapeKind, StrokeStyle } from "../../core/api";
 import { worldToScreen, type Camera } from "../camera";
 import { HANDLE_GRAB_PX, MOVE_REACH_MOUSE_PX, MOVE_REACH_TOUCH_PX, handlesOf, moveHandlePoint } from "../tools/handles";
-import { LINK_REACH_PX } from "../tools/line-points";
+import { LINK_REACH_PX, POINT_REACH_PX, POINT_REACH_TOUCH_PX } from "../tools/line-points";
 import { LINK_MOUSE_PX, LINK_TOUCH_PX, copyBadgeBox, linkBadgeBox } from "./link-badge";
 ```
 
@@ -1613,19 +1655,20 @@ export interface ElementBadges { readonly bounds: Bounds; readonly link: boolean
 /** Demi-côté dessiné du rond « Déplacer » (24 px, `paintMoveHandle`). */
 const MOVE_DRAWN_HALF_PX = 12;
 
-/** OG41 (DA2) : ce qui entoure le cadre de la sélection, cibles comprises, en px de la scène : huit poignées de taille
- *  (prise `HANDLE_GRAB_PX`), « Déplacer » (22 px au doigt, 12 à la souris), « + » (`LINK_REACH_PX`), badges de lien et de
- *  copie (44 px au doigt, 24 à la souris). Une seule source pour la barre d'objet : une poignée ajoutée au calque
- *  (rotation d'OG33) n'est évitée que si elle entre ici. Sans cadre : rien. */
+/** OG41 (DA2) : ce qui entoure la sélection, cibles comprises, en px de la scène : huit poignées de taille (prise
+ *  `HANDLE_GRAB_PX`), « Déplacer » (22 px au doigt, 12 à la souris), « + » (`LINK_REACH_PX`), points d'une ligne ou d'une
+ *  flèche seule (calque sans cadre, `select.ts:375-380` : `POINT_REACH_TOUCH_PX` au doigt, `POINT_REACH_PX` à la
+ *  souris), badges de lien et de copie (44 px au doigt, 24 à la souris). Une seule source pour la barre d'objet : une
+ *  poignée ajoutée au calque (rotation d'OG33) n'est évitée que si elle entre ici. Calque vide : rien. */
 export function overlayKeepOut(o: EditOverlay, camera: Camera, touch: boolean, badges: readonly ElementBadges[] = []): readonly ScreenRect[] {
-  if (o.frame === null) return [];
   const out: ScreenRect[] = [];
   const square = (x: number, y: number, half: number): void => void out.push({ x: x - half, y: y - half, w: 2 * half, h: 2 * half });
   const world = (x: number, y: number, half: number): void => {
     const [sx, sy] = worldToScreen(camera, x, y);
     square(sx, sy, half);
   };
-  if (o.handles) {
+  for (const p of o.points ?? []) world(p.x, p.y, touch ? POINT_REACH_TOUCH_PX : POINT_REACH_PX);
+  if (o.frame !== null && o.handles) {
     for (const h of handlesOf(o.frame)) world(h.x, h.y, HANDLE_GRAB_PX);
     if (o.move === true) {
       const [mx, my] = moveHandlePoint(o.frame, camera.zoom);
@@ -1706,7 +1749,7 @@ obstacles de l'interface par `placeLinkAvoiding`, la suivante essayée si l'obst
 
 **Test et commande bornée :**
 `cd /Users/jeromedenis/projets/roomboard-wt/gomme-et-barre-objet/apps/web && npx -y pnpm@12.18.0 exec vitest run src/ui/island-place.test.ts --reporter=verbose 2>&1 | grep -E "Test Files|Tests  |FAIL|placeObjectBar"`
-Attendu : `Test Files  1 passed`, `Tests  N passed` (N ≥ 1), au moins six lignes `placeObjectBar`, aucun `FAIL`.
+Attendu : `Test Files  1 passed`, `Tests  N passed` (N ≥ 1), au moins huit lignes `placeObjectBar`, aucun `FAIL`.
 
 **Contraintes (recopiées de Global Constraints) :**
 - G1 Mac, pas de Rust. G2 commande ci-dessus ; suite complète en fin de tâche (référence 4742 passés, 1 rouge propre au Mac `profile-actions.test.ts`). G3 `tsc --noEmit` vide.
@@ -1741,6 +1784,15 @@ describe("placeObjectBar (OG41, D20)", () => {
     const p = placeObjectBar({ x: 0, y: 0, w: 1280, h: 900 }, bar, area, [], []);
     expect(p).toEqual({ left: 550, top: 8, side: "inside" });
   });
+  it("placeObjectBar : dedans : 8 px sous les poignées du haut, jamais sur elles", () => {
+    const p = placeObjectBar({ x: 0, y: 0, w: 1280, h: 900 }, bar, area, [{ x: -12, y: -12, w: 24, h: 24 }, { x: 628, y: -12, w: 24, h: 24 }], []);
+    expect(p).toEqual({ left: 550, top: 20, side: "inside" });
+  });
+  it("placeObjectBar : barre d'outils en bas, objet collé en bas : au-dessus, hors de l'îlot (S6)", () => {
+    const low = { x: 400, y: 760, w: 200, h: 100 };
+    const tools = { x: 300, y: 828, w: 680, h: 56 };
+    expect(placeObjectBar(low, bar, area, [], [tools])).toEqual({ left: 410, top: 708, side: "above" });
+  });
   it("placeObjectBar : obstacle sur la place du dessus : décalée à sa droite (D20, placeLinkAvoiding)", () => {
     const p = placeObjectBar(frame, bar, area, [], [{ x: 380, y: 230, w: 100, h: 60 }]);
     expect(p).toEqual({ left: 488, top: 248, side: "above" });
@@ -1772,7 +1824,7 @@ const crosses = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.
 
 /** OG41 (D20, DA3) : place de la barre d'objet `bar` dans `area`, centrée sur le cadre `frame` de la sélection, à 8 px
  *  au-dessus de tout ce qui l'entoure (`keepOut` : poignées, « + », « Déplacer », badges, cibles comprises), sinon 8 px en
- *  dessous, sinon dans la vue en haut du cadre. Chaque place évite les `obstacles` (îlots, panneau d'options, barre
+ *  dessous, sinon dans la vue, 8 px sous les zones gardées du haut du cadre. Chaque place évite les `obstacles` (îlots, panneau d'options, barre
  *  latérale) par `placeLinkAvoiding` ; une place qui en croise encore un est abandonnée pour la suivante (la dernière
  *  essayée est gardée). Bornée à 8 px des bords (`placeWithin`) ; px entiers. */
 export function placeObjectBar(frame: Rect, bar: Box, area: Box, keepOut: readonly Rect[], obstacles: readonly Rect[]): ObjectBarPlace {
@@ -1780,6 +1832,8 @@ export function placeObjectBar(frame: Rect, bar: Box, area: Box, keepOut: readon
   const around = [frame, ...keepOut];
   const top = Math.min(...around.map((r) => r.y));
   const bottom = Math.max(...around.map((r) => r.y + r.h));
+  // Dedans : sous les zones gardées du haut du cadre (poignées, « Déplacer », badges), pas sur elles.
+  const topZone = Math.max(frame.y, ...keepOut.filter((r) => r.y < frame.y + m).map((r) => r.y + r.h));
   const maxX = Math.max(m, area.w - m - bar.w);
   const inner = { w: Math.max(0, area.w - 2 * m), h: Math.max(0, area.h - 2 * m) };
   const within = (x: number, y: number): Point => {
@@ -1790,7 +1844,7 @@ export function placeObjectBar(frame: Rect, bar: Box, area: Box, keepOut: readon
   const tries: readonly (readonly [ObjectBarPlace["side"], number, boolean])[] = [
     ["above", top - m - bar.h, top - m - bar.h >= m],
     ["below", bottom + m, bottom + m + bar.h <= area.h - m],
-    ["inside", Math.max(frame.y, 0) + m, true],
+    ["inside", Math.max(topZone, 0) + m, true],
   ];
   let last: ObjectBarPlace | null = null;
   for (const [side, y, fits] of tries) {
@@ -1832,6 +1886,7 @@ Monté par T9 ; ici le composant, ses tables et ses dépendances (icônes, racco
 - Modifier : `apps/web/src/ui/icons.ts` (cinq icônes Lucide), `apps/web/src/ui/MenuBar.tsx:19-25` (`MENU_STEP` exporté),
   `apps/web/src/ui/rb.css` (après `.rb-cell-menu`, l. 292), `apps/web/src/ui/shortcuts.ts` (après `line-edit`),
   `apps/web/src/engine/input/keys.ts` (après `objectKey`, l. 82-95), `apps/web/src/app/toolbar-host.ts:9`,
+  `apps/web/src/ui/SelectionRow.tsx:23-29` (deux clés de `DISABLED`, pour que le `Record<SelectionAction, …>` élargi compile ; T9 réécrit le fichier),
   `apps/web/src/app/workspace.ts:848-858`, `THIRD_PARTY_NOTICES.md` (section Lucide design L1-L4, l. 608-630)
 - Tests : `ui/icons.test.ts`, `ui/rb-css.test.ts`, `ui/shortcuts.test.ts`, `engine/input/keys.test.ts`,
   `app/toolbar-host.test.ts`, `app/workspace.test.ts`, `ui/MenuBar.test.tsx` (vert tel quel), `ui/HelpPanel.test.tsx` (vert tel quel)
@@ -2030,7 +2085,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-function setup(v: ObjectBarView = BASE) {
+function setup(v: ObjectBarView = BASE, obs: { x: number; y: number; w: number; h: number }[] = []) {
   const [view, setView] = createSignal<ObjectBarView>(v);
   let cam: Camera = { zoom: 1, tx: 0, ty: 0 };
   const cbs = new Set<(c: Camera) => void>();
@@ -2043,7 +2098,7 @@ function setup(v: ObjectBarView = BASE) {
   stage.tabIndex = -1;
   mount.append(stage);
   document.body.append(mount);
-  render(() => <ObjectBar view={view} host={host} engine={() => engine} stage={() => stage} mount={mount} obstacles={() => []} />);
+  render(() => <ObjectBar view={view} host={host} engine={() => engine} stage={() => stage} mount={mount} obstacles={() => obs} />);
   const bar = (): HTMLElement => mount.querySelector<HTMLElement>("[data-object-bar]")!;
   const ids = (): string[] => [...bar().querySelectorAll("[data-object-button]")].map((b) => b.getAttribute("data-selection-action") ?? "more");
   const moveCamera = (c: Camera): void => {
@@ -2113,13 +2168,37 @@ describe("ObjectBar (OG41, D18-D27)", () => {
     fireEvent.pointerUp(window, { pointerType: "touch" });
     expect(t.bar().hidden).toBe(false);
   });
-  it("D25 : un appui sur la barre n'atteint pas la scène", () => {
+  it("D25 : la barre est hors de la scène (dans le conteneur) : un appui sur elle n'atteint pas la scène", () => {
     const t = setup();
+    expect(t.bar().parentElement).toBe(t.mount);
+    expect(t.stage.contains(t.bar())).toBe(false);
     const seen = vi.fn();
     t.stage.addEventListener("pointerdown", seen);
     fireEvent.pointerDown(t.bar().querySelector("[data-object-button]")!, { pointerType: "touch" });
     expect(seen).not.toHaveBeenCalled();
     expect(t.bar().hidden).toBe(false);
+  });
+  it("D20 : obstacle posé après la barre (îlot placé à l'image suivante) : la barre se décale une image plus tard", async () => {
+    const obs: { x: number; y: number; w: number; h: number }[] = [];
+    const t = setup(BASE, obs);
+    expect(t.bar().style.left).toBe("210px");
+    obs.push({ x: 200, y: 240, w: 200, h: 60 });
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+    expect(t.bar().style.left).toBe("408px");
+  });
+  it("effet de bord 12 : Suppr, Espace, Échap pressés dans la barre n'atteignent pas le moteur ; la sélection reste", () => {
+    const t = setup();
+    const engineKeys = vi.fn();
+    window.addEventListener("keydown", engineKeys);
+    fireEvent.keyDown(window, { key: "F10", shiftKey: true });
+    engineKeys.mockClear();
+    const first = document.activeElement as HTMLElement;
+    for (const key of ["Delete", " ", "Backspace"]) fireEvent.keyDown(first, { key });
+    fireEvent.keyDown(first, { key: "Escape" });
+    expect(engineKeys).not.toHaveBeenCalled();
+    expect(t.host.selection).not.toHaveBeenCalled();
+    expect(t.bar().hidden).toBe(false);
+    window.removeEventListener("keydown", engineKeys);
   });
   it("S7 : « … » : Premier plan, Arrière-plan, Exporter la sélection, icône et libellé ; jouées", () => {
     const t = setup();
@@ -2175,7 +2254,7 @@ Calcul attendu du placement : cadre écran (200, 300)-(400, 400), barre 180 × 4
 
 - [ ] **Étape 4 : lancer, constater le rouge** — commande bornée : `FAIL` (modules absents).
 
-- [ ] **Étape 5 : `toolbar-host.ts`, `workspace.ts`**
+- [ ] **Étape 5 : `toolbar-host.ts`, `workspace.ts`, `SelectionRow.tsx`**
 
 `apps/web/src/app/toolbar-host.ts:9` :
 
@@ -2188,6 +2267,14 @@ export type SelectionAction = "group" | "ungroup" | "copy" | "paste" | "export" 
 ```ts
         duplicate: () => void engine.duplicateSelection(),
         delete: () => void engine.deleteSelection(),
+```
+
+`apps/web/src/ui/SelectionRow.tsx:23-29` : `DISABLED` est un `Record<SelectionAction, …>` ; ajouter ses deux clés (la
+rangée ne les rend pas, `SELECTION_ACTIONS` garde ses cinq entrées jusqu'à T9) :
+
+```ts
+  duplicate: (v) => (v.selection?.length ?? 0) === 0,
+  delete: (v) => (v.selection?.length ?? 0) === 0,
 ```
 
 - [ ] **Étape 6 : `keys.ts`, `shortcuts.ts`, `MenuBar.tsx`**
@@ -2403,12 +2490,31 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
     setAt(placeObjectBar(frame, { w: root.offsetWidth, h: root.offsetHeight }, { w: props.mount.clientWidth, h: props.mount.clientHeight }, keep, obstacles));
   };
 
+  // Les îlots se posent par image et par ResizeObserver (Island.tsx:42-46, 246) : `islands()` est relu une image après
+  // chaque place (un seul replacement, jamais en boucle), et à chaque changement de taille du conteneur.
+  let settle = 0;
+  const win = props.mount.ownerDocument.defaultView ?? window;
+  const placeNow = (): void => {
+    if (!visible() || pressed()) return;
+    place();
+    win.cancelAnimationFrame(settle);
+    settle = win.requestAnimationFrame(() => {
+      if (visible() && !pressed()) place();
+    });
+  };
+  onCleanup(() => win.cancelAnimationFrame(settle));
   createEffect(() => {
     void props.view();
     void main().length;
     void more().length;
     void camTick();
-    if (visible() && !pressed()) place();
+    placeNow();
+  });
+  onMount(() => {
+    if (typeof ResizeObserver !== "function") return;
+    const ro = new ResizeObserver(() => placeNow());
+    ro.observe(props.mount);
+    onCleanup(() => ro.disconnect());
   });
   createEffect(() => {
     const off = props.engine().onCamera(() => setCamTick((n) => n + 1));
@@ -2769,7 +2875,7 @@ trois essais suivent les sélecteurs (D23, D33).
   (T5) : `Engine.selectionKeepOut()`.
 - Produit : `SelectionRow(props: { view: Accessor<ToolbarView>; host: ToolbarHost }): JSX.Element` (même signature, un seul bouton).
 - Réutilise : `apps/web/src/ui/IconButton.tsx:110`, `apps/web/src/ui/shortcuts.ts` (`buttonShortcut`) — `IconButton({ icon: "clipboard-paste", label: "Coller", attrs: { "data-selection-action": "paste" }, shortcut: buttonShortcut("paste"), onPress })`
-- Réutilise : `apps/web/src/ui/Island.tsx` (`extra`, T8) — `obstacles={islands}`
+- Réutilise : `apps/web/src/ui/Island.tsx` (`extra`, T8) — `obstacles={() => [...islands(), ...popoverRects()]}` (les `.rb-media-bar` de `MediaBar` et `Model3dBar` sont hors du calque des îlots)
 
 **Test et commande bornée :**
 `cd /Users/jeromedenis/projets/roomboard-wt/gomme-et-barre-objet/apps/web && npx -y pnpm@12.18.0 exec vitest run src/ui/SelectionRow.test.tsx src/ui/Toolbar.test.tsx src/ui/App.test.tsx src/ui/ObjectBar.test.tsx --reporter=verbose 2>&1 | grep -E "Test Files|Tests  |FAIL|un seul bouton icône|barre d'objet montée"`
@@ -2911,7 +3017,20 @@ que « Coller » ; les actions de l'objet sont dans la barre d'objet.`
 
 - [ ] **Étape 4 : monter la barre dans `App.tsx`**
 
-Import : `import { ObjectBar } from "./ObjectBar";`. Remplacer le rappel `extra` (l. 671-688) par :
+Import : `import { ObjectBar } from "./ObjectBar";` et `import type { Rect } from "./island-place";`. Avant le `return` du
+composant, ajouter (barres de média et d'objet 3D, `.rb-popover` hors du calque des îlots, `App.tsx:691-703`, obstacles
+aussi, D20) :
+
+```tsx
+  /** OG41 (D20) : rectangles fenêtre des barres flottantes hors des îlots (média, objet 3D), lus à l'appel. */
+  const popoverRects = (): readonly Rect[] =>
+    [...props.stages.ownerDocument.querySelectorAll(".rb-media-bar")].flatMap((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 ? [{ x: r.left, y: r.top, w: r.width, h: r.height }] : [];
+    });
+```
+
+Remplacer le rappel `extra` (l. 671-688) par :
 
 ```tsx
         extra={(sideStart, above, islands) => (
@@ -2938,7 +3057,7 @@ Import : `import { ObjectBar } from "./ObjectBar";`. Remplacer le rappel `extra`
               engine={() => board().engine}
               stage={() => board().stage}
               mount={props.stages}
-              obstacles={islands}
+              obstacles={() => [...islands(), ...popoverRects()]}
             />
           </>
         )}
@@ -3049,6 +3168,8 @@ const captures = opt("--captures");
 const avant = argv.includes("--avant");
 const BAR = "[data-object-bar]";
 const act = (id) => `[data-selection-action="${id}"]`;
+/** Bouton d'action : dans la barre d'objet ; en `--avant` (main), celui de la rangée Sélection à libellés. */
+const inBar = (id) => (avant ? act(id) : `${BAR} ${act(id)}`);
 
 const pw = await loadPlaywright();
 if (!pw) {
@@ -3078,6 +3199,14 @@ async function scenario(name, run) {
   }
 }
 const helpers = (page) => ({
+  /** Clic si présent ; absent : contrôle en échec (imprimé en `--avant`, qui continue). */
+  press: async (sel) => {
+    const here = (await page.locator(sel).count()) > 0 && (await page.locator(sel).first().isVisible());
+    check(here, `présent : ${sel}`);
+    if (here) await page.click(sel);
+    await frames(page);
+    return here;
+  },
   drag: async (pts) => {
     const m = stageMouse(page);
     await m.move(...pts[0]);
@@ -3088,7 +3217,7 @@ const helpers = (page) => ({
   },
   barBox: async () => {
     await frames(page);
-    const b = await page.locator(BAR).boundingBox();
+    const b = (await page.locator(BAR).count()) > 0 ? await page.locator(BAR).first().boundingBox() : null; // absent (main) : null, sans attendre
     if (b) lire("barre", `${b.x},${b.y},${b.width}×${b.height}`);
     return b;
   },
@@ -3108,7 +3237,7 @@ const helpers = (page) => ({
   shot: async (name, sel) => {
     if (!captures) return;
     const path = join(captures, name);
-    const box = sel ? await page.locator(sel).first().boundingBox() : null;
+    const box = sel && (await page.locator(sel).count()) > 0 ? await page.locator(sel).first().boundingBox() : null;
     const clip = box ? { x: Math.max(0, box.x - 120), y: Math.max(0, box.y - 120), width: box.width + 240, height: box.height + 320 } : undefined;
     await page.screenshot({ path, ...(clip ? { clip } : {}), animations: "disabled", caret: "hide", scale: "device" });
     console.log(`capture : ${path}`);
@@ -3122,7 +3251,7 @@ try {
     await dropFile(page, "#stage", "photo.png", solidPng(200, 150, [29, 78, 216]), "image/png", [600, 420]);
     await frames(page);
     await clickItem(page, "select");
-    await tapStage(page, 600, 420);
+    await tapStage(page, 630, 445); // dans l'image qu'elle soit centrée sur le point de dépôt ou calée par son coin
     await waitAttr(page, "data-selection", "1");
     const bar = await h.barBox();
     const f = await h.frameBox();
@@ -3136,17 +3265,21 @@ try {
     check(ints, "S5 : icônes posées en px entiers (netteté § 10 à 2x)");
     await h.shot("l2-barre-forme.png", BAR);
     // Appui long : infobulle « Dupliquer · Ctrl+D », sans action.
-    const dup = await page.locator(`${BAR} ${act("duplicate")}`).boundingBox();
-    const n0 = Number(await attr(page, "data-elements"));
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: dup.x + dup.width / 2, y: dup.y + dup.height / 2, id: 3 }] });
-    await page.waitForSelector('[role="tooltip"]', { timeout: 5000 });
-    const tip = await page.locator('[role="tooltip"]').first();
-    lire("infobulle", `${await tip.textContent()} · ${await tip.getAttribute("data-keys")}`);
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    await page.waitForTimeout(400);
-    check(Number(await attr(page, "data-elements")) === n0, "S5 : appui long sur Dupliquer : infobulle, aucune copie");
+    const dupSel = `${BAR} ${act("duplicate")}`;
+    const dup = (await page.locator(dupSel).count()) > 0 ? await page.locator(dupSel).first().boundingBox() : null;
+    if (dup !== null) {
+      const n0 = Number(await attr(page, "data-elements"));
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: dup.x + dup.width / 2, y: dup.y + dup.height / 2, id: 3 }] });
+      await page.waitForSelector('[role="tooltip"]', { timeout: 5000 });
+      const tip = page.locator('[role="tooltip"]').first();
+      const text = `${await tip.textContent()} · ${await tip.getAttribute("data-keys")}`;
+      lire("infobulle", text);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await page.waitForTimeout(400);
+      check(text === "Dupliquer · Ctrl+D" && Number(await attr(page, "data-elements")) === n0, "S5 : appui long sur Dupliquer : infobulle « Dupliquer · Ctrl+D », aucune copie");
+    } else check(false, "S5 : bouton Dupliquer de la barre d'objet présent");
     // Glisser : barre cachée pendant le geste, reposée au-dessus de la nouvelle place.
-    const end = await touchDrag(page, cdp, [600, 420], [400, 300], { hold: true });
+    const end = await touchDrag(page, cdp, [630, 445], [400, 300], { hold: true });
     check(!(await page.locator(BAR).isVisible()), "S5 : barre cachée pendant le glisser");
     await end();
     const bar2 = await h.barBox();
@@ -3163,10 +3296,12 @@ try {
   // S6 — place manquante, barre d'outils en bas, panneau et barre latérale, objet qui remplit la vue, flèches.
   await scenario("S6", async ({ page }) => {
     const h = helpers(page);
+    // Sous la rangée du haut (îlots à y 16-72) ; « + » et poignées ne laissent pas 52 px au-dessus : barre dessous.
     await clickItem(page, "rect");
-    await h.drag([[500, 20], [700, 120]]);
+    await h.drag([[150, 100], [300, 200]]);
     await clickItem(page, "select");
-    await marquee(page, [480, 5], [720, 140]);
+    await tapStage(page, 225, 150);
+    await waitAttr(page, "data-selection", "1");
     const bar = await h.barBox();
     const f = await h.frameBox();
     check(bar !== null && bar.y >= f.y + f.height, "S6 : objet collé en haut : barre sous le cadre (et sous les « + »)");
@@ -3181,10 +3316,17 @@ try {
     await page.keyboard.press("ArrowRight");
     const after = await h.barBox();
     check(before !== null && after !== null && after.x > before.x, "S6 : flèche → : l'objet bouge, la barre suit");
+    // Objet qui remplit la vue : un rectangle agrandi par le zoom (Ctrl + molette) jusqu'à déborder.
+    await page.keyboard.press("Escape");
     await clickItem(page, "rect");
-    await h.drag([[5, 160], [1270, 890]]);
+    await h.drag([[560, 400], [720, 520]]);
     await clickItem(page, "select");
-    await tapStage(page, 640, 500);
+    await tapStage(page, 640, 460);
+    const st0 = await page.locator("#stage").boundingBox();
+    await page.mouse.move(st0.x + 640, st0.y + 460);
+    await page.keyboard.down("Control");
+    for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -400);
+    await page.keyboard.up("Control");
     const big = await h.barBox();
     const stage = await page.locator("#stage").boundingBox();
     check(big !== null && big.y >= stage.y && big.y + big.height <= stage.y + stage.height, "S6 : objet qui remplit la vue : barre dans la vue");
@@ -3201,12 +3343,12 @@ try {
     await marquee(page, [280, 280], [620, 420]);
     await waitAttr(page, "data-selection", "2");
     check((await h.buttons()).includes("group"), "S7 : deux formes : Grouper visible");
-    await page.click(`${BAR} ${act("group")}`);
+    await h.press(inBar("group"));
     await waitAttr(page, "data-grouped", "1");
     const ids = await h.buttons();
     check(ids.includes("ungroup") && !ids.includes("group"), "S7 : Dégrouper remplace Grouper");
     await h.shot("l2-barre-groupe.png", BAR);
-    await page.click(`${BAR} [data-object-more]`);
+    if (!(await h.press(`${BAR} [data-object-more]`))) return;
     const rows = await page.$$eval("[data-object-menu] button", (els) => els.map((e) => [e.querySelector("span")?.textContent, e.getBoundingClientRect().height]));
     lire("menu", rows.map((r) => `${r[0]}:${r[1]}`).join(","));
     check(JSON.stringify(rows.map((r) => r[0])) === JSON.stringify(["Premier plan", "Arrière-plan", "Exporter la sélection"]) && rows.every((r) => r[1] >= 44), "S7 : « … » : Premier plan, Arrière-plan, Exporter la sélection, 44 px");
@@ -3240,11 +3382,11 @@ try {
     await page.click('button[aria-label="3 colonnes, 3 lignes"]');
     await page.keyboard.press("Escape");
     await clickItem(page, "select");
-    await tapStage(page, 700, 230);
+    await marquee(page, [150, 150], [760, 420]); // le tableau 3 × 3 posé en (200, 200), seul objet de la page
     await waitAttr(page, "data-selection", "1");
     check((await h.buttons()).includes("delete"), "S8 : tableau choisi : la barre montre Supprimer");
     const n0 = Number(await attr(page, "data-elements"));
-    await page.click(`${BAR} ${act("delete")}`);
+    if (!(await h.press(inBar("delete")))) return;
     await waitAttr(page, "data-elements", String(n0 - 1));
     await page.keyboard.press("Control+z");
     await waitAttr(page, "data-elements", String(n0));
@@ -3253,7 +3395,7 @@ try {
     await h.drag([[900, 500], [1000, 600]]);
     await clickItem(page, "select");
     await tapStage(page, 950, 500);
-    await page.click(`${BAR} ${act("copy")}`);
+    await h.press(inBar("copy"));
     await tapStage(page, 1100, 800);
     await waitAttr(page, "data-selection", "0");
     check(!(await page.locator(BAR).isVisible()) && (await page.locator(`[data-island-context] ${act("paste")}`).count()) === 1, "S8 : page vide : barre disparue, « Coller » dans l'îlot contextuel");
@@ -3277,9 +3419,11 @@ process.exit(failed ? 1 : 0);
 ```
 
 En `--avant` (sur `main`), `[data-object-bar]` n'existe pas : les lectures rendent `null`, chaque contrôle est imprimé
-`non`, les captures montrent la rangée Sélection à libellés ; un `page.click` sur un sélecteur absent lève : l'envelopper
-n'est pas voulu, l'orchestrateur lit la sortie jusqu'à ce point (les captures « avant » `l2-barre-forme.png` et
-`l2-barre-dessous.png` sont prises avant tout clic de la barre).
+`non` sans arrêter ; les clics passent par `press(inBar(id))`, qui vise la rangée Sélection à libellés de `main`
+(mêmes `data-selection-action`), et les captures « avant » montrent cette rangée aux mêmes moments. Seul S7 s'arrête
+avant le menu « … » (absent de `main`) ; S8 joue Supprimer et Copier par la rangée de `main`. Toutes les captures sont en
+2x (`newPage(…, { scale: 2 })`, `scale: "device"`), PNG, dans le dossier `--captures`
+(`docs/design/captures/gomme-et-barre-objet/avant|apres`).
 
 - [ ] **Étape 3 : inscrire l'essai** — `scripts/verifier.sh`, après `  node scripts/essais/gomme-objets-navigateur.mjs` :
 
