@@ -130,8 +130,9 @@ pub(crate) fn plan(units: &[Unit], how: ArrangeHow) -> Vec<(String, Transform)> 
             let start = |b: &Bounds| if h { b.x0 } else { b.y0 };
             let end = |b: &Bounds| if h { b.x1 } else { b.y1 };
             let mid = |b: &Bounds| (start(b) + end(b)) / 2.0;
-            let mut order: Vec<usize> = (0..units.len()).collect();
-            order.sort_by(|&a, &b| mid(&boxes[a]).total_cmp(&mid(&boxes[b])));
+            let order = crate::order::sorted_indices(units.len(), &|a, b| {
+                mid(&boxes[a]).total_cmp(&mid(&boxes[b]))
+            });
             let span: f64 = boxes.iter().map(|b| end(b) - start(b)).sum();
             let n = units.len() as f64;
             let step = (end(&sel) - start(&sel) - span) / (n - 1.0);
@@ -299,10 +300,11 @@ impl Document {
             if found.iter().any(|f| f.page_id != page) {
                 return Err(CommandError::MixedPages);
             }
-            let outers: BTreeSet<String> = found
-                .iter()
-                .filter_map(|f| read_group(&txn, &f.element)?.into_iter().next())
-                .collect();
+            let outers = crate::order::string_set(
+                found
+                    .iter()
+                    .filter_map(|f| read_group(&txn, &f.element)?.into_iter().next()),
+            );
             let mut picked = Vec::new();
             // Un seul passage sur la page, dans l'ordre de la pile (patron de `cmd_group`).
             if let Some(els) = self.page_elements(&txn, &page) {
@@ -385,7 +387,7 @@ impl Document {
                 None => Vec::new(),
             }
         };
-        moved.sort();
+        crate::order::sort_stable_by(&mut moved, String::cmp);
         moved.dedup();
         for f in followed {
             if !moved.contains(&f) {

@@ -159,10 +159,10 @@ pub(crate) fn reinsert_kept(
     moves: Vec<(u32, MapPrelim)>,
     to: u32,
 ) {
-    let mut idx: Vec<u32> = moves.iter().map(|(i, _)| *i).collect();
-    idx.sort_unstable_by(|a, b| b.cmp(a));
-    for i in idx {
-        arr.remove(txn, i);
+    // Indices décroissants (OG35 : par le tri partagé de `order`).
+    let order = crate::order::sorted_indices(moves.len(), &|a, b| moves[b].0.cmp(&moves[a].0));
+    for k in order {
+        arr.remove(txn, moves[k].0);
     }
     for (k, (_, p)) in moves.into_iter().enumerate() {
         arr.insert(txn, to + k as u32, p);
