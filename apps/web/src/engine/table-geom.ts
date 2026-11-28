@@ -19,6 +19,8 @@ export const TABLE_PADDING = 8;
 export const TABLE_LINE_WIDTH = 2;
 /** Ombrage (F13, HB-6, choix visuel à l'essai) : fond opaque gris, puis hachures à 45°, trait 2, pas 16 unités. */
 export const TABLE_SHADE_COLOR = "#94a3b8";
+/** Liseré hachuré au bord intérieur d'un cache ouvert (DS3, H19). */
+export const TABLE_OPEN_RIM = 4;
 export const TABLE_SHADE_HATCH = "#cbd5e1";
 export const TABLE_SHADE_HATCH_WIDTH = 2;
 export const TABLE_SHADE_HATCH_STEP = 16;
@@ -26,7 +28,7 @@ export const TABLE_SHADE_HATCH_STEP = 16;
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
 /** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
 export const TABLE_HEADER_FILL = "#E0E0E8";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none" | "row-up" | "row-down" | "col-left" | "col-right";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none" | "row-up" | "row-down" | "col-left" | "col-right" | "shade-open-toggle";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -46,6 +48,8 @@ export interface TableCellState {
   /** Zone fusionnée de la cellule active (F16) ; null ou absente hors zone. */
   readonly zone?: Range | null;
   readonly shaded?: boolean;
+  /** personnalisation-3 (DS3) : la cellule active est un cache ouvert. */
+  readonly open?: boolean;
   /** personnalisation-3 (D17) : la ligne 0 est un en-tête, `#stage[data-table-header]`. */
   readonly header?: boolean;
   /** DS10 : les objets logés rétrécissent au lieu d'agrandir la case (`fit`), lu par le panneau. */

@@ -55,6 +55,7 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("table-fit", "Tableau", "Agrandir ou rétrécir pour les objets", "Alt+F"),
   s("cell-image", "Tableau", "Mettre l'image logée en fond", "Alt+I"),
   s("table-header", "Tableau", "Basculer l'en-tête", "Alt+E"),
+  s("table-shade-open", "Tableau", "Ouvrir ou refermer le cache", "Alt+O"),
   s("table-fit-content", "Tableau", "Ajuster au contenu", "Alt+A"),
   s("table-border-set", "Tableau", "Bordure de la case", "Alt+B"),
   s("table-border-none", "Tableau", "Aucune bordure", "Alt+Maj+B"),

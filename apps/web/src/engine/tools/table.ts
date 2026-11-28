@@ -735,7 +735,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
       const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
       const look = cellLook(t, at.ref.row, at.ref.col);
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ...(t.fit === "shrink" ? { fit: "shrink" as const } : {}), column: t.rows.map((r) => cellContent(t, r.id, t.cols[at.cell.col]?.id ?? "").text), ha: look.ha, va: look.va, border: look.border };
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ...(t.fit === "shrink" ? { fit: "shrink" as const } : {}), column: t.rows.map((r) => cellContent(t, r.id, t.cols[at.cell.col]?.id ?? "").text), ha: look.ha, va: look.va, border: look.border, open: look.open };
     },
     act(a) {
       if (!settle()) return;
@@ -773,6 +773,15 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         case "unshade":
           shadeOver(at, span, null);
           break;
+        case "shade-open-toggle": {
+          const shaded = rangeCells(t, span).flatMap((c) => {
+            const r = t.rows[c.row];
+            const k = t.cols[c.col];
+            return r !== undefined && k !== undefined && cellContent(t, r.id, k.id).shade !== null ? [cellLook(t, r.id, k.id).open] : [];
+          });
+          if (shaded.length > 0) api.look({ key: "open", value: !shaded.every((o) => o) });
+          return;
+        }
         case "header-toggle":
           ctx.run({ type: "SetTableOptions", id: ref.id, header: t.header !== true });
           break;

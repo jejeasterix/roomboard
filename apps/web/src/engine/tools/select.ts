@@ -5,7 +5,7 @@
  * en fantômes avec la matrice provisoire (CL4-1) ; une seule Transform au relâché ; "cancel" et "abort" n'écrivent
  * rien (D39) ; un clic sans glisser (< 2 px écran) non plus. Un seul pointeur à la fois (CL4-14).
  * C10b (F10) : un toucher sans glisser (< 8 px écran, REVEAL_TAP_PX), sans Maj, sur une cellule ombrée du tableau le plus
- * haut sous le point la révèle (SetTableShade à null, une étape), sélection inchangée ; au-delà, le glisser sélectionne et déplace.
+ * haut sous le point l'ouvre ou la referme (`SetTableLook` `open`, une étape), sélection inchangée ; au-delà, le glisser sélectionne et déplace.
  * C3 (Z2) : un clic prend le groupe extérieur entier, Maj+clic l'ajoute ou le retire entier, le rectangle ne prend un
  * groupe qu'entier (`engine/groups.ts`).
  * personnalisation-3 (DA3) : glisser vers une case par `cell-drop.ts`, 4 points d'appel.
@@ -33,7 +33,7 @@ import {
 } from "./handles";
 import type { CellDrop } from "./cell-drop";
 import { expandToGroups, keepWholeGroups, viewsOf, type GroupedView } from "../groups";
-import { cellContent, tableAt } from "../table-geom";
+import { cellContent, cellLook, tableAt } from "../table-geom";
 import type { LivePart, SelectionTool, ToolContext } from "./tool";
 
 export const SELECT_TOL_PX = 6;
@@ -48,6 +48,7 @@ interface Reveal {
   readonly id: string;
   readonly row: string;
   readonly col: string;
+  readonly open: boolean;
 }
 
 interface Drag {
@@ -204,7 +205,7 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
     const r = h.table.rows[h.cell.row];
     const k = h.table.cols[h.cell.col];
     if (r === undefined || k === undefined) return null;
-    return cellContent(h.table, r.id, k.id).shade === null ? null : { id, row: r.id, col: k.id };
+    return cellContent(h.table, r.id, k.id).shade === null ? null : { id, row: r.id, col: k.id, open: cellLook(h.table, r.id, k.id).open };
   };
 
   return {
@@ -323,7 +324,8 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       }
       if (d.mode === "tap-shade") {
         const r = d.reveal;
-        if (r !== null) ctx.run({ type: "SetTableShade", id: r.id, from: { row: r.row, col: r.col }, to: { row: r.row, col: r.col }, shade: null });
+        // DS3 : le toucher ouvre ou referme le cache (l'ombrage reste) ; une étape.
+        if (r !== null) ctx.run({ type: "SetTableLook", id: r.id, from: { row: r.row, col: r.col }, to: { row: r.row, col: r.col }, look: { key: "open", value: !r.open } });
         return;
       }
       if (d.mode === "band") {

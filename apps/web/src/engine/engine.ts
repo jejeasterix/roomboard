@@ -59,6 +59,8 @@ export interface EngineState {
   /** C10b (F29) : zones fusionnées et cellules ombrées de tous les tableaux de la page montrée, quel que soit l'outil. */
   readonly tableMerges: number;
   readonly tableShades: number;
+  /** personnalisation-3 (DS3) : caches ouverts de la page montrée (`#stage[data-table-opens]`). */
+  readonly tableOpens: number;
   /** État de la barre de format (C7b, R15) : saisie ouverte de l'outil Texte ou Tableau actif ; null sinon. */
   readonly textFormat: FormatState | null;
   /** Couleur du pot (C6a, D16) ; null = « Aucune ». Facultative (PC5) : le moteur la publie toujours. */
@@ -537,19 +539,21 @@ export function createEngine(deps: EngineDeps): Engine {
 
   /** Comptes de `#stage[data-table-merges|data-table-shades]` (F29), recalculés quand la version ou la page change (PC12).
    *  OE23 (Q7) : seuls les candidats `table` (kind brut) sont lus, chacun confirmé par sa vue (un mal formé est `unknown`). */
-  let counted = { key: "", merges: 0, shades: 0 };
-  const tableCounts = (): { readonly merges: number; readonly shades: number } => {
+  let counted = { key: "", merges: 0, shades: 0, opens: 0 };
+  const tableCounts = (): { readonly merges: number; readonly shades: number; readonly opens: number } => {
     const key = `${pageId}|${doc.version()}`;
     if (counted.key !== key) {
       let merges = 0;
       let shades = 0;
+      let opens = 0;
       for (const id of doc.elementIdsOfKind(pageId, "table")) {
         const el = doc.element(id);
         if (el?.kind !== "table") continue;
         merges += el.table.merges.length;
         shades += el.table.cells.filter((c) => c.shade !== null).length;
+        opens += el.table.cells.filter((c) => c.open === true).length;
       }
-      counted = { key, merges, shades };
+      counted = { key, merges, shades, opens };
     }
     return counted;
   };
@@ -629,6 +633,7 @@ export function createEngine(deps: EngineDeps): Engine {
       tableCell: tableTool.cellState(),
       tableMerges: tableCounts().merges,
       tableShades: tableCounts().shades,
+      tableOpens: tableCounts().opens,
       textFormat: tool === "text" ? textTool.formatState() : tool === "table" ? tableTool.formatState() : null,
       fillColor,
       fillTolerance,
