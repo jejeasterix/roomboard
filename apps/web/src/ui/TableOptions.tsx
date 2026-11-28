@@ -80,9 +80,9 @@ export function TableSection(props: {
           <For each={props.picks().filter((p) => p.color !== null)}>
             {(p) => (
               <IconButton keepFocus icon={null} label={p.label} pressed={props.cell()?.border?.[0] === p.color} shortcut={buttonShortcut("table-border-set")}
-                attrs={{ "data-table-border-color": p.color ?? "", class: "rb-opt-btn" }}
+                attrs={{ "data-table-border-color": p.color ?? "", class: "rb-pick" }}
                 onPress={() => border([p.color ?? "#000000", cur()[1], styled(cur()[2])])}>
-                <span class="rb-swatch" aria-hidden="true" style={{ "background-color": p.color ?? "transparent" }} />
+                <span class="rb-pick-dot" aria-hidden="true" style={{ background: p.color ?? "transparent" }} />
               </IconButton>
             )}
           </For>

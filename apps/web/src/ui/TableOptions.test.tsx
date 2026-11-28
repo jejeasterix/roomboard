@@ -66,4 +66,15 @@ describe("TableOptions (DS10)", () => {
     const r = mount("tableRows", cell());
     expect(r.container.querySelector('[data-table-option="header"]')?.getAttribute("aria-keyshortcuts")).toBe("Alt+E");
   });
+  it("DS10 : Bordures : les pastilles de couleur reprennent celles de la barre (rb-pick, rb-pick-dot plein, enfoncée)", () => {
+    const { container } = mount("tableBorder", cell({ border: ["#dc2626", 2, "solid"] }));
+    const b = container.querySelector('[data-table-border-color="#dc2626"]')!;
+    expect(b.classList.contains("rb-pick")).toBe(true);
+    expect(b.getAttribute("aria-pressed")).toBe("true");
+    const dot = b.querySelector(".rb-pick-dot") as HTMLElement;
+    expect(dot).not.toBeNull();
+    expect(dot.style.backgroundColor).not.toBe("");
+    expect(container.querySelector('[data-table-border-color="#000000"]')?.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector(".rb-swatch")).toBeNull();
+  });
 });
