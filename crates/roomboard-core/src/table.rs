@@ -1329,11 +1329,13 @@ pub(crate) mod tests {
             vec![
                 TableColView {
                     id: "c1".into(),
-                    width: 240.0, accept: None
+                    width: 240.0,
+                    accept: None
                 },
                 TableColView {
                     id: "c2".into(),
-                    width: 100.0, accept: None
+                    width: 100.0,
+                    accept: None
                 },
             ]
         );
@@ -1351,7 +1353,11 @@ pub(crate) mod tests {
                     fill: None,
                     shade: None,
                     bg: None,
-                    spans: plain_spans("Lundi"), ha: None, va: None, border: None, open: false
+                    spans: plain_spans("Lundi"),
+                    ha: None,
+                    va: None,
+                    border: None,
+                    open: false
                 },
                 TableCellView {
                     row: "r2".into(),
@@ -1360,7 +1366,11 @@ pub(crate) mod tests {
                     fill: Some("#fef08a".into()),
                     shade: None,
                     bg: None,
-                    spans: plain_spans(""), ha: None, va: None, border: None, open: false
+                    spans: plain_spans(""),
+                    ha: None,
+                    va: None,
+                    border: None,
+                    open: false
                 },
             ]
         );
@@ -1392,7 +1402,8 @@ pub(crate) mod tests {
             t.cols,
             vec![TableColView {
                 id: "c-ok".into(),
-                width: 240.0, accept: None
+                width: 240.0,
+                accept: None
             }]
         );
         let txn = d.read();
@@ -2429,7 +2440,11 @@ pub(crate) mod tests {
                 fill: Some("#fef08a".into()),
                 shade: None,
                 bg: None,
-                spans: plain_spans(""), ha: None, va: None, border: None, open: false
+                spans: plain_spans(""),
+                ha: None,
+                va: None,
+                border: None,
+                open: false
             }]
         );
         let w = writes(&d);
@@ -2687,7 +2702,8 @@ pub(crate) mod tests {
             t.cols,
             vec![TableColView {
                 id: "c2".into(),
-                width: 100.0, accept: None
+                width: 100.0,
+                accept: None
             }]
         );
         assert_eq!(

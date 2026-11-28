@@ -1310,7 +1310,15 @@ impl Document {
     ) -> Result<JsValue, JsError> {
         to_js(
             &self
-                .set_table_look_inner(id, [from_row, from_col], [to_row, to_col], key, text, width, labels)
+                .set_table_look_inner(
+                    id,
+                    [from_row, from_col],
+                    [to_row, to_col],
+                    key,
+                    text,
+                    width,
+                    labels,
+                )
                 .map_err(cmd_err)?,
         )
     }
@@ -2464,7 +2472,9 @@ impl Document {
         let look = match key {
             "ha" => CellLook::Ha(text),
             "va" => CellLook::Va(text),
-            "border" => CellLook::Border(text.map(|c| (c, width, labels.into_iter().next().unwrap_or_default()))),
+            "border" => CellLook::Border(
+                text.map(|c| (c, width, labels.into_iter().next().unwrap_or_default())),
+            ),
             "open" => CellLook::Open(width != 0.0),
             "accept" => CellLook::Accept(labels),
             _ => return Err(CommandError::BadTable),
@@ -4282,16 +4292,43 @@ mod tests {
     fn set_table_look_inner_centers_borders_and_refuses_unknown_key() {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        let id = d.add_table_inner(&p, [0.0, 0.0], [2, 2], [240.0, 64.0], "#000000", 36.0).expect("tableau").ids[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [2, 2], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
         let t = table_of(&d, &id);
         let (r, c) = (t.rows[0].id.clone(), t.cols[0].id.clone());
-        d.set_table_look_inner(&id, [&r, &c], [&r, &c], "ha", Some("center".into()), 0.0, vec![]).expect("ha");
+        d.set_table_look_inner(
+            &id,
+            [&r, &c],
+            [&r, &c],
+            "ha",
+            Some("center".into()),
+            0.0,
+            vec![],
+        )
+        .expect("ha");
         assert_eq!(table_of(&d, &id).cells[0].ha.as_deref(), Some("center"));
-        d.set_table_look_inner(&id, [&r, &c], [&r, &c], "border", Some("#dc2626".into()), 8.0, vec!["dashed".into()]).expect("border");
-        assert_eq!(table_of(&d, &id).cells[0].border, Some(("#dc2626".to_string(), 8.0, "dashed".to_string())));
-        assert_eq!(d.set_table_look_inner(&id, [&r, &c], [&r, &c], "zz", None, 0.0, vec![]), Err(CommandError::BadTable));
+        d.set_table_look_inner(
+            &id,
+            [&r, &c],
+            [&r, &c],
+            "border",
+            Some("#dc2626".into()),
+            8.0,
+            vec!["dashed".into()],
+        )
+        .expect("border");
+        assert_eq!(
+            table_of(&d, &id).cells[0].border,
+            Some(("#dc2626".to_string(), 8.0, "dashed".to_string()))
+        );
+        assert_eq!(
+            d.set_table_look_inner(&id, [&r, &c], [&r, &c], "zz", None, 0.0, vec![]),
+            Err(CommandError::BadTable)
+        );
     }
-
 
     // personnalisation-3 (D3, D4) : `PlaceInCell` et `SetTableLineSizes` par les `*_inner`.
     #[test]

@@ -64,7 +64,13 @@ pub(crate) fn read_accept(o: Option<Out>) -> Option<Vec<String>> {
     if items.is_empty() || items.len() > MAX_ACCEPT {
         return None;
     }
-    items.iter().map(|a| match a { Any::String(s) => Some(s.to_string()), _ => None }).collect()
+    items
+        .iter()
+        .map(|a| match a {
+            Any::String(s) => Some(s.to_string()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Valeur admise (contrôle avant la recherche du tableau, comme le faux cœur).
@@ -74,9 +80,17 @@ fn check(look: &CellLook) -> Result<(), CommandError> {
         CellLook::Va(v) => v.as_deref().is_none_or(|x| x == "top" || VA.contains(&x)),
         CellLook::Border(b) => b.as_ref().is_none_or(|(c, w, s)| border_ok(c, *w, s)),
         CellLook::Open(_) => true,
-        CellLook::Accept(l) => l.len() <= MAX_ACCEPT && l.iter().all(|s| !s.trim().is_empty() && s.chars().count() <= MAX_LABEL_CHARS),
+        CellLook::Accept(l) => {
+            l.len() <= MAX_ACCEPT
+                && l.iter()
+                    .all(|s| !s.trim().is_empty() && s.chars().count() <= MAX_LABEL_CHARS)
+        }
     };
-    if ok { Ok(()) } else { Err(CommandError::BadTable) }
+    if ok {
+        Ok(())
+    } else {
+        Err(CommandError::BadTable)
+    }
 }
 
 /// Valeur écrite (le défaut ne s'écrit pas).
@@ -111,7 +125,14 @@ fn write(txn: &mut TransactionMut, map: &MapRef, look: &CellLook) {
         CellLook::Ha(v) => put_str(txn, map, "ha", norm(v.as_deref(), "left")),
         CellLook::Va(v) => put_str(txn, map, "va", norm(v.as_deref(), "top")),
         CellLook::Border(Some((c, w, s))) => {
-            let v = Any::Array(vec![Any::String(c.as_str().into()), Any::from(*w), Any::String(s.as_str().into())].into());
+            let v = Any::Array(
+                vec![
+                    Any::String(c.as_str().into()),
+                    Any::from(*w),
+                    Any::String(s.as_str().into()),
+                ]
+                .into(),
+            );
             map.insert(txn, "border", In::Any(v));
         }
         CellLook::Border(None) => {
@@ -149,7 +170,8 @@ impl Document {
             targets(&rect, &merges)
                 .into_iter()
                 .filter_map(|(r, c)| {
-                    let cell = read_cell(&txn, raw.cells.as_ref(), &raw.rows[r].id, &raw.cols[c].id);
+                    let cell =
+                        read_cell(&txn, raw.cells.as_ref(), &raw.rows[r].id, &raw.cols[c].id);
                     differs(cell.as_ref(), look).then_some(((r, c), cell))
                 })
                 .collect()
@@ -184,7 +206,12 @@ impl Document {
             let txn = self.read();
             raw.cols[cols]
                 .iter()
-                .filter(|l| read_accept(l.map.get(&txn, "accept")).as_deref().unwrap_or(&[]) != labels)
+                .filter(|l| {
+                    read_accept(l.map.get(&txn, "accept"))
+                        .as_deref()
+                        .unwrap_or(&[])
+                        != labels
+                })
                 .map(|l| l.map.clone())
                 .collect()
         };
@@ -197,7 +224,13 @@ impl Document {
                 if labels.is_empty() {
                     m.remove(&mut txn, "accept");
                 } else {
-                    let v = Any::Array(labels.iter().map(|s| Any::String(s.as_str().into())).collect::<Vec<_>>().into());
+                    let v = Any::Array(
+                        labels
+                            .iter()
+                            .map(|s| Any::String(s.as_str().into()))
+                            .collect::<Vec<_>>()
+                            .into(),
+                    );
                     m.insert(&mut txn, "accept", In::Any(v));
                 }
             }
@@ -219,8 +252,15 @@ mod tests {
     }
     fn table3(d: &mut Document, p: &str) -> String {
         d.apply(Command::AddTable {
-            page: p.into(), x: 0.0, y: 0.0, cols: 3, rows: 3, col_width: 240.0, row_height: 64.0,
-            color: "#000000".into(), size: 36.0,
+            page: p.into(),
+            x: 0.0,
+            y: 0.0,
+            cols: 3,
+            rows: 3,
+            col_width: 240.0,
+            row_height: 64.0,
+            color: "#000000".into(),
+            size: 36.0,
         })
         .expect("tableau")
         .ids[0]
@@ -233,16 +273,37 @@ mod tests {
         let v = view(d, t);
         (v.rows[r].id.clone(), v.cols[c].id.clone())
     }
-    fn look(d: &mut Document, t: &str, a: (usize, usize), b: (usize, usize), l: CellLook) -> Result<crate::commands::Change, CommandError> {
+    fn look(
+        d: &mut Document,
+        t: &str,
+        a: (usize, usize),
+        b: (usize, usize),
+        l: CellLook,
+    ) -> Result<crate::commands::Change, CommandError> {
         let (from, to) = (ids(d, t, a.0, a.1), ids(d, t, b.0, b.1));
-        d.apply(Command::SetTableLook { id: t.into(), from, to, look: l })
+        d.apply(Command::SetTableLook {
+            id: t.into(),
+            from,
+            to,
+            look: l,
+        })
     }
     fn shade(d: &mut Document, t: &str, r: usize, c: usize, on: bool) {
         let x = ids(d, t, r, c);
-        d.apply(Command::SetTableShade { id: t.into(), from: x.clone(), to: x, shade: on.then(|| "#94a3b8".to_string()) }).expect("ombrage");
+        d.apply(Command::SetTableShade {
+            id: t.into(),
+            from: x.clone(),
+            to: x,
+            shade: on.then(|| "#94a3b8".to_string()),
+        })
+        .expect("ombrage");
     }
     fn meta() -> crate::format::SaveMeta {
-        crate::format::SaveMeta { app_version: "0.1.0".into(), now: "2026-11-28T00:00:00Z".into(), created: None }
+        crate::format::SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-28T00:00:00Z".into(),
+            created: None,
+        }
     }
     /// Tableau 3 × 3 portant les cinq clés : `ha`/`va` sur (0, 0)-(0, 1) (« Lundi » en (0, 0)), bordure en (1, 1),
     /// cache ouvert en (2, 2), `accept` sur la colonne 0.
@@ -250,13 +311,35 @@ mod tests {
         let p = first(d);
         let t = table3(d, &p);
         let (r, c) = ids(d, &t, 0, 0);
-        d.apply(Command::SetTableCell { id: t.clone(), row: r, col: c, content: "Lundi".into(), row_height: None, spans: None }).expect("texte");
+        d.apply(Command::SetTableCell {
+            id: t.clone(),
+            row: r,
+            col: c,
+            content: "Lundi".into(),
+            row_height: None,
+            spans: None,
+        })
+        .expect("texte");
         look(d, &t, (0, 0), (0, 1), CellLook::Ha(Some("center".into()))).expect("ha");
         look(d, &t, (0, 0), (0, 1), CellLook::Va(Some("bottom".into()))).expect("va");
-        look(d, &t, (1, 1), (1, 1), CellLook::Border(Some(("#dc2626".into(), 8.0, "dashed".into())))).expect("border");
+        look(
+            d,
+            &t,
+            (1, 1),
+            (1, 1),
+            CellLook::Border(Some(("#dc2626".into(), 8.0, "dashed".into()))),
+        )
+        .expect("border");
         shade(d, &t, 2, 2, true);
         look(d, &t, (2, 2), (2, 2), CellLook::Open(true)).expect("open");
-        look(d, &t, (0, 0), (2, 0), CellLook::Accept(vec!["chat".into(), "chien".into()])).expect("accept");
+        look(
+            d,
+            &t,
+            (0, 0),
+            (2, 0),
+            CellLook::Accept(vec!["chat".into(), "chien".into()]),
+        )
+        .expect("accept");
         t
     }
 
@@ -265,14 +348,38 @@ mod tests {
         let mut d = Document::blank();
         let p = first(&d);
         let t = table3(&mut d, &p);
-        let c = look(&mut d, &t, (0, 0), (0, 1), CellLook::Ha(Some("center".into()))).expect("plage");
+        let c = look(
+            &mut d,
+            &t,
+            (0, 0),
+            (0, 1),
+            CellLook::Ha(Some("center".into())),
+        )
+        .expect("plage");
         assert_eq!(c.ids, vec![t.clone()]);
-        assert!(view(&d, &t).cells.iter().all(|x| x.ha.as_deref() == Some("center")));
+        assert!(view(&d, &t)
+            .cells
+            .iter()
+            .all(|x| x.ha.as_deref() == Some("center")));
         assert_eq!(view(&d, &t).cells.len(), 2);
         let ver = d.version();
-        look(&mut d, &t, (0, 0), (0, 1), CellLook::Ha(Some("center".into()))).expect("même");
+        look(
+            &mut d,
+            &t,
+            (0, 0),
+            (0, 1),
+            CellLook::Ha(Some("center".into())),
+        )
+        .expect("même");
         assert_eq!(d.version(), ver, "rien ne change : aucune étape");
-        look(&mut d, &t, (0, 0), (0, 1), CellLook::Ha(Some("left".into()))).expect("retour");
+        look(
+            &mut d,
+            &t,
+            (0, 0),
+            (0, 1),
+            CellLook::Ha(Some("left".into())),
+        )
+        .expect("retour");
         assert!(view(&d, &t).cells.is_empty());
         assert!(d.undo());
         assert_eq!(view(&d, &t).cells.len(), 2);
@@ -295,14 +402,33 @@ mod tests {
             CellLook::Accept((0..65).map(|i| format!("e{i}")).collect()),
         ];
         for l in bad {
-            assert_eq!(d.apply(Command::SetTableLook { id: "zz".into(), from: a.clone(), to: a.clone(), look: l.clone() }), Err(CommandError::BadTable), "{l:?} : contrôle avant le tableau");
+            assert_eq!(
+                d.apply(Command::SetTableLook {
+                    id: "zz".into(),
+                    from: a.clone(),
+                    to: a.clone(),
+                    look: l.clone()
+                }),
+                Err(CommandError::BadTable),
+                "{l:?} : contrôle avant le tableau"
+            );
         }
         assert_eq!(
-            d.apply(Command::SetTableLook { id: "zz".into(), from: a.clone(), to: a.clone(), look: CellLook::Ha(Some("right".into())) }),
+            d.apply(Command::SetTableLook {
+                id: "zz".into(),
+                from: a.clone(),
+                to: a.clone(),
+                look: CellLook::Ha(Some("right".into()))
+            }),
             Err(CommandError::UnknownElement("zz".into()))
         );
         assert_eq!(
-            d.apply(Command::SetTableLook { id: t.clone(), from: ("x".into(), "y".into()), to: a, look: CellLook::Ha(Some("right".into())) }),
+            d.apply(Command::SetTableLook {
+                id: t.clone(),
+                from: ("x".into(), "y".into()),
+                to: a,
+                look: CellLook::Ha(Some("right".into()))
+            }),
             Err(CommandError::BadTable)
         );
     }
@@ -312,10 +438,24 @@ mod tests {
         let mut d = Document::blank();
         let p = first(&d);
         let t = table3(&mut d, &p);
-        look(&mut d, &t, (2, 2), (2, 2), CellLook::Va(Some("bottom".into()))).expect("va");
+        look(
+            &mut d,
+            &t,
+            (2, 2),
+            (2, 2),
+            CellLook::Va(Some("bottom".into())),
+        )
+        .expect("va");
         let v = view(&d, &t);
         assert_eq!(v.cells.len(), 1);
-        assert_eq!((v.cells[0].text.as_str(), v.cells[0].va.as_deref(), v.cells[0].ha.as_deref()), ("", Some("bottom"), None));
+        assert_eq!(
+            (
+                v.cells[0].text.as_str(),
+                v.cells[0].va.as_deref(),
+                v.cells[0].ha.as_deref()
+            ),
+            ("", Some("bottom"), None)
+        );
     }
 
     #[test]
@@ -323,17 +463,34 @@ mod tests {
         let mut d = Document::blank();
         let p = first(&d);
         let t = table3(&mut d, &p);
-        look(&mut d, &t, (0, 0), (1, 1), CellLook::Border(Some(("#dc2626".into(), 8.0, "dashed".into())))).expect("border");
+        look(
+            &mut d,
+            &t,
+            (0, 0),
+            (1, 1),
+            CellLook::Border(Some(("#dc2626".into(), 8.0, "dashed".into()))),
+        )
+        .expect("border");
         let v = view(&d, &t);
         assert_eq!(v.cells.len(), 4);
-        assert!(v.cells.iter().all(|c| c.border == Some(("#dc2626".to_string(), 8.0, "dashed".to_string()))));
+        assert!(v
+            .cells
+            .iter()
+            .all(|c| c.border == Some(("#dc2626".to_string(), 8.0, "dashed".to_string()))));
         {
             let txn = d.read();
             let f = d.find_element(&txn, &t).expect("t");
-            let Some(Out::YMap(cells)) = f.element.get(&txn, "cells") else { panic!("cells") };
+            let Some(Out::YMap(cells)) = f.element.get(&txn, "cells") else {
+                panic!("cells")
+            };
             let (r, c) = (v.rows[0].id.clone(), v.cols[0].id.clone());
-            let Some(Out::YMap(cell)) = cells.get(&txn, &format!("{r}:{c}")) else { panic!("case") };
-            assert!(matches!(cell.get(&txn, "border"), Some(Out::Any(Any::Array(_)))), "positionnel, jamais Any::Map (U3)");
+            let Some(Out::YMap(cell)) = cells.get(&txn, &format!("{r}:{c}")) else {
+                panic!("case")
+            };
+            assert!(
+                matches!(cell.get(&txn, "border"), Some(Out::Any(Any::Array(_)))),
+                "positionnel, jamais Any::Map (U3)"
+            );
         }
         look(&mut d, &t, (0, 0), (1, 1), CellLook::Border(None)).expect("retire");
         assert!(view(&d, &t).cells.is_empty());
@@ -362,11 +519,32 @@ mod tests {
         let mut d = Document::blank();
         let p = first(&d);
         let t = table3(&mut d, &p);
-        look(&mut d, &t, (0, 1), (2, 2), CellLook::Accept(vec!["chat".into(), "chien".into()])).expect("accept");
+        look(
+            &mut d,
+            &t,
+            (0, 1),
+            (2, 2),
+            CellLook::Accept(vec!["chat".into(), "chien".into()]),
+        )
+        .expect("accept");
         let v = view(&d, &t);
-        assert_eq!(v.cols.iter().map(|c| c.accept.clone()).collect::<Vec<_>>(), vec![None, Some(vec!["chat".into(), "chien".into()]), Some(vec!["chat".into(), "chien".into()])]);
+        assert_eq!(
+            v.cols.iter().map(|c| c.accept.clone()).collect::<Vec<_>>(),
+            vec![
+                None,
+                Some(vec!["chat".into(), "chien".into()]),
+                Some(vec!["chat".into(), "chien".into()])
+            ]
+        );
         let ver = d.version();
-        look(&mut d, &t, (0, 1), (0, 2), CellLook::Accept(vec!["chat".into(), "chien".into()])).expect("même");
+        look(
+            &mut d,
+            &t,
+            (0, 1),
+            (0, 2),
+            CellLook::Accept(vec!["chat".into(), "chien".into()]),
+        )
+        .expect("même");
         assert_eq!(d.version(), ver);
         look(&mut d, &t, (0, 0), (0, 2), CellLook::Accept(vec![])).expect("retire");
         assert!(view(&d, &t).cols.iter().all(|c| c.accept.is_none()));
@@ -396,7 +574,13 @@ mod tests {
             let mut txn = old.transact_untracked();
             let f = old.find_element(&txn, &t).expect("t");
             if let Some(Out::YMap(cells)) = f.element.get(&txn, "cells") {
-                let maps: Vec<MapRef> = cells.iter(&txn).filter_map(|(_, v)| match v { Out::YMap(m) => Some(m), _ => None }).collect();
+                let maps: Vec<MapRef> = cells
+                    .iter(&txn)
+                    .filter_map(|(_, v)| match v {
+                        Out::YMap(m) => Some(m),
+                        _ => None,
+                    })
+                    .collect();
                 for m in maps {
                     for k in ["ha", "va", "border", "open"] {
                         m.remove(&mut txn, k);
@@ -404,7 +588,13 @@ mod tests {
                 }
             }
             if let Some(Out::YArray(cols)) = f.element.get(&txn, "cols") {
-                let maps: Vec<MapRef> = cols.iter(&txn).filter_map(|v| match v { Out::YMap(m) => Some(m), _ => None }).collect();
+                let maps: Vec<MapRef> = cols
+                    .iter(&txn)
+                    .filter_map(|v| match v {
+                        Out::YMap(m) => Some(m),
+                        _ => None,
+                    })
+                    .collect();
                 for m in maps {
                     m.remove(&mut txn, "accept");
                 }
@@ -417,7 +607,9 @@ mod tests {
             c.border = None;
             c.open = false;
         }
-        a.cells.retain(|c| !c.text.is_empty() || c.fill.is_some() || c.shade.is_some() || c.bg.is_some());
+        a.cells.retain(|c| {
+            !c.text.is_empty() || c.fill.is_some() || c.shade.is_some() || c.bg.is_some()
+        });
         for c in &mut a.cols {
             c.accept = None;
         }
