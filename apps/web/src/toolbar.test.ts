@@ -328,7 +328,7 @@ describe("actions du tableau (C10a)", () => {
   it("TOOL_TABLE.table : « Tableau », choix table", () => {
     expect(TOOL_TABLE["table"]).toEqual({ label: "Tableau", choice: "table" });
   });
-  it("ACTION_TABLE porte les neuf actions ; TABLE_ACTIONS dans l'ordre de la rangée (T10 de C10a, F15 : actions du tableau (C10b))", () => {
+  it("ACTION_TABLE porte les dix actions ; TABLE_ACTIONS dans l'ordre de la rangée (T10 de C10a, F15 : actions du tableau (C10b))", () => {
     expect(TABLE_ACTIONS).toEqual(["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform", "table-merge", "table-split", "table-shade", "table-unshade", "table-header"]);
     expect(TABLE_ACTIONS.map((a) => ACTION_TABLE[a]?.label)).toEqual(["+ Ligne", "+ Colonne", "− Ligne", "− Colonne", "Uniformiser", "Fusionner", "Diviser", "Ombrer", "Désombrer", "En-tête"]);
   });

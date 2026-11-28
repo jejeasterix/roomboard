@@ -169,6 +169,18 @@ const HEAD = (header: boolean): TableData => ({
 });
 
 describe("S10 en-tête (D17)", () => {
+  it("PR 74 : zone (0, 0)-(1, 0) d'un tableau à en-tête : fond d'en-tête sur ses deux lignes", () => {
+    const t: TableData = {
+      color: "#000000", size: 36, header: true,
+      cols: [{ id: "c1", width: 100 }, { id: "c2", width: 100 }],
+      rows: [{ id: "r1", height: 64 }, { id: "r2", height: 64 }],
+      cells: [], merges: [{ row: "r1", col: "c1", rows: 2, cols: 1 }],
+    };
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), t);
+    expect(ctx.rects).toContainEqual([0, 0, 100, 128]);
+    expect(ctx.log.filter((l) => l === `fillRect ${TABLE_HEADER_FILL}`)).toHaveLength(2);
+  });
   it("S10 : ligne 0 peinte au fond d'en-tête avant les traits ; sans en-tête : aucun fond", () => {
     const ctx = new FakeCtx();
     paintTableGrid(asCtx(ctx), HEAD(true));

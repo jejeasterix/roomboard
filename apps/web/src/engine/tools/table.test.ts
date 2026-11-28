@@ -1057,6 +1057,50 @@ describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
 });
 
 describe("outil Tableau — TB2 en-tête et D35", () => {
+  it("PR 74 : une étape par geste : header-toggle, un seul undo rend la ligne normale", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const n = s.runs.length;
+    s.tool.act("header-toggle");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.table(id).header).toBe(true);
+    s.doc.undo();
+    expect(s.table(id).header).toBeUndefined();
+  });
+  it("PR 74 : tableau à en-tête : le menu de case propose « Retirer l'en-tête »", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      const id = s.create(100, 200, 3, 3);
+      s.tool.requestCommit();
+      s.doc.apply({ type: "SetTableOptions", id, header: true });
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      expect(s.menuOpens[0]?.items.find((i) => i.id === "header")?.label).toBe("Retirer l'en-tête");
+      s.tool.close(1, "end");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("PR 74 : D35 sur une plage : un objet dans une case non active de la plage refuse Ombrer", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const o = s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: 1000, y0: 1000, x1: 1100, y1: 1050, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    const t = s.table(id);
+    s.doc.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: [id, t.rows[0]?.id ?? "", t.cols[1]?.id ?? ""], sizes: [] });
+    s.click(120, 220);
+    s.tool.requestCommit();
+    s.setShift(true);
+    s.click(100 + 240 + 120, 220);
+    s.setShift(false);
+    expect(s.tool.cellState()?.range).toEqual({ r0: 0, c0: 0, r1: 0, c1: 1 });
+    const n = s.runs.length;
+    s.tool.act("shade");
+    expect(s.runs.length).toBe(n);
+    expect(s.notices).toEqual(["Retirez d'abord les objets de la case."]);
+  });
   it("TB2 : header-toggle écrit header vrai puis faux, une étape chacun ; cellState.header suit", () => {
     const s = setup();
     const id = s.create(100, 200, 2, 2);
