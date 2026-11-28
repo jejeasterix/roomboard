@@ -151,7 +151,7 @@ try {
     await clickItem(page, "rect");
     await h.drag([[150, 100], [300, 200]]);
     await clickItem(page, "select");
-    await tapStage(page, 225, 150);
+    await marquee(page, [330, 230], [120, 70]); // rectangle vide : on le prend par un cadre, pas par son intérieur
     await waitAttr(page, "data-selection", "1");
     const bar = await h.barBox();
     const f = await h.frameBox();
@@ -172,7 +172,7 @@ try {
     await clickItem(page, "rect");
     await h.drag([[560, 400], [720, 520]]);
     await clickItem(page, "select");
-    await tapStage(page, 640, 460);
+    await marquee(page, [540, 380], [740, 540]);
     const st0 = await page.locator("#stage").boundingBox();
     await page.mouse.move(st0.x + 640, st0.y + 460);
     await page.keyboard.down("Control");

@@ -102,6 +102,7 @@ async function scenario(page, url, { captures, tmp }) {
   check((await bounds()).join(",") === before.join(","), "S1 : Annuler une fois : les trois reviennent");
   await page.click('button[data-selection-action="ungroup"]');
   await waitAttr("data-grouped", "0");
+  await page.keyboard.press("Escape"); // le focus est dans la barre d'objet (OG41) : le premier Échap le rend à la scène
   await page.keyboard.press("Escape");
   await waitAttr("data-selection", "0");
   await mouse.click(170, 280);
