@@ -64,6 +64,8 @@ import {
   type Grip,
   type LinkedBox,
   type Range,
+  SORT_REFUSED,
+  sortedRows,
 } from "../table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "../text-layout";
 import type { CellDrop } from "./cell-drop";
@@ -520,6 +522,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         },
       });
     }
+    items.push({ id: "sort-asc", label: "Trier", run: () => api.act("sort-asc") });
     items.push({ id: "header", label: at.table.header === true ? "Retirer l'en-tête" : "En-tête", run: () => api.act("header-toggle") });
     menu.open(p.sx, p.sy, items);
   };
@@ -808,6 +811,13 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           const n = axis === "row" ? t.rows.length : t.cols.length;
           const back = a === "row-up" || a === "col-left";
           if (back ? s0 > 0 : s1 < n - 1) reorderTo(at, axis, s0, s1, back ? s0 - 1 : s0 + 1);
+          break;
+        }
+        case "sort-asc":
+        case "sort-desc": {
+          const order = sortedRows(t, at.cell.col, a === "sort-asc" ? "asc" : "desc");
+          if (order === null) notify?.(SORT_REFUSED);
+          else if (order.some((x, i) => x !== t.rows[i]?.id)) ctx.run({ type: "ReorderTableLines", id: ref.id, axis: "row", order });
           break;
         }
         case "fit-content":

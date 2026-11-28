@@ -101,6 +101,10 @@ export function TableSection(props: {
         <IconButton keepFocus icon="rows-2" label="En-tête" shortcut={buttonShortcut("table-header")}
           attrs={{ "data-table-option": "header", class: "rb-opt-btn", role: "switch", "aria-checked": String(props.cell()?.header === true) }}
           onPress={() => props.host.act("header-toggle")} />
+        <IconButton keepFocus icon="arrow-down-a-z" label="Trier croissant (Alt+T)" shortcut={buttonShortcut("table-sort-asc")}
+          attrs={{ "data-table-option": "sort-asc", class: "rb-opt-btn" }} onPress={() => props.host.act("sort-asc")} />
+        <IconButton keepFocus icon="arrow-down-z-a" label="Trier décroissant (Alt+Maj+T)" shortcut={buttonShortcut("table-sort-desc")}
+          attrs={{ "data-table-option": "sort-desc", class: "rb-opt-btn" }} onPress={() => props.host.act("sort-desc")} />
       </div>
     ),
   };

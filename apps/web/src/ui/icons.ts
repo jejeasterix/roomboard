@@ -166,6 +166,9 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "align-end-horizontal": [["rect", { width: "6", height: "16", x: "4", y: "2", rx: "2" }], ["rect", { width: "6", height: "9", x: "14", y: "9", rx: "2" }], ["path", { d: "M22 22H2" }]],
   // personnalisation-3 suite (DS10) : Lucide @7981a0798a, ISC (move-horizontal : Ajuster au contenu ; ban : aucune bordure).
   "move-horizontal": [["path", { d: "m18 8 4 4-4 4" }], ["path", { d: "M2 12h20" }], ["path", { d: "m6 8-4 4 4 4" }]],
+  // personnalisation-3 suite (DS9) : Lucide @7981a0798a, ISC (arrow-down-a-z : Trier croissant ; arrow-down-z-a : Trier décroissant).
+  "arrow-down-a-z": [["path", { d: "m3 16 4 4 4-4" }], ["path", { d: "M7 20V4" }], ["path", { d: "M20 8h-5" }], ["path", { d: "M15 10V6.5a2.5 2.5 0 0 1 5 0V10" }], ["path", { d: "M15 14h5l-5 6h5" }]],
+  "arrow-down-z-a": [["path", { d: "m3 16 4 4 4-4" }], ["path", { d: "M7 4v16" }], ["path", { d: "M15 4h5l-5 6h5" }], ["path", { d: "M15 20v-3.5a2.5 2.5 0 0 1 5 0V20" }], ["path", { d: "M20 18h-5" }]],
   "ban": [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M4.929 4.929 19.07 19.071" }]],
   "align-horizontal-space-around": [["rect", { width: "6", height: "10", x: "9", y: "7", rx: "2" }], ["path", { d: "M4 22V2" }], ["path", { d: "M20 22V2" }]],
   "align-vertical-space-around": [["rect", { width: "10", height: "6", x: "7", y: "9", rx: "2" }], ["path", { d: "M22 20H2" }], ["path", { d: "M22 4H2" }]],

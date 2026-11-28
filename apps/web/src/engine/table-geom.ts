@@ -28,7 +28,7 @@ export const TABLE_SHADE_HATCH_STEP = 16;
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
 /** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
 export const TABLE_HEADER_FILL = "#E0E0E8";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none" | "row-up" | "row-down" | "col-left" | "col-right" | "shade-open-toggle";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none" | "row-up" | "row-down" | "col-left" | "col-right" | "shade-open-toggle" | "sort-asc" | "sort-desc";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -520,4 +520,26 @@ export function lineAt(sizes: readonly number[], v: number): number {
     if (v < acc) return i;
   }
   return Math.max(0, sizes.length - 1);
+}
+
+export const SORT_REFUSED = "Le tri ne passe pas sur une cellule fusionnée sur plusieurs lignes.";
+const SORT = new Intl.Collator("fr", { numeric: true, sensitivity: "base" });
+
+/** D20, DS9 : ordre des lignes trié selon la colonne `col` (texte de l'ancre si la case est couverte) ; vides en
+ *  dernier dans les deux sens, tri stable, ligne d'en-tête gardée en tête ; une zone sur plusieurs lignes : null. */
+export function sortedRows(t: TableData, col: number, dir: "asc" | "desc"): string[] | null {
+  if (mergeRanges(t).some((z) => z.r1 > z.r0)) return null;
+  const head = t.header === true ? t.rows.slice(0, 1) : [];
+  const body = t.rows.slice(head.length).map((r, j) => {
+    const i = j + head.length;
+    const a = anchorOf(t, { row: i, col });
+    const text = cellContent(t, t.rows[a.row]?.id ?? "", t.cols[a.col]?.id ?? "").text.trim();
+    return { id: r.id, i, text };
+  });
+  body.sort((x, y) => {
+    if (x.text === "" || y.text === "") return x.text === y.text ? x.i - y.i : x.text === "" ? 1 : -1;
+    const c = SORT.compare(x.text, y.text);
+    return c !== 0 ? (dir === "asc" ? c : -c) : x.i - y.i;
+  });
+  return [...head.map((r) => r.id), ...body.map((b) => b.id)];
 }

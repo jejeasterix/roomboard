@@ -843,8 +843,8 @@ describe("image de fond de case (personnalisation-3 T9, S5)", () => {
       vi.advanceTimersByTime(500);
       expect(s.menuOpens).toHaveLength(1);
       const items = s.menuOpens[0]?.items ?? [];
-      expect(items.map((i) => i.id)).toEqual(["fit", "cell-image", "unplace", "header"]);
-      expect(items.map((i) => i.label)).toEqual(["Rétrécir", "Mettre en fond", "Sortir", "En-tête"]);
+      expect(items.map((i) => i.id)).toEqual(["fit", "cell-image", "unplace", "sort-asc", "header"]);
+      expect(items.map((i) => i.label)).toEqual(["Rétrécir", "Mettre en fond", "Sortir", "Trier", "En-tête"]);
       s.tool.close(1, "end");
       items[2]?.run();
       expect(s.last()).toEqual({ type: "PlaceInCell", ids: [s.image], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] });

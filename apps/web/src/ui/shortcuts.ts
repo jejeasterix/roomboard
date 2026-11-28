@@ -59,6 +59,8 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("table-fit-content", "Tableau", "Ajuster au contenu", "Alt+A"),
   s("table-border-set", "Tableau", "Bordure de la case", "Alt+B"),
   s("table-border-none", "Tableau", "Aucune bordure", "Alt+Maj+B"),
+  s("table-sort-asc", "Tableau", "Trier croissant", "Alt+T"),
+  s("table-sort-desc", "Tableau", "Trier décroissant", "Alt+Maj+T"),
   s("table-ha-next", "Tableau", "Alignement horizontal suivant", "Alt+Maj+C"),
   s("table-va-next", "Tableau", "Alignement vertical suivant", "Alt+Maj+M"),
   s("table-col-wider", "Tableau", "Élargir la colonne", "Alt+→"),

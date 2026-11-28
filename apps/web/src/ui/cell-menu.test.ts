@@ -21,7 +21,7 @@ describe("menu de case (cell-menu, personnalisation-3 T7)", () => {
   it("cell-menu : l'entrée sort-asc porte l'icône arrow-down-a-z", () => {
     const menu = createCellMenu(document.body);
     menu.open(10, 20, [{ id: "sort-asc", label: "Trier", run: vi.fn() }]);
-    const root = document.body.querySelector<HTMLElement>('div[role="menu"].rb-cell-menu');
+    const root = [...document.body.querySelectorAll<HTMLElement>('div[role="menu"].rb-cell-menu')].at(-1);
     expect(root?.querySelector("svg path")?.getAttribute("d")).toBe("m3 16 4 4 4-4");
     menu.close();
   });

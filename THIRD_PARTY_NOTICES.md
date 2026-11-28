@@ -647,7 +647,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   `fill-solid`, `fill-hachure`, `fill-cross`, `head-none`, `head-arrow`, `head-triangle`, `head-triangle-outline`.
 
 - Panneau d'options du tableau (personnalisation-3 suite, DS10), lus au même commit `7981a0798a` par `gh api`, recopiés tels quels, noms RoomBoard
-  identiques aux noms Lucide : `move-horizontal` (Ajuster au contenu), `ban` (Aucune bordure).
+  identiques aux noms Lucide : `move-horizontal` (Ajuster au contenu), `ban` (Aucune bordure), `arrow-down-a-z` (Trier croissant),
+  `arrow-down-z-a` (Trier décroissant).
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :
 
