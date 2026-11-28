@@ -294,7 +294,7 @@ function BarBlock(props: {
   row: RowShared;
 }): JSX.Element {
   // U13 : une action retirée reste dans le profil (réécrite telle quelle) mais n'a pas de ligne.
-  const items = (): readonly ToolItem[] => props.bar.groups.flatMap((g) => g.items).filter((it) => !(it.kind === "action" && RETIRED_ACTIONS.has(it.action)));
+  const items = (): readonly ToolItem[] => props.bar.groups.flatMap((g) => g.items).filter((it) => !(it.kind === "action" && it.action !== undefined && RETIRED_ACTIONS.has(it.action)));
   const choices = (): readonly CatalogEntry[] => catalog(props.draft(), props.bar.id);
   const [adding, setAdding] = createSignal(false);
   let addButton: HTMLButtonElement | undefined;
