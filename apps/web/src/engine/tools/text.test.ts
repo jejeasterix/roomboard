@@ -78,6 +78,23 @@ function setup(measure: Measure = narrow, zoom = 1, opacity?: number) {
   return { doc, page, runs, host, tool, click, show, frames: () => frames, changes: () => changes };
 }
 
+describe("outil Texte — texte logé (OG79)", () => {
+  it("OG79 : éditer un texte logé (boîte réduite) : édité à 600, la boîte reprend sa ligne la plus longue, une ligne", () => {
+    const { doc, page, host, tool, runs, click } = setup();
+    const t = doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 2, rows: 1, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const v = doc.element(t);
+    if (v?.kind !== "table") throw new Error("tableau");
+    const id = doc.apply({ type: "SetText", page, id: null, x: 8, y: 8, content: "chat", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
+    doc.apply({ type: "PlaceInCell", ids: [id], matrix: [1, 0, 0, 1, 0, 0], cell: [t, v.table.rows[0]?.id ?? "", v.table.cols[0]?.id ?? ""], sizes: [], boxWidth: 45 });
+    click(20, 20);
+    expect(tool.editing()).toMatchObject({ id, boxWidth: 600, lodged: true });
+    host.text = "chat noir";
+    tool.requestCommit();
+    // 9 × 10 = 90, + 36 / 8 → 95 ; sur une ligne (45), pas repliée à 45 de large.
+    expect(runs.at(-1)).toMatchObject({ type: "SetText", id, content: "chat noir", boxWidth: 95, boxHeight: 45 });
+  });
+});
+
 describe("outil Texte (D14, CL4-3 à CL4-6)", () => {
   it("clic dans le vide : boîte neuve à la pointe, hôte ouvert, rien d'écrit", () => {
     const { host, tool, runs, click } = setup();

@@ -10,6 +10,7 @@ import { plainSpans, sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { screenToWorld, type Camera } from "../camera";
 import { DEFAULT_TEXT_BOX_WIDTH, layoutRich, richBoxHeight, type Measure } from "../text-layout";
+import { fittedTextWidth } from "../table-geom";
 import { createCommitGate } from "./commit-gate";
 import { NO_LIVE, type GestureTool, type LivePart, type ToolContext } from "./tool";
 
@@ -33,6 +34,8 @@ export interface TextEditSession {
   /** Matrice monde de la boîte (translation pour une boîte neuve). */
   readonly matrix: Matrix;
   readonly boxWidth: number;
+  /** OG79 : texte logé dans une case : édité à la largeur d'un clic, sa boîte reprend sa ligne la plus longue à la validation. */
+  readonly lodged?: boolean;
   readonly color: string;
   readonly size: number;
   readonly initial: string;
@@ -105,8 +108,9 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     // R6 : texte et segments inchangés : aucune commande ; mise en forme seule (S6) : la commande part.
     if (s.id !== null && content === s.initial && sameSpans(spans, s.spans)) return;
     const look = s.id === null ? currentLook() : undefined;
-    const boxHeight = richBoxHeight(layoutRich(spans, { size: s.size }, s.boxWidth, measure));
-    ctx.run({ type: "SetText", page: s.page, id: s.id, x: s.matrix[4], y: s.matrix[5], content, color: s.color, size: s.size, boxWidth: s.boxWidth, boxHeight, spans, ...(s.id === null && look ? { look } : {}) });
+    const boxWidth = s.lodged === true ? (fittedTextWidth({ spans, size: s.size, boxWidth: s.boxWidth }, measure) ?? s.boxWidth) : s.boxWidth;
+    const boxHeight = richBoxHeight(layoutRich(spans, { size: s.size }, boxWidth, measure));
+    ctx.run({ type: "SetText", page: s.page, id: s.id, x: s.matrix[4], y: s.matrix[5], content, color: s.color, size: s.size, boxWidth, boxHeight, spans, ...(s.id === null && look ? { look } : {}) });
   };
 
   const open = (x: number, y: number): void => {
@@ -119,7 +123,9 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
         page,
         id: el.id,
         matrix: el.transform,
-        boxWidth: el.text.boxWidth,
+        // OG79 : la boîte d'un texte logé a été réduite à sa ligne ; l'édition reprend la largeur d'un clic.
+        boxWidth: el.cell === undefined ? el.text.boxWidth : Math.max(el.text.boxWidth, DEFAULT_TEXT_BOX_WIDTH),
+        ...(el.cell === undefined ? {} : { lodged: true }),
         color: el.style.color,
         size: el.text.size,
         initial: el.text.content,

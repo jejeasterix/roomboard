@@ -287,19 +287,25 @@ describe("glisser vers une case — S14 tableau de tri (DS5)", () => {
     s.move([1520, 220], [360, 96]);
     const cmd = s.runs.at(-1);
     expect(cmd?.type).toBe("PlaceInCell");
-    // « chat » : 4 × 18 = 72 ; la boîte ne garde que la ligne (arrondie au-dessus).
-    expect(cmd?.type === "PlaceInCell" ? cmd.boxWidth : null).toBe(72);
-    expect(width()).toBe(72);
-    expect(s.doc.bounds([a])).toEqual({ x0: 248, y0: 72, x1: 248 + 72, y1: 72 + 45 });
+    // « chat » : 4 × 18 = 72, + 36 / 8 = 76,5 : la boîte ne garde que la ligne (arrondie au-dessus), 77.
+    expect(cmd?.type === "PlaceInCell" ? cmd.boxWidth : null).toBe(77);
+    expect(width()).toBe(77);
+    expect(s.doc.bounds([a])).toEqual({ x0: 248, y0: 72, x1: 248 + 77, y1: 72 + 45 });
     s.doc.undo();
     expect(width()).toBe(600);
     expect(s.doc.element(a)?.cell).toBeUndefined();
   });
-  it("OG79 : texte déjà plus étroit que sa ligne, ou image : aucune boîte écrite", () => {
+  it("OG79 : texte dont la boîte tient déjà sa ligne, ou image : aucune boîte écrite", () => {
     const s = setup();
     s.move([1200, 1150], [360, 96]);
-    const cmd = s.runs.at(-1);
-    expect(cmd?.type === "PlaceInCell" ? cmd.boxWidth : "autre").toBeUndefined();
+    const img = s.runs.at(-1);
+    expect(img?.type === "PlaceInCell" ? img.boxWidth : "autre").toBeUndefined();
+    // « chat » : 72 + 4,5 → 77 ; une boîte de 77 ne se réduit plus.
+    s.doc.apply({ type: "SetText", page: s.page, id: null, x: 1500, y: 200, content: "chat", color: "#000000", size: 36, boxWidth: 77, boxHeight: 45 });
+    s.move([1520, 220], [600, 96]);
+    const txt = s.runs.at(-1);
+    expect(txt?.type).toBe("PlaceInCell");
+    expect(txt?.type === "PlaceInCell" ? txt.boxWidth : "autre").toBeUndefined();
   });
   it("C4 : l'étiquette large sortie de sa case : la colonne revient à 240 (D11 mesure aussi le texte)", () => {
     const s = setup();

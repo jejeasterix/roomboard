@@ -448,15 +448,16 @@ export function contentBounds(doc: Pick<CoreDocument, "element" | "bounds">, ids
   return transformBounds(v.transform, { x0: 0, y0: 0, x1: w, y1: t.boxHeight });
 }
 
-/** OG79 : largeur de boîte d'un texte logé : sa ligne mise en lignes la plus longue (sans décalage d'alignement), arrondie
- *  au-dessus ; les coupures restent celles de `boxWidth` (chaque ligne y tient). `null` si la boîte n'est pas plus large. */
-export function fittedTextWidth(t: TextData, measure: Measure): number | null {
+/** OG79 : largeur de boîte d'un texte logé : sa ligne mise en lignes la plus longue (sans décalage d'alignement), plus un
+ *  huitième de sa taille (une police mesurée un peu plus large ailleurs ne la replie pas), arrondie au-dessus ; les
+ *  coupures restent celles de `boxWidth` (chaque ligne y tient). `null` si la boîte n'est pas plus large. */
+export function fittedTextWidth(t: Pick<TextData, "spans" | "size" | "boxWidth">, measure: Measure): number | null {
   let w = 0;
   for (const line of layoutRich(t.spans, { size: t.size }, t.boxWidth, measure)) {
     const last = line.segments[line.segments.length - 1];
     if (last !== undefined) w = Math.max(w, last.x + last.width);
   }
-  const fit = Math.max(1, Math.ceil(w));
+  const fit = Math.ceil(w + t.size / 8);
   return fit < t.boxWidth ? fit : null;
 }
 
