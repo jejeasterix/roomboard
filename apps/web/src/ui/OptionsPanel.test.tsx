@@ -802,9 +802,9 @@ describe("OptionsPanel : Modifier les points (OG12 T11)", () => {
     fireEvent.click(b!);
     expect(engine.removeLinePoints).toHaveBeenCalledTimes(1);
   });
-  it("DS10 : outil Tableau, case active : quatre sections ; un appui va à engine.tableLook", () => {
+  it("DS10 : outil Tableau, case active : cinq sections (Tableau de tri au lot C) ; un appui va à engine.tableLook", () => {
     const { container, engine } = mount({ tool: "table", selection: [], tableCell: { id: "t", row: 0, col: 0, rows: 2, cols: 2, ha: "left", va: "top", border: null } });
-    expect([...container.querySelectorAll("[data-option]")].map((e) => e.getAttribute("data-option"))).toEqual(["tableObjects", "tableAlign", "tableBorder", "tableRows"]);
+    expect([...container.querySelectorAll("[data-option]")].map((e) => e.getAttribute("data-option"))).toEqual(["tableObjects", "tableAlign", "tableBorder", "tableRows", "tableAccept"]);
     fireEvent.click(container.querySelector('[data-option="tableAlign"] [data-option-value="center"]')!);
     expect(engine.tableLook).toHaveBeenCalledWith({ key: "ha", value: "center" });
   });

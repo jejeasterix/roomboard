@@ -18,6 +18,14 @@ describe("menu de case (cell-menu, personnalisation-3 T7)", () => {
     expect(root?.hidden).toBe(true);
   });
 
+  it("cell-menu : l'entrée sort-asc porte l'icône arrow-down-a-z", () => {
+    const menu = createCellMenu(document.body);
+    menu.open(10, 20, [{ id: "sort-asc", label: "Trier", run: vi.fn() }]);
+    const root = [...document.body.querySelectorAll<HTMLElement>('div[role="menu"].rb-cell-menu')].at(-1);
+    expect(root?.querySelector("svg path")?.getAttribute("d")).toBe("m3 16 4 4 4-4");
+    menu.close();
+  });
+
   it("cell-menu : Échap ferme sans lancer l'action", () => {
     const run = vi.fn();
     const menu = createCellMenu(document.body);

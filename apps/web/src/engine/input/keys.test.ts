@@ -231,6 +231,9 @@ describe("tableKey (H12)", () => {
   it("tableKey : Alt+flèches seules ; avec Ctrl, Maj, Cmd, sans Alt, en saisie ou en composition : null", () => {
     const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
     expect(tableKey(a("a", { code: "KeyA" }))).toBe("fit-content");
+    expect(tableKey(a("t", { code: "KeyT" }))).toBe("sort-asc");
+    expect(tableKey(a("T", { code: "KeyT", shiftKey: true }))).toBe("sort-desc");
+    expect(tableKey(a("t", { code: "KeyT", ctrlKey: true }))).toBeNull();
     expect(tableKey(a("ArrowRight"))).toBe("col-wider");
     expect(tableKey(a("ArrowLeft"))).toBe("col-narrower");
     expect(tableKey(a("ArrowDown"))).toBe("row-taller");
@@ -250,6 +253,13 @@ describe("tableKey TB2", () => {
     expect(tableKey(a())).toBe("header-toggle");
     expect(tableKey(a({ shiftKey: true }))).toBeNull();
     expect(tableKey(a({ ctrlKey: true }))).toBeNull();
+  });
+  it("tableKey : Alt+O (lu par code) ouvre ou referme le cache, sans Maj ni Ctrl", () => {
+    const o = (x: Partial<KeyLike> = {}): KeyLike => ({ key: "o", code: "KeyO", ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...x });
+    expect(tableKey(o())).toBe("shade-open-toggle");
+    expect(tableKey(o({ key: "ø" }))).toBe("shade-open-toggle");
+    expect(tableKey(o({ shiftKey: true }))).toBeNull();
+    expect(tableKey(o({ ctrlKey: true }))).toBeNull();
   });
 });
 
@@ -381,6 +391,7 @@ describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointe
   const table: KeyLike[] = [
     ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, altKey: true })),
     k("e", { code: "KeyE", altKey: true }),
+    k("o", { code: "KeyO", altKey: true }),
     k("a", { code: "KeyA", altKey: true }),
     k("f", { code: "KeyF", altKey: true }),
     k("i", { code: "KeyI", altKey: true }),
@@ -389,6 +400,8 @@ describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointe
     k("C", { code: "KeyC", altKey: true, shiftKey: true }),
     k("M", { code: "KeyM", altKey: true, shiftKey: true }),
     k("b", { code: "KeyB", altKey: true }),
+    k("t", { code: "KeyT", altKey: true }),
+    k("T", { code: "KeyT", altKey: true, shiftKey: true }),
     k("B", { code: "KeyB", altKey: true, shiftKey: true }),
     ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, ctrlKey: true, shiftKey: true })),
   ];

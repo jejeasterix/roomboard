@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { acceptsDrop, parseLabels, sortedRows, destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -274,8 +274,17 @@ describe("TB1 bordures", () => {
       element: (id: string) => (id === "o" ? { id, cell: ["t", "r1", "b"] } : id === "p" ? { id, cell: ["x", "r0", "a"] } : { id }) as never,
       bounds: (ids: readonly string[]) => (ids[0] === "o" ? { x0: 1010, y0: 2010, x1: 1110, y1: 2060 } : null),
     };
-    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] })).toEqual([{ row: "r1", col: "b", w: 100, h: 50 }]);
-    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, ["o"])).toEqual([]);
+    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, narrow)).toEqual([{ row: "r1", col: "b", w: 100, h: 50 }]);
+    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, narrow, ["o"])).toEqual([]);
+  });
+  it("C4 linkedBoxes : un texte logé compte la largeur de ses lignes (boîte 600 d'un clic), pas sa boîte", () => {
+    const txt = { id: "o", kind: "text", transform: [1, 0, 0, 1, 1010, 2010], cell: ["t", "r1", "b"], style: { color: "#000000", width: 1 }, text: { content: "chat", size: 36, boxWidth: 600, boxHeight: 45, spans: plainSpans("chat") } };
+    const doc = {
+      elementIds: () => ["t", "o"],
+      element: (id: string) => (id === "o" ? txt : { id }) as never,
+      bounds: (ids: readonly string[]) => (ids[0] === "o" ? { x0: 1010, y0: 2010, x1: 1610, y1: 2055 } : null),
+    };
+    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, narrow)).toEqual([{ row: "r1", col: "b", w: 40, h: 45 }]);
   });
 });
 
@@ -330,5 +339,64 @@ describe("movedOrder, keepsMerges (D18, DS8)", () => {
     };
     expect(keepsMerges(t, "row", ["c", "a", "b"])).toBe(true);
     expect(keepsMerges(t, "row", ["a", "c", "b"])).toBe(false);
+  });
+});
+
+describe("sortedRows (D20, DS9)", () => {
+  const col = (texts: readonly string[], header = false, merges: TableData["merges"] = []): TableData => ({
+    color: "#000", size: 36, merges, ...(header ? { header: true } : {}),
+    cols: [{ id: "a", width: 100 }, { id: "b", width: 100 }],
+    rows: texts.map((_, i) => ({ id: `r${i}`, height: 64 })),
+    cells: texts.flatMap((text, i) => (text === "" ? [] : [{ row: `r${i}`, col: "a", text, fill: null, shade: null, spans: [{ text, attrs: {} }] }])),
+  });
+  it("sortedRows : nombres en ordre numérique fr, en-tête gardé en tête", () => {
+    expect(sortedRows(col(["Nombre", "10", "9", "100"], true), 0, "asc")).toEqual(["r0", "r2", "r1", "r3"]);
+    expect(sortedRows(col(["Nombre", "10", "9", "100"], true), 0, "desc")).toEqual(["r0", "r3", "r1", "r2"]);
+  });
+  it("sortedRows : vides en dernier dans les deux sens ; casse et accents ignorés, stable", () => {
+    expect(sortedRows(col(["b", "", "A", "a"]), 0, "asc")).toEqual(["r2", "r3", "r0", "r1"]);
+    expect(sortedRows(col(["b", "", "A", "a"]), 0, "desc")).toEqual(["r0", "r2", "r3", "r1"]);
+  });
+  it("C4 DS9 : colonne de nombres français : ordre des valeurs (décimales, négatifs, milliers)", () => {
+    expect(sortedRows(col(["2,5", "2,05", "2,10"]), 0, "asc")).toEqual(["r1", "r2", "r0"]);
+    expect(sortedRows(col(["2,5", "2,05", "2,10"]), 0, "desc")).toEqual(["r0", "r2", "r1"]);
+    expect(sortedRows(col(["-3", "-5", "\u22124"]), 0, "asc")).toEqual(["r1", "r2", "r0"]);
+    expect(sortedRows(col(["1 000", "12\u00a0500", "999", "2\u202f000"]), 0, "asc")).toEqual(["r2", "r0", "r3", "r1"]);
+  });
+  it("C4 DS9 : en-tête et vides hors du test des nombres ; une case non numérique rend la colonne au collateur", () => {
+    expect(sortedRows(col(["Valeur", "2,5", "", "2,05"], true), 0, "asc")).toEqual(["r0", "r3", "r1", "r2"]);
+    expect(sortedRows(col(["2,5", "", "-1"]), 0, "desc")).toEqual(["r0", "r2", "r1"]);
+    expect(sortedRows(col(["10", "b", "9", "a"]), 0, "asc")).toEqual(["r2", "r0", "r3", "r1"]);
+  });
+  it("sortedRows : zone sur deux lignes : refus (null)", () => {
+    expect(sortedRows(col(["x", "y", "z"], false, [{ row: "r0", col: "b", rows: 2, cols: 1 }]), 0, "asc")).toBeNull();
+  });
+  it("sortedRows : zone d'une seule ligne : admise ; une case couverte prend le texte de l'ancre", () => {
+    const t = col(["z", "y"], false, [{ row: "r0", col: "a", rows: 1, cols: 2 }]);
+    expect(sortedRows(t, 0, "asc")).toEqual(["r1", "r0"]);
+    expect(sortedRows(t, 1, "asc")).toEqual(["r0", "r1"]);
+  });
+});
+
+describe("acceptsDrop, parseLabels (D21, DS5)", () => {
+  const t = (header: boolean): TableData => ({
+    color: "#000", size: 36, merges: [], cells: [], ...(header ? { header: true } : {}),
+    cols: [{ id: "a", width: 100, accept: ["chat", "Chien"] }, { id: "b", width: 100 }],
+    rows: [{ id: "r0", height: 64 }, { id: "r1", height: 64 }],
+  });
+  it("acceptsDrop : libellé de la liste (casse, blancs de bord) ; autre libellé, objet non texte : refus ; colonne sans liste : tout", () => {
+    expect(acceptsDrop(t(false), { row: 1, col: 0 }, "  CHAT ")).toBe(true);
+    expect(acceptsDrop(t(false), { row: 1, col: 0 }, "chien")).toBe(true);
+    expect(acceptsDrop(t(false), { row: 1, col: 0 }, "truite")).toBe(false);
+    expect(acceptsDrop(t(false), { row: 1, col: 0 }, null)).toBe(false);
+    expect(acceptsDrop(t(false), { row: 1, col: 1 }, null)).toBe(true);
+  });
+  it("acceptsDrop : case d'en-tête d'une colonne à liste : refus", () => {
+    expect(acceptsDrop(t(true), { row: 0, col: 0 }, "chat")).toBe(false);
+    expect(acceptsDrop(t(true), { row: 0, col: 1 }, "chat")).toBe(true);
+  });
+  it("parseLabels : virgule, point-virgule, retour ; blancs, vides et doublons (sans casse) retirés ; 64 au plus", () => {
+    expect(parseLabels(" chat, chien ;Chat\n\n poisson ")).toEqual(["chat", "chien", "poisson"]);
+    expect(parseLabels(Array.from({ length: 70 }, (_, i) => `e${i}`).join(","))).toHaveLength(64);
   });
 });

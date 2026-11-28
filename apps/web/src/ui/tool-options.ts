@@ -10,7 +10,7 @@ import type { RadioOption } from "./RadioChoices";
 export type OptionKey =
   | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "pressure" | "strokeStyle" | "roughness" | "roundness"
   | "font" | "fontSize" | "textAlign" | "arrowType" | "arrowheads" | "opacity" | "image" | "media" | "model3d" | "layers" | "align" | "transform" | "actions"
-  | "tableObjects" | "tableAlign" | "tableBorder" | "tableRows";
+  | "tableObjects" | "tableAlign" | "tableBorder" | "tableRows" | "tableAccept";
 export const OPTION_ORDER: readonly OptionKey[] = [
   "strokeColor", "background", "fillStyle", "strokeWidth", "pressure", "strokeStyle", "roughness", "roundness",
   // OG12 : la place réservée `editPoints` est devenue sa vraie section, « Type de flèche » (`arrowType`), à l'ordre
@@ -19,12 +19,12 @@ export const OPTION_ORDER: readonly OptionKey[] = [
   // OG34 : les commandes du média et de l'objet 3D (barres flottantes de C14 et C15) deviennent des sections.
   "media", "model3d",
   "layers", "align", "transform", "actions",
-  "tableObjects", "tableAlign", "tableBorder", "tableRows",
+  "tableObjects", "tableAlign", "tableBorder", "tableRows", "tableAccept",
 ];
 /** OG23 : sections ouvertes au premier affichage (`image`, `media`, `model3d` : la section propre d'un objet seul). */
 export const OPEN_BY_DEFAULT: ReadonlySet<OptionKey> = new Set<OptionKey>(["strokeColor", "background", "strokeWidth", "image", "media", "model3d", "tableAlign", "tableBorder"]);
 /** DS10 : sections de l'outil Tableau, montrées avec une case active. */
-export const TABLE_SECTIONS: readonly OptionKey[] = ["tableObjects", "tableAlign", "tableBorder", "tableRows"];
+export const TABLE_SECTIONS: readonly OptionKey[] = ["tableObjects", "tableAlign", "tableBorder", "tableRows", "tableAccept"];
 /** Section ouverte : l'état gardé sur l'appareil s'il est booléen, sinon le défaut. */
 export function sectionOpen(key: OptionKey, saved: Readonly<Partial<Record<string, boolean>>>): boolean {
   const v = Object.hasOwn(saved, key) ? saved[key] : undefined;

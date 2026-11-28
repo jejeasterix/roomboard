@@ -10,7 +10,8 @@
 import type { Bounds, CellLink, CoreDocument, ElementView, HAlign, Matrix, TableAxis, TableBorder, TableData, TableElement, TextSpan, VAlign } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
-import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
+import { textAlignOf } from "../core/look";
+import { layoutRich, lineShift, richBoxHeight, type Measure } from "./text-layout";
 
 export const TABLE_COL_WIDTH = 240;
 export const TABLE_ROW_HEIGHT = 64;
@@ -19,6 +20,8 @@ export const TABLE_PADDING = 8;
 export const TABLE_LINE_WIDTH = 2;
 /** Ombrage (F13, HB-6, choix visuel à l'essai) : fond opaque gris, puis hachures à 45°, trait 2, pas 16 unités. */
 export const TABLE_SHADE_COLOR = "#94a3b8";
+/** Liseré hachuré au bord intérieur d'un cache ouvert (DS3, H19). */
+export const TABLE_OPEN_RIM = 4;
 export const TABLE_SHADE_HATCH = "#cbd5e1";
 export const TABLE_SHADE_HATCH_WIDTH = 2;
 export const TABLE_SHADE_HATCH_STEP = 16;
@@ -26,7 +29,7 @@ export const TABLE_SHADE_HATCH_STEP = 16;
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
 /** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
 export const TABLE_HEADER_FILL = "#E0E0E8";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none" | "row-up" | "row-down" | "col-left" | "col-right";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none" | "row-up" | "row-down" | "col-left" | "col-right" | "shade-open-toggle" | "sort-asc" | "sort-desc";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -46,6 +49,8 @@ export interface TableCellState {
   /** Zone fusionnée de la cellule active (F16) ; null ou absente hors zone. */
   readonly zone?: Range | null;
   readonly shaded?: boolean;
+  /** personnalisation-3 (DS3) : la cellule active est un cache ouvert. */
+  readonly open?: boolean;
   /** personnalisation-3 (D17) : la ligne 0 est un en-tête, `#stage[data-table-header]`. */
   readonly header?: boolean;
   /** DS10 : les objets logés rétrécissent au lieu d'agrandir la case (`fit`), lu par le panneau. */
@@ -58,6 +63,8 @@ export interface TableCellState {
   readonly linked?: number;
   /** D18 : textes de la colonne active, de haut en bas, `#stage[data-table-column]`. */
   readonly column?: readonly string[];
+  /** personnalisation-3 (DS5) : étiquettes admises par la colonne active (tableau de tri), lu par le champ « Accepte ». */
+  readonly accept?: readonly string[];
 }
 export interface TableHit { readonly id: string; readonly transform: Matrix; readonly table: TableData; readonly cell: Cell }
 
@@ -429,19 +436,40 @@ export function cellGrips(t: TableData, c: Cell): Grip[] {
   ];
 }
 
+/** C4 (D34) : boîte monde de ce qu'un objet demande à sa case, seule mesure de la taille exigée par un objet logé (pose,
+ *  sortie D11, ajuster au contenu : `linkedBoxes` et `cell-drop`). Un seul texte : de son bord gauche au bout de sa
+ *  ligne mise en lignes la plus longue (`layoutRich` à `boxWidth`, décalée de `lineShift` comme au dessin), sur la
+ *  hauteur de sa boîte, passé par sa matrice ; la boîte d'un clic (600 de large) n'impose rien. Sinon : `bounds`. */
+export function contentBounds(doc: Pick<CoreDocument, "element" | "bounds">, ids: readonly string[], measure: Measure): Bounds | null {
+  const v = ids.length === 1 && ids[0] !== undefined ? doc.element(ids[0]) : null;
+  if (v?.kind !== "text") return doc.bounds(ids);
+  const t = v.text;
+  const align = textAlignOf(v.look);
+  let w = 0;
+  for (const line of layoutRich(t.spans, { size: t.size }, t.boxWidth, measure)) {
+    const last = line.segments[line.segments.length - 1];
+    if (last !== undefined) w = Math.max(w, lineShift(line, t.boxWidth, align) + last.x + last.width);
+  }
+  const pts = [applyMatrix(v.transform, 0, 0), applyMatrix(v.transform, w, 0), applyMatrix(v.transform, 0, t.boxHeight), applyMatrix(v.transform, w, t.boxHeight)];
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
 /** Boîtes locales des objets logés dans `table` (D34), hors `skip` : rectangle englobant, dans le repère du tableau, des
- *  quatre coins de leur boîte monde. Lue au geste seulement (jamais par image). */
+ *  quatre coins de leur boîte monde demandée (`contentBounds`). Lue au geste seulement (jamais par image). */
 export function linkedBoxes(
   doc: Pick<CoreDocument, "elementIds" | "element" | "bounds">,
   page: string,
   table: { readonly id: string; readonly transform: Matrix },
+  measure: Measure,
   skip: readonly string[] = [],
 ): LinkedBox[] {
   const inv = invertMatrix(table.transform);
   if (inv === null) return [];
   return linkedIn(doc, page, table.id, skip).flatMap((v) => {
     const cell = v.cell;
-    const b = doc.bounds([v.id]);
+    const b = contentBounds(doc, [v.id], measure);
     if (cell === undefined || b === null) return [];
     const pts = [applyMatrix(inv, b.x0, b.y0), applyMatrix(inv, b.x1, b.y0), applyMatrix(inv, b.x0, b.y1), applyMatrix(inv, b.x1, b.y1)];
     const xs = pts.map((p) => p[0]);
@@ -521,4 +549,58 @@ export function lineAt(sizes: readonly number[], v: number): number {
     if (v < acc) return i;
   }
   return Math.max(0, sizes.length - 1);
+}
+
+export const SORT_REFUSED = "Le tri ne passe pas sur une cellule fusionnée sur plusieurs lignes.";
+const SORT = new Intl.Collator("fr", { numeric: true, sensitivity: "base" });
+/** DS9 (C4) : nombre écrit à la française : signe moins ou U+2212, chiffres groupés par trois (espace, U+00A0 ou
+ *  U+202F) ou d'un bloc, virgule décimale. */
+const FR_NUMBER = /^[-\u2212]?(?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)(?:,\d+)?$/;
+
+/** Valeur d'un nombre français (DS9, C4) ; null si `s` n'en est pas un. */
+export function frenchNumber(s: string): number | null {
+  if (!FR_NUMBER.test(s)) return null;
+  return Number(s.replace(/[ \u00a0\u202f]/g, "").replace("\u2212", "-").replace(",", "."));
+}
+
+/** D20, DS9 : ordre des lignes trié selon la colonne `col` (texte de l'ancre si la case est couverte) ; vides en
+ *  dernier dans les deux sens, tri stable, ligne d'en-tête gardée en tête ; une zone sur plusieurs lignes : null.
+ *  Toutes les cases non vides du corps sont des nombres français : leurs valeurs ; sinon le collateur (C4). */
+export function sortedRows(t: TableData, col: number, dir: "asc" | "desc"): string[] | null {
+  if (mergeRanges(t).some((z) => z.r1 > z.r0)) return null;
+  const head = t.header === true ? t.rows.slice(0, 1) : [];
+  const body = t.rows.slice(head.length).map((r, j) => {
+    const i = j + head.length;
+    const a = anchorOf(t, { row: i, col });
+    const text = cellContent(t, t.rows[a.row]?.id ?? "", t.cols[a.col]?.id ?? "").text.trim();
+    return { id: r.id, i, text, n: frenchNumber(text) };
+  });
+  const numeric = body.every((b) => b.text === "" || b.n !== null);
+  body.sort((x, y) => {
+    if (x.text === "" || y.text === "") return x.text === y.text ? x.i - y.i : x.text === "" ? 1 : -1;
+    const c = numeric ? Math.sign((x.n ?? 0) - (y.n ?? 0)) : SORT.compare(x.text, y.text);
+    return c !== 0 ? (dir === "asc" ? c : -c) : x.i - y.i;
+  });
+  return [...head.map((r) => r.id), ...body.map((b) => b.id)];
+}
+
+const label = (s: string): string => s.trim().toLocaleLowerCase("fr");
+
+/** D21, DS5 : la case `cell` accepte-t-elle l'étiquette `text` (null : pas un seul texte) ? Colonne sans liste : tout ;
+ *  case d'en-tête d'une colonne à liste : rien ; sinon le libellé, sans casse ni blancs de bord, doit être dans la liste. */
+export function acceptsDrop(t: TableData, cell: Cell, text: string | null): boolean {
+  const list = t.cols[cell.col]?.accept;
+  if (list === undefined || list.length === 0) return true;
+  if (t.header === true && cell.row === 0) return false;
+  return text !== null && list.some((x) => label(x) === label(text));
+}
+
+/** Champ « Accepte » (DS5) : libellés séparés par virgule, point-virgule ou retour ; nettoyés, sans doublon, 64 au plus. */
+export function parseLabels(s: string): string[] {
+  const out: string[] = [];
+  for (const raw of s.split(/[,;\n]/)) {
+    const x = raw.trim();
+    if (x !== "" && !out.some((o) => label(o) === label(x)) && out.length < 64) out.push(x);
+  }
+  return out;
 }

@@ -17,6 +17,7 @@ import {
   shownSpans,
   TABLE_HEADER_FILL,
   TABLE_LINE_WIDTH,
+  TABLE_OPEN_RIM,
   TABLE_SHADE_HATCH,
   TABLE_SHADE_HATCH_STEP,
   TABLE_SHADE_HATCH_WIDTH,
@@ -57,9 +58,8 @@ function fillBox(ctx: CanvasRenderingContext2D, b: Bounds, color: string): void 
   ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
 }
 
-/** Ombrage (F13) : fond opaque à la couleur de la cellule, hachures à 45° découpées au rectangle. */
-function paintShade(ctx: CanvasRenderingContext2D, b: Bounds, color: string): void {
-  fillBox(ctx, b, color);
+/** Hachures à 45° découpées au rectangle (F13). */
+function hatch(ctx: CanvasRenderingContext2D, b: Bounds): void {
   const w = b.x1 - b.x0;
   const h = b.y1 - b.y0;
   ctx.save();
@@ -75,6 +75,27 @@ function paintShade(ctx: CanvasRenderingContext2D, b: Bounds, color: string): vo
   ctx.lineWidth = TABLE_SHADE_HATCH_WIDTH;
   ctx.stroke();
   ctx.restore();
+}
+
+/** Ombrage (F13) : fond opaque à la couleur de la cellule, hachures à 45° découpées au rectangle. */
+function paintShade(ctx: CanvasRenderingContext2D, b: Bounds, color: string): void {
+  fillBox(ctx, b, color);
+  hatch(ctx, b);
+}
+
+/** Cache ouvert (DS3, H19) : quatre bandes de `TABLE_OPEN_RIM` au bord intérieur, à la couleur de l'ombrage, hachurées ;
+ *  le contenu de la case reste visible. */
+function paintOpenShade(ctx: CanvasRenderingContext2D, b: Bounds, color: string): void {
+  const r = Math.min(TABLE_OPEN_RIM, (b.x1 - b.x0) / 2, (b.y1 - b.y0) / 2);
+  for (const s of [
+    { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y0 + r },
+    { x0: b.x0, y0: b.y1 - r, x1: b.x1, y1: b.y1 },
+    { x0: b.x0, y0: b.y0 + r, x1: b.x0 + r, y1: b.y1 - r },
+    { x0: b.x1 - r, y0: b.y0 + r, x1: b.x1, y1: b.y1 - r },
+  ]) {
+    fillBox(ctx, s, color);
+    hatch(ctx, s);
+  }
 }
 
 /** Image de fond (personnalisation-3, T9) : « couvrir », centrée, découpée au rectangle de la case ; image pas encore
@@ -187,7 +208,7 @@ export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData, imag
   for (const cell of t.cells) {
     if (cell.shade === null) continue;
     const at = visibleCell(t, zones, cell);
-    if (at !== null) paintShade(ctx, cellRect(t, at), cell.shade);
+    if (at !== null) (cell.open === true ? paintOpenShade : paintShade)(ctx, cellRect(t, at), cell.shade);
   }
   const xs = edges(t.cols.map((c) => c.width));
   const ys = edges(t.rows.map((r) => r.height));
@@ -237,7 +258,7 @@ export function cellTextBoxes(t: TableData): CellTextBox[] {
   const out: CellTextBox[] = [];
   const zones = mergeRanges(t);
   for (const cell of t.cells) {
-    if (cell.text === "" || cell.shade !== null) continue;
+    if (cell.text === "" || (cell.shade !== null && cell.open !== true)) continue;
     const at = visibleCell(t, zones, cell);
     if (at === null) continue;
     out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: shownSpans(t, at) });

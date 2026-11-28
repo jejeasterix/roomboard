@@ -73,7 +73,7 @@ describe("tool-options", () => {
   it("DS10 : showsPanel(table) ; sections du tableau seulement avec une case active, dans l'ordre", () => {
     expect(showsPanel("table" as never, 0, false)).toBe(true);
     expect(sectionsFor("table" as never, [], false, null, 0, false)).toEqual([]);
-    expect(sectionsFor("table" as never, [], false, null, 0, true)).toEqual(["tableObjects", "tableAlign", "tableBorder", "tableRows"]);
+    expect(sectionsFor("table" as never, [], false, null, 0, true)).toEqual(["tableObjects", "tableAlign", "tableBorder", "tableRows", "tableAccept"]);
     expect(sectionsFor("rect", [], false, null, 0, true)).not.toContain("tableAlign");
   });
   it("showsPanel : masqué avec Main, Gomme, Pot, Sélection sans sélection, et en annotation", () => {

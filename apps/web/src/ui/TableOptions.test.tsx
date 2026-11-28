@@ -53,6 +53,20 @@ describe("TableOptions (DS10)", () => {
     fireEvent.click(container.querySelector('[data-table-option="fit-content"]')!);
     expect(host.act.mock.calls.map((c) => c[0])).toEqual(["fit-toggle", "fit-content"]);
   });
+  it("DS10 : Lignes : Trier croissant et décroissant (act sort-asc, sort-desc)", () => {
+    const { container, host } = mount("tableRows", cell());
+    fireEvent.click(container.querySelector('[data-table-option="sort-asc"]')!);
+    fireEvent.click(container.querySelector('[data-table-option="sort-desc"]')!);
+    expect(host.act.mock.calls.map((c) => c[0])).toEqual(["sort-asc", "sort-desc"]);
+  });
+  it("C4 : Lignes : libellés de tri sans raccourci écrit en double (porté par `shortcut`, aria-keyshortcuts)", () => {
+    const { container } = mount("tableRows", cell());
+    const asc = container.querySelector('[data-table-option="sort-asc"]');
+    const desc = container.querySelector('[data-table-option="sort-desc"]');
+    expect([asc?.getAttribute("aria-label"), desc?.getAttribute("aria-label")]).toEqual(["Trier croissant", "Trier décroissant"]);
+    expect(asc?.getAttribute("aria-keyshortcuts")).toBe("Alt+T");
+    expect(desc?.getAttribute("aria-keyshortcuts") ?? "").not.toBe("");
+  });
   it("DS10 : Lignes : En-tête est un interrupteur (aria-checked) qui bascule", () => {
     const { container, host } = mount("tableRows", cell({ header: true }));
     const b = container.querySelector('[data-table-option="header"]')!;
@@ -95,5 +109,21 @@ describe("TableOptions (DS10)", () => {
     expect(dot.style.backgroundColor).not.toBe("");
     expect(container.querySelector('[data-table-border-color="#000000"]')?.getAttribute("aria-pressed")).toBe("false");
     expect(container.querySelector(".rb-swatch")).toBeNull();
+  });
+  it("S14, DS10 : Tableau de tri : le champ montre la liste ; Entrée écrit look accept (libellés nettoyés)", () => {
+    const { container, host } = mount("tableAccept", cell({ accept: ["chat"] }));
+    const input = container.querySelector<HTMLInputElement>('[data-table-option="accept"]')!;
+    expect(input.value).toBe("chat");
+    fireEvent.input(input, { target: { value: "chat, chien ; Chat" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(host.look).toHaveBeenLastCalledWith({ key: "accept", value: ["chat", "chien"] });
+  });
+  it("C4 (DS5) : « Accepte » est une zone de texte : une liste collée avec des retours à la ligne garde ses séparateurs", () => {
+    const { container, host } = mount("tableAccept", cell({ accept: [] }));
+    const area = container.querySelector<HTMLTextAreaElement>('[data-table-option="accept"]')!;
+    expect(area.tagName).toBe("TEXTAREA");
+    fireEvent.input(area, { target: { value: "chat\nchien\nlapin" } });
+    fireEvent.change(area);
+    expect(host.look).toHaveBeenLastCalledWith({ key: "accept", value: ["chat", "chien", "lapin"] });
   });
 });

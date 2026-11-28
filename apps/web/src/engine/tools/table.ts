@@ -65,6 +65,8 @@ import {
   type Grip,
   type LinkedBox,
   type Range,
+  SORT_REFUSED,
+  sortedRows,
 } from "../table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "../text-layout";
 import type { CellDrop } from "./cell-drop";
@@ -214,7 +216,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
 
   /** Taille la plus petite de la ligne ou colonne (D13, D34) : taille exigée par le texte et les objets logés. */
   const minSize = (id: string, transform: Matrix, t: TableData, edge: EdgeHit): number => {
-    const need = requiredSizes(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }), t.cols.map((c) => c.width), measure);
+    const need = requiredSizes(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }, measure), t.cols.map((c) => c.width), measure);
     return (edge.axis === "col" ? need.cols : need.rows)[edge.index] ?? 0;
   };
 
@@ -241,7 +243,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     const col = t.cols[edge.index];
     if (col === undefined || col.width === v) return;
     const widths = t.cols.map((c, i) => (i === edge.index ? v : c.width));
-    const rows = rowsNeeding(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }), widths);
+    const rows = rowsNeeding(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }, measure), widths);
     ctx.run({ type: "SetTableLineSizes", id, cols: [[col.id, v]], rows });
   };
 
@@ -445,7 +447,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   /** Uniformiser (T11, D34) : colonnes à la largeur moyenne, lignes à la hauteur moyenne, jamais sous la taille exigée
    *  (texte et objets logés, `requiredSizes`). Déjà uniforme à un arrondi près : aucune étape (T14). */
   const uniform = (id: string, transform: Matrix, t: TableData): void => {
-    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform });
+    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform }, measure);
     const mean = t.cols.reduce((s, c) => s + c.width, 0) / t.cols.length;
     const w = Math.max(mean, ...requiredSizes(t, linked, t.cols.map(() => mean), measure).cols);
     const need = Math.max(...requiredSizes(t, linked, t.cols.map(() => w), measure).rows);
@@ -524,6 +526,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         },
       });
     }
+    items.push({ id: "sort-asc", label: "Trier", run: () => api.act("sort-asc") });
     items.push({ id: "header", label: at.table.header === true ? "Retirer l'en-tête" : "En-tête", run: () => api.act("header-toggle") });
     menu.open(p.sx, p.sy, items);
   };
@@ -534,7 +537,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     const el = ctx.doc.element(id);
     if (el?.kind !== "table") return;
     const t = el.table;
-    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform: el.transform });
+    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform: el.transform }, measure);
     const widths = t.cols.map((c) => c.width);
     const cols: (readonly [string, number])[] = [];
     if (col !== null) {
@@ -739,7 +742,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
       const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
       const look = cellLook(t, at.ref.row, at.ref.col);
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ...(t.fit === "shrink" ? { fit: "shrink" as const } : {}), column: t.rows.map((r) => cellContent(t, r.id, t.cols[at.cell.col]?.id ?? "").text), ha: look.ha, va: look.va, border: look.border };
+      const accept = t.cols[at.cell.col]?.accept;
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ...(t.fit === "shrink" ? { fit: "shrink" as const } : {}), column: t.rows.map((r) => cellContent(t, r.id, t.cols[at.cell.col]?.id ?? "").text), ha: look.ha, va: look.va, border: look.border, open: look.open, ...(accept === undefined ? {} : { accept }) };
     },
     act(a) {
       if (!settle()) return;
@@ -777,6 +781,15 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         case "unshade":
           shadeOver(at, span, null);
           break;
+        case "shade-open-toggle": {
+          const shaded = rangeCells(t, span).flatMap((c) => {
+            const r = t.rows[c.row];
+            const k = t.cols[c.col];
+            return r !== undefined && k !== undefined && cellContent(t, r.id, k.id).shade !== null ? [cellLook(t, r.id, k.id).open] : [];
+          });
+          if (shaded.length > 0) api.look({ key: "open", value: !shaded.every((o) => o) });
+          return;
+        }
         case "header-toggle":
           ctx.run({ type: "SetTableOptions", id: ref.id, header: t.header !== true });
           break;
@@ -803,6 +816,13 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           const n = axis === "row" ? t.rows.length : t.cols.length;
           const back = a === "row-up" || a === "col-left";
           if (back ? s0 > 0 : s1 < n - 1) reorderTo(at, axis, s0, s1, back ? s0 - 1 : s0 + 1);
+          break;
+        }
+        case "sort-asc":
+        case "sort-desc": {
+          const order = sortedRows(t, at.cell.col, a === "sort-asc" ? "asc" : "desc");
+          if (order === null) notify?.(SORT_REFUSED);
+          else if (order.some((x, i) => x !== t.rows[i]?.id)) ctx.run({ type: "ReorderTableLines", id: ref.id, axis: "row", order });
           break;
         }
         case "fit-content":

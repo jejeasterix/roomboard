@@ -8,7 +8,7 @@
 import { ICONS, ICON_VIEWBOX } from "./icons";
 
 export interface CellMenuItem {
-  readonly id: "fit" | "cell-image" | "unplace" | "header";
+  readonly id: "fit" | "cell-image" | "unplace" | "header" | "sort-asc";
   readonly label: string;
   run(): void;
 }
@@ -46,7 +46,7 @@ export function placeCellMenu(
 
 /** Cible tactile minimale (G8). */
 export const MENU_BUTTON_PX = 44;
-const ICON_OF: Readonly<Record<CellMenuItem["id"], string>> = { fit: "fit", "cell-image": "wallpaper", unplace: "close", header: "rows-2" };
+const ICON_OF: Readonly<Record<CellMenuItem["id"], string>> = { fit: "fit", "cell-image": "wallpaper", unplace: "close", header: "rows-2", "sort-asc": "arrow-down-a-z" };
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 export function createCellMenu(host: HTMLElement): CellMenuHost {

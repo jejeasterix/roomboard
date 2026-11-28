@@ -24,6 +24,7 @@ const base: EngineState = {
   tableCell: null,
   tableMerges: 0,
   tableShades: 0,
+  tableOpens: 0,
   textFormat: null,
 };
 
@@ -37,8 +38,8 @@ describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
       selection: ["a", "b"],
       selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
     };
-    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", pageMode: "landscape", table: "", tableLinked: "", tableHeader: "", tableAlign: "", tableBorder: "", tableColumn: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "", lineEdit: "", bind: "", linePoints: "0" });
-    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", pageMode: "landscape", table: "", tableLinked: "", tableHeader: "", tableAlign: "", tableBorder: "", tableColumn: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "", lineEdit: "", bind: "", linePoints: "0" });
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", pageMode: "landscape", table: "", tableLinked: "", tableHeader: "", tableAlign: "", tableBorder: "", tableColumn: "", tableMerges: "0", tableShades: "0", tableOpens: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "", lineEdit: "", bind: "", linePoints: "0" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", pageMode: "landscape", table: "", tableLinked: "", tableHeader: "", tableAlign: "", tableBorder: "", tableColumn: "", tableMerges: "0", tableShades: "0", tableOpens: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "", lineEdit: "", bind: "", linePoints: "0" });
     expect(pagesLabel(s)).toBe("2 / 3");
   });
 
@@ -57,6 +58,10 @@ describe("stageTags (C10b, F29)", () => {
   it("tableMerges, tableShades : comptes de la page montrée en texte", () => {
     const t = stageTags({ ...base, tableMerges: 2, tableShades: 3 });
     expect([t.tableMerges, t.tableShades]).toEqual(["2", "3"]);
+  });
+
+  it("S12 : tableOpens : nombre de caches ouverts en texte", () => {
+    expect(stageTags({ ...base, tableOpens: 2 }).tableOpens).toBe("2");
   });
 });
 

@@ -10,7 +10,7 @@ import type { Command, CoreDocument, TableElement, TextElement } from "../core/a
 import { sourcePixelAt } from "../core/image-params";
 import { formatSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix, isClosedShape, isSegment } from "../core/shapes";
-import { cellAt, cellContent, cellInnerBox, cellTextFrame, shownSpans } from "./table-geom";
+import { cellAt, cellContent, cellInnerBox, cellLook, cellTextFrame, shownSpans } from "./table-geom";
 import { layoutRich, offsetAt, richBoxHeight, wordAt, type Measure } from "./text-layout";
 
 /** Tolérance de toucher, en px d'écran (celle de l'outil Texte, D3). */
@@ -69,7 +69,7 @@ function tableCommand(page: string, el: TableElement, x: number, y: number, colo
   if (cell === null || row === undefined || col === undefined) return background(page, color);
   const fill: Command = { type: "SetTableFill", id: el.id, row, col, fill: color };
   const content = cellContent(t, row, col);
-  if (content.text === "" || content.shade !== null) return fill;
+  if (content.text === "" || (content.shade !== null && !cellLook(t, row, col).open)) return fill;
   // D15 : même cadre aligné que le dessin (`paintCellTexts`) ; `offsetAt` décale la ligne par `lineShift`. Mise en lignes
   // sur les segments affichés (gras d'en-tête, `shownSpans`) ; la commande garde ceux du contenu.
   const box = cellInnerBox(t, cell);

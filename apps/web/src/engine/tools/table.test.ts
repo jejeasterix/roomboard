@@ -764,7 +764,7 @@ describe("appui long sur une case (menu de case, personnalisation-3 T7)", () => 
       s.tool.begin(1, [at(120, 220)]);
       vi.advanceTimersByTime(500);
       expect(s.menuOpens).toHaveLength(1);
-      expect(s.menuOpens[0]?.items.map((i) => i.id)).toEqual(["fit", "header"]);
+      expect(s.menuOpens[0]?.items.map((i) => i.id)).toEqual(["fit", "sort-asc", "header"]);
       const opened = s.host.opened.length;
       s.tool.close(1, "end");
       expect(s.host.opened.length).toBe(opened);
@@ -843,8 +843,8 @@ describe("image de fond de case (personnalisation-3 T9, S5)", () => {
       vi.advanceTimersByTime(500);
       expect(s.menuOpens).toHaveLength(1);
       const items = s.menuOpens[0]?.items ?? [];
-      expect(items.map((i) => i.id)).toEqual(["fit", "cell-image", "unplace", "header"]);
-      expect(items.map((i) => i.label)).toEqual(["Rétrécir", "Mettre en fond", "Sortir", "En-tête"]);
+      expect(items.map((i) => i.id)).toEqual(["fit", "cell-image", "unplace", "sort-asc", "header"]);
+      expect(items.map((i) => i.label)).toEqual(["Rétrécir", "Mettre en fond", "Sortir", "Trier", "En-tête"]);
       s.tool.close(1, "end");
       items[2]?.run();
       expect(s.last()).toEqual({ type: "PlaceInCell", ids: [s.image], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] });
@@ -1382,5 +1382,76 @@ describe("outil Tableau — S11 déplacer une ligne (D18, DS8)", () => {
   it("S11 : poignées de déplacement dessinées avec celles de taille (row-move, col-move)", () => {
     const { s } = ready();
     expect((s.tool.live().overlay?.grips ?? []).map((g) => g.kind).sort()).toEqual(["col", "col-move", "row", "row-move"]);
+  });
+});
+
+describe("outil Tableau — S12 cache (DS3)", () => {
+  it("S12 : Alt+O (shade-open-toggle) : ouvre puis referme la case ombrée ; sans ombrage : rien", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const n = s.runs.length;
+    s.tool.act("shade-open-toggle");
+    expect(s.runs.length).toBe(n);
+    s.tool.act("shade");
+    s.tool.act("shade-open-toggle");
+    expect(s.tool.cellState()?.open).toBe(true);
+    s.tool.act("shade-open-toggle");
+    expect(s.tool.cellState()?.open).toBe(false);
+    expect(s.table(id).cells[0]?.shade).toBe("#94a3b8");
+  });
+});
+
+describe("outil Tableau — S13 trier (DS9)", () => {
+  const ready = () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 4);
+    for (const text of ["Nombre", "10", "9", "100"]) {
+      s.type(text);
+      s.tool.navigate("down");
+    }
+    s.tool.requestCommit();
+    s.doc.apply({ type: "SetTableOptions", id, header: true });
+    s.click(100 + 120, 200 + 64 + 32);
+    s.tool.requestCommit();
+    return { s, id };
+  };
+  it("S13 : Alt+T (sort-asc) : une ReorderTableLines, Nombre|9|10|100 ; un undo rend l'ordre", () => {
+    const { s } = ready();
+    const n = s.runs.length;
+    s.tool.act("sort-asc");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.last()?.type).toBe("ReorderTableLines");
+    expect(s.tool.cellState()?.column).toEqual(["Nombre", "9", "10", "100"]);
+    s.doc.undo();
+    expect(s.tool.cellState()?.column).toEqual(["Nombre", "10", "9", "100"]);
+  });
+  it("S13 : déjà trié : aucune commande", () => {
+    const { s } = ready();
+    s.tool.act("sort-asc");
+    const n = s.runs.length;
+    s.tool.act("sort-asc");
+    expect(s.runs.length).toBe(n);
+  });
+  it("S13 : zone sur deux lignes refusée : message, aucune commande", () => {
+    const { s, id } = ready();
+    const t = s.table(id);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: t.rows[1]?.id ?? "", col: t.cols[1]?.id ?? "" }, to: { row: t.rows[2]?.id ?? "", col: t.cols[1]?.id ?? "" } });
+    const n = s.runs.length;
+    s.tool.act("sort-desc");
+    expect(s.runs.length).toBe(n);
+    expect(s.notices).toContain("Le tri ne passe pas sur une cellule fusionnée sur plusieurs lignes.");
+  });
+  it("S13 : le menu de case propose « Trier »", () => {
+    vi.useFakeTimers();
+    try {
+      const { s } = ready();
+      s.tool.begin(1, [at(220, 296)]);
+      vi.advanceTimersByTime(500);
+      expect(s.menuOpens.at(-1)?.items.map((i) => i.id)).toContain("sort-asc");
+      s.tool.close(1, "end");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
