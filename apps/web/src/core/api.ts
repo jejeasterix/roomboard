@@ -207,12 +207,14 @@ export type Command =
   | { readonly type: "SplitTableCell"; readonly id: string; readonly row: string; readonly col: string }
   /** C10b (F9) : shade = couleur, null retire (révéler, retirer l'ombrage). */
   | { readonly type: "SetTableShade"; readonly id: string; readonly from: CellIds; readonly to: CellIds; readonly shade: string | null }
-  /** personnalisation-3 (D3) : tailles, suivi, matrice composée sur ids, cell posé (null : retiré) ; une étape. */
-  | { readonly type: "PlaceInCell"; readonly ids: readonly string[]; readonly matrix: Matrix; readonly cell: CellLink | null; readonly sizes: readonly LineSize[] }
+  /** personnalisation-3 (D3) : tailles, suivi, matrice composée sur ids, cell posé (null : retiré) ; une étape. OG79 :
+   *  `boxWidth` (fini > 0, sinon `badText`) devient la largeur de boîte des textes de `ids`, dans la même étape. */
+  | { readonly type: "PlaceInCell"; readonly ids: readonly string[]; readonly matrix: Matrix; readonly cell: CellLink | null; readonly sizes: readonly LineSize[]; readonly boxWidth?: number }
   /** personnalisation-3 (D4) : tailles par id, objets liés suivis ; une étape. */
   | { readonly type: "SetTableLineSizes"; readonly id: string; readonly cols: readonly (readonly [string, number])[]; readonly rows: readonly (readonly [string, number])[] }
-  /** personnalisation-3 (T7) : `fit` "shrink" écrit, "grow" retire ; `header` true écrit, false retire ; une étape. */
-  | { readonly type: "SetTableOptions"; readonly id: string; readonly fit?: "grow" | "shrink"; readonly header?: boolean }
+  /** personnalisation-3 (T7) : `fit` "shrink" écrit, "grow" retire ; `header` true écrit, false retire ; une étape. OG79
+   *  (HS9) : `rows`, hauteurs de lignes par id écrites dans la même étape, objets liés suivis. */
+  | { readonly type: "SetTableOptions"; readonly id: string; readonly fit?: "grow" | "shrink"; readonly header?: boolean; readonly rows?: readonly (readonly [string, number])[] }
   /** personnalisation-3 (T9) : l'image logée `from` devient le fond de la case et quitte la page ; null retire le fond ; une étape. */
   | { readonly type: "SetCellImage"; readonly id: string; readonly row: string; readonly col: string; readonly from: string | null }
   /** personnalisation-3 (suite OG32, DS1) : une clé de case ou la liste `accept` des colonnes ; une étape. */

@@ -10,8 +10,8 @@ use yrs::{Any, Array, In, Map, MapPrelim, MapRef, Out, ReadTxn, TransactionMut};
 use crate::commands::{valid_matrix, Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    apply_transform, cell_link_to_any, compose, finite_positive, fits_f32, invert, out_string,
-    out_transform, read_cell_link, transform_to_any, Transform, IDENTITY,
+    apply_transform, cell_link_to_any, compose, finite_positive, fits_f32, invert, out_f64,
+    out_string, out_transform, read_cell_link, transform_to_any, Transform, IDENTITY,
 };
 use crate::table::{
     cell_key, cells_map, insert_cell, merges_of, read_cell, read_raw, Line, RawTable, TableAxis,
@@ -412,19 +412,29 @@ impl Document {
         id: &str,
         fit: Option<&str>,
         header: Option<bool>,
+        rows: &[(String, f64)],
     ) -> Result<Change, CommandError> {
         let (page, e, raw) = self.table_of(id)?;
         if !matches!(fit, None | Some("grow" | "shrink")) {
+            return Err(CommandError::BadTable);
+        }
+        let sizes: Vec<(TableAxis, String, f64)> = rows
+            .iter()
+            .map(|(l, s)| (TableAxis::Row, l.clone(), *s))
+            .collect();
+        if !line_sizes_ok(&raw, &sizes) {
             return Err(CommandError::BadTable);
         }
         let shrink = fit
             .map(|f| f == "shrink")
             .filter(|s| *s != raw.fit.is_some());
         let head = header.filter(|h| *h != raw.header);
-        if shrink.is_none() && head.is_none() {
+        let resized = !line_sizes_same(&raw, &sizes);
+        if shrink.is_none() && head.is_none() && !resized {
             return Ok(self.unchanged());
         }
-        {
+        let before = offsets(&raw);
+        let moved = {
             let mut txn = self.transact_local();
             match shrink {
                 Some(true) => {
@@ -444,8 +454,14 @@ impl Document {
                 }
                 None => {}
             }
-        }
-        Ok(self.table_done(page, id))
+            if resized {
+                write_line_sizes(&mut txn, &raw, &sizes);
+                self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
+            } else {
+                Vec::new()
+            }
+        };
+        Ok(self.table_done_with(page, id, moved))
     }
 
     /// `SetCellImage` (T9) : `Some(image)` : l'image logée dans cette case devient son fond `bg` (asset de l'image, image
@@ -581,10 +597,14 @@ impl Document {
         m: &Transform,
         cell: Option<&[String; 3]>,
         sizes: &[LineSize],
+        box_width: Option<f64>,
     ) -> Result<Change, CommandError> {
-        // 1. Matrice invalide.
+        // 1. Matrice invalide ; OG79 : largeur de boîte des textes non finie ou nulle.
         if !valid_matrix(m) {
             return Err(CommandError::BadMatrix);
+        }
+        if box_width.is_some_and(|w| !finite_positive(w)) {
+            return Err(CommandError::BadText);
         }
         // 2. Un tableau parmi les ids (D36).
         let (found, same_links) = {
@@ -604,6 +624,21 @@ impl Document {
                 .iter()
                 .all(|(_, f)| read_cell_link(&txn, &f.element).as_ref() == cell);
             (found, same)
+        };
+        // OG79 : textes dont la boîte prend `box_width` (les autres objets n'en ont pas).
+        let resized: HashSet<String> = match box_width {
+            None => HashSet::new(),
+            Some(w) => {
+                let txn = self.read();
+                found
+                    .iter()
+                    .filter(|(_, f)| {
+                        out_string(f.element.get(&txn, "kind")).as_deref() == Some("text")
+                            && out_f64(f.element.get(&txn, "boxWidth")) != Some(w)
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            }
         };
         // 3. Aucun id trouvé : aucune étape. 4. Plusieurs pages.
         let Some(page) = found.first().map(|(_, f)| f.page_id.clone()) else {
@@ -652,6 +687,7 @@ impl Document {
         // 8. Rien ne change : aucune étape.
         if *m == IDENTITY
             && same_links
+            && resized.is_empty()
             && tables
                 .iter()
                 .all(|(_, _, raw, list)| line_sizes_same(raw, list))
@@ -668,9 +704,13 @@ impl Document {
                 touched.push(tid.clone());
                 touched.extend(self.follow_in(&mut txn, &page, e, tid, &before, &skip));
             }
-            for ((_, f), c) in found.iter().zip(&composed) {
+            for ((id, f), c) in found.iter().zip(&composed) {
                 if *m != IDENTITY {
                     f.element.insert(&mut txn, "transform", transform_to_any(c));
+                }
+                if let (Some(w), true) = (box_width, resized.contains(id)) {
+                    f.element
+                        .insert(&mut txn, "boxWidth", In::Any(Any::from(w)));
                 }
                 match cell {
                     Some(l) => {
@@ -691,6 +731,11 @@ impl Document {
             if *m != IDENTITY {
                 let placed: Vec<String> = found.iter().map(|(id, _)| id.clone()).collect();
                 touched.extend(crate::linear::follow(self, &mut txn, &placed, Some(m)));
+            } else if !resized.is_empty() {
+                // OG79, comme `cmd_set_text` : sans déplacement, une boîte réduite recale ses extrémités liées.
+                let mut boxed: Vec<String> = resized.iter().cloned().collect();
+                boxed.sort();
+                touched.extend(crate::linear::follow(self, &mut txn, &boxed, None));
             }
         }
         crate::order::sort_stable_by(&mut touched, String::cmp);
@@ -792,6 +837,7 @@ mod tests {
                     size: 316.0,
                 },
             ],
+            box_width: None,
         })
         .expect("logé")
     }
@@ -829,6 +875,67 @@ mod tests {
         assert_eq!(tx(&d, &o), before);
     }
 
+    // OG79 : une étiquette d'un clic (boîte 600) logée prend la largeur de sa ligne ; le test de clic ne la trouve plus
+    // sur la case voisine ; un seul Ctrl+Z rend 600 ; largeur nulle : `BadText` sans étape ; un rectangle n'a pas de boîte.
+    #[test]
+    fn place_in_cell_narrows_a_text_box() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1100.0, 1100.0);
+        let s = d
+            .apply(Command::SetText {
+                page: p.clone(),
+                id: None,
+                x: 1500.0,
+                y: 200.0,
+                content: "chat".into(),
+                color: "#000000".into(),
+                size: 36.0,
+                box_width: 600.0,
+                box_height: 45.0,
+                spans: None,
+                look: Look::default(),
+            })
+            .expect("texte")
+            .ids[0]
+            .clone();
+        let width = |d: &Document| d.element(&s).and_then(|e| e.text).map(|x| x.box_width);
+        let v0 = d.version();
+        let bad = d.apply(Command::PlaceInCell {
+            ids: vec![s.clone()],
+            matrix: IDENTITY,
+            cell: Some(link(&d, &t, 0, 1)),
+            sizes: vec![],
+            box_width: Some(0.0),
+        });
+        assert_eq!(bad, Err(CommandError::BadText));
+        assert_eq!(d.version(), v0, "refus sans étape");
+        assert_eq!(
+            d.hit_test(&p, 1500.0 + 400.0, 220.0, 0.0),
+            Some(s.clone()),
+            "boîte 600 avant"
+        );
+        d.apply(Command::PlaceInCell {
+            ids: vec![s.clone(), o.clone()],
+            matrix: [1.0, 0.0, 0.0, 1.0, 248.0 - 1500.0, 8.0 - 200.0],
+            cell: Some(link(&d, &t, 0, 1)),
+            sizes: vec![],
+            box_width: Some(72.0),
+        })
+        .expect("logé");
+        assert_eq!(width(&d), Some(72.0));
+        assert_eq!(
+            d.hit_test(&p, 600.0, 30.0, 0.0),
+            Some(t.clone()),
+            "la case voisine est au tableau"
+        );
+        assert_eq!(d.hit_test(&p, 300.0, 30.0, 0.0), Some(s.clone()));
+        assert!(d.undo());
+        assert_eq!(width(&d), Some(600.0), "un seul Ctrl+Z");
+        assert_eq!(d.element(&s).expect("s").cell, None);
+    }
+
     // S18, D35, D36 : refus sans écriture.
     #[test]
     fn place_in_cell_refuses_table_and_closed_shade() {
@@ -843,6 +950,7 @@ mod tests {
             matrix: IDENTITY,
             cell: Some(link(&d, &t, 0, 0)),
             sizes: vec![],
+            box_width: None,
         });
         assert_eq!(table_in, Err(CommandError::BadTable));
         assert_eq!(d.version(), v0, "refus sans étape");
@@ -860,6 +968,7 @@ mod tests {
             matrix: IDENTITY,
             cell: Some(l),
             sizes: vec![],
+            box_width: None,
         });
         assert_eq!(shaded, Err(CommandError::BadTable));
         assert_eq!(d.version(), v1);
@@ -941,6 +1050,7 @@ mod tests {
             matrix: IDENTITY,
             cell: Some(link(&d, &t, 2, 2)),
             sizes: vec![],
+            box_width: None,
         })
         .expect("logé");
         let at = tx(&d, &o);
@@ -971,6 +1081,51 @@ mod tests {
         assert_eq!(view(&d, &t).rows[0].height, 80.0);
     }
 
+    // OG79 (HS9) : en-tête et hauteur de la ligne 0 dans la même étape, objet logé dessous suivi ; ligne inconnue ou citée
+    // deux fois : `BadTable` sans étape.
+    #[test]
+    fn set_table_options_header_grows_row_in_one_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1100.0, 1100.0);
+        place11(&mut d, &t, &o);
+        let at = tx(&d, &o);
+        let r0 = view(&d, &t).rows[0].id.clone();
+        let v = d.version();
+        for rows in [
+            vec![("zz".to_string(), 90.0)],
+            vec![(r0.clone(), 90.0), (r0.clone(), 95.0)],
+        ] {
+            let bad = d.apply(Command::SetTableOptions {
+                id: t.clone(),
+                fit: None,
+                header: Some(true),
+                rows,
+            });
+            assert_eq!(bad, Err(CommandError::BadTable));
+        }
+        assert_eq!(d.version(), v, "refus sans étape");
+        d.apply(Command::SetTableOptions {
+            id: t.clone(),
+            fit: None,
+            header: Some(true),
+            rows: vec![(r0.clone(), 90.0)],
+        })
+        .expect("en-tête");
+        assert!(view(&d, &t).header);
+        assert_eq!(view(&d, &t).rows[0].height, 90.0);
+        assert_eq!(
+            tx(&d, &o)[5],
+            at[5] + 26.0,
+            "l'objet logé en ligne 1 descend"
+        );
+        assert!(d.undo());
+        assert!(!view(&d, &t).header, "un seul Ctrl+Z");
+        assert_eq!(view(&d, &t).rows[0].height, 64.0);
+        assert_eq!(tx(&d, &o), at);
+    }
+
     // D4 : tailles ligne par ligne, suivi, une étape ; id inconnu refusé ; mêmes tailles : aucune étape.
     #[test]
     fn set_table_options_writes_fit_and_header() {
@@ -981,6 +1136,7 @@ mod tests {
             id: t.clone(),
             fit: Some("shrink".into()),
             header: Some(true),
+            rows: vec![],
         })
         .expect("options");
         assert_eq!(view(&d, &t).fit.as_deref(), Some("shrink"));
@@ -990,6 +1146,7 @@ mod tests {
             id: t.clone(),
             fit: Some("shrink".into()),
             header: None,
+            rows: vec![],
         })
         .expect("même");
         assert_eq!(d.version(), v);
@@ -997,7 +1154,8 @@ mod tests {
             d.apply(Command::SetTableOptions {
                 id: t.clone(),
                 fit: Some("zz".into()),
-                header: None
+                header: None,
+                rows: vec![],
             }),
             Err(CommandError::BadTable)
         );
@@ -1005,6 +1163,7 @@ mod tests {
             id: t.clone(),
             fit: Some("grow".into()),
             header: Some(false),
+            rows: vec![],
         })
         .expect("retour");
         assert_eq!(view(&d, &t).fit, None);
@@ -1022,6 +1181,7 @@ mod tests {
             matrix: IDENTITY,
             cell: Some(link(&d, &t, 1, 1)),
             sizes: vec![],
+            box_width: None,
         })
         .expect("logé");
         let v = view(&d, &t);
@@ -1214,6 +1374,7 @@ mod tests {
             matrix: IDENTITY,
             cell: Some(link(&d, &t, 0, 0)),
             sizes: vec![],
+            box_width: None,
         })
         .expect("logé");
         let at = tx(&d, &o);
@@ -1264,6 +1425,7 @@ mod tests {
             matrix: IDENTITY,
             cell: Some(link(&d, &t, 0, 0)),
             sizes: vec![],
+            box_width: None,
         })
         .expect("logé");
         d.apply(Command::Transform {
@@ -1331,6 +1493,7 @@ mod tests {
             matrix: IDENTITY,
             cell: Some(link(&d, &t, 0, 0)),
             sizes: vec![],
+            box_width: None,
         })
         .expect("logé");
         d.apply(Command::Restack {
@@ -1424,6 +1587,7 @@ mod tests {
                     matrix: IDENTITY,
                     cell: Some(link(&d, &t, 0, 0)),
                     sizes: vec![size(a), size(b)],
+                    box_width: None,
                 }),
                 Err(CommandError::BadTable)
             );
@@ -1450,6 +1614,7 @@ mod tests {
             matrix: [1.0, 0.0, 0.0, 1.0, 5.0, 5.0],
             cell: Some(link(&d, &t, 0, 0)),
             sizes: vec![],
+            box_width: None,
         });
         assert!(r.is_ok());
         assert_eq!(raw_link(&d, &o), None);

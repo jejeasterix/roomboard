@@ -7,11 +7,12 @@
  * (`layoutRich`, B1) ; sur une ancre de plusieurs lignes, la dernière ligne porte le reste (F7). Tailles par défaut en
  * unités de page (T4) ; la largeur de page se lit sur la page, jamais ici.
  */
-import type { Bounds, CellLink, CoreDocument, ElementView, HAlign, Matrix, TableAxis, TableBorder, TableData, TableElement, TextSpan, VAlign } from "../core/api";
+import type { Bounds, CellLink, CoreDocument, ElementView, HAlign, Matrix, TableAxis, TableBorder, TableData, TableElement, TextData, TextSpan, VAlign } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
 import { textAlignOf } from "../core/look";
 import { layoutRich, lineShift, richBoxHeight, type Measure } from "./text-layout";
+import { transformBounds } from "./tools/handles";
 
 export const TABLE_COL_WIDTH = 240;
 export const TABLE_ROW_HEIGHT = 64;
@@ -239,15 +240,8 @@ export function cellContaining(doc: Pick<CoreDocument, "elementIdsOfKind" | "ele
   const col = hit.table.cols[hit.cell.col];
   if (row === undefined || col === undefined) return null;
   if (cellContent(hit.table, row.id, col.id).shade !== null) return null;
-  const r = cellRect(hit.table, hit.cell);
-  const xs: number[] = [];
-  const ys: number[] = [];
-  for (const [x, y] of [[r.x0, r.y0], [r.x1, r.y0], [r.x0, r.y1], [r.x1, r.y1]] as const) {
-    const [wx, wy] = applyMatrix(hit.transform, x, y);
-    xs.push(wx);
-    ys.push(wy);
-  }
-  const inside = box.x0 >= Math.min(...xs) - tol && box.y0 >= Math.min(...ys) - tol && box.x1 <= Math.max(...xs) + tol && box.y1 <= Math.max(...ys) + tol;
+  const z = transformBounds(hit.transform, cellRect(hit.table, hit.cell));
+  const inside = box.x0 >= z.x0 - tol && box.y0 >= z.y0 - tol && box.x1 <= z.x1 + tol && box.y1 <= z.y1 + tol;
   return inside ? [hit.id, row.id, col.id] : null;
 }
 
@@ -440,20 +434,30 @@ export function cellGrips(t: TableData, c: Cell): Grip[] {
  *  sortie D11, ajuster au contenu : `linkedBoxes` et `cell-drop`). Un seul texte : de son bord gauche au bout de sa
  *  ligne mise en lignes la plus longue (`layoutRich` à `boxWidth`, décalée de `lineShift` comme au dessin), sur la
  *  hauteur de sa boîte, passé par sa matrice ; la boîte d'un clic (600 de large) n'impose rien. Sinon : `bounds`. */
-export function contentBounds(doc: Pick<CoreDocument, "element" | "bounds">, ids: readonly string[], measure: Measure): Bounds | null {
+export function contentBounds(doc: Pick<CoreDocument, "element" | "bounds">, ids: readonly string[], measure: Measure, boxWidth?: number): Bounds | null {
   const v = ids.length === 1 && ids[0] !== undefined ? doc.element(ids[0]) : null;
   if (v?.kind !== "text") return doc.bounds(ids);
   const t = v.text;
+  const bw = boxWidth ?? t.boxWidth;
   const align = textAlignOf(v.look);
+  let w = 0;
+  for (const line of layoutRich(t.spans, { size: t.size }, bw, measure)) {
+    const last = line.segments[line.segments.length - 1];
+    if (last !== undefined) w = Math.max(w, lineShift(line, bw, align) + last.x + last.width);
+  }
+  return transformBounds(v.transform, { x0: 0, y0: 0, x1: w, y1: t.boxHeight });
+}
+
+/** OG79 : largeur de boîte d'un texte logé : sa ligne mise en lignes la plus longue (sans décalage d'alignement), arrondie
+ *  au-dessus ; les coupures restent celles de `boxWidth` (chaque ligne y tient). `null` si la boîte n'est pas plus large. */
+export function fittedTextWidth(t: TextData, measure: Measure): number | null {
   let w = 0;
   for (const line of layoutRich(t.spans, { size: t.size }, t.boxWidth, measure)) {
     const last = line.segments[line.segments.length - 1];
-    if (last !== undefined) w = Math.max(w, lineShift(line, t.boxWidth, align) + last.x + last.width);
+    if (last !== undefined) w = Math.max(w, last.x + last.width);
   }
-  const pts = [applyMatrix(v.transform, 0, 0), applyMatrix(v.transform, w, 0), applyMatrix(v.transform, 0, t.boxHeight), applyMatrix(v.transform, w, t.boxHeight)];
-  const xs = pts.map((p) => p[0]);
-  const ys = pts.map((p) => p[1]);
-  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  const fit = Math.max(1, Math.ceil(w));
+  return fit < t.boxWidth ? fit : null;
 }
 
 /** Boîtes locales des objets logés dans `table` (D34), hors `skip` : rectangle englobant, dans le repère du tableau, des
@@ -471,10 +475,8 @@ export function linkedBoxes(
     const cell = v.cell;
     const b = contentBounds(doc, [v.id], measure);
     if (cell === undefined || b === null) return [];
-    const pts = [applyMatrix(inv, b.x0, b.y0), applyMatrix(inv, b.x1, b.y0), applyMatrix(inv, b.x0, b.y1), applyMatrix(inv, b.x1, b.y1)];
-    const xs = pts.map((p) => p[0]);
-    const ys = pts.map((p) => p[1]);
-    return [{ row: cell[1], col: cell[2], w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }];
+    const l = transformBounds(inv, b);
+    return [{ row: cell[1], col: cell[2], w: l.x1 - l.x0, h: l.y1 - l.y0 }];
   });
 }
 

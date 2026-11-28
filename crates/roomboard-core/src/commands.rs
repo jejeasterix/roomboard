@@ -262,6 +262,8 @@ pub enum Command {
         matrix: Transform,
         cell: Option<[String; 3]>,
         sizes: Vec<crate::table_links::LineSize>,
+        /// OG79 : largeur de boîte écrite sur les textes de `ids` (finie > 0, sinon `BadText`), même étape.
+        box_width: Option<f64>,
     },
     /// personnalisation-3 (D4) : tailles par id de ligne et de colonne, objets liés suivis ; une étape.
     SetTableLineSizes {
@@ -270,11 +272,13 @@ pub enum Command {
         rows: Vec<(String, f64)>,
     },
     /// personnalisation-3 (T7) : `fit` `"shrink"` écrit, `"grow"` retire ; `header` `true` écrit, `false` retire ; autre
-    /// `fit` : `BadTable` ; rien ne change : aucune étape.
+    /// `fit` : `BadTable` ; rien ne change : aucune étape. OG79 (HS9) : `rows`, hauteurs de lignes écrites dans la même
+    /// étape, objets liés suivis (comme `SetTableLineSizes`) ; une ligne inconnue ou citée deux fois : `BadTable`.
     SetTableOptions {
         id: String,
         fit: Option<String>,
         header: Option<bool>,
+        rows: Vec<(String, f64)>,
     },
     /// personnalisation-3 (T9) : `Some(image)` : l'image logée dans la case (`row`, `col`) devient son fond (`bg`) et
     /// disparaît de la page ; non logée là : `BadTable` ; `None` : fond retiré. Une étape.
@@ -1053,13 +1057,17 @@ impl Document {
                 matrix,
                 cell,
                 sizes,
-            } => self.cmd_place_in_cell(&ids, &matrix, cell.as_ref(), &sizes),
+                box_width,
+            } => self.cmd_place_in_cell(&ids, &matrix, cell.as_ref(), &sizes, box_width),
             Command::SetTableLineSizes { id, cols, rows } => {
                 self.cmd_set_table_line_sizes(&id, &cols, &rows)
             }
-            Command::SetTableOptions { id, fit, header } => {
-                self.cmd_set_table_options(&id, fit.as_deref(), header)
-            }
+            Command::SetTableOptions {
+                id,
+                fit,
+                header,
+                rows,
+            } => self.cmd_set_table_options(&id, fit.as_deref(), header, &rows),
             Command::SetCellImage { id, row, col, from } => {
                 self.cmd_set_cell_image(&id, &row, &col, from.as_deref())
             }
@@ -5218,6 +5226,7 @@ pub(crate) mod tests {
             matrix: crate::element::IDENTITY,
             cell: Some(l.clone()),
             sizes: vec![],
+            box_width: None,
         })
         .expect("logé");
         let c = d

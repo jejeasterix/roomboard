@@ -10,7 +10,7 @@
 import type { Bounds, CellLink, Command, ElementView, LineSize, Matrix, TableElement } from "../../core/api";
 import { applyMatrix, invertMatrix } from "../../core/shapes";
 import type { GroupedView } from "../groups";
-import { acceptsDrop, cellContent, cellInnerBox, cellRect, contentBounds, linkedBoxes, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
+import { acceptsDrop, cellContent, cellInnerBox, cellRect, contentBounds, fittedTextWidth, linkedBoxes, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { transformBounds, translateMatrix } from "./handles";
 import type { ToolContext } from "./tool";
@@ -64,7 +64,16 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
       return v === null ? [] : [v];
     });
   /** C4 : boîte monde demandée par la sélection (texte : ses lignes, pas sa boîte), vues du cliché D28. */
-  const needed = (selection: readonly string[]): Bounds | null => contentBounds({ element: view, bounds: (ids) => ctx.doc.bounds(ids) }, selection, measure);
+  const needed = (selection: readonly string[], boxWidth?: number): Bounds | null =>
+    contentBounds({ element: view, bounds: (ids) => ctx.doc.bounds(ids) }, selection, measure, boxWidth);
+  /** OG79 : un seul texte, plus large que sa ligne la plus longue : sa largeur de boîte à la pose et sa boîte monde
+   *  réduite. La boîte réduite sert à la pose et au test de clic : le texte ne capte plus les touchers des cases voisines. */
+  const fitted = (selection: readonly string[]): { readonly width: number; readonly box: Bounds } | null => {
+    const v = views(selection);
+    const t = v.length === 1 && v[0]?.kind === "text" ? v[0] : null;
+    const width = t === null ? null : fittedTextWidth(t.text, measure);
+    return t === null || width === null ? null : { width, box: transformBounds(t.transform, { x0: 0, y0: 0, x1: width, y1: t.text.boxHeight }) };
+  };
 
   /** Case visée : tableau le plus haut sous le pointeur, hors sélection ; sélection sans tableau ; case ni ombrée ni en zone. */
   const aimed = (selection: readonly string[], x: number, y: number): TableHit | null => {
@@ -123,7 +132,9 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
 
   /** `PlaceInCell` vers la case `hit` (mode agrandir, D8) ; objet posé au coin de la boîte intérieure. */
   const placeInto = (selection: readonly string[], hit0: TableHit): Command | null => {
-    const box = ctx.doc.bounds(selection);
+    const fit = fitted(selection);
+    const box = fit?.box ?? ctx.doc.bounds(selection);
+    const narrow = fit === null ? {} : { boxWidth: fit.width };
     const local0 = box === null ? null : localBox(hit0.transform, box);
     const r0 = hit0.table.rows[hit0.cell.row];
     const k0 = hit0.table.cols[hit0.cell.col];
@@ -144,7 +155,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     const r = hit.table.rows[hit.cell.row];
     const k = hit.table.cols[hit.cell.col];
     const local = localBox(hit.transform, box);
-    const need = needed(selection);
+    const need = needed(selection, fit?.width);
     const asked = need === null ? null : localBox(hit.transform, need);
     if (r === undefined || k === undefined || local === null || asked === null) return null;
     const link: CellLink = [hit.id, r.id, k.id];
@@ -157,7 +168,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     if (hit.table.fit === "shrink") {
       const inner = cellInnerBox(hit.table, hit.cell);
       const k = Math.min(1, inner.w / (local.x1 - local.x0), inner.h / (local.y1 - local.y0));
-      return { type: "PlaceInCell", ids: [...selection], matrix: [k, 0, 0, k, tx - k * box.x0, ty - k * box.y0], cell: link, sizes: left };
+      return { type: "PlaceInCell", ids: [...selection], matrix: [k, 0, 0, k, tx - k * box.x0, ty - k * box.y0], cell: link, sizes: left, ...narrow };
     }
     const widths = hit.table.cols.map((c) => c.width);
     const req = requiredSizes(hit.table, [...others, mine], widths, measure);
@@ -168,7 +179,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     if (needH > r.height) grow.push([hit.id, "row", r.id, needH]);
     // Une ligne ou colonne n'est citée qu'une fois : la case visée garde le dernier mot.
     const sizes = [...left.filter((z) => !grow.some((g) => g[0] === z[0] && g[1] === z[1] && g[2] === z[2])), ...grow];
-    return { type: "PlaceInCell", ids: [...selection], matrix: translateMatrix(tx - box.x0, ty - box.y0), cell: link, sizes };
+    return { type: "PlaceInCell", ids: [...selection], matrix: translateMatrix(tx - box.x0, ty - box.y0), cell: link, sizes, ...narrow };
   };
 
   /** Le centre de la boîte déplacée reste dans la case (ou la zone fusionnée) où l'objet est logé : le lien est gardé. */

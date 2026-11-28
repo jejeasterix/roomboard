@@ -264,6 +264,43 @@ describe("glisser vers une case — S14 tableau de tri (DS5)", () => {
     s.move([1520, 420], [360, 160]);
     expect(s.t().cols.map((c) => c.width)).toEqual([240, 304, 240]);
   });
+  it("OG79 : étiquette d'un clic (boîte 600) logée en (0, 1) : un toucher sur le cache voisin (0, 2) l'ouvre", () => {
+    const s = setup();
+    const t0 = s.t();
+    const c2 = { row: t0.rows[0]?.id ?? "", col: t0.cols[2]?.id ?? "" };
+    s.doc.apply({ type: "SetTableShade", id: s.table, from: c2, to: c2, shade: "#94a3b8" });
+    const a = s.doc.apply({ type: "SetText", page: s.page, id: null, x: 1500, y: 200, content: "chat", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
+    s.move([1520, 220], [360, 32]);
+    expect(s.doc.element(a)?.cell?.[2]).toBe(t0.cols[1]?.id);
+    s.tool.setSelection([]);
+    s.move([600, 30], [600, 30]);
+    expect(s.runs.at(-1)).toEqual({ type: "SetTableLook", id: s.table, from: c2, to: c2, look: { key: "open", value: true } });
+    expect(s.tool.selection()).toEqual([]);
+  });
+  it("OG79 : la pose réduit la boîte du texte à sa largeur mise en lignes, dans la même PlaceInCell ; un undo rend 600", () => {
+    const s = setup();
+    const a = s.doc.apply({ type: "SetText", page: s.page, id: null, x: 1500, y: 200, content: "chat", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
+    const width = (): number | undefined => {
+      const v = s.doc.element(a);
+      return v?.kind === "text" ? v.text.boxWidth : undefined;
+    };
+    s.move([1520, 220], [360, 96]);
+    const cmd = s.runs.at(-1);
+    expect(cmd?.type).toBe("PlaceInCell");
+    // « chat » : 4 × 18 = 72 ; la boîte ne garde que la ligne (arrondie au-dessus).
+    expect(cmd?.type === "PlaceInCell" ? cmd.boxWidth : null).toBe(72);
+    expect(width()).toBe(72);
+    expect(s.doc.bounds([a])).toEqual({ x0: 248, y0: 72, x1: 248 + 72, y1: 72 + 45 });
+    s.doc.undo();
+    expect(width()).toBe(600);
+    expect(s.doc.element(a)?.cell).toBeUndefined();
+  });
+  it("OG79 : texte déjà plus étroit que sa ligne, ou image : aucune boîte écrite", () => {
+    const s = setup();
+    s.move([1200, 1150], [360, 96]);
+    const cmd = s.runs.at(-1);
+    expect(cmd?.type === "PlaceInCell" ? cmd.boxWidth : "autre").toBeUndefined();
+  });
   it("C4 : l'étiquette large sortie de sa case : la colonne revient à 240 (D11 mesure aussi le texte)", () => {
     const s = setup();
     const a = s.doc.apply({ type: "SetText", page: s.page, id: null, x: 1500, y: 200, content: "rhinocéros blanc", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";

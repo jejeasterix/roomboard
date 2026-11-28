@@ -2061,6 +2061,49 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     d.free();
   });
 
+  it("OG79 : PlaceInCell boxWidth : le texte prend la largeur, le rectangle non ; test de clic réduit ; un undo ; 0 refusé", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const p = first(d);
+    const x = d.apply({ type: "SetText", page: p, id: null, x: 1500, y: 200, content: "chat", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
+    const width = (): number | undefined => {
+      const v = d.element(x);
+      return v?.kind === "text" ? v.text.boxWidth : undefined;
+    };
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "PlaceInCell", ids: [x], matrix: [1, 0, 0, 1, 0, 0], cell: s.link(0, 1), sizes: [], boxWidth: 0 }))).toBe("texte invalide (taille et boîte finies > 0 attendues)"));
+    const wide = (b: { x0: number; x1: number } | null): number => (b === null ? -1 : b.x1 - b.x0);
+    const rectW = wide(d.bounds([s.o]));
+    d.apply({ type: "PlaceInCell", ids: [x, s.o], matrix: [1, 0, 0, 1, 248 - 1500, 8 - 200], cell: s.link(0, 1), sizes: [], boxWidth: 72 });
+    expect(width()).toBe(72);
+    expect(wide(d.bounds([s.o]))).toBe(rectW);
+    expect(d.hitTest(p, 300, 30, 0)).toBe(x);
+    d.undo();
+    expect(width()).toBe(600);
+    expect(d.element(x)?.cell).toBeUndefined();
+    // Sans déplacement, la seule largeur fait une étape ; la même largeur ensuite : aucune.
+    d.apply({ type: "PlaceInCell", ids: [x], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [], boxWidth: 100 });
+    expect(width()).toBe(100);
+    unchanged(d, () => d.apply({ type: "PlaceInCell", ids: [x], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [], boxWidth: 100 }));
+    d.free();
+  });
+
+  it("OG79 (HS9) : SetTableOptions rows : en-tête et hauteur de la ligne 0 en une étape, objet logé suivi ; refus", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Place11(d, s);
+    const at = d.element(s.o)?.transform ?? [];
+    const r0 = tableOf(d, s.t).rows[0]?.id ?? "";
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableOptions", id: s.t, header: true, rows: [["zz", 90]] }))).toBe(TABLE_MESSAGE));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableOptions", id: s.t, header: true, rows: [[r0, 90], [r0, 95]] }))).toBe(TABLE_MESSAGE));
+    d.apply({ type: "SetTableOptions", id: s.t, header: true, rows: [[r0, 90]] });
+    expect([tableOf(d, s.t).header, tableOf(d, s.t).rows[0]?.height]).toEqual([true, 90]);
+    expect(d.element(s.o)?.transform[5]).toBe((at[5] ?? 0) + 26);
+    d.undo();
+    expect([tableOf(d, s.t).header, tableOf(d, s.t).rows[0]?.height]).toEqual([undefined, 64]);
+    expect(d.element(s.o)?.transform).toEqual(at);
+    d.free();
+  });
+
   it("PlaceInCell refusé (S18) : un tableau, une case ombrée ; aucun id : aucune étape", () => {
     const d = f.blank();
     const s = p3Placed(d);

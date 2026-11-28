@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Essai personnalisation-3 suite (OG32) au navigateur : lot B (S7 ajuster, S8 alignement, S9 bordures, S10 bouton
-// En-tête enfoncé, S11 déplacer une ligne) ; le lot C (T14) ajoute S12, S13, S14. Application construite (apps/web/dist),
+// En-tête enfoncé, S11 déplacer une ligne) ; le lot C (T14) ajoute S12, S13, S14 ; OG79, l'étiquette logée et le cache voisin. Application construite (apps/web/dist),
 // CSP de la coque, Chromium headless de Playwright, vrai toucher (CDP), heure figée. Oracles : #stage[data-…], lus avant
 // toute capture. Tableaux posés à droite de l'îlot d'options. Lancé par scripts/verifier.sh --e2e. Sortie : 0 réussi,
 // 1 échec, 2 outil absent. Usage : node scripts/essais/personnalisation-3-suite-navigateur.mjs [--captures]
@@ -402,6 +402,34 @@ async function scenario(page, url, { captures }) {
   await touchDrag(truite, c14(2, 0));
   check((await attr("data-version")) === v0 && (await attr("data-bounds")) === before, "S14 : « truite » refusée : revenue à sa place, aucune étape");
   await capture("tableau-tri-apres");
+
+  // OG79 : étiquette d'un clic (boîte de 600) logée au doigt en (0, 0) d'un 2 × 1 dont la case (0, 1) est un cache. À la
+  // pose, sa boîte prend la largeur du texte (même étape) : elle ne couvre plus le cache, qu'un toucher ouvre.
+  const c79 = await newTable(RX2, 920, 2, 1);
+  await typeIn(c79(0, 1), "réponse");
+  await page.click('[data-table-action="table-shade"]');
+  await fr();
+  const spot79 = [origin[0] + RX, origin[1] + 960];
+  await label("chat", spot79[0], spot79[1]);
+  await page.click(item("select"));
+  await fr();
+  const chat79 = screen(c, spot79[0] + 20, spot79[1] + 20);
+  await mouse.click(...chat79);
+  await fr();
+  const [ax0, , ax1] = await boundsOf();
+  check(ax1 - ax0 >= 590, `OG79 : étiquette d'un clic : boîte de ${Math.round(ax1 - ax0)} avant la pose (600 attendu)`);
+  await capture("etiquette-logee-avant");
+  await touchDrag(chat79, c79(0, 0));
+  const [bx0, , bx1] = await boundsOf();
+  check(bx1 - bx0 > 0 && bx1 - bx0 < COL - 16, `OG79 : logée, la boîte prend la largeur du texte (${Math.round(bx1 - bx0)} < ${COL - 16})`);
+  await capture("etiquette-logee-apres");
+  const opens79 = Number(await attr("data-table-opens"));
+  await page.keyboard.press("Escape");
+  await fr();
+  await tap(c79(0, 1));
+  check(Number(await attr("data-table-opens")) === opens79 + 1 && (await attr("data-selection")) === "0", "OG79 : un toucher sur le cache voisin l'ouvre, l'étiquette n'est pas sélectionnée");
+  await page.waitForSelector(".rb-toast", { state: "detached", timeout: 15000 });
+  await capture("cache-voisin-ouvert");
 
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
 }

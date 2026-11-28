@@ -1184,9 +1184,10 @@ impl Document {
         col: Option<String>,
         size_keys: Vec<String>,
         size_values: &[f64],
+        box_width: Option<f64>,
     ) -> Result<JsValue, JsError> {
         let cell = cell_of(table, row, col).map_err(cmd_err)?;
-        change_js(self.place_in_cell_inner(ids, matrix, cell, &size_keys, size_values))
+        change_js(self.place_in_cell_inner(ids, matrix, cell, &size_keys, size_values, box_width))
     }
 
     /// personnalisation-3 (D4) : ids et tailles de même longueur, sinon `BadTable`.
@@ -1207,8 +1208,10 @@ impl Document {
         id: &str,
         fit: Option<String>,
         header: Option<bool>,
+        row_ids: Vec<String>,
+        row_heights: &[f64],
     ) -> Result<JsValue, JsError> {
-        change_js(self.set_table_options_inner(id, fit, header))
+        change_js(self.set_table_options_inner(id, fit, header, &row_ids, row_heights))
     }
 
     /// personnalisation-3 (T9) : l'image logée `from` devient le fond de la case (`row`, `col`) ; `None` retire le fond.
@@ -2269,6 +2272,7 @@ impl Document {
         cell: Option<[String; 3]>,
         size_keys: &[String],
         size_values: &[f64],
+        box_width: Option<f64>,
     ) -> Result<Change, CommandError> {
         let matrix: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
         if size_keys.len() != 3 * size_values.len() {
@@ -2296,6 +2300,7 @@ impl Document {
             matrix,
             cell,
             sizes,
+            box_width,
         })
     }
 
@@ -2330,11 +2335,21 @@ impl Document {
         id: &str,
         fit: Option<String>,
         header: Option<bool>,
+        row_ids: &[String],
+        row_heights: &[f64],
     ) -> Result<Change, CommandError> {
+        if row_ids.len() != row_heights.len() {
+            return Err(CommandError::BadTable);
+        }
         self.run(Command::SetTableOptions {
             id: id.to_string(),
             fit,
             header,
+            rows: row_ids
+                .iter()
+                .cloned()
+                .zip(row_heights.iter().copied())
+                .collect(),
         })
     }
 
@@ -4310,20 +4325,21 @@ mod tests {
             Some(cell.clone()),
             &keys,
             &[416.0, 316.0],
+            None,
         )
         .expect("logé");
         let after = table_of(&d, &id);
         assert_eq!((after.cols[1].width, after.rows[1].height), (416.0, 316.0));
         assert_eq!(d.core.element(&s).and_then(|e| e.cell), Some(cell));
         assert!(d
-            .place_in_cell_inner(vec![s.clone()], &[1.0], None, &[], &[])
+            .place_in_cell_inner(vec![s.clone()], &[1.0], None, &[], &[], None)
             .is_err());
         assert!(d
-            .place_in_cell_inner(vec![s], &IDENTITY_6, None, &keys[..3], &[])
+            .place_in_cell_inner(vec![s], &IDENTITY_6, None, &keys[..3], &[], None)
             .is_err());
         let bad_axis = vec![id.clone(), "diag".into(), t.cols[1].id.clone()];
         assert!(d
-            .place_in_cell_inner(vec![], &IDENTITY_6, None, &bad_axis, &[300.0])
+            .place_in_cell_inner(vec![], &IDENTITY_6, None, &bad_axis, &[300.0], None)
             .is_err());
         assert!(d
             .set_table_line_sizes_inner(&id, &[t.cols[0].id.clone()], &[], &[], &[])

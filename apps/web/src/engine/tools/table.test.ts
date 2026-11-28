@@ -1120,6 +1120,31 @@ describe("outil Tableau — TB2 en-tête et D35", () => {
     expect(s.last()).toMatchObject({ type: "SetTableCell", content: text, rowHeight: want, spans: [{ text, attrs: {} }] });
     expect(s.table(id).rows[0]?.height).toBe(want);
   });
+  it("OG79 (HS9) : « En-tête » sur une ligne 0 déjà écrite : elle grandit au gras dans la même SetTableOptions, un undo", () => {
+    const bm: Measure = (s, _size, face) => s.length * (face?.bold === true ? 14 : 10);
+    const text = "aaaaaaaaa bbbbbbbbb";
+    const s = setup(bm);
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    s.click(220, 232);
+    s.type(text);
+    s.tool.requestCommit();
+    const h0 = s.table(id).rows[0]?.height ?? 0;
+    const want = cellHeight([{ text, attrs: { bold: true } }], 36, 240, bm);
+    expect(want).toBeGreaterThan(h0);
+    const n = s.runs.length;
+    s.tool.act("header-toggle");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.last()).toEqual({ type: "SetTableOptions", id, header: true, rows: [[s.table(id).rows[0]?.id, want]] });
+    expect(s.table(id).rows[0]?.height).toBe(want);
+    s.doc.undo();
+    expect([s.table(id).header, s.table(id).rows[0]?.height]).toEqual([undefined, h0]);
+    // Retirer l'en-tête ne réduit rien (une hauteur ne baisse jamais toute seule, D11).
+    s.doc.redo();
+    s.tool.act("header-toggle");
+    expect(s.last()).toEqual({ type: "SetTableOptions", id, header: false });
+    expect(s.table(id).rows[0]?.height).toBe(want);
+  });
   it("TB2 : header-toggle écrit header vrai puis faux, une étape chacun ; cellState.header suit", () => {
     const s = setup();
     const id = s.create(100, 200, 2, 2);

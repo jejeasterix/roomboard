@@ -752,6 +752,7 @@ class WasmCoreDocument implements CoreDocument {
             cmd.cell?.[2],
             cmd.sizes.flatMap(([t, a, l]) => [t, a, l]),
             new Float64Array(cmd.sizes.map((s) => s[3])),
+            cmd.boxWidth,
           ),
         );
       case "SetTableLineSizes":
@@ -765,7 +766,7 @@ class WasmCoreDocument implements CoreDocument {
           ),
         );
       case "SetTableOptions":
-        return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header));
+        return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header, (cmd.rows ?? []).map(([l]) => l), new Float64Array((cmd.rows ?? []).map(([, h]) => h))));
       case "SetCellImage":
         return toChange(this.d.set_cell_image(cmd.id, cmd.row, cmd.col, cmd.from ?? undefined));
       case "SetTableLook": {
