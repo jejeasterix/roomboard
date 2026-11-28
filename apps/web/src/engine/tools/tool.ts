@@ -14,6 +14,9 @@ export interface ToolContext {
   page(): string;
   camera(): Camera;
   run(cmd: Command): Change | null;
+  /** OG41 (D5) : plusieurs commandes, une seule étape d'annulation (T37, `Engine.runAll`) ; null si la liste est vide ou
+   *  si le cœur refuse. Le moteur le fournit ; la gomme l'exige (aucun repli en commandes séparées). */
+  runAll?(cmds: readonly Command[]): Change | null;
   /** Maj tenue (CL4-12) ; absent = jamais tenue. */
   shift?(): boolean;
   /** Alt tenue (C9, G8) : aucun magnétisme ; absent = jamais tenue. */

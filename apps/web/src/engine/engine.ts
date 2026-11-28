@@ -5,7 +5,7 @@
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
-import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type EraseMode, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
+import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, scrollBounds, scrollTo, zoomAt as zoomCamera, type Camera, type ScrollBounds } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
@@ -35,7 +35,6 @@ import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type Select
 
 export interface EngineState {
   readonly tool: ToolChoice;
-  readonly eraserMode: EraseMode;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly page: string;
@@ -98,7 +97,7 @@ export interface WheelInput {
 export interface ToolFactories {
   /** OG11 : le style courant (`ItemStyle` étend la couleur et l'épaisseur du stylo). */
   pen(ctx: ToolContext, style: () => ItemStyle): GestureTool;
-  eraser(ctx: ToolContext, mode: () => EraseMode): GestureTool;
+  eraser(ctx: ToolContext): GestureTool;
   /** Outils d'édition (lot 4) ; absents : outils inertes (tests du moteur, amorce partielle). */
   select?(ctx: ToolContext): SelectionTool;
   shape?(ctx: ToolContext, kind: ShapeKind, style: () => ItemStyle): GestureTool;
@@ -210,7 +209,6 @@ export interface Engine {
   readonly view: ViewSink;
   tool(): ToolChoice;
   setTool(t: ToolChoice): void;
-  setEraserMode(m: EraseMode): void;
   run(cmd: Command): Change | null;
   /** T37 : plusieurs commandes d'un même changement, une seule étape d'annulation (un annuler les défait toutes, un
    *  rétablir les refait) ; une seule émission. Liste vide : null. Une commande refusée arrête la suite (erreur de l'état). */
@@ -511,7 +509,6 @@ export function createEngine(deps: EngineDeps): Engine {
   /** OG12 T11 : cible surlignée du dernier calque peint (`overlay.bind`). */
   let bindHint: string | null = null;
   let lastOverlay = overlayKey(EMPTY_OVERLAY);
-  let eraserMode: EraseMode = "partial";
   let error: string | null = null;
   /** T18 : élément dont l'éditeur de lien est ouvert ; retombe à null dès qu'il n'est plus l'unique sélection. */
   let linkEditing: string | null = null;
@@ -610,7 +607,6 @@ export function createEngine(deps: EngineDeps): Engine {
     const units = sel.length === 0 ? { units: 0, grouped: false } : selectionUnits(sel, selectedViews());
     return {
       tool,
-      eraserMode,
       canUndo: doc.canUndo(),
       canRedo: doc.canRedo(),
       page: pageId,
@@ -893,6 +889,7 @@ export function createEngine(deps: EngineDeps): Engine {
     page: () => pageId,
     camera: () => camera,
     run,
+    runAll,
     shift: () => shiftHeld || touchShift,
     alt: () => altHeld,
     requestFrame: requestScene,
@@ -913,7 +910,7 @@ export function createEngine(deps: EngineDeps): Engine {
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => item) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => item),
-    eraser: deps.tools.eraser(ctx, () => eraserMode),
+    eraser: deps.tools.eraser(ctx),
     select: selectTool,
     rect: shapeTool("rect"),
     ellipse: shapeTool("ellipse"),
@@ -1222,10 +1219,6 @@ export function createEngine(deps: EngineDeps): Engine {
         tool = t;
         requestScene();
       }
-      emit();
-    },
-    setEraserMode(m) {
-      eraserMode = m;
       emit();
     },
     run,
