@@ -1384,6 +1384,25 @@ describe("moteur — C10b (F29, F14)", () => {
     expect([engine.state().tableShades, engine.state().tableOpens]).toEqual([2, 1]);
   });
 
+  it("C4 (HS7) : tableOpens : une case « ouverte » sans ombrage n'est pas un cache ouvert", () => {
+    const { doc, engine } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    const base = tableEl("a", false, 2);
+    if (base.kind !== "table") throw new Error("tableau");
+    const first = base.table.cells[0];
+    if (first === undefined) throw new Error("case");
+    const cells = [...base.table.cells.map((c, i) => (i === 0 ? { ...c, open: true as const } : c)), { ...first, row: "zz", col: "zz", shade: null, open: true as const }];
+    const el: ElementView = { ...base, table: { ...base.table, cells } };
+    const realIds = doc.elementIds.bind(doc);
+    const realEl = doc.element.bind(doc);
+    doc.elementIds = (p) => (p === page ? [...realIds(p), "a"] : realIds(p));
+    const realKind = doc.elementIdsOfKind.bind(doc);
+    doc.elementIdsOfKind = (p, k) => (p === page && k === "table" ? [...realKind(p, k), "a"] : realKind(p, k));
+    doc.element = (id) => (id === "a" ? el : realEl(id));
+    engine.run({ type: "AddPage", after: page });
+    expect([engine.state().tableShades, engine.state().tableOpens]).toEqual([2, 1]);
+  });
+
   it("OE23 (Q7) : tableMerges, tableShades : seule la vue des candidats « table » est lue, jamais celle d'un trait", () => {
     const { doc, engine } = setup();
     const page = doc.pageIds()[0] ?? "";
