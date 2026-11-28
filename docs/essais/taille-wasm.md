@@ -278,3 +278,94 @@ Pire écart : +1 % (`fill_zone`, 19,3 contre 19,1 ms), sous le bruit et sous le 
 | `hit_test` + `ids_in_rect` | 1 972 ; 1 974 | 1 886 ; 1 840 | 1 903 ; 1 951 |
 | `erase` + `undo` | 189 ; 175 | 178 ; 173 | 204 ; 214 |
 | `fill_zone` S6 + `undo` | 19 ; 19 | 20 ; 20 | 19 ; 20 |
+
+## OG35 (marge du module principal trouvée dans le code Rust, 2026-11-28)
+
+Cible : au moins 150 Ko de marge sous le plafond H2-13 (1 572 864 o), sans relever le plafond, sans `opt-level = "z"`
+et sans perte de vitesse au-delà de +3 %. Départ : `main` 161cf73, module principal 1 456 551 o après `-Oz` (marge
+116 313 o) ; module formats 2 795 907 o (inchangé : aucun de ses crates n'est touché, sauf `roomboard-core` par
+`format/mod.rs`, voir plus bas).
+
+Mesure : comme `scripts/verifier.sh` (`cargo build --release`, `wasm-bindgen --remove-name-section`, `wasm-opt -Oz`).
+Décompte : un second module gardé avec sa section `name` (`wasm-bindgen` sans `--remove-name-section`, puis
+`wasm-opt -Oz -g`), lu par deux scripts hors dépôt : taille de chaque fonction, et arbre de domination du graphe
+d'appels tiré de `wasm-dis` (l'équivalent de `twiggy dominators`, absent de la VM).
+
+### Où va la place (départ)
+
+Code 1 336 263 o, données 106 071 o. Par crate (fonctions génériques comptées dans la crate de leur définition) :
+`roomboard_core` 339 666, `core` 212 752, `yrs` 184 475, fonctions exportées (`*_shim` de wasm-bindgen, où le corps
+de chaque méthode est inliné) 178 812, `alloc` 70 649, `zip` 68 088, `i_overlay` 39 462, `hashbrown` 38 568,
+`zlib_rs` 31 573, `serde_json` 26 161, le reste sous 14 000 o. Taille retenue (domination) : `Document::apply`
+432 380 o, dont `cmd_fill` 184 355 (pot sur zone, `i_overlay` 146 971) ; `format::open` 90 247 (lecture du zip).
+
+Deux postes recopiés plutôt que partagés :
+
+- le chemin d'erreur `JsError::new(&e.to_string())` de `cmd_err`, `fmt_err` et `to_js`, inliné dans chacun des
+  105 exports ;
+- les tris : chaque `sort_by` d'un type ou d'une fermeture neuve recopie tout l'algorithme (tri stable : `drift`,
+  `quicksort`, `smallsort`, 2 à 8 Ko). Les tris instanciés depuis notre code pesaient environ 41 Ko.
+
+### Changements gardés (un à la fois)
+
+| pas | changement | module principal (o) | gain (o) |
+|---|---|---:|---:|
+| départ | `main` 161cf73 | 1 456 551 | — |
+| 1 | `format/mod.rs` : message fixe pour l'échec d'écriture d'une archive en mémoire (`zip_err`, `io_err`), erreur d'entrée-sortie gardée brute dans `read_entry` | 1 456 018 | 533 |
+| 2 | `roomboard-wasm` : `cmd_err` et `fmt_err` en `#[inline(never)]` | 1 446 948 | 9 070 |
+| 3 | `roomboard-wasm` : erreur de `to_js` dans `ser_err`, `#[inline(never)]` | 1 445 527 | 1 421 |
+| 4 | `roomboard-core/src/order.rs` : un seul tri stable d'indices (`sorted_indices`, `sort_stable_by`) pour les tris des commandes (Distribuer, `reinsert_kept`, `find_unique`, Grouper, Restack, suppression par indices) | 1 422 841 | 22 686 |
+| 5 | `roomboard-wasm` : `change_js` unique pour les 49 exports qui rendent un `Change` | 1 416 848 | 5 993 |
+| fusion | `origin/main` 0e683c75 (OG33, outils lot 2 : +9 197 o sur `main`, 1 465 748 o) | 1 426 752 | — |
+| 6 | `order::string_set` (un `BTreeSet<String>` rempli par `insert`, sans le tri de `collect`) et les quatre `sort()` de `String` par `sort_stable_by` ; `change_js` pour l'export neuf d'OG33 (`shape_to_polygon`) | 1 418 253 | 8 499 |
+
+Gain total contre `main` 0e683c75 : 47 495 o (−3,2 %). Marge : 154 611 o (cible : 153 600 o, 150 Kio).
+
+Pas 1 : `ZipError` et `io::Error` ne peuvent pas échouer en écrivant dans un `Vec` ; le texte devient
+« document RoomBoard endommagé : écriture de l'archive impossible ». Leur `Display` reste lié par une table de
+fonctions (`dyn Error` dans le lecteur du zip) : le gain est petit, gardé parce qu'il ne coûte rien.
+Pas 4 : `sorted_indices` trie une permutation `0..n` par une fermeture `&dyn Fn` ; `sort_stable_by` la rejoue sur
+le `Vec`. L'ordre est celui de `sort_by` (stable), testé contre lui (`order::tests`). Les ids ne passent plus par un
+`BTreeSet<&String>` mais par `sorted_unique` (même ordre trié, mêmes doublons retirés). Les tris du pot sur zone
+(`zone.rs`), chemin chaud, n'y passent pas.
+
+### Banc de vitesse (Node, médianes et minimums en ms)
+
+Script hors dépôt sur le patron d'OG28 (`initSync`, mêmes essais, plus 1 500 `element` + `outline` et 300
+`add_shape`) ; les deux modules tournent en alternance dans le même processus, pour subir la même charge.
+Modules : `main` 0e683c75 et la branche (pas 6), tous deux après `-Oz`. 15 passages, charge de la VM 10,8 à 14,7.
+
+| essai | `main` médiane | branche médiane | écart | `main` min | branche min | écart |
+|---|---:|---:|---:|---:|---:|---:|
+| `StrokeBuilder` (2 000 traits) | 262,7 | 250,0 | −4,8 % | 221,4 | 220,5 | −0,4 % |
+| `commit_stroke` × 1 500 + `save` | 239,7 | 204,1 | −14,8 % | 197,5 | 196,7 | −0,4 % |
+| `load` | 36,3 | 36,6 | +0,7 % | 33,2 | 32,9 | −1,0 % |
+| `hit_test` + `ids_in_rect` × 30 | 1 098,9 | 1 073,1 | −2,3 % | 993,8 | 1 008,7 | +1,5 % |
+| `element` + `outline` × 1 500 | 849,5 | 842,1 | −0,9 % | 740,1 | 747,6 | +1,0 % |
+| `erase` × 2 + `undo` × 2 | 869,7 | 885,0 | +1,8 % | 793,9 | 790,8 | −0,4 % |
+| `fill_zone` S6 + `undo` | 20,5 | 20,6 | +0,2 % | 19,4 | 19,3 | −0,5 % |
+| `add_shape` × 300 | 24,5 | 23,5 | −4,1 % | 21,1 | 20,9 | −0,7 % |
+
+Pire écart : +1,8 % (médiane de `erase`), +1,5 % (minimum de `hit_test`), sous le seuil de +3 % ; aucun de ces deux
+chemins n'est touché par OG35. Sous une charge de 13 à 25, les séries plus courtes donnaient ±10 à ±25 % dans les
+deux sens : seule la série longue est retenue. Les tris déplacés (Distribuer, Grouper, Restack) portent sur la
+sélection : quelques dizaines d'éléments, hors banc.
+
+### Essais écartés
+
+| essai | module principal (o) | pourquoi |
+|---|---:|---|
+| tris de `Vec<String>` par `sort_stable_by`, seuls | +686 sur le pas 4 | le tri des `String` reste instancié par `BTreeSet::from_iter`, qui trie avant de construire ; repris au pas 6 avec `string_set` |
+| `-C llvm-args=-inline-threshold=50` (cible wasm, sur `main`) | 1 447 093 | réglage global, chemins chauds compris ; pas de banc |
+| `-C llvm-args=-inline-threshold=25` | 1 428 351 | −28 Ko, mais même défaut ; réserve, à passer au banc avant tout usage |
+| `--remap-path-prefix` du registre Cargo | non construit | environ 6 Ko de chemins de paniques ; chemin propre à chaque machine, et les recettes de l'installeur devraient le reprendre |
+| remplacer le crate `zip` | non construit | environ 60 Ko, mais `pub use zip` et `Opened.archive` le sortent du cœur (`roomboard-formats`, coque) |
+| doublons `::<Transaction>` / `::<TransactionMut>` | — | 12 640 o au total, dont 3 523 o dans notre code : trop peu |
+
+### Où reste la place
+
+- `i_overlay` (147 Ko sous `cmd_fill`) et `yrs` (184 Ko) : seul `opt-level = "z"` les réduit, refusé par le banc d'OG28.
+- Le lecteur et l'écrivain `zip` (68 Ko et `zlib_rs` 31 Ko) : un conteneur propre, en lecture et en écriture, ferait
+  gagner environ 60 Ko, mais demande de changer l'interface de `format` pour `roomboard-formats` et la coque.
+- Les exports : 168 Ko après OG35, surtout la colle de wasm-bindgen (conversion des `Option<String>`, libération).
+  Des exports à moins d'arguments (un objet au lieu de 28 paramètres) la réduiraient ; changement d'API côté TS.

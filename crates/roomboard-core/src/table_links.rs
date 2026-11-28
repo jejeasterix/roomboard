@@ -633,7 +633,7 @@ impl Document {
                 touched.extend(crate::linear::follow(self, &mut txn, &placed, Some(m)));
             }
         }
-        touched.sort();
+        crate::order::sort_stable_by(&mut touched, String::cmp);
         touched.dedup();
         Ok(self.done(Change {
             pages: vec![page],

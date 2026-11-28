@@ -105,7 +105,6 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 #etat { margin: 0; color: #b91c1c; pointer-events: auto; }
 #etat:not(:empty) { padding: 12px 16px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); }
 #pages { margin-left: 8px; font-variant-numeric: tabular-nums; }
-#echelons-notes { margin-left: 8px; color: #b45309; }
 /* design-l2 (L2-14, L2-30, L2-12, D-DS2) : calque des îlots dans la case de la scène, au-dessus d'elle (z 2, sous les
    panneaux passagers en z 3) ; il ne prend aucun clic, ses îlots si. Coins posés à 16 px entiers ; îlots centrés placés
    en px entiers par Island.tsx (left, top, max-inline-size) ; aucune translation, aucune colonne fractionnaire, aucun
@@ -515,9 +514,6 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
    remplissage ; jamais une cible ; position et taille écrites par `app/eraser-ring.ts`. */
 .rb-eraser-ring { position: absolute; left: 0; top: 0; box-sizing: border-box; border: 1.5px solid var(--rf-violet-600); border-radius: 50%; box-shadow: 0 0 0 1px #fff; background: none; pointer-events: none; z-index: 2; }
 .rb-eraser-ring[hidden] { display: none; }
-/* OG25 : boutons du panneau Réglages à 44 px de haut au moins (cible tactile du cadrage design), dont le réglage
-   « Gomme automatique à la paume ». */
-#reglages button[data-reglage] { min-block-size: 44px; }
 
 /* T16 : sélecteur de couleur complet, popover à droite du bouton « Autres couleurs ». */
 /* Sélecteur ouvert : le panneau passe au-dessus des autres îlots (le sélecteur, posé en `fixed`, peut les recouvrir, T31). */
