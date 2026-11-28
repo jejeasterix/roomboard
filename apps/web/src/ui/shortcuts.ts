@@ -105,3 +105,13 @@ export function buttonShortcut(action: string | undefined): { readonly text: str
   const text = shortcutText(action, mac);
   return text === null ? null : { text, aria: ariaShortcut(action, mac) };
 }
+
+/** OG33 (lot 2b, choix 2) : lettre et chiffre d'un outil (lignes `tool-<id>` et `tool-<id>-num`), montrés dans son
+ *  infobulle : « R ou 2 » ; `aria-keyshortcuts` « R 2 » (deux raccourcis séparés par une espace, WAI-ARIA) ; null sans lettre. */
+export function toolShortcut(tool: string | undefined): { readonly text: string; readonly aria: string } | null {
+  if (tool === undefined) return null;
+  const letter = shortcutText(`tool-${tool}`, false);
+  if (letter === null) return null;
+  const digit = shortcutText(`tool-${tool}-num`, false);
+  return digit === null ? { text: letter, aria: letter } : { text: `${letter} ou ${digit}`, aria: `${letter} ${digit}` };
+}
