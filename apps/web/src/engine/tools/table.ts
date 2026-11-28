@@ -49,6 +49,7 @@ import {
   rangeRect,
   rangeSize,
   requiredSizes,
+  headerSpans,
   shownSpans,
   SIZE_STEP,
   step,
@@ -101,6 +102,9 @@ interface Opened {
   readonly initialSpans: readonly TextSpan[];
   readonly colWidth: number;
   readonly size: number;
+  /** Tableau et ligne à l'ouverture : la hauteur exigée se mesure sur les segments affichés (gras d'en-tête, `headerSpans`). */
+  readonly table: TableData;
+  readonly row: number;
 }
 /** Appui sur une cellule (F14) : le relâché décide (ouvrir, ou rien après une plage). */
 interface Press {
@@ -369,7 +373,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         row: o.ref.row,
         col: o.ref.col,
         content,
-        rowHeight: cellHeight(spans, o.size, o.colWidth, measure),
+        rowHeight: cellHeight(headerSpans(o.table, o.row, spans), o.size, o.colWidth, measure),
         spans,
       });
     }
@@ -391,7 +395,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     const inner = cellInnerBox(at.table, at.cell);
     const { text, spans, fill } = cellContent(at.table, at.ref.row, at.ref.col);
     const frame = cellTextFrame(at.table, at.cell, richBoxHeight(layoutRich(shownSpans(at.table, at.cell), { size: at.table.size }, inner.w, measure)));
-    opened = { ref: at.ref, initial: text, initialSpans: spans, colWidth, size: at.table.size };
+    opened = { ref: at.ref, initial: text, initialSpans: spans, colWidth, size: at.table.size, table: at.table, row: at.cell.row };
     gate.reset();
     editor.open(
       {

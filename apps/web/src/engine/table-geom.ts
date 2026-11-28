@@ -183,8 +183,13 @@ export function cellContent(
  *  hauteur exigée (`rowHeightsFor`), pot (`fill-target.ts`), saisie (`openActive`). Jamais écrits dans une commande :
  *  le gras d'en-tête n'est qu'un affichage. */
 export function shownSpans(t: TableData, c: Cell): readonly TextSpan[] {
-  const spans = cellContent(t, t.rows[c.row]?.id ?? "", t.cols[c.col]?.id ?? "").spans;
-  return t.header === true && c.row === 0 ? spans.map((s) => ({ text: s.text, attrs: { ...s.attrs, bold: true as const } })) : spans;
+  return headerSpans(t, c.row, cellContent(t, t.rows[c.row]?.id ?? "", t.cols[c.col]?.id ?? "").spans);
+}
+
+/** Segments `spans` de la ligne `row`, mis en gras si c'est la ligne 0 d'un tableau à en-tête ; sinon inchangés. Sert
+ *  `shownSpans` et la hauteur exigée à l'écriture d'une case (`commit` de l'outil Tableau). */
+export function headerSpans(t: TableData, row: number, spans: readonly TextSpan[]): readonly TextSpan[] {
+  return t.header === true && row === 0 ? spans.map((s) => ({ text: s.text, attrs: { ...s.attrs, bold: true as const } })) : spans;
 }
 
 /** Le tableau le plus haut de `tables` (ordre de la pile) sous (x, y) monde (I2) ; matrice non inversible : sauté. */
