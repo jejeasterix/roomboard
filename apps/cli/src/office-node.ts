@@ -110,7 +110,7 @@ const fromProc = (procDir: string): Array<{ pid: number; cmd: string }> | null =
  *  accentuée n'est plus trouvée. En échec : aucun processus. */
 const fromPs = (): Array<{ pid: number; cmd: string }> => {
   try {
-    const env = { ...process.env, LC_ALL: "en_US.UTF-8" };
+    const env = { ...process.env, LC_ALL: "C.UTF-8" };
     return parsePs(execFileSync("/bin/ps", ["-axww", "-o", "pid=,command="], { encoding: "utf8", env, maxBuffer: 64 * 1024 * 1024 }));
   } catch {
     return [];

@@ -79,7 +79,7 @@ const processusAvec = (needle) => {
   if (!existsSync("/proc")) {
     const ps = spawnSync("/bin/ps", ["-axww", "-o", "pid=,command="], {
       encoding: "utf8",
-      env: { ...process.env, LC_ALL: "en_US.UTF-8" }, // sinon `ps` écrit les accents en `M-CM-)`
+      env: { ...process.env, LC_ALL: "C.UTF-8" }, // sinon `ps` écrit les accents en `M-CM-)`
       maxBuffer: 64 * 1024 * 1024,
     });
     if (ps.status !== 0) throw new Ecart(`ps : code ${ps.status} ${ps.stderr}`);
