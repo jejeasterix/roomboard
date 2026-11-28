@@ -251,6 +251,13 @@ describe("tableKey TB2", () => {
     expect(tableKey(a({ shiftKey: true }))).toBeNull();
     expect(tableKey(a({ ctrlKey: true }))).toBeNull();
   });
+  it("tableKey : Alt+O (lu par code) ouvre ou referme le cache, sans Maj ni Ctrl", () => {
+    const o = (x: Partial<KeyLike> = {}): KeyLike => ({ key: "o", code: "KeyO", ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...x });
+    expect(tableKey(o())).toBe("shade-open-toggle");
+    expect(tableKey(o({ key: "ø" }))).toBe("shade-open-toggle");
+    expect(tableKey(o({ shiftKey: true }))).toBeNull();
+    expect(tableKey(o({ ctrlKey: true }))).toBeNull();
+  });
 });
 
 describe("OG12 : lineEditKey, linkedKey, isCtrlKey", () => {
@@ -381,6 +388,7 @@ describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointe
   const table: KeyLike[] = [
     ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, altKey: true })),
     k("e", { code: "KeyE", altKey: true }),
+    k("o", { code: "KeyO", altKey: true }),
     k("a", { code: "KeyA", altKey: true }),
     k("f", { code: "KeyF", altKey: true }),
     k("i", { code: "KeyI", altKey: true }),

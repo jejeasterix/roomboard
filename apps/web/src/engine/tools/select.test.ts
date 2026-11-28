@@ -328,13 +328,28 @@ describe("révélation d'un ombrage (F10)", () => {
     return v?.kind === "table" ? v.table.cells.filter((c) => c.shade !== null).length : -1;
   };
 
-  it("F10, S1 : toucher une cellule ombrée : SetTableShade null sur elle, une étape, sélection inchangée", () => {
+  const isOpen = (s: S, id: string): boolean => {
+    const v = s.doc.element(id);
+    return v?.kind === "table" ? v.table.cells[0]?.open === true : false;
+  };
+
+  it("F10, S1 : toucher une cellule ombrée : SetTableLook open sur elle, une étape, sélection inchangée", () => {
     const s = setup();
     const { id, cell } = shadedTable(s);
     gesture(s.tool, [[150, 130]]);
-    expect(s.runs).toEqual([{ type: "SetTableShade", id, from: cell, to: cell, shade: null }]);
-    expect([shades(s, id), s.tool.selection()]).toEqual([0, []]);
+    expect(s.runs).toEqual([{ type: "SetTableLook", id, from: cell, to: cell, look: { key: "open", value: true } }]);
+    expect([shades(s, id), s.tool.selection()]).toEqual([1, []]);
     s.doc.undo();
+    expect(isOpen(s, id)).toBe(false);
+  });
+
+  it("S12 : toucher un cache ouvert le referme (open faux), une étape ; l'ombrage reste", () => {
+    const s = setup();
+    const { id, cell } = shadedTable(s);
+    gesture(s.tool, [[150, 130]]);
+    expect(isOpen(s, id)).toBe(true);
+    gesture(s.tool, [[150, 130]]);
+    expect(s.runs.at(-1)).toEqual({ type: "SetTableLook", id, from: cell, to: cell, look: { key: "open", value: false } });
     expect(shades(s, id)).toBe(1);
   });
 
@@ -342,8 +357,8 @@ describe("révélation d'un ombrage (F10)", () => {
     const s = setup();
     const { id } = shadedTable(s);
     gesture(s.tool, [[150, 130], [155, 130]]);
-    expect(s.runs.map((c) => c.type)).toEqual(["SetTableShade"]);
-    expect(shades(s, id)).toBe(0);
+    expect(s.runs.map((c) => c.type)).toEqual(["SetTableLook"]);
+    expect(isOpen(s, id)).toBe(true);
   });
 
   it("F10 : glisser de 9 px : déplacement depuis le point d'appui, rien de révélé", () => {
@@ -366,12 +381,12 @@ describe("révélation d'un ombrage (F10)", () => {
     expect([s.runs, s.tool.selection()]).toEqual([[], [id]]);
   });
 
-  it("F10 : tableau déjà sélectionné : toucher une cellule ombrée (hors poignée) la révèle, la sélection reste", () => {
+  it("F10 : tableau déjà sélectionné : toucher une cellule ombrée (hors poignée) l'ouvre, la sélection reste", () => {
     const s = setup();
     const { id } = shadedTable(s);
     gesture(s.tool, [[400, 130]]);
     gesture(s.tool, [[150, 130]]);
-    expect(s.runs.map((c) => c.type)).toEqual(["SetTableShade"]);
+    expect(s.runs.map((c) => c.type)).toEqual(["SetTableLook"]);
     expect(s.tool.selection()).toEqual([id]);
   });
 

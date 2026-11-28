@@ -29,7 +29,7 @@ function channel() {
 function fakeBoard(doc: CoreDocument) {
   let tool = "pen";
   const cbs = new Set<(s: EngineState) => void>();
-  const state = () => ({ tool, eraserMode: "partial", canUndo: false, canRedo: false, page: doc.pageIds()[0] ?? "", pageIndex: 0, pageCount: 1, selection: [], selectionBounds: null, selectionUnits: 0, selectionGrouped: false, tableCell: null, tableMerges: 0, tableShades: 0, textFormat: null, elementCount: 0, version: doc.version(), error: null }) as unknown as EngineState;
+  const state = () => ({ tool, eraserMode: "partial", canUndo: false, canRedo: false, page: doc.pageIds()[0] ?? "", pageIndex: 0, pageCount: 1, selection: [], selectionBounds: null, selectionUnits: 0, selectionGrouped: false, tableCell: null, tableMerges: 0, tableShades: 0, tableOpens: 0, textFormat: null, elementCount: 0, version: doc.version(), error: null }) as unknown as EngineState;
   const engine = {
     state,
     onState: (cb: (s: EngineState) => void) => { cbs.add(cb); return () => cbs.delete(cb); },
@@ -389,7 +389,7 @@ describe("viewOf : style courant (OG11 T9)", () => {
     const s = {
       tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, textFormat: null,
       selection: ["x"], selectionBounds: null, selectionUnits: 1, selectionGrouped: false, tableCell: null,
-      tableMerges: 0, tableShades: 0, elementCount: 1, version: 3, error: null, page: "p", itemStyle,
+      tableMerges: 0, tableShades: 0, tableOpens: 0, elementCount: 1, version: 3, error: null, page: "p", itemStyle,
     } as unknown as EngineState;
     const v = viewOf(s);
     expect(v.itemStyle).toEqual(itemStyle);

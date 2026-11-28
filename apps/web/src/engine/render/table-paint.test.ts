@@ -248,3 +248,23 @@ describe("S9 bordures par case (D16, DS4)", () => {
     expect(ctx.log.filter((l) => l === "moveTo")).toHaveLength(24 - 4);
   });
 });
+
+describe("S12 cache ouvert (DS3, H19)", () => {
+  const open = (o: boolean): TableData => ({
+    color: "#000000", size: 36, merges: [],
+    cols: [{ id: "a", width: 100 }], rows: [{ id: "r", height: 64 }],
+    cells: [{ row: "r", col: "a", text: "secret", fill: "#fef08a", shade: "#94a3b8", spans: plainSpans("secret"), ...(o ? { open: true as const } : {}) }],
+  });
+  it("S12 : ouvert : le fond de la case reste visible, quatre bandes de 4 au bord, aucun fond opaque plein", () => {
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), open(true));
+    expect(ctx.rects).toContainEqual([0, 0, 100, 64]);
+    expect(ctx.rects).toContainEqual([0, 0, 100, 4]);
+    expect(ctx.rects).toContainEqual([0, 60, 100, 4]);
+    expect(ctx.log.filter((l) => l === "fillRect #94a3b8")).toHaveLength(4);
+  });
+  it("S12 : ouvert : le texte est dessiné ; fermé : non (F11)", () => {
+    expect(cellTextBoxes(open(true)).map((b) => b.text)).toEqual(["secret"]);
+    expect(cellTextBoxes(open(false))).toEqual([]);
+  });
+});

@@ -1367,3 +1367,20 @@ describe("outil Tableau — S11 déplacer une ligne (D18, DS8)", () => {
     expect((s.tool.live().overlay?.grips ?? []).map((g) => g.kind).sort()).toEqual(["col", "col-move", "row", "row-move"]);
   });
 });
+
+describe("outil Tableau — S12 cache (DS3)", () => {
+  it("S12 : Alt+O (shade-open-toggle) : ouvre puis referme la case ombrée ; sans ombrage : rien", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const n = s.runs.length;
+    s.tool.act("shade-open-toggle");
+    expect(s.runs.length).toBe(n);
+    s.tool.act("shade");
+    s.tool.act("shade-open-toggle");
+    expect(s.tool.cellState()?.open).toBe(true);
+    s.tool.act("shade-open-toggle");
+    expect(s.tool.cellState()?.open).toBe(false);
+    expect(s.table(id).cells[0]?.shade).toBe("#94a3b8");
+  });
+});

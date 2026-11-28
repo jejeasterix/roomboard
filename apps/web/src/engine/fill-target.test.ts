@@ -284,4 +284,13 @@ describe("pot dans une case alignée (D15, DS6)", () => {
     // Boîte 224 × 148 ; ligne de 110 × 45 décalée de 57 en x, de 51,5 en y ; « matin » en x 100 + 8 + 57 + 60 = 225..275.
     expect(colored(250, 400 + 8 + 51.5 + 20)).toBe("matin");
   });
+  it("S12 : pot sur un cache ouvert : le mot (SetTableCell) ; fermé : remplissage (SetTableFill)", () => {
+    const m10 = (x: string) => x.length * 10;
+    const { doc, page, table, r, c } = setup();
+    const cell = { row: r[0] ?? "", col: c[0] ?? "" };
+    doc.apply({ type: "SetTableShade", id: table, from: cell, to: cell, shade: "#94a3b8" });
+    expect(fillCommand(doc, page, 120, 420, 1, "#dc2626", m10)).toMatchObject({ type: "SetTableFill" });
+    doc.apply({ type: "SetTableLook", id: table, from: cell, to: cell, look: { key: "open", value: true } });
+    expect(fillCommand(doc, page, 120, 420, 1, "#dc2626", m10)).toMatchObject({ type: "SetTableCell" });
+  });
 });

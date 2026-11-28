@@ -1324,6 +1324,21 @@ describe("moteur — C10b (F29, F14)", () => {
     expect([engine.state().tableMerges, engine.state().tableShades]).toEqual([1, 2]);
   });
 
+  it("S12 : tableOpens : compte les caches ouverts de la page montrée (boucle tableCounts)", () => {
+    const { doc, engine } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    const base = tableEl("a", false, 2);
+    const el: ElementView = base.kind === "table" ? { ...base, table: { ...base.table, cells: base.table.cells.map((c, i) => (i === 0 ? { ...c, open: true as const } : c)) } } : base;
+    const realIds = doc.elementIds.bind(doc);
+    const realEl = doc.element.bind(doc);
+    doc.elementIds = (p) => (p === page ? [...realIds(p), "a"] : realIds(p));
+    const realKind = doc.elementIdsOfKind.bind(doc);
+    doc.elementIdsOfKind = (p, k) => (p === page && k === "table" ? [...realKind(p, k), "a"] : realKind(p, k));
+    doc.element = (id) => (id === "a" ? el : realEl(id));
+    engine.run({ type: "AddPage", after: page });
+    expect([engine.state().tableShades, engine.state().tableOpens]).toEqual([2, 1]);
+  });
+
   it("OE23 (Q7) : tableMerges, tableShades : seule la vue des candidats « table » est lue, jamais celle d'un trait", () => {
     const { doc, engine } = setup();
     const page = doc.pageIds()[0] ?? "";
