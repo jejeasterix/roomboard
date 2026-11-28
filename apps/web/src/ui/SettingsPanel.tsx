@@ -4,13 +4,14 @@ import type { RendererDiagnostics } from "../engine/render/select";
 import {
   cycleSetting,
   needsReload,
-  SETTING_KEYS,
   settingLabel,
   settingsSearch,
   type EffectiveEchelons,
   type SettingKey,
   type SettingsStore,
 } from "../engine/settings";
+import { Icon } from "./IconButton";
+import "./settings.css";
 
 export const RELOAD_DIRTY_MESSAGE = "Recharger : les onglets non enregistrés seront perdus. Continuer ?";
 
@@ -41,6 +42,55 @@ export interface SettingsPanelProps {
 
 const WEBGL_WORDS = { on: "actif", off: "coupé", repli: "repli Canvas 2D" } as const;
 
+/** Texte du `title` et de la note visible des réglages qui rechargent la page (É3, É4). */
+const RELOAD_HINT = "Recharge la page : le dessin en cours est perdu";
+
+/** OG39 : sections du panneau, dans l'ordre ; chaque clé de `SETTING_KEYS` dans l'une d'elles, dans
+ *  le même ordre (le test « un bouton par réglage » le vérifie). */
+const SAISIE: readonly SettingKey[] = ["finger", "palm"];
+const RENDU: readonly SettingKey[] = ["prediction", "inkTrail", "webgl"];
+
+/** « Doigt : vue » → nom « Doigt », valeur « vue » ; le texte complet du bouton reste celui des essais. */
+function splitLabel(text: string): readonly [string, string] {
+  const at = text.indexOf(" : ");
+  return at < 0 ? [text, ""] : [text.slice(0, at), text.slice(at + 3)];
+}
+
+/** Nom, séparateur (lu, pas montré) et valeur d'une rangée : `textContent` = libellé complet. */
+function RowText(props: { text: string; hideValue?: boolean }): JSX.Element {
+  const parts = () => splitLabel(props.text);
+  return (
+    <>
+      <span class="rb-set-name">{parts()[0]}</span>
+      <span class="rb-set-sep"> : </span>
+      <span class="rb-set-val" classList={{ "rb-set-sr": props.hideValue === true }}>{parts()[1]}</span>
+    </>
+  );
+}
+
+/** Section titrée du panneau (OG39) : icône Lucide et titre comme l'en-tête du panneau d'options, sans accordéon. */
+function Section(props: { id: string; icon: string; title: string; children: JSX.Element }): JSX.Element {
+  return (
+    <section class="rb-set-sec" data-section={props.id} aria-labelledby={`reglages-h-${props.id}`}>
+      <h3 class="rb-set-h" id={`reglages-h-${props.id}`}>
+        <Icon name={props.icon} />
+        <span>{props.title}</span>
+      </h3>
+      {props.children}
+    </section>
+  );
+}
+
+/** Interrupteur d'un réglage oui / non (OG39) : `role="switch"`, poignée à droite, valeur lue par le lecteur d'écran. */
+function SwitchRow(props: { reglage: string; on: boolean; label: string; toggle(): void }): JSX.Element {
+  return (
+    <button type="button" class="rb-set-row" role="switch" aria-checked={props.on} data-reglage={props.reglage} onClick={() => props.toggle()}>
+      <RowText text={props.label} hideValue />
+      <span class="rb-set-knob" aria-hidden="true" />
+    </button>
+  );
+}
+
 export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
   const [settings, setSettings] = createSignal(props.store.get());
   onCleanup(props.store.onChange(setSettings));
@@ -69,36 +119,46 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
     return text;
   };
 
+  /** Rangée d'un réglage du moteur : un appui passe à la valeur suivante (`cycleSetting`), comme avant OG39. */
+  const engineRow = (key: SettingKey): JSX.Element => (
+    <button
+      type="button"
+      class="rb-set-row"
+      data-reglage={key}
+      title={needsReload(key) ? RELOAD_HINT : undefined}
+      aria-describedby={needsReload(key) ? "reglages-recharge" : undefined}
+      onClick={() => void click(key)}
+    >
+      <RowText text={settingLabel(key, settings(), props.effective())} />
+      <Show when={needsReload(key)}>
+        <Icon name="reset" />
+      </Show>
+    </button>
+  );
+
   return (
-    <div id="reglages" role="group" aria-label="Réglages du moteur">
-      <For each={SETTING_KEYS}>
-        {(key) => (
-          <button
-            type="button"
-            data-reglage={key}
-            title={needsReload(key) ? "Recharge la page : le dessin en cours est perdu" : undefined}
-            onClick={() => void click(key)}
-          >
-            {settingLabel(key, settings(), props.effective())}
-          </button>
-        )}
-      </For>
+    <div id="reglages" class="rb-settings" role="group" aria-label="Réglages du moteur">
+      <Section id="saisie" icon="hand" title="Stylet et doigt">
+        <For each={SAISIE}>{engineRow}</For>
+        <Show when={palmDevice}>
+          {(dev) => <SwitchRow reglage="gomme-paume" on={palmOn()} label={palmOn() ? PALM_ERASER_LABELS.on : PALM_ERASER_LABELS.off} toggle={() => void dev().setPalmEraser(!dev().palmEraser())} />}
+        </Show>
+      </Section>
+      <Section id="rendu" icon="pen-line" title="Rendu de l'encre">
+        <For each={RENDU}>{engineRow}</For>
+        <p id="reglages-recharge" class="rb-set-hint">{RELOAD_HINT}</p>
+      </Section>
       <Show when={device}>
         {(dev) => (
-          <button type="button" data-reglage="cadre" onClick={() => void dev().setFrame(!dev().frame())}>
-            {frame() ? FRAME_LABELS.on : FRAME_LABELS.off}
-          </button>
+          <Section id="annotation" icon="annotate" title="Annotation">
+            <SwitchRow reglage="cadre" on={frame()} label={frame() ? FRAME_LABELS.on : FRAME_LABELS.off} toggle={() => void dev().setFrame(!dev().frame())} />
+          </Section>
         )}
       </Show>
-      <Show when={palmDevice}>
-        {(dev) => (
-          <button type="button" data-reglage="gomme-paume" onClick={() => void dev().setPalmEraser(!dev().palmEraser())}>
-            {palmOn() ? PALM_ERASER_LABELS.on : PALM_ERASER_LABELS.off}
-          </button>
-        )}
-      </Show>
-      <span id="echelons-notes">{props.notes.join(" · ")}</span>
-      <p id="webgl-diagnostic">{diagnostic()}</p>
+      <footer class="rb-set-foot">
+        <span id="echelons-notes" hidden={props.notes.length === 0}>{props.notes.join(" · ")}</span>
+        <p id="webgl-diagnostic">{diagnostic()}</p>
+      </footer>
     </div>
   );
 }

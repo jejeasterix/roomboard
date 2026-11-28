@@ -1,10 +1,13 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSettingsStore, DEFAULT_SETTINGS, SETTING_KEYS, type EffectiveEchelons } from "../engine/settings";
 import type { RendererDiagnostics } from "../engine/render/select";
 import { createDeviceSettings, type DeviceSettings } from "../device-settings";
+import { ICON_VIEWBOX, ICONS } from "./icons";
 import { FRAME_LABELS, PALM_ERASER_LABELS, RELOAD_DIRTY_MESSAGE, SettingsPanel } from "./SettingsPanel";
 
 afterEach(cleanup);
@@ -176,5 +179,84 @@ describe("SettingsPanel : gomme automatique à la paume (OG25, déc. 26)", () =>
     const { btn } = setup({ palmEraser });
     palmEraser.setPalmEraser(false);
     expect(btn("gomme-paume").textContent).toBe(PALM_ERASER_LABELS.off);
+  });
+});
+
+describe("SettingsPanel : design des îlots (OG39)", () => {
+  const both = () => setup({ device: createDeviceSettings(null), palmEraser: createDeviceSettings(null) });
+
+  it("OG39 sections : « Stylet et doigt », « Rendu de l'encre », « Annotation », chacune titrée avec une icône Lucide connue", () => {
+    const { r } = both();
+    const heads = [...r.container.querySelectorAll<HTMLElement>("#reglages .rb-set-h")];
+    expect(heads.map((h) => h.textContent)).toEqual(["Stylet et doigt", "Rendu de l'encre", "Annotation"]);
+    for (const h of heads) {
+      const icon = h.querySelector("svg.rb-icon")?.getAttribute("data-icon") ?? "";
+      expect(Object.hasOwn(ICONS, icon), icon).toBe(true);
+    }
+    for (const svg of r.container.querySelectorAll("#reglages svg")) expect(svg.getAttribute("viewBox")).toBe(ICON_VIEWBOX);
+  });
+
+  it("OG39 sections : chaque réglage dans sa section, dans l'ordre", () => {
+    const { r } = both();
+    const keys = (sec: string) => [...r.container.querySelectorAll(`#reglages [data-section="${sec}"] [data-reglage]`)].map((b) => b.getAttribute("data-reglage"));
+    expect(keys("saisie")).toEqual(["finger", "palm", "gomme-paume"]);
+    expect(keys("rendu")).toEqual(["prediction", "inkTrail", "webgl"]);
+    expect(keys("annotation")).toEqual(["cadre"]);
+  });
+
+  it("OG39 sections : sans device, aucune section Annotation ; sans palmEraser, la section saisie garde Doigt et Paume", () => {
+    const { r } = setup();
+    expect(r.container.querySelector('#reglages [data-section="annotation"]')).toBeNull();
+    expect([...r.container.querySelectorAll('#reglages [data-section="saisie"] [data-reglage]')].map((b) => b.getAttribute("data-reglage"))).toEqual(["finger", "palm"]);
+  });
+
+  it("OG39 rangée : nom et valeur séparés, texte complet inchangé", () => {
+    const { btn } = setup();
+    expect(btn("finger").querySelector(".rb-set-name")?.textContent).toBe("Doigt");
+    expect(btn("finger").querySelector(".rb-set-val")?.textContent).toBe("vue");
+    expect(btn("finger").textContent).toBe("Doigt : vue");
+    expect(btn("webgl").querySelector(".rb-set-name")?.textContent).toBe("É4 WebGL2");
+    expect(btn("webgl").querySelector(".rb-set-val")?.textContent).toBe("éteint");
+  });
+
+  it("OG39 interrupteurs : gomme-paume et cadre en role=switch, aria-checked suit le réglage", () => {
+    const palmEraser = createDeviceSettings(null);
+    const device = createDeviceSettings(null);
+    const { btn } = setup({ device, palmEraser });
+    for (const k of ["gomme-paume", "cadre"]) {
+      expect(btn(k).getAttribute("role")).toBe("switch");
+      expect(btn(k).getAttribute("aria-checked")).toBe("true");
+      expect(btn(k).querySelector(".rb-set-knob")).not.toBeNull();
+    }
+    fireEvent.click(btn("gomme-paume"));
+    expect(btn("gomme-paume").getAttribute("aria-checked")).toBe("false");
+    device.setFrame(false);
+    expect(btn("cadre").getAttribute("aria-checked")).toBe("false");
+    expect(btn("palm").getAttribute("role")).toBeNull();
+  });
+
+  it("OG39 rechargement : É3 et É4 portent l'icône « reset » et la note visible du rechargement", () => {
+    const { r, btn } = setup();
+    const hint = r.container.querySelector<HTMLElement>("#reglages-recharge");
+    expect(hint?.textContent).toBe("Recharge la page : le dessin en cours est perdu");
+    for (const k of ["inkTrail", "webgl"]) {
+      expect(btn(k).querySelector('svg[data-icon="reset"]')).not.toBeNull();
+      expect(btn(k).getAttribute("aria-describedby")).toBe("reglages-recharge");
+    }
+    for (const k of ["finger", "palm", "prediction"]) expect(btn(k).querySelector("svg")).toBeNull();
+  });
+
+  it("OG39 notes : vides, aucun paragraphe d'avertissement montré ; données, montrées", () => {
+    expect(setup().r.container.querySelector("#echelons-notes")?.hasAttribute("hidden")).toBe(true);
+    expect(setup({ notes: ["a"] }).r.container.querySelector("#echelons-notes")?.hasAttribute("hidden")).toBe(false);
+  });
+});
+
+describe("settings.css (OG39)", () => {
+  const css = readFileSync(join(__dirname, "settings.css"), "utf8").replace(/\s+/g, " ");
+  it("rangées à 44 px au moins (cible tactile), jetons de la charte seulement", () => {
+    expect(css).toMatch(/\.rb-set-row \{[^}]*min-block-size: 44px/);
+    const colors = css.replace(/\/\*.*?\*\//g, "").match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
+    expect(colors).toEqual([]);
   });
 });
