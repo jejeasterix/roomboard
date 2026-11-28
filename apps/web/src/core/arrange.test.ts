@@ -2,7 +2,7 @@
 // `crates/roomboard-core/tests/arrange.rs`, joués sur des unités nues.
 import { describe, expect, it } from "vitest";
 import type { Bounds } from "./api";
-import { ARRANGE_HOWS, arrangeUnknown, isArrangeHow, planArrange, planRotate, reachOfKind, rotationMatrix, type ArrangeUnit, type Reach } from "./arrange";
+import { ARRANGE_HOWS, arrangeUnknown, isArrangeHow, planArrange, planRotate, reachOfKind, rotationMatrix, rotationOf, type ArrangeUnit, type Reach } from "./arrange";
 
 const box = (x0: number, y0: number, x1: number, y1: number): Bounds => ({ x0, y0, x1, y1 });
 const one = (id: string, b: Bounds, reach: Reach = "matrix"): ArrangeUnit => ({ members: [{ id, reach, bounds: b }] });
@@ -72,6 +72,18 @@ describe("OG33 rotation", () => {
     expect(planRotate([one("t", box(0, 0, 100, 30), "place")], 45)).toEqual([]);
     expect(planRotate([one("a", box(0, 0, 10, 10))], 360)).toEqual([]);
     expect(planRotate([one("a", box(0, 0, 10, 10))], -720)).toEqual([]);
+  });
+  it("rotation quasi nulle (matrice arrondie à l'identité) : rien à faire, ni étape ni matrice pleine (C5, D38)", () => {
+    const u = [one("a", box(0, 0, 10, 10))];
+    for (const deg of [1e-14, -1e-13, -1e-20]) {
+      expect(planRotate(u, deg)).toEqual([]);
+      expect(rotationOf(u, deg)).toBeNull();
+    }
+  });
+  it("texte seul 100 x 30 en (200, 0), tourné sur son centre : translation résiduelle omise, à chaque degré (C5)", () => {
+    const u = [one("t", box(200, 0, 300, 30), "place")];
+    const moved = Array.from({ length: 359 }, (_, i) => i + 1).filter((deg) => planRotate(u, deg).length > 0);
+    expect(moved).toEqual([]);
   });
   it("reachOfKind : portée du cœur, fill jamais bougé", () => {
     expect(reachOfKind("shape")).toBe("matrix");

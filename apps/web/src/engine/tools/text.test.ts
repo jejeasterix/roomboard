@@ -478,6 +478,29 @@ describe("texte de forme (OG33 lot 2b, choix 8, 9)", () => {
     expect(runs).toEqual([]);
     expect(done).toEqual([id]);
   });
+  it("texte de forme : rectangle 200 x 100 étiré ×2 : zone de 390 px à l'échelle 1, pas de lettres étirées (C5, constat 2)", () => {
+    const { doc, page, tool } = setup();
+    const id = doc.apply({ type: "AddShape", page, shape: "rect", x0: 0, y0: 0, x1: 200, y1: 100, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "Transform", ids: [id], matrix: [2, 0, 0, 1, 0, 0] });
+    expect(tool.openLabel(id)).toBe(true);
+    expect(tool.editing()?.boxWidth).toBe(390);
+    expect(tool.editing()?.matrix.slice(0, 5)).toEqual([1, 0, 0, 1, 5]);
+  });
+  it("texte de forme : réduit à 0,3 : zone de 50 px en taille 24 à l'échelle 1, pas un texte de 7 px (C5, constat 2)", () => {
+    const { doc, page, tool } = setup();
+    const id = doc.apply({ type: "AddShape", page, shape: "rect", x0: 0, y0: 0, x1: 200, y1: 100, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "Transform", ids: [id], matrix: [0.3, 0, 0, 0.3, 0, 0] });
+    expect(tool.openLabel(id)).toBe(true);
+    expect(tool.editing()).toMatchObject({ boxWidth: 50, size: 24 });
+    expect(tool.editing()?.matrix.slice(0, 5)).toEqual([1, 0, 0, 1, 5]);
+  });
+  it("texte de forme : rectangle de 30 px agrandi ×4 : modifiable, la boîte se prend en monde (C5, constat 4)", () => {
+    const { doc, page, tool } = setup();
+    const id = doc.apply({ type: "AddShape", page, shape: "rect", x0: 0, y0: 0, x1: 30, y1: 100, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "Transform", ids: [id], matrix: [4, 0, 0, 1, 0, 0] });
+    expect(tool.openLabel(id)).toBe(true);
+    expect(tool.editing()?.boxWidth).toBe(110);
+  });
   it("texte de forme : openLabel sur une ligne : false", () => {
     const { doc, page, tool, host } = setup();
     const id = doc.apply({ type: "AddShape", page, shape: "line", x0: 0, y0: 0, x1: 200, y1: 0, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";

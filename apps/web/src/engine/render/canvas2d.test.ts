@@ -166,6 +166,7 @@ const VIEWS: Record<string, ElementView> = {
   r: { id: "r", kind: "shape", transform: [1, 0, 0, 1, 10, 20], style: { color: "#1e40af", width: 4 }, shape: { shape: "rect", w: 200, h: 100, fill: null } },
   e: { id: "e", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#1e40af", width: 4 }, shape: { shape: "ellipse", w: 50, h: 30, fill: "#ff0000" } },
   lab: { id: "lab", kind: "shape", transform: [0, 1, -1, 0, 30, 40], style: { color: "#1e40af", width: 4 }, shape: { shape: "rect", w: 200, h: 100, fill: null, label: "Bonjour" } },
+  big: { id: "big", kind: "shape", transform: [2, 0, 0, 1, 10, 20], style: { color: "#1e40af", width: 4 }, shape: { shape: "rect", w: 200, h: 100, fill: null, label: "Bonjour" } },
   f: { id: "f", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#1e40af", width: 4 }, shape: { shape: "arrow", w: 100, h: 0, fill: null } },
   t: { id: "t", kind: "text", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 0 }, text: { content: "un deux\ntrois", size: 20, boxWidth: 1000, boxHeight: 50, spans: [{ text: "un deux\ntrois", attrs: {} }] } },
 };
@@ -195,7 +196,18 @@ describe("Canvas2DRenderer — lot 4 (formes, texte, calque)", () => {
     expect(scene.log.indexOf("transform 0,1,-1,0,30,40")).toBeGreaterThan(-1);
     expect(scene.log.indexOf("transform 0,1,-1,0,30,40")).toBeLessThan(scene.log.indexOf("stroke #1e40af 4"));
     expect(scene.log.indexOf("stroke #1e40af 4")).toBeLessThan(i);
-    expect(scene.log[i - 1]).toMatch(/^transform 1,0,0,1,5,/);
+    // C5 (constat 2) : le texte quitte le repère de la forme ; repère de rotation et translation seules, x = 40 + 5.
+    expect(scene.log[i - 1]).toMatch(/^transform 0,1,-1,0,-?[\d.]+,45$/);
+  });
+
+  it("texte de forme étirée ×2 : posé sans l'échelle de la forme, boîte de 390 en monde (C5, constat 2)", () => {
+    const { r, scene } = makeViews();
+    r.drawScene({ id: "p", elementIds: ["big"] }, IDENTITY, new Set());
+    const i = scene.log.findIndex((l) => l.startsWith("fillText Bonjour"));
+    expect(i).toBeGreaterThan(0);
+    expect(scene.log[i - 1]).toMatch(/^transform 1,0,0,1,15,/);
+    const open = scene.log.lastIndexOf("save", i);
+    expect(scene.log.slice(open, i).some((l) => l.startsWith("transform 2,"))).toBe(false);
   });
 
   it("texte de forme : fantôme noLabel sans fillText", () => {

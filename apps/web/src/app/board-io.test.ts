@@ -230,6 +230,18 @@ describe("board-io : copie au format (C13, D18)", () => {
     expect(text.m.slice(0, 4).map((n) => Math.round(n * 1000) / 1000)).toEqual(shape.m.slice(0, 4).map((n) => Math.round(n * 1000) / 1000));
   });
 
+  it("texte de forme d'un rectangle 200 x 100 étiré ×2 : exporté sans l'échelle, boîte de 390 (C5, constat 2)", async () => {
+    const draft = fakeCore.blank();
+    const pid = draft.pageIds()[0]!;
+    const id = draft.apply({ type: "AddShape", page: pid, shape: "rect", x0: 0, y0: 0, x1: 200, y1: 100, style: { color: "#000000", width: 2 }, fill: null }).ids[0]!;
+    draft.apply({ type: "SetShapeLabel", id, label: "Bonjour" });
+    draft.apply({ type: "Transform", ids: [id], matrix: [2, 0, 0, 1, 0, 0] });
+    const r = await boardListOf(draft, createAssetStore(fakeHasher), "iwb");
+    const text = decodeBoardList(r.list.ops, r.list.texts)[0]!.objects[1] as Text;
+    expect(text.boxWidth).toBe(390);
+    expect(text.m.slice(0, 5)).toEqual([1, 0, 0, 1, 5]);
+  });
+
   it("texte de forme exporté : hauteur de layoutRich (deux lignes repliées pour un mot plus large que box.w, aucun \\n)", async () => {
     const draft = fakeCore.blank();
     const pid = draft.pageIds()[0]!;

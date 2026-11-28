@@ -5028,6 +5028,18 @@ describe.each(factories)("contrat OG33 Rotate : $name", ({ f }) => {
     expect(d.version()).toBe(v);
     d.free();
   });
+  it("Rotate quasi nul (1e-14, -1e-20) et texte seul tourné sur son centre : aucune étape, sur les deux cœurs (C5)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p, 0);
+    const t = d.apply({ type: "SetText", page: p, id: null, x: 200, y: 0, content: "abc", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 }).ids[0]!;
+    const v = d.version();
+    for (const angle of [1e-14, -1e-20]) expect(d.apply({ type: "Rotate", ids: [r], angle }).ids).toEqual([]);
+    const moved = Array.from({ length: 359 }, (_, i) => i + 1).filter((angle) => d.apply({ type: "Rotate", ids: [t], angle }).ids.length > 0);
+    expect(moved).toEqual([]);
+    expect(d.version()).toBe(v);
+    d.free();
+  });
   it("Rotate : la flèche liée suit, une étape", () => {
     const d = f.blank();
     const p = first(d);
