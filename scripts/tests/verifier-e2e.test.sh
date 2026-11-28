@@ -42,6 +42,8 @@ grep -q "scripts/essais/gomme-trait-epais-navigateur.mjs" scripts/verifier.sh ||
 grep -q "scripts/essais/personnalisation-2-retours-navigateur.mjs" scripts/verifier.sh || ko "personnalisation-2-retours-navigateur absent de verifier.sh"
 # OG25 gomme automatique à la paume : ligne à part, comme OG20.
 grep -q "scripts/essais/gomme-paume-navigateur.mjs" scripts/verifier.sh || ko "gomme-paume-navigateur absent de verifier.sh"
+# OG41 gomme unique (objets entiers, tableau épargné) : ligne à part, comme OG25.
+grep -q "scripts/essais/gomme-objets-navigateur.mjs" scripts/verifier.sh || ko "gomme-objets-navigateur absent de verifier.sh"
 # OG27 (restes d'OG19, d'OG14 et d'OG24) : ligne à part, comme la gomme.
 grep -q "scripts/essais/restes-og19-og14-og24-navigateur.mjs" scripts/verifier.sh || ko "restes-og19-og14-og24-navigateur absent de verifier.sh"
 grep -q "scripts/essais/restes-og27-navigateur.mjs" scripts/verifier.sh || ko "restes-og27-navigateur absent de verifier.sh"
