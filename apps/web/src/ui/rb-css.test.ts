@@ -385,3 +385,16 @@ describe("rb.css (T33)", () => {
     expect(rule(".rb-mbar-trim .rb-opt-wide[data-keys]::after")).toContain("content: none;");
   });
 });
+
+describe("barre d'objet (OG41, D18, D26)", () => {
+  it("îlot blanc rayon xl, filet et ombre ; caché par [hidden] ; boutons de 36 px, cible de 44 px", () => {
+    expect(rule(".rb-object-bar")).toContain("position: absolute");
+    expect(rule(".rb-object-bar")).toContain("block-size: 44px");
+    expect(rule(".rb-object-bar")).toContain("gap: 8px");
+    expect(rule(".rb-object-bar")).toContain("var(--rf-radius-xl)");
+    expect(rule(".rb-object-bar")).toContain("var(--rf-shadow-hover)");
+    expect(rule(".rb-object-bar[hidden]")).toContain("display: none");
+    expect(rule(".rb-object-bar > button.rb-ib")).toContain("inline-size: 36px");
+    expect(rule(".rb-object-bar > button.rb-ib::before")).toContain("inset: -4px");
+  });
+});

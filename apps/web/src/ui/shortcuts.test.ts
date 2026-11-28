@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, arrangeKey, cellKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, arrangeKey, cellKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, objectMenuKey, toolKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -17,12 +17,12 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   nudge: ["nudge", "-1,0"], pipette: ["picker", "i"],
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
   "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
-  "palm-eraser": ["app", "palm-eraser"],
+  "palm-eraser": ["app", "palm-eraser"], "object-bar": ["objectMenu", "F10"],
   ...Object.fromEntries(["select", "rect", "diamond", "ellipse", "arrow", "line", "pen", "text", "eraser", "hand"].flatMap((t) => [[`tool-${t}`, ["tool", t]], ...(t === "hand" ? [] : [[`tool-${t}-num`, ["tool", t]]])])),
   "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
   "table-header": ["table", "header-toggle"], "table-col-wider": ["table", "col-wider"], "table-col-narrower": ["table", "col-narrower"], "table-row-taller": ["table", "row-taller"], "table-row-shorter": ["table", "row-shorter"],
 };
-const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight", "Entrée": "Enter" };
+const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight", "Entrée": "Enter", F10: "F10" };
 const ARROWS: Readonly<Record<string, string>> = { "→": "ArrowRight", "←": "ArrowLeft", "↑": "ArrowUp", "↓": "ArrowDown" };
 /** Raccourci de l'outil Tableau (Alt ou Ctrl, Maj, lettre par `code`, flèche) lu comme un `KeyLike`. */
 const pressTable = (keys: string): KeyLike => {
@@ -62,6 +62,7 @@ describe("shortcuts", () => {
       else if (by === "linked") expect(linkedKey({ ...press("→"), key: "ArrowRight", altKey: true, shiftKey: true }), s.id).toBe(value);
       else if (by === "ctrlHeld") expect(isCtrlKey({ key: "Control" }), s.id).toBe(true);
       else if (by === "tool") expect(toolKey(e), s.id).toBe(value);
+      else if (by === "objectMenu") expect([objectMenuKey(e), e.key, e.shiftKey], s.id).toEqual([true, value, true]);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
       else if (by === "picker") {
         // Pipette (sélecteur ouvert) : « I » sans modificateur, lue par e.key ; aucun autre reconnaisseur ne la prend.
@@ -148,3 +149,8 @@ describe("lettres des outils", () => {
   });
 });
 
+describe("OG41 : barre de l'objet", () => {
+  it("OG41 (D24) : Maj+F10 ou Menu : « Barre de l'objet », groupe Édition", () => {
+    expect(SHORTCUTS.find((x) => x.id === "object-bar")).toEqual({ id: "object-bar", group: "Édition", label: "Barre de l'objet", keys: "Maj+F10, Menu" });
+  });
+});

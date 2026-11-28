@@ -6,7 +6,7 @@ import type { AnnotationControl, PointerMode, SendTarget } from "../platform/ann
 import { messageOf } from "../platform/controller";
 import { fillChoices, isKnownTool, presetsOf, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
 
-export type SelectionAction = "group" | "ungroup" | "copy" | "paste" | "export";
+export type SelectionAction = "group" | "ungroup" | "copy" | "paste" | "export" | "duplicate" | "delete";
 
 /** U15 : ce que la barre sait du reste ; implémentation locale par appels directs. */
 export interface ToolbarHost {

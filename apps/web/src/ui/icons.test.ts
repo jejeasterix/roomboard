@@ -51,6 +51,8 @@ const OPTION_ICONS = ["copy-plus", "link", "external-link", "trash-2", "sliders-
 /** OG34 : panneau de retouche d'image, sections Média et Objet 3D (Lucide, noms identiques). */
 const OG34_ICONS = ["play", "pause", "repeat", "volume-2", "arrow-right-to-line", "arrow-left-to-line", "move-horizontal", "rotate-3d", "scan", "sun", "contrast", "rotate-ccw"];
 const DIALOG_ICONS = ["search", "image-plus", "layout-template"];
+/** OG41 (D18) : barre d'objet, Lucide au commit 7981a0798a (les autres icônes de la barre existaient déjà). */
+const OBJECT_BAR_ICONS = ["group", "ungroup", "clipboard-paste", "ellipsis", "image"];
 const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
 /** personnalisation-1a (T6, GC4) : icônes Lucide du lot 1, recopiées telles quelles (trait 2 d'origine, rendu à 1,5 par la feuille de style). */
 const LOT1: Readonly<Record<string, IconNode>> = {
@@ -83,10 +85,10 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     expect(TOOL_ICONS.eraser).toBe("eraser");
     expect(NOTICE).not.toContain("`eraser-part`");
   });
-  it("ICONS : 143 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes)", () => {
-    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS, ...OG34_ICONS]);
+  it("ICONS : 148 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes), OG41 (5 icônes de la barre d'objet)", () => {
+    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS, ...OG34_ICONS, ...OBJECT_BAR_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(143);
+    expect(Object.keys(ICONS)).toHaveLength(148);
   });
   it("losange : tracé Lucide diamond, trait fin sur la grille 24", () => {
     expect(ICONS["diamond"]).toBeDefined();
@@ -203,5 +205,14 @@ describe("OG12 : icônes des lignes", () => {
         }
       }
     }
+  });
+});
+
+describe("OG41 : icônes de la barre d'objet", () => {
+  it("OG41 (D18) : icônes de la barre d'objet, Lucide 7981a0798a, notice à jour", () => {
+    for (const n of ["group", "ungroup", "clipboard-paste", "ellipsis", "image", "copy", "copy-plus", "trash-2", "bring-to-front", "send-to-back", "export"]) {
+      expect(ICONS[n]?.length ?? 0, n).toBeGreaterThan(0);
+    }
+    for (const n of ["group", "ungroup", "clipboard-paste", "ellipsis", "image"]) expect(NOTICE, n).toContain(`\`${n}\``);
   });
 });

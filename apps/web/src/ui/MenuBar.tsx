@@ -16,8 +16,8 @@ import { TIP_GAP, createTip } from "./tooltip";
  */
 export const MENU_LABEL = "Menu";
 
-/** Rang de la ligne suivante par touche (table, jamais un branchement sur la touche). */
-const STEP: Readonly<Record<string, (i: number, n: number) => number>> = {
+/** Rang de la ligne suivante par touche (table, jamais un branchement sur la touche) ; OG41 : partagée avec la barre d'objet. */
+export const MENU_STEP: Readonly<Record<string, (i: number, n: number) => number>> = {
   ArrowDown: (i, n) => (i + 1) % n,
   ArrowUp: (i, n) => (i - 1 + n) % n,
   Home: () => 0,
@@ -119,12 +119,12 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
       close(true);
       return;
     }
-    if (!Object.hasOwn(STEP, e.key)) return;
+    if (!Object.hasOwn(MENU_STEP, e.key)) return;
     e.preventDefault();
     const all = rows();
     if (all.length === 0) return;
     const i = all.indexOf(document.activeElement as HTMLButtonElement);
-    all[STEP[e.key]!(Math.max(i, 0), all.length)]?.focus();
+    all[MENU_STEP[e.key]!(Math.max(i, 0), all.length)]?.focus();
   };
   const choose = (run: () => void) => (): void => {
     close(!byPointer && root?.contains(document.activeElement) === true);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARRANGE_HOWS } from "../../core/arrange";
-import { appShortcut, arrangeKey, cellKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
+import { appShortcut, arrangeKey, cellKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, objectMenuKey, toolKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -423,5 +423,16 @@ describe("lettres des outils", () => {
     expect(toolKey(k("r", { shiftKey: true }))).toBeNull();
     expect(toolKey(k("r", { isComposing: true }))).toBeNull();
     expect(toolKey(k("r", { target: { tagName: "INPUT", type: "text" } }))).toBeNull();
+  });
+});
+
+describe("OG41 : touche de la barre de l'objet", () => {
+  it("OG41 objectMenuKey : Maj+F10 ou Menu, hors saisie, sans Ctrl, Méta ni Alt", () => {
+    const k = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...o });
+    expect(objectMenuKey(k("F10", { shiftKey: true }))).toBe(true);
+    expect(objectMenuKey(k("ContextMenu"))).toBe(true);
+    expect(objectMenuKey(k("F10"))).toBe(false);
+    expect(objectMenuKey(k("F10", { shiftKey: true, ctrlKey: true }))).toBe(false);
+    expect(objectMenuKey(k("ContextMenu", { isComposing: true }))).toBe(false);
   });
 });
