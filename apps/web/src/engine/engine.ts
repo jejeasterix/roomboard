@@ -551,7 +551,7 @@ export function createEngine(deps: EngineDeps): Engine {
         if (el?.kind !== "table") continue;
         merges += el.table.merges.length;
         shades += el.table.cells.filter((c) => c.shade !== null).length;
-        opens += el.table.cells.filter((c) => c.open === true).length;
+        opens += el.table.cells.filter((c) => c.open === true && c.shade != null).length;
       }
       counted = { key, merges, shades, opens };
     }
