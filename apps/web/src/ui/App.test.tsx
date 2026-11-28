@@ -1519,7 +1519,7 @@ describe("App — grille à un geste et aimant (OG69, G1, G4, G5)", () => {
   const setGrids = (tab: FakeTab): unknown[] =>
     tab.engine.run!.mock.calls.map((c) => c[0] as { type: string; grid?: unknown }).filter((c) => c.type === "SetGrid").map((c) => c.grid);
 
-  it("G4 : « Afficher la grille » (à côté du compteur) pose la grille neuve du Créateur, carreaux de 40 aimantés ; Ctrl+' aussi", () => {
+  it("G4 : « Afficher la grille » (îlot « Annuler et vue ») pose la grille neuve du Créateur, carreaux de 40 aimantés ; Ctrl+' aussi", () => {
     const { container, tab } = renderApp();
     const button = container.querySelector<HTMLButtonElement>('button[data-item="grid-toggle"]');
     expect(button?.getAttribute("aria-label")).toBe("Afficher la grille");

@@ -325,6 +325,9 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-grid .rb-radios[data-look="chips"] .rb-radio[aria-checked="true"] { border-color: var(--rf-violet-600); background: var(--rf-violet-100); color: var(--rf-violet-700); font-weight: 600; }
 .rb-grid .rb-radio:not([aria-checked="true"]):not(:disabled):hover { background: var(--rf-gray-50); }
 .rb-grid .rb-radio:disabled { color: var(--rf-gray-500); cursor: not-allowed; }
+/* Épaisseur : une seule rangée de segments égaux (la règle des rangées de trois de 168 px vise le panneau des profils). */
+.rb-grid .rb-radios[data-look="segment"]:has(> .rb-radio:nth-child(4)) { flex-wrap: nowrap; }
+.rb-grid .rb-radios[data-look="segment"]:has(> .rb-radio:nth-child(4)) > .rb-radio { flex: 1 1 0; min-inline-size: 0; }
 .rb-grid-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .rb-grid-input { display: grid; min-inline-size: 0; }
 .rb-grid-input input { box-sizing: border-box; inline-size: 100%; min-block-size: 48px; padding: 0 12px; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); color: var(--rf-gray-800); font: inherit; font-size: 15px; }

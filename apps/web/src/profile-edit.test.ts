@@ -80,7 +80,7 @@ describe("profile-edit (C1, DAC1-1)", () => {
     const up = moveItem(DEFAUT, "outils", "sep-1", -1);
     expect(groupsOf(up)[0]).toEqual(["select", "hand", "sep-1"]);
     expect(moveItem(DEFAUT, "outils", "select", -1)).toEqual(DEFAUT);
-    expect(moveItem(DEFAUT, "outils", "grid-toggle", 1)).toEqual(DEFAUT);
+    expect(moveItem(DEFAUT, "outils", "page-next", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "outils", "absent", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "pages", "eraser", 1)).toEqual(DEFAUT);
   });
@@ -98,7 +98,7 @@ describe("profile-edit (C1, DAC1-1)", () => {
   });
 
   it("catalogue : barre tools = outils et actions absents ; barre pages = actions seules (P15)", () => {
-    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["diamond", "undo", "redo", "page-add", "page-remove", "page-insert-file", "page-duplicate", "edit-original", "export-pdf", "export-iwb", "export-ubz", "fit-page", "file-new", "file-open", "file-import", "file-save", "file-save-as", "settings", "help", "page-clear", "profiles", "grid", "library"]);
+    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["diamond", "undo", "redo", "page-add", "page-remove", "page-insert-file", "page-duplicate", "edit-original", "export-pdf", "export-iwb", "export-ubz", "fit-page", "file-new", "file-open", "file-import", "file-save", "file-save-as", "settings", "help", "page-clear", "profiles", "grid", "grid-toggle", "library"]); // OG69 : « Afficher la grille » proposé (îlot « Annuler et vue » par défaut)
     const simple = catalog(SIMPLE, "outils");
     expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "diamond", "ellipse", "line", "arrow", "text", "table", "fill"]);
     const pages = catalog(DEFAUT, "pages");

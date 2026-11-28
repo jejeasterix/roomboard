@@ -158,6 +158,8 @@ function GridToggle(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
     stop();
     if (held) return;
     held = true;
+    // G1 : le bouton est l'ouvreur (focus rendu à la fermeture) ; le panneau prend ensuite le focus sur Type.
+    button?.focus({ preventScroll: true });
     props.ctx.host.runAction(GRID_PANEL_ACTION);
   };
   return (
@@ -173,6 +175,9 @@ function GridToggle(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
         disabled={st().disabled}
         {...tipPointerHandlers(tip)}
         onPointerDown={(e) => {
+          // Au doigt et au stylet, pas d'événements souris de compatibilité : leur mousedown, après un appui long,
+          // reprendrait au panneau le focus posé sur Type. Le clic, lui, a toujours lieu.
+          if (e.pointerType !== "mouse") e.preventDefault();
           tip.down(e.pointerType);
           held = false;
           stop();

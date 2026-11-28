@@ -230,14 +230,15 @@ describe("design-l2 : profils fournis en îlots (L2-2 à L2-4)", () => {
   const flat = (id: string, barId: string) => builtinProfile(id)!.toolbars.find((b) => b.id === barId)!.groups.flatMap((g) => g.items.map((i) => i.id));
   it("design-l2 L2-4, personnalisation-1b Q23 : outils de defaut et annotation : Sélection, Main | Stylo, Gomme, Gomme : partielle | formes, Texte, Tableau, Pot | Fonds | Annotation du bureau", () => {
     for (const id of ["defaut", "annotation"]) {
-      expect(flat(id, "outils"), id).toEqual(["select", "hand", "sep-1", "pen", "eraser", "eraser-mode", "sep-2", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "sep-fonds", "backgrounds", "sep-3", "desktop-annotation", "page-prev", "page-number", "page-next", "grid-toggle"]);
+      expect(flat(id, "outils"), id).toEqual(["select", "hand", "sep-1", "pen", "eraser", "eraser-mode", "sep-2", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "sep-fonds", "backgrounds", "sep-3", "desktop-annotation", "page-prev", "page-number", "page-next"]);
       expect(builtinProfile(id)!.toolbars[0]!.groups.map((g) => g.id), id).toEqual(["navigation", "dessin", "edition", "page", "bureau", "pages"]);
       expect(visibleItems(builtinProfile(id)!.toolbars[0]!, ALL)[0]!.id, id).toBe("select");
     }
   });
   it("design-l2 L2-4 : menu, historique, panneaux et pages de defaut", () => {
     expect(flat("defaut", "menu")).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "sep-5", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "edit-original", "sep-6", "help", "page-clear", "grid", "settings", "menu-profiles"]);
-    expect(flat("defaut", "historique")).toEqual(["undo", "redo", "fit-page"]);
+    // OG69 (G4) : « Afficher la grille » à côté d'« Ajuster la page ».
+    expect(flat("defaut", "historique")).toEqual(["undo", "redo", "fit-page", "grid-toggle"]);
     expect(flat("defaut", "panneaux")).toEqual(["library", "profiles"]);
     expect(flat("defaut", "pages")).toEqual(["page-add", "page-duplicate", "page-remove"]);
   });
@@ -281,10 +282,8 @@ describe("personnalisation-1a T2 : navigation en barre d'outils, barre des pages
       expect(sideActions(pages).map((i) => i.action), p.id).toEqual(pageIds);
       const tools = p.toolbars.find((b) => b.role === "tools")!;
       const last = tools.groups.at(-1)!;
-      // OG69 (G4) : « Afficher la grille » à côté du compteur, sauf dans le profil simple (sans grille).
-      const grid = p.id === "simple" ? [] : ["grid-toggle"];
-      expect([last.id, last.items.map((i) => i.id)], p.id).toEqual(["pages", ["page-prev", "page-number", "page-next", ...grid]]);
-      expect(last.items.map((i) => i.label), p.id).toEqual(["Page précédente", "Numéro de page", "Page suivante", ...(p.id === "simple" ? [] : ["Afficher la grille"])]);
+      expect([last.id, last.items.map((i) => i.id)], p.id).toEqual(["pages", ["page-prev", "page-number", "page-next"]]);
+      expect(last.items.map((i) => i.label), p.id).toEqual(["Page précédente", "Numéro de page", "Page suivante"]);
       expect(p.behavior.pageMode, p.id).toBe("landscape");
     }
     expect(builtinProfile("defaut")!.toolbars[0]!.groups.map((g) => g.id)).toEqual(["navigation", "dessin", "edition", "page", "bureau", "pages"]);
