@@ -116,7 +116,7 @@ impl std::fmt::Display for FormatError {
 impl std::error::Error for FormatError {}
 
 /// Échec d'écriture de l'archive, qui vit en mémoire : il n'arrive pas en pratique. Message fixe (OG35) : mettre en
-/// texte `ZipError` ou `io::Error` lierait tout leur `Display` au module Wasm (environ N Ko).
+/// texte `ZipError` ou `io::Error` ajouterait leur `Display` au module Wasm.
 const WRITE_FAILED: &str = "écriture de l'archive impossible";
 
 fn zip_err(_: zip::result::ZipError) -> FormatError {
