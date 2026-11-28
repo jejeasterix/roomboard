@@ -3031,6 +3031,18 @@ describe("OG23 T8 : pipette de scène", () => {
 });
 
 describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt tardif, survol", () => {
+  it("Alt+T tourne la sélection de 15°, une étape ; sans sélection : la touche passe", () => {
+    const { engine, rect, doc } = og12();
+    const id = rect(100, 100, 200, 200);
+    expect(engine.key(key("†", { altKey: true, code: "KeyT" }))).toBe(false);
+    engine.select([id]);
+    expect(engine.key(key("†", { altKey: true, code: "KeyT" }))).toBe(true);
+    expect(doc.element(id)!.transform[1]).toBeCloseTo(Math.sin(Math.PI / 12), 9);
+    doc.undo();
+    expect([...doc.element(id)!.transform.slice(0, 4)]).toEqual([1, 0, 0, 1]);
+    expect(engine.key(key("ˇ", { altKey: true, shiftKey: true, code: "KeyT" }))).toBe(true);
+    expect(doc.element(id)!.transform[1]).toBeCloseTo(-Math.sin(Math.PI / 12), 9);
+  });
   function og12() {
     const doc = fakeCore.blank();
     const frames = new Frames();

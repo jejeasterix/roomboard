@@ -215,6 +215,13 @@ export function arrangeKey(e: KeyLike): ArrangeHow | null {
   return null;
 }
 
+/** OG33 (lot 2b, choix 6) : Alt+T tourne la sélection de 15° à droite, Alt+Maj+T de 15° à gauche ; lettre lue par `code`
+ *  (Option+T donne « † » sous macOS) ; mêmes refus qu'`arrangeKey`. */
+export function rotateKey(e: KeyLike): 15 | -15 | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || !e.altKey || e.defaultPrevented === true || inEditable(e.target)) return null;
+  return e.code === "KeyT" ? (e.shiftKey ? -15 : 15) : null;
+}
+
 /** Flèche seule : 1 px ; Maj : 5 px (Excalidraw) ; jamais avec Ctrl, Cmd ou Alt (Ctrl+flèches = Disposition d'OG4). */
 export function nudgeKey(e: KeyLike): { dx: number; dy: number } | null {
   if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented === true || inEditable(e.target) || inControl(e.target)) return null;
