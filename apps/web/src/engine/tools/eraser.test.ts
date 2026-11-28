@@ -3,7 +3,7 @@ import type { Change, Command, CoreDocument, StrokeStyle } from "../../core/api"
 import { fakeCore } from "../../core/fake-core";
 import { IDENTITY, type Camera } from "../camera";
 import type { InputSample } from "../input/sampler";
-import { createEraserTool, ERASER_PROBES_PER_FRAME, ERASER_RADIUS_PX } from "./eraser";
+import { createEraserTool, ERASER_BOUNDS_PER_FRAME, ERASER_PROBES_PER_FRAME, ERASER_RADIUS_PX } from "./eraser";
 import type { ToolContext } from "./tool";
 
 const s = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
@@ -104,6 +104,25 @@ describe("createEraserTool (OG41 : une seule gomme, D2-D8)", () => {
     expect(t.doc.element(img)?.kind).toBe("image");
   });
 
+  it("tolérance 0 d'abord : un trait posé à 8 px du chemin ne cache pas l'image balayée (D3)", () => {
+    const t = setup();
+    const img = t.image(100, 100);
+    // Au-dessus de l'image, à 8 px de chaque échantillon : sous un seul hitTest au rayon (12), c'est lui le premier plan.
+    t.stroke(hline(158, 0, 300, 2));
+    sweep(t.tool(), [[50, 150], [250, 150]]);
+    expect(deleted(t.alls)).toEqual([img]);
+  });
+
+  it("un objet posé dans un cadre vide est atteint comme ailleurs : repli au rayon depuis l'intérieur (D3, D31)", () => {
+    const t = setup();
+    const frame = t.rect(0, 0, 400, 400, null);
+    const img = t.image(150, 150);
+    // À 8 px au-dessus de l'image, dans l'intérieur du cadre, loin de son trait.
+    sweep(t.tool(), [[160, 142], [240, 142]]);
+    expect(deleted(t.alls)).toEqual([img]);
+    expect(t.doc.element(frame)).not.toBeNull();
+  });
+
   it("un plan par geste : deux images superposées, seule celle du dessus part ; un second passage efface l'autre (D32)", () => {
     const t = setup();
     const below = t.image(100, 100);
@@ -160,18 +179,51 @@ describe("createEraserTool (OG41 : une seule gomme, D2-D8)", () => {
 
   it("au plus 8 hitTest par image, tout le reste sondé au relâché (D8, Review Focus 3)", () => {
     const t = setup();
-    // Intérieur d'un grand rectangle vide d'abord (une sonde par échantillon, aucune touche), image en fin de chemin.
-    t.rect(0, 0, 1700, 400, null);
+    // Chemin dans la marge du rayon, hors de la boîte d'une flèche en diagonale : chaque échantillon est proche, aucun
+    // n'est sous la flèche, ni à tolérance 0 ni au rayon : deux appels par échantillon. Image en fin de chemin.
+    t.add({ type: "AddShape", page: t.page, shape: "arrow", x0: 0, y0: 0, x1: 1700, y1: 400, style: PEN, fill: null });
     const img = t.image(1800, 0, 200, 400);
     const tool = t.tool();
-    tool.begin(1, [s(100, 200)]);
-    tool.extend(1, [s(1990, 200)], []);
-    const before = t.hits.n;
+    tool.begin(1, [s(100, -8)]);
+    tool.extend(1, [s(1990, -8)], []);
+    let before = t.hits.n;
     tool.frame();
-    expect(t.hits.n - before).toBeLessThanOrEqual(ERASER_PROBES_PER_FRAME);
+    expect(t.hits.n - before).toBe(ERASER_PROBES_PER_FRAME);
+    for (let i = 0; i < 8; i++) {
+      before = t.hits.n;
+      tool.frame();
+      expect(t.hits.n - before).toBeLessThanOrEqual(ERASER_PROBES_PER_FRAME);
+    }
     expect(tool.live().hidden.has(img)).toBe(false);
     tool.close(1, "end");
-    expect(deleted(t.alls)).toContain(img);
+    expect(deleted(t.alls)).toEqual([img]);
+  });
+
+  it("aucune boîte mesurée au premier contact ; mesure par paquets, un candidat pas encore mesuré compte comme proche (D8)", () => {
+    const t = setup();
+    // Posée la première : sous les autres, mesurée la dernière (la mesure part du premier plan).
+    const img = t.image(100, 100);
+    const far = 3 * ERASER_BOUNDS_PER_FRAME;
+    for (let i = 0; i < far; i++) t.image(5000 + 150 * i, 5000);
+    const raw = t.doc.bounds.bind(t.doc);
+    const b = { n: 0 };
+    t.doc.bounds = (ids: readonly string[]) => {
+      b.n++;
+      return raw(ids);
+    };
+    const tool = t.tool();
+    tool.begin(1, [s(150, 150)]);
+    expect(b.n).toBe(0);
+    tool.extend(1, [s(250, 150)], []);
+    tool.frame();
+    expect(b.n).toBeGreaterThan(0);
+    expect(b.n).toBeLessThanOrEqual(ERASER_BOUNDS_PER_FRAME);
+    expect(tool.live().hidden.has(img)).toBe(true);
+    for (let i = 0; i < 8; i++) tool.frame();
+    expect(b.n).toBe(far + 1);
+    tool.close(1, "end");
+    expect(b.n).toBe(far + 1);
+    expect(deleted(t.alls)).toEqual([img]);
   });
 
   it("deux passes sur le même objet : la seconde n'écrit aucun id disparu (Review Focus 2)", () => {

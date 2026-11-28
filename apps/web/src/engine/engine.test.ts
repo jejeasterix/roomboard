@@ -188,6 +188,19 @@ describe("createEngine", () => {
     expect(doc.element(rect)).toBeNull();
   });
 
+  it("OG41 gomme : un appui dans le vide n'écrit rien, ni version ni étape d'annulation (D38)", () => {
+    const doc = fakeCore.blank();
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => createEraserTool(ctx) } });
+    engine.resize(1280, 720, 1);
+    const version = doc.version();
+    const canUndo = engine.state().canUndo;
+    engine.sink.begin(1, "eraser", [{ x: 600, y: 300, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }]);
+    engine.sink.close(1, "end");
+    expect(doc.version()).toBe(version);
+    expect(engine.state().canUndo).toBe(canUndo);
+    expect(doc.canUndo()).toBe(false);
+  });
+
   it("redraw : une scène de plus à l'image suivante (bitmap arrivé)", () => {
     const { engine, frames, renderer } = setup();
     engine.resize(800, 600, 1);
