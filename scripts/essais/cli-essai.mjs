@@ -711,6 +711,17 @@ try {
   verifie("T-S12 : SetTableLook open sur la case ombrée", caseDe(5, lr2, lc0)?.open === true, look.brut);
   verifie("T-S12 : trois undo, une étape chacun : open, ombrage et accept retirés, bordure gardée", caseDe(9, lr2, lc0) === undefined && tabDe(9)?.cols?.find((c) => c.id === lc1)?.accept === undefined && caseDe(9, lr0, lc0)?.border !== undefined, look.brut);
   egal("T-S9 : réouverture : bordure présente", etat(pl).pages[0].elements.find((e) => e.id === tab.id)?.table?.cells?.find((x) => x.row === lr0 && x.col === lc0)?.border, ["#dc2626", 8, "dashed"]);
+  // T-S12 (DS3) : Désombrer (SetTableShade null) retire l'ombrage et `open`, relu par `state` (pas seulement par undo).
+  const caseA = { row: lr2, col: lc0 };
+  const desombre = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "SetTableShade", id: tab.id, from: caseA, to: caseA, shade: "#94a3b8" },
+    { type: "SetTableLook", id: tab.id, from: caseA, to: caseA, look: { key: "open", value: true } },
+    { op: "state" },
+    { type: "SetTableShade", id: tab.id, from: caseA, to: caseA, shade: null },
+    { op: "state" },
+  ));
+  const caseOuverte = (i) => (desombre.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id)?.table?.cells?.find((x) => x.row === lr2 && x.col === lc0);
+  verifie("T-S12 : SetTableShade null retire l'ombrage et open, relu par state", desombre.code === 0 && caseOuverte(2)?.open === true && caseOuverte(4) === undefined, desombre.brut);
   // personnalisation-3 suite (T4, D18) : ReorderTableLines inverse les lignes, relu par `state` ; undo : une étape.
   const rows0 = etat(pl).pages[0].elements.find((e) => e.id === tab.id).table.rows.map((r) => r.id);
   const ordre = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
