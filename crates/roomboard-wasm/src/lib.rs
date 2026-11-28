@@ -4330,6 +4330,29 @@ mod tests {
         );
     }
 
+    // personnalisation-3 (D18) : `ReorderTableLines` par `reorder_table_lines_inner` (`row` vrai = lignes).
+    #[test]
+    fn reorder_table_lines_inner_swaps_rows() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [2, 2], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let r: Vec<String> = table_of(&d, &id).rows.iter().map(|x| x.id.clone()).collect();
+        d.reorder_table_lines_inner(&id, true, &[r[1].clone(), r[0].clone()])
+            .expect("ordre");
+        assert_eq!(
+            table_of(&d, &id)
+                .rows
+                .iter()
+                .map(|x| x.id.clone())
+                .collect::<Vec<_>>(),
+            vec![r[1].clone(), r[0].clone()]
+        );
+    }
+
     // personnalisation-3 (D3, D4) : `PlaceInCell` et `SetTableLineSizes` par les `*_inner`.
     #[test]
     fn place_in_cell_inner_links_and_sizes() {

@@ -1563,4 +1563,199 @@ mod tests {
         assert_eq!(back.cited_assets().len(), 1);
         assert!(view(&back, &t).cells.iter().any(|c| c.bg.is_some()));
     }
+
+    fn reorder(id: &str, order: Vec<String>) -> Command {
+        Command::ReorderTableLines {
+            id: id.into(),
+            axis: TableAxis::Row,
+            order,
+        }
+    }
+    fn row_ids(d: &Document, t: &str) -> Vec<String> {
+        view(d, t).rows.iter().map(|x| x.id.clone()).collect()
+    }
+
+    // personnalisation-3 (D18, G7) : une étape ; même ordre : aucune ; annuler rend l'ordre d'origine.
+    #[test]
+    fn reorder_table_lines_rows_and_undo() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let r = row_ids(&d, &t);
+        let c = d
+            .apply(reorder(&t, vec![r[2].clone(), r[0].clone(), r[1].clone()]))
+            .expect("ordre");
+        assert_eq!(c.ids, vec![t.clone()]);
+        assert_eq!(
+            row_ids(&d, &t),
+            vec![r[2].clone(), r[0].clone(), r[1].clone()]
+        );
+        let v = d.version();
+        d.apply(reorder(&t, vec![r[2].clone(), r[0].clone(), r[1].clone()]))
+            .expect("même");
+        assert_eq!(d.version(), v);
+        assert!(d.undo());
+        assert_eq!(row_ids(&d, &t), r);
+    }
+
+    // D18 : permutation fausse : `BadTable` ; la valeur est refusée avant la recherche du tableau (doublon sur un
+    // tableau inconnu : `BadTable`) ; ordre valable sur un tableau inconnu : `UnknownElement`.
+    #[test]
+    fn reorder_refuses_bad_order() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let r = row_ids(&d, &t);
+        let v = d.version();
+        for o in [
+            vec![r[0].clone(), r[1].clone()],
+            vec![r[0].clone(), r[0].clone(), r[1].clone()],
+            vec![r[0].clone(), r[1].clone(), "zz".into()],
+            vec![],
+        ] {
+            assert_eq!(d.apply(reorder(&t, o)), Err(CommandError::BadTable));
+        }
+        assert_eq!(d.version(), v);
+        assert_eq!(
+            d.apply(reorder("zz", vec![r[0].clone(), r[0].clone()])),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(
+            d.apply(reorder("zz", r)),
+            Err(CommandError::UnknownElement("zz".into()))
+        );
+    }
+
+    // S11 : une zone coupée est refusée sans écriture ; la zone entière déplacée (même ordre interne) passe.
+    #[test]
+    fn reorder_refuses_cut_merge() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let r = row_ids(&d, &t);
+        let c0 = view(&d, &t).cols[0].id.clone();
+        d.apply(Command::MergeTableCells {
+            id: t.clone(),
+            from: (r[0].clone(), c0.clone()),
+            to: (r[1].clone(), c0),
+        })
+        .expect("fusion");
+        let ver = d.version();
+        for o in [
+            vec![r[0].clone(), r[2].clone(), r[1].clone()],
+            vec![r[1].clone(), r[0].clone(), r[2].clone()],
+        ] {
+            assert_eq!(d.apply(reorder(&t, o)), Err(CommandError::BadTable));
+        }
+        assert_eq!(d.version(), ver);
+        d.apply(reorder(&t, vec![r[2].clone(), r[0].clone(), r[1].clone()]))
+            .expect("zone entière déplacée");
+        assert_eq!(
+            row_ids(&d, &t),
+            vec![r[2].clone(), r[0].clone(), r[1].clone()]
+        );
+    }
+
+    // D5 : l'objet logé en (1, 1) suit sa ligne, dans la même transaction.
+    #[test]
+    fn reorder_moves_linked_objects() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 1000.0, 1000.0, 1100.0, 1050.0);
+        place11(&mut d, &t, &o);
+        let y0 = tx(&d, &o)[5];
+        let h0 = view(&d, &t).rows[0].height;
+        let r = row_ids(&d, &t);
+        let c = d
+            .apply(reorder(&t, vec![r[1].clone(), r[0].clone(), r[2].clone()]))
+            .expect("ordre");
+        assert_eq!(c.ids, vec![t.clone(), o.clone()]);
+        assert_eq!(tx(&d, &o)[5], y0 - h0);
+        assert!(d.undo());
+        assert_eq!(tx(&d, &o)[5], y0);
+    }
+
+    // S17 (U3) : l'ordre écrit se relit, et un enregistrement relu redonne les mêmes octets.
+    #[test]
+    fn reorder_reload_keeps_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-28T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let r = row_ids(&d, &t);
+        d.apply(reorder(&t, vec![r[2].clone(), r[1].clone(), r[0].clone()]))
+            .expect("ordre");
+        let file = save(&load(&save(&d, &meta).expect("save")).expect("load 1"), &meta)
+            .expect("resave 1");
+        let again = save(&load(&file).expect("load 2"), &meta).expect("resave 2");
+        assert_eq!(file, again);
+        assert_eq!(
+            row_ids(&load(&file).expect("load"), &t),
+            vec![r[2].clone(), r[1].clone(), r[0].clone()]
+        );
+    }
+
+    // Patron écarté (T4) : les places brutes (`Line.index`, entrées illisibles comprises) reçoivent les recopies
+    // `as_prelim`, pas les rangs lisibles ; une entrée illisible en tête reste à sa place, une clé inconnue suit sa
+    // ligne ; annuler rend le `Y.Array` d'origine.
+    #[test]
+    fn reorder_keeps_raw_slots_and_unknown_keys() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let r = row_ids(&d, &t);
+        let rows_arr = |d: &Document| {
+            let txn = d.read();
+            let f = d.find_element(&txn, &t).expect("t");
+            match f.element.get(&txn, "rows") {
+                Some(yrs::Out::YArray(a)) => a,
+                _ => panic!("rows"),
+            }
+        };
+        let raw = |d: &Document| -> Vec<(Option<String>, Option<String>)> {
+            let a = rows_arr(d);
+            let txn = d.read();
+            a.iter(&txn)
+                .map(|o| match o {
+                    yrs::Out::YMap(m) => (
+                        crate::element::out_string(m.get(&txn, "id")),
+                        crate::element::out_string(m.get(&txn, "zz")),
+                    ),
+                    _ => (None, None),
+                })
+                .collect()
+        };
+        {
+            let a = rows_arr(&d);
+            let mut txn = d.transact_untracked();
+            let Some(yrs::Out::YMap(m)) = a.get(&txn, 2) else {
+                panic!("ligne 2")
+            };
+            m.insert(&mut txn, "zz", "garde");
+            a.insert(&mut txn, 0, MapPrelim::from([("height", In::from(10.0))]));
+        }
+        let before = raw(&d);
+        assert_eq!(before.len(), 4);
+        assert_eq!(before[0], (None, None));
+        assert_eq!(row_ids(&d, &t), r);
+        d.apply(reorder(&t, vec![r[2].clone(), r[0].clone(), r[1].clone()]))
+            .expect("ordre");
+        assert_eq!(
+            raw(&d),
+            vec![
+                (None, None),
+                (Some(r[2].clone()), Some("garde".into())),
+                (Some(r[0].clone()), None),
+                (Some(r[1].clone()), None),
+            ]
+        );
+        assert!(d.undo());
+        assert_eq!(raw(&d), before);
+    }
 }
