@@ -3115,6 +3115,25 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(engine.state().tool).toBe("text");
   });
 
+  it("Entrée sur un losange de 60 px, trop étroit pour un texte : rien ne change, la touche passe (C5, constat 1)", () => {
+    const { engine, doc, page, textLog } = og12();
+    const id = doc.apply({ type: "AddShape", page, shape: "diamond", x0: 300, y0: 300, x1: 360, y1: 360, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    engine.select([id]);
+    expect(engine.key(key("Enter"))).toBe(false);
+    expect(textLog).toEqual([]);
+    expect(engine.state().tool).toBe("select");
+  });
+
+  it("Entrée sur ce losange agrandi ×4 : la boîte se prend en monde, son texte s'ouvre (C5, constat 4)", () => {
+    const { engine, doc, page, textLog } = og12();
+    const id = doc.apply({ type: "AddShape", page, shape: "diamond", x0: 0, y0: 0, x1: 60, y1: 60, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "Transform", ids: [id], matrix: [4, 0, 0, 4, 0, 0] });
+    engine.select([id]);
+    expect(engine.key(key("Enter"))).toBe(true);
+    expect(textLog).toEqual([`text.openLabel ${id}`]);
+    expect(engine.state().tool).toBe("text");
+  });
+
   it("Entrée sur une ligne : la touche passe ; Entrée sur un bouton qui a le focus : le bouton agit, le texte de la forme ne s'ouvre pas", () => {
     const { engine, rect, line, textLog } = og12();
     engine.select([line()]);
