@@ -133,6 +133,8 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
   let drag: Drag | null = null;
   let lastTap: (Tap & { id: string }) | null = null;
   let first: InputSample | null = null;
+  // Sélection au début de l'appui (avant qu'il ne la change) : un double toucher exige que l'objet y fût déjà.
+  let selBefore: readonly string[] = [];
   const one = (): ElementView | null => (selection.length === 1 ? ctx.doc.element(selection[0]!) : null);
   // personnalisation-3 (D28) : pendant un glisser, la vue de l'élément seul (OG12 : ligne, nœud) est lue une fois, au
   // premier aperçu ; aucun element() par image. Le glisser est muté en place : la clé tient jusqu'à sa fin.
@@ -262,6 +264,7 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       const s = samples[0];
       if (drag !== null || !s) return;
       first = s;
+      selBefore = selection;
       const [x, y] = world(s);
       const zoom = ctx.camera().zoom;
       const shift = ctx.shift?.() === true;
@@ -360,13 +363,14 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
         const id = d.mode === "move" || d.mode === "copy" ? d.target ?? null : d.mode === "line-end" || d.mode === "line-mid" ? selection[0] ?? null : null;
         const cur: Tap = { t: d.t, x: d.sx, y: d.sy };
         const view = id === null ? null : ctx.doc.element(id);
-        if (id !== null && lastTap?.id === id && isDoubleTap(lastTap, cur) && editsPointsOnTap(view)) {
+        const already = id !== null && selBefore.includes(id);
+        if (id !== null && already && lastTap?.id === id && isDoubleTap(lastTap, cur) && editsPointsOnTap(view)) {
           lastTap = null;
           ctx.editPoints?.(id);
           return;
         }
         // OG33 (choix 9, décision du lot 2a) : double toucher ou double-clic sur une forme = son texte, jamais la conversion.
-        if (id !== null && lastTap?.id === id && isDoubleTap(lastTap, cur) && isNode(view)) {
+        if (id !== null && already && lastTap?.id === id && isDoubleTap(lastTap, cur) && isNode(view)) {
           lastTap = null;
           ctx.editText?.(id);
           return;
