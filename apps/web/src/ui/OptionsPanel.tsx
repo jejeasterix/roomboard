@@ -28,7 +28,7 @@ import { RadioChoices, type RadioOption } from "./RadioChoices";
 import { TableSection, type TableOptionsHost, type TableSectionKey } from "./TableOptions";
 import type { TableCellState } from "../engine/table-geom";
 import {
-  DISTRIBUTE_MIN_UNITS, FONTS, admitsDragCopy, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionOpen, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
+  DISTRIBUTE_MIN_UNITS, FONTS, admitsDragCopy, TEXT_SIZES, STROKES, WIDTH_OPTIONS, appliesTo, backgroundPicks, disabledIn, formValue, sectionOpen, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
 } from "./tool-options";
 
 export interface OptionsPanelProps {
@@ -79,11 +79,6 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   transform: "Transformer",
   actions: "Actions",
 };
-const STROKES: readonly RadioOption<StrokeKind>[] = [
-  { value: "solid", label: "Plein", icon: "stroke-solid" },
-  { value: "dashed", label: "Tirets", icon: "stroke-dashed" },
-  { value: "dotted", label: "Pointillés", icon: "stroke-dotted" },
-];
 const ROUGH: readonly RadioOption<"0" | "1" | "2">[] = [
   { value: "0", label: "Net", icon: "sloppiness-0" },
   { value: "1", label: "À main levée", icon: "sloppiness-1" },
@@ -155,9 +150,6 @@ const LAYERS = [
   { value: "backward", label: "Reculer", icon: "chevron-down", act: (e: Engine) => e.reorder("down") },
   { value: "back", label: "Arrière-plan", icon: "send-to-back", act: (e: Engine) => e.sendToBack() },
 ] as const;
-const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({
-  value: w.value, label: w.label, icon: w.value === "2" ? "width-thin" : w.value === "4" ? "width-medium" : "width-thick",
-}));
 /** Sections à segments : valeur (chaîne) et mot du résumé gris de l'en-tête. */
 const SUMMARY: Readonly<Partial<Record<OptionKey, readonly RadioOption<string>[]>>> = {
   strokeWidth: WIDTH_OPTIONS, pressure: PRESSURE, strokeStyle: STROKES, roughness: ROUGH, roundness: CORNERS, fillStyle: FILLS,
