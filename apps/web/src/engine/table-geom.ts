@@ -10,7 +10,8 @@
 import type { Bounds, CellLink, CoreDocument, ElementView, HAlign, Matrix, TableAxis, TableBorder, TableData, TableElement, TextSpan, VAlign } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
-import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
+import { textAlignOf } from "../core/look";
+import { layoutRich, lineShift, richBoxHeight, type Measure } from "./text-layout";
 
 export const TABLE_COL_WIDTH = 240;
 export const TABLE_ROW_HEIGHT = 64;
@@ -435,19 +436,40 @@ export function cellGrips(t: TableData, c: Cell): Grip[] {
   ];
 }
 
+/** C4 (D34) : boîte monde de ce qu'un objet demande à sa case, seule mesure de la taille exigée par un objet logé (pose,
+ *  sortie D11, ajuster au contenu : `linkedBoxes` et `cell-drop`). Un seul texte : de son bord gauche au bout de sa
+ *  ligne mise en lignes la plus longue (`layoutRich` à `boxWidth`, décalée de `lineShift` comme au dessin), sur la
+ *  hauteur de sa boîte, passé par sa matrice ; la boîte d'un clic (600 de large) n'impose rien. Sinon : `bounds`. */
+export function contentBounds(doc: Pick<CoreDocument, "element" | "bounds">, ids: readonly string[], measure: Measure): Bounds | null {
+  const v = ids.length === 1 && ids[0] !== undefined ? doc.element(ids[0]) : null;
+  if (v?.kind !== "text") return doc.bounds(ids);
+  const t = v.text;
+  const align = textAlignOf(v.look);
+  let w = 0;
+  for (const line of layoutRich(t.spans, { size: t.size }, t.boxWidth, measure)) {
+    const last = line.segments[line.segments.length - 1];
+    if (last !== undefined) w = Math.max(w, lineShift(line, t.boxWidth, align) + last.x + last.width);
+  }
+  const pts = [applyMatrix(v.transform, 0, 0), applyMatrix(v.transform, w, 0), applyMatrix(v.transform, 0, t.boxHeight), applyMatrix(v.transform, w, t.boxHeight)];
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
 /** Boîtes locales des objets logés dans `table` (D34), hors `skip` : rectangle englobant, dans le repère du tableau, des
- *  quatre coins de leur boîte monde. Lue au geste seulement (jamais par image). */
+ *  quatre coins de leur boîte monde demandée (`contentBounds`). Lue au geste seulement (jamais par image). */
 export function linkedBoxes(
   doc: Pick<CoreDocument, "elementIds" | "element" | "bounds">,
   page: string,
   table: { readonly id: string; readonly transform: Matrix },
+  measure: Measure,
   skip: readonly string[] = [],
 ): LinkedBox[] {
   const inv = invertMatrix(table.transform);
   if (inv === null) return [];
   return linkedIn(doc, page, table.id, skip).flatMap((v) => {
     const cell = v.cell;
-    const b = doc.bounds([v.id]);
+    const b = contentBounds(doc, [v.id], measure);
     if (cell === undefined || b === null) return [];
     const pts = [applyMatrix(inv, b.x0, b.y0), applyMatrix(inv, b.x1, b.y0), applyMatrix(inv, b.x0, b.y1), applyMatrix(inv, b.x1, b.y1)];
     const xs = pts.map((p) => p[0]);
@@ -531,9 +553,19 @@ export function lineAt(sizes: readonly number[], v: number): number {
 
 export const SORT_REFUSED = "Le tri ne passe pas sur une cellule fusionnée sur plusieurs lignes.";
 const SORT = new Intl.Collator("fr", { numeric: true, sensitivity: "base" });
+/** DS9 (C4) : nombre écrit à la française : signe moins ou U+2212, chiffres groupés par trois (espace, U+00A0 ou
+ *  U+202F) ou d'un bloc, virgule décimale. */
+const FR_NUMBER = /^[-\u2212]?(?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)(?:,\d+)?$/;
+
+/** Valeur d'un nombre français (DS9, C4) ; null si `s` n'en est pas un. */
+export function frenchNumber(s: string): number | null {
+  if (!FR_NUMBER.test(s)) return null;
+  return Number(s.replace(/[ \u00a0\u202f]/g, "").replace("\u2212", "-").replace(",", "."));
+}
 
 /** D20, DS9 : ordre des lignes trié selon la colonne `col` (texte de l'ancre si la case est couverte) ; vides en
- *  dernier dans les deux sens, tri stable, ligne d'en-tête gardée en tête ; une zone sur plusieurs lignes : null. */
+ *  dernier dans les deux sens, tri stable, ligne d'en-tête gardée en tête ; une zone sur plusieurs lignes : null.
+ *  Toutes les cases non vides du corps sont des nombres français : leurs valeurs ; sinon le collateur (C4). */
 export function sortedRows(t: TableData, col: number, dir: "asc" | "desc"): string[] | null {
   if (mergeRanges(t).some((z) => z.r1 > z.r0)) return null;
   const head = t.header === true ? t.rows.slice(0, 1) : [];
@@ -541,11 +573,12 @@ export function sortedRows(t: TableData, col: number, dir: "asc" | "desc"): stri
     const i = j + head.length;
     const a = anchorOf(t, { row: i, col });
     const text = cellContent(t, t.rows[a.row]?.id ?? "", t.cols[a.col]?.id ?? "").text.trim();
-    return { id: r.id, i, text };
+    return { id: r.id, i, text, n: frenchNumber(text) };
   });
+  const numeric = body.every((b) => b.text === "" || b.n !== null);
   body.sort((x, y) => {
     if (x.text === "" || y.text === "") return x.text === y.text ? x.i - y.i : x.text === "" ? 1 : -1;
-    const c = SORT.compare(x.text, y.text);
+    const c = numeric ? Math.sign((x.n ?? 0) - (y.n ?? 0)) : SORT.compare(x.text, y.text);
     return c !== 0 ? (dir === "asc" ? c : -c) : x.i - y.i;
   });
   return [...head.map((r) => r.id), ...body.map((b) => b.id)];

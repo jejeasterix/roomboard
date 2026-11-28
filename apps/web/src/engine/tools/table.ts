@@ -216,7 +216,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
 
   /** Taille la plus petite de la ligne ou colonne (D13, D34) : taille exigée par le texte et les objets logés. */
   const minSize = (id: string, transform: Matrix, t: TableData, edge: EdgeHit): number => {
-    const need = requiredSizes(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }), t.cols.map((c) => c.width), measure);
+    const need = requiredSizes(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }, measure), t.cols.map((c) => c.width), measure);
     return (edge.axis === "col" ? need.cols : need.rows)[edge.index] ?? 0;
   };
 
@@ -243,7 +243,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     const col = t.cols[edge.index];
     if (col === undefined || col.width === v) return;
     const widths = t.cols.map((c, i) => (i === edge.index ? v : c.width));
-    const rows = rowsNeeding(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }), widths);
+    const rows = rowsNeeding(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }, measure), widths);
     ctx.run({ type: "SetTableLineSizes", id, cols: [[col.id, v]], rows });
   };
 
@@ -447,7 +447,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   /** Uniformiser (T11, D34) : colonnes à la largeur moyenne, lignes à la hauteur moyenne, jamais sous la taille exigée
    *  (texte et objets logés, `requiredSizes`). Déjà uniforme à un arrondi près : aucune étape (T14). */
   const uniform = (id: string, transform: Matrix, t: TableData): void => {
-    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform });
+    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform }, measure);
     const mean = t.cols.reduce((s, c) => s + c.width, 0) / t.cols.length;
     const w = Math.max(mean, ...requiredSizes(t, linked, t.cols.map(() => mean), measure).cols);
     const need = Math.max(...requiredSizes(t, linked, t.cols.map(() => w), measure).rows);
@@ -537,7 +537,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     const el = ctx.doc.element(id);
     if (el?.kind !== "table") return;
     const t = el.table;
-    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform: el.transform });
+    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform: el.transform }, measure);
     const widths = t.cols.map((c) => c.width);
     const cols: (readonly [string, number])[] = [];
     if (col !== null) {

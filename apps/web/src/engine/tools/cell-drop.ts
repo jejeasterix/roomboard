@@ -10,7 +10,7 @@
 import type { Bounds, CellLink, Command, ElementView, LineSize, Matrix, TableElement } from "../../core/api";
 import { applyMatrix, invertMatrix } from "../../core/shapes";
 import type { GroupedView } from "../groups";
-import { acceptsDrop, cellContent, cellInnerBox, cellRect, linkedBoxes, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
+import { acceptsDrop, cellContent, cellInnerBox, cellRect, contentBounds, linkedBoxes, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { transformBounds, translateMatrix } from "./handles";
 import type { ToolContext } from "./tool";
@@ -63,6 +63,8 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
       const v = view(id);
       return v === null ? [] : [v];
     });
+  /** C4 : boîte monde demandée par la sélection (texte : ses lignes, pas sa boîte), vues du cliché D28. */
+  const needed = (selection: readonly string[]): Bounds | null => contentBounds({ element: view, bounds: (ids) => ctx.doc.bounds(ids) }, selection, measure);
 
   /** Case visée : tableau le plus haut sous le pointeur, hors sélection ; sélection sans tableau ; case ni ombrée ni en zone. */
   const aimed = (selection: readonly string[], x: number, y: number): TableHit | null => {
@@ -93,12 +95,12 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     const t = tv.table;
     const r = t.rows.findIndex((x) => x.id === link[1]);
     const k = t.cols.findIndex((x) => x.id === link[2]);
-    const box = ctx.doc.bounds(selection);
+    const box = needed(selection);
     const local = box === null ? null : localBox(tv.transform, box);
     const row = t.rows[r];
     const col = t.cols[k];
     if (row === undefined || col === undefined || local === null) return [];
-    const others = linkedBoxes(ctx.doc, ctx.page(), { id: link[0], transform: tv.transform }, selection);
+    const others = linkedBoxes(ctx.doc, ctx.page(), { id: link[0], transform: tv.transform }, measure, selection);
     const widths = t.cols.map((c) => c.width);
     const mine = { row: row.id, col: col.id, w: local.x1 - local.x0, h: local.y1 - local.y0 };
     const withMe = requiredSizes(t, [...others, mine], widths, measure);
@@ -142,17 +144,19 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     const r = hit.table.rows[hit.cell.row];
     const k = hit.table.cols[hit.cell.col];
     const local = localBox(hit.transform, box);
-    if (r === undefined || k === undefined || local === null) return null;
+    const need = needed(selection);
+    const asked = need === null ? null : localBox(hit.transform, need);
+    if (r === undefined || k === undefined || local === null || asked === null) return null;
     const link: CellLink = [hit.id, r.id, k.id];
-    const mine: LinkedBox = { row: r.id, col: k.id, w: local.x1 - local.x0, h: local.y1 - local.y0 };
-    const others = linkedBoxes(ctx.doc, ctx.page(), hit, selection);
+    const mine: LinkedBox = { row: r.id, col: k.id, w: asked.x1 - asked.x0, h: asked.y1 - asked.y0 };
+    const others = linkedBoxes(ctx.doc, ctx.page(), hit, measure, selection);
     const corner = cellRect(hit.table, hit.cell);
     const [tx, ty] = applyMatrix(hit.transform, corner.x0 + TABLE_PADDING, corner.y0 + TABLE_PADDING);
     // T7 (S2) : mode rétrécir : la case ne change pas ; l'objet est réduit (échelle uniforme, jamais agrandi) à la boîte
     // intérieure de la case et posé à son coin haut-gauche. Tableau tourné : hors périmètre (cadrage § 7).
     if (hit.table.fit === "shrink") {
       const inner = cellInnerBox(hit.table, hit.cell);
-      const k = Math.min(1, inner.w / mine.w, inner.h / mine.h);
+      const k = Math.min(1, inner.w / (local.x1 - local.x0), inner.h / (local.y1 - local.y0));
       return { type: "PlaceInCell", ids: [...selection], matrix: [k, 0, 0, k, tx - k * box.x0, ty - k * box.y0], cell: link, sizes: left };
     }
     const widths = hit.table.cols.map((c) => c.width);

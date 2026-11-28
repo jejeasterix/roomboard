@@ -269,7 +269,7 @@ describe("glisser vers une case — S14 tableau de tri (DS5)", () => {
     const a = s.doc.apply({ type: "SetText", page: s.page, id: null, x: 1500, y: 200, content: "rhinocéros blanc", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
     s.move([1520, 220], [360, 96]);
     expect(s.t().cols[1]?.width).toBe(304);
-    s.move([260, 90], [1500, 1600]);
+    s.move([400, 95], [1500, 1600]);
     expect(s.doc.element(a)?.cell).toBeUndefined();
     expect(s.t().cols.map((c) => c.width)).toEqual([240, 240, 240]);
   });
