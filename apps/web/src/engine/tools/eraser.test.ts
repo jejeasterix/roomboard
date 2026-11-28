@@ -324,4 +324,52 @@ describe("createEraserTool (OG41 : une seule gomme, D2-D8)", () => {
     const t = setup(IDENTITY, false);
     expect(() => t.tool()).toThrow(/runAll/);
   });
+  it("losange sans fond : intérieur gardé, bord effacé (D31, isFillable)", () => {
+    const t = setup();
+    const d = t.add({ type: "AddShape", page: t.page, shape: "diamond", x0: 100, y0: 100, x1: 300, y1: 300, style: PEN, fill: null });
+    const tool = t.tool();
+    sweep(tool, [[190, 200], [210, 200]]);
+    expect(deleted(t.alls)).toEqual([]);
+    expect(t.doc.element(d)).not.toBeNull();
+    // Sommet gauche du losange (100, 200) : sur le trait.
+    sweep(tool, [[90, 200], [110, 200]], 64, 2);
+    expect(deleted(t.alls)).toEqual([d]);
+  });
+
+  it("ligne fermée sans fond (Modifier les points) : intérieur gardé, bord effacé (D31, isFillable)", () => {
+    const t = setup();
+    const r = t.rect(100, 100, 300, 300, null);
+    t.doc.apply({ type: "ShapeToPolygon", id: r });
+    const ids = t.doc.elementIds(t.page);
+    const poly = ids[ids.length - 1]!;
+    const tool = t.tool();
+    sweep(tool, [[170, 200], [230, 200]]);
+    expect(deleted(t.alls)).toEqual([]);
+    expect(t.doc.element(poly)).not.toBeNull();
+    sweep(tool, [[80, 200], [120, 200]], 64, 2);
+    expect(deleted(t.alls)).toEqual([poly]);
+  });
+
+  it("limite connue (H18) : image sous un cadre vide : gardée", () => {
+    const t = setup();
+    const img = t.image(150, 150);
+    const frame = t.rect(100, 100, 300, 300, null);
+    // hitTest rend le cadre à toute tolérance : l'image dessous n'est jamais le premier plan.
+    sweep(t.tool(), [[160, 200], [240, 200]]);
+    expect(deleted(t.alls)).toEqual([]);
+    expect(t.doc.element(img)).not.toBeNull();
+    expect(t.doc.element(frame)).not.toBeNull();
+  });
+
+  it("D4 : un objet logé renvoyé sous son tableau (Arrière-plan) a le tableau pour premier plan : gardé", () => {
+    const t = setup();
+    const table = t.add({ type: "AddTable", page: t.page, x: 100, y: 200, cols: 3, rows: 3, colWidth: 100, rowHeight: 64, color: "#000000", size: 36 });
+    const img = t.image(210, 270, 60, 40);
+    t.doc.apply({ type: "Restack", ids: [img], to: 0 });
+    sweep(t.tool(), [[90, 230], [410, 390]]);
+    expect(deleted(t.alls)).toEqual([]);
+    expect(t.doc.element(img)).not.toBeNull();
+    expect(t.doc.element(table)?.kind).toBe("table");
+  });
+
 });
