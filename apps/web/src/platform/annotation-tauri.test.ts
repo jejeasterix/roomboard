@@ -125,7 +125,7 @@ describe("hôte des fenêtres de la coque (C11a, P13, P21)", () => {
     w.onView((v) => views.push(v.tool));
     w.onExitRequest(() => (exits += 1));
     await w.support();
-    f.fire(ANNOTATION_EVENTS.view, { tool: "select", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 });
+    f.fire(ANNOTATION_EVENTS.view, { tool: "select", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 });
     f.fire(ANNOTATION_EVENTS.exitRequest, {});
     w.send({ kind: "runAction", id: "undo" });
     w.sendProfile(BUILTIN_PROFILES[0]!);

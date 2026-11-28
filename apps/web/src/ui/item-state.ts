@@ -18,7 +18,6 @@ export interface AnnotationView {
 
 export interface ToolbarView {
   readonly tool: string;
-  readonly eraserMode: "partial" | "object";
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly pageIndex: number;
@@ -62,10 +61,6 @@ const spanCols = (c: TableCellState): number => extent(c).c1 - extent(c).c0 + 1;
 
 /** Ce que l'état publié change d'une action ; une action absente de la table garde l'état neutre. */
 export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<ItemState>>> = {
-  "eraser-mode": (v) => ({
-    pressed: v.eraserMode === "object",
-    label: `Gomme : ${v.eraserMode === "object" ? "objet" : "partielle"}`,
-  }),
   "desktop-annotation": (v) => {
     const on = v.annotation?.active === true;
     return { pressed: on, label: on ? "Quitter l'annotation" : "Annotation du bureau" };

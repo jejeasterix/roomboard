@@ -79,7 +79,7 @@ export function createFakeAnnotationWindows(o: FakeAnnotationOptions = {}): Fake
   let captures = 0;
   let lastFrame: boolean | null = null;
   let lastPalm: boolean | null = null;
-  let view: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
+  let view: ToolbarView = { tool: "pen", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
   const clamp = (s: number | null): number => (s === null || s < 0 || s >= screens ? 0 : s);
   const publish = (v: ToolbarView): void => {
     view = jsonChannel(v);

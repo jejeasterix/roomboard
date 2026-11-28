@@ -34,7 +34,7 @@ describe("profils livrés (T83, CL5b-9)", () => {
   });
 
   it("defaut porte chaque bouton de l'ancienne barre (inventaire du plan)", () => {
-    for (const id of ["pen", "eraser", "hand", "eraser-mode", "undo", "redo", "select", "rect", "ellipse", "line", "arrow", "text",
+    for (const id of ["pen", "eraser", "hand", "undo", "redo", "select", "rect", "ellipse", "line", "arrow", "text",
       "page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "file-new", "file-open", "file-save", "file-save-as", "fit-page", "settings", "profiles", "grid"]) {
       expect(ids("defaut"), id).toContain(id);
     }
@@ -192,7 +192,7 @@ describe("design-l4 : barres d'annotation livrées (L4-1, L4-5 à L4-7)", () => 
       expect(p.toolbars.map((b) => b.id), id).toEqual(["outils", "menu", "historique", "panneaux", "pages", "annotation"]);
       expect([bar(id, "annotation").role, bar(id, "annotation").dock]).toEqual(["annotation", "top"]);
       expect(flat(bar(id, "annotation")), id).toEqual([
-        "annotation-pointer", "ann-sep-1", "ann-pen", "ann-eraser", "ann-eraser-mode", "ann-arrow", "ann-rect", "ann-text",
+        "annotation-pointer", "ann-sep-1", "ann-pen", "ann-eraser", "ann-arrow", "ann-rect", "ann-text",
         "ann-sep-2", "ann-undo", "annotation-freeze", "annotation-screen", "ann-sep-3", "depot-annotation", "annotation-send",
         "annotation-send-new", "ann-sep-4", "ann-desktop-annotation",
       ]);
@@ -228,9 +228,9 @@ describe("design-l4 : barres d'annotation livrées (L4-1, L4-5 à L4-7)", () => 
 
 describe("design-l2 : profils fournis en îlots (L2-2 à L2-4)", () => {
   const flat = (id: string, barId: string) => builtinProfile(id)!.toolbars.find((b) => b.id === barId)!.groups.flatMap((g) => g.items.map((i) => i.id));
-  it("design-l2 L2-4, personnalisation-1b Q23 : outils de defaut et annotation : Sélection, Main | Stylo, Gomme, Gomme : partielle | formes, Texte, Tableau, Pot | Fonds | Annotation du bureau", () => {
+  it("design-l2 L2-4, personnalisation-1b Q23 : outils de defaut et annotation : Sélection, Main | Stylo, Gomme | formes, Texte, Tableau, Pot | Fonds | Annotation du bureau", () => {
     for (const id of ["defaut", "annotation"]) {
-      expect(flat(id, "outils"), id).toEqual(["select", "hand", "sep-1", "pen", "eraser", "eraser-mode", "sep-2", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "sep-fonds", "backgrounds", "sep-3", "desktop-annotation", "page-prev", "page-number", "page-next"]);
+      expect(flat(id, "outils"), id).toEqual(["select", "hand", "sep-1", "pen", "eraser", "sep-2", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "sep-fonds", "backgrounds", "sep-3", "desktop-annotation", "page-prev", "page-number", "page-next"]);
       expect(builtinProfile(id)!.toolbars[0]!.groups.map((g) => g.id), id).toEqual(["navigation", "dessin", "edition", "page", "bureau", "pages"]);
       expect(visibleItems(builtinProfile(id)!.toolbars[0]!, ALL)[0]!.id, id).toBe("select");
     }

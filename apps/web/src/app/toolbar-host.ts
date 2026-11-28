@@ -36,7 +36,7 @@ export interface HostTargets {
     send?(to: SendTarget): Promise<void>;
     pointer?(mode: PointerMode): Promise<void>;
   };
-  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "nextOrAdd" | "duplicatePage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat" | "bringToFront" | "sendToBack" | "deleteElements">;
+  engine(): Pick<Engine, "setTool" | "state" | "undo" | "redo" | "addPage" | "nextOrAdd" | "duplicatePage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat" | "bringToFront" | "sendToBack" | "deleteElements">;
   /** « Effacer la page » : identifiants des objets de la page montrée. */
   pageElementIds(): readonly string[];
   /** Question oui / non (shell) ; absent : refus. */
@@ -96,7 +96,6 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "export-iwb": (t) => t.exportBoard?.("iwb"),
   "export-ubz": (t) => t.exportBoard?.("ubz"),
   "fit-page": (t) => t.engine().fitPage(),
-  "eraser-mode": (t) => t.engine().setEraserMode(t.engine().state().eraserMode === "partial" ? "object" : "partial"),
   "file-new": file("new"),
   "file-open": file("open"),
   "file-import": file("import"),

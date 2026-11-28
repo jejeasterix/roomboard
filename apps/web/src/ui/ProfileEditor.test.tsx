@@ -201,8 +201,8 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
 
   it("Monter au clavier deux fois : le focus reste sur le bouton de la ligne déplacée (P14)", async () => {
     const { q, save } = setup();
-    fireEvent.click(q(grip("eraser-mode")));
-    const up = (): HTMLButtonElement => q<HTMLButtonElement>('[data-edit-item="eraser-mode"] button[data-edit="up"]');
+    fireEvent.click(q(grip("text")));
+    const up = (): HTMLButtonElement => q<HTMLButtonElement>('[data-edit-item="text"] button[data-edit="up"]');
     up().focus();
     fireEvent.click(document.activeElement!); // Entrée ou Espace sur un bouton = clic
     await tick();
@@ -210,9 +210,9 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     fireEvent.click(document.activeElement!);
     await tick();
     expect(document.activeElement).toBe(up());
-    expect((document.activeElement as HTMLElement).closest("[data-edit-item]")!.getAttribute("data-edit-item")).toBe("eraser-mode");
+    expect((document.activeElement as HTMLElement).closest("[data-edit-item]")!.getAttribute("data-edit-item")).toBe("text");
     fireEvent.click(q('button[data-edit="save"]'));
-    expect(outils(last(save)).groups[1]!.items.map((i) => i.id)).toEqual(["sep-1", "eraser-mode", "pen", "eraser"]);
+    expect(outils(last(save)).groups[2]!.items.map((i) => i.id)).toEqual(["sep-2", "rect", "ellipse", "text", "line", "arrow", "table", "fill"]);
   });
 
   it("Monter jusqu'en tête : le bouton grisé rend le focus à l'autre bouton de la ligne", async () => {

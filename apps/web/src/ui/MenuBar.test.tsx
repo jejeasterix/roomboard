@@ -17,7 +17,7 @@ const ITEMS: readonly ToolItem[] = [
   { id: "zone", kind: "dropzone", label: "Déposer ici", requires: [], rest: {} },
   { id: "rect", kind: "tool", tool: "rect", label: "Rectangle", requires: [], rest: {} },
 ];
-const VIEW: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
+const VIEW: ToolbarView = { tool: "pen", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
 const bar = (dock: Bar["dock"] = "floating"): Bar => ({ id: "menu", role: "menu", dock, collapsed: false, groups: [], rest: {} });
 
 function setup(dock: Bar["dock"] = "floating") {

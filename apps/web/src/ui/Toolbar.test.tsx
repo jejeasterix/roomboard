@@ -16,7 +16,7 @@ import { TIP_HOVER_MS } from "./tooltip";
 afterEach(cleanup);
 
 const NO_CAPS: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
-const VIEW: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 };
+const VIEW: ToolbarView = { tool: "pen", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 };
 const outils = BUILTIN_PROFILES[0]!.toolbars.find((b) => b.id === "outils")!;
 const historique = BUILTIN_PROFILES[0]!.toolbars.find((b) => b.id === "historique")!;
 
@@ -127,9 +127,11 @@ describe("Toolbar", () => {
     const { container } = setup(mkBar([tool("pen"), sep, tool("eraser")]));
     expect(container.querySelector('.rb-sep[role="separator"]')).not.toBeNull();
   });
-  it("libellé de l'état : gomme partielle", () => {
+  it("OG41 (D1) : une seule gomme : l'outil eraser, aucun bouton eraser-mode", () => {
     const { container } = setup();
-    expect(container.querySelector('button[data-item="eraser-mode"]')!.textContent).toBe("Gomme : partielle");
+    expect(container.querySelectorAll('button[data-item="eraser"]')).toHaveLength(1);
+    expect(container.querySelector('button[data-item="eraser-mode"]')).toBeNull();
+    expect(container.querySelector('[data-icon="eraser-part"]')).toBeNull();
   });
   it("zone de dépôt : un dépôt appelle host.dropFiles", () => {
     const zone: ToolItem = { id: "zone", kind: "dropzone", label: "Déposer", requires: [], rest: {} };

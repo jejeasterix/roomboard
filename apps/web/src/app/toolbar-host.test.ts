@@ -3,11 +3,11 @@ import { ACTION_TABLE, type Profile } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import { ACTIONS, createLocalToolbarHost, type HostTargets } from "./toolbar-host";
 
-function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profile = BUILTIN_PROFILES[0]!) {
+function setup(_over: Record<string, never> = {}, profile: Profile = BUILTIN_PROFILES[0]!) {
   const engine = {
-    setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), setFillColor: vi.fn(), setFillTolerance: vi.fn(), undo: vi.fn(), redo: vi.fn(),
+    setTool: vi.fn(), setPenStyle: vi.fn(), setFillColor: vi.fn(), setFillTolerance: vi.fn(), undo: vi.fn(), redo: vi.fn(),
     addPage: vi.fn(() => true), nextOrAdd: vi.fn(() => true), duplicatePage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
-    fitPage: vi.fn(), bringToFront: vi.fn(() => true), sendToBack: vi.fn(() => true), deleteElements: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
+    fitPage: vi.fn(), bringToFront: vi.fn(() => true), sendToBack: vi.fn(() => true), deleteElements: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({})),
   };
   const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), toggleSidebar: vi.fn(), insertPages: vi.fn(), exportPdf: vi.fn(), selection: vi.fn(), pageElementIds: vi.fn(() => ["a", "b"]), confirm: vi.fn(async () => true) } as unknown as HostTargets;
   const host = createLocalToolbarHost(t, () => profile);
@@ -128,12 +128,6 @@ describe("ToolbarHost local", () => {
   it("page-number sans toggleSidebar : sans effet", () => {
     const t = { engine: () => ({}), runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), selection: vi.fn() } as unknown as HostTargets;
     expect(() => createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!).runAction("page-number")).not.toThrow();
-  });
-  it("eraser-mode bascule partial → object et inversement", () => {
-    const a = setup(); a.host.runAction("eraser-mode");
-    expect(a.engine.setEraserMode).toHaveBeenCalledWith("object");
-    const b = setup({ eraserMode: "object" }); b.host.runAction("eraser-mode");
-    expect(b.engine.setEraserMode).toHaveBeenCalledWith("partial");
   });
   it("C4 : library bascule le panneau « library »", () => {
     const { host, t } = setup();
