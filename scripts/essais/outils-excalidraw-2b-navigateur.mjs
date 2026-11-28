@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DIST, Echec, frames, gitSha, inkIn, item, loadPlaywright, ROOT, serve, stageBox, VIEWPORT } from "./commun.mjs";
-import { attr, BIN, doubleTouch, newPage, OPT, press, saved, tapAt, tapStage, touchDrag, touchDragWithLateFinger, useTool, waitAttr } from "./gestes.mjs";
+import { attr, BIN, choose, doubleTouch, opt, newPage, OPT, press, saved, tapAt, tapStage, touchDrag, touchDragWithLateFinger, useTool, waitAttr } from "./gestes.mjs";
 import { fringes, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "outils-excalidraw-2b";
@@ -385,6 +385,57 @@ async function capturesM3(browser, base, nom) {
   await ctx.close();
 }
 
+// ------------------------------------------------------------------------------------------------------------- M4
+
+/** M4 (S13) : « + » de droite au doigt (B relié à A), A choisi, Alt+→ choisit B (boîte lue dans `data-bounds`) ; pointe
+ *  « Losange creux » choisie au doigt dans le panneau, lue dans l'état enregistré. */
+async function m4(browser, base, tmp) {
+  const { ctx, page, cdp, errors } = await newPage(browser, base, { scale: 2 });
+  const A = [[300, 300], [460, 400]];
+  await pickRect(page, cdp, ...A);
+  await page.waitForTimeout(600);
+  // « + » de droite : à 40 px écran du côté droit du cadre (demi-épaisseur comprise).
+  await tapStage(page, A[1][0] + HALF_STROKE + 40, centerOf(...A)[1]);
+  await page.waitForTimeout(600);
+  const all = await rectsOf(page, tmp, "m4a.roomboard");
+  check(all.length === 2, `M4 : « + » de droite : un second rectangle B (${all.length} rectangles)`);
+  const [ra, rb] = [all[0], all[1]];
+  // A redevient le seul objet choisi ; Alt+→ va à B.
+  const c = centerOf(...A);
+  await tapStage(page, c[0], c[1]);
+  await waitAttr(page, "data-selection", "1");
+  const b0 = await attr(page, "data-bounds");
+  await page.keyboard.press("Alt+ArrowRight");
+  await frames(page);
+  await waitAttr(page, "data-selection", "1");
+  const bounds = (await attr(page, "data-bounds")).split(",").map(Number);
+  const box = [rb.transform[4] - HALF_STROKE, rb.transform[5] - HALF_STROKE, rb.transform[4] + rb.shape.w + HALF_STROKE, rb.transform[5] + rb.shape.h + HALF_STROKE];
+  lire("M4.nav", bounds.map((n) => Math.round(n)).join(","));
+  check(b0 !== (await attr(page, "data-bounds")), "M4 : la sélection a changé après Alt+→");
+  check(bounds.length === 4 && bounds.every((n, i) => Math.abs(n - box[i]) <= 1), `M4 : Alt+→ choisit B : data-bounds ${bounds} égal à la boîte de B ${box}`);
+  void ra;
+  // Alt+← revient à A ; sans objet relié dans la direction, la sélection reste.
+  await page.keyboard.press("Alt+ArrowUp");
+  await frames(page);
+  check((await attr(page, "data-bounds")).split(",").map(Number).every((n, i) => Math.abs(n - bounds[i]) <= 1), "M4 : Alt+↑ sans objet relié : la sélection reste");
+  await page.keyboard.press("Alt+ArrowLeft");
+  await frames(page);
+  check((await attr(page, "data-bounds")) === b0, "M4 : Alt+← revient à A");
+  // Pointe « Losange creux » : outil Flèche, valeur choisie au doigt, flèche tracée ailleurs, lue dans l'état.
+  await tool(page, "arrow");
+  const cible = await page.locator(opt("endArrowhead", "diamond_outline")).boundingBox();
+  lire("M4.cible", `${Math.round(cible?.width ?? 0)}x${Math.round(cible?.height ?? 0)}`);
+  check(cible !== null && cible.width >= 44 && cible.height >= 44, "M4 : la cible « Losange creux » mesure au moins 44 px");
+  await choose(page, "doigt", "endArrowhead", "diamond_outline");
+  await touchDrag(page, cdp, [300, 600], [600, 600]);
+  const els = (await saved(page, tmp, "m4b.roomboard")).elements;
+  const fl = els.filter((e) => e.shape?.shape === "arrow").at(-1);
+  lire("M4.pointe", fl?.look?.endArrowhead);
+  check(fl?.look?.endArrowhead === "diamond_outline", "M4 : la flèche porte la pointe « diamond_outline »");
+  check(errors.length === 0, "M4 : aucune erreur dans la page");
+  await ctx.close();
+}
+
 // ------------------------------------------------------------------------------------------------------------- main
 
 async function main() {
@@ -432,6 +483,7 @@ async function main() {
     if (on("m1")) await m1(browser, base, tmp);
     if (on("m2")) await m2(browser, base, tmp);
     if (on("m3")) await m3(browser, base, tmp);
+    if (on("m4")) await m4(browser, base, tmp);
     console.log(`${LABEL} : OK`);
     return 0;
   } catch (e) {
