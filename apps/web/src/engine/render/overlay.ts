@@ -91,8 +91,6 @@ export const isEmptyOverlay = (o: EditOverlay): boolean =>
 export interface ScreenRect { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 /** Badges d'un élément sélectionné (lien T18, « copie » OG23), lus sur son aspect par le moteur. */
 export interface ElementBadges { readonly bounds: Bounds; readonly link: boolean; readonly copy: boolean }
-/** Demi-côté dessiné du rond « Déplacer » (24 px, `paintMoveHandle`). */
-const MOVE_DRAWN_HALF_PX = 12;
 
 /** OG41 (DA2) : ce qui entoure la sélection, cibles comprises, en px de la scène : huit poignées de taille (prise
  *  `HANDLE_GRAB_PX`), « Déplacer » (22 px au doigt, 12 à la souris), « + » (`LINK_REACH_PX`), points d'une ligne ou d'une
@@ -110,8 +108,9 @@ export function overlayKeepOut(o: EditOverlay, camera: Camera, touch: boolean, b
   if (o.frame !== null && o.handles) {
     for (const h of handlesOf(o.frame)) world(h.x, h.y, HANDLE_GRAB_PX);
     if (o.move === true) {
+      // Le rond dessiné (24 px, `paintMoveHandle`, link-badge.ts:142) tient dans la prise, 12 px de demi-côté au moins.
       const [mx, my] = moveHandlePoint(o.frame, camera.zoom);
-      world(mx, my, Math.max(MOVE_DRAWN_HALF_PX, touch ? MOVE_REACH_TOUCH_PX : MOVE_REACH_MOUSE_PX));
+      world(mx, my, touch ? MOVE_REACH_TOUCH_PX : MOVE_REACH_MOUSE_PX);
     }
   }
   for (const k of o.links ?? []) world(k.x, k.y, LINK_REACH_PX);

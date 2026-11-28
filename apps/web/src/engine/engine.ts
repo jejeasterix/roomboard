@@ -1241,8 +1241,13 @@ export function createEngine(deps: EngineDeps): Engine {
     selectionKeepOut() {
       const sel = selectTool.selection();
       if (sel.length === 0) return [];
+      const parts = liveTools().map((t) => t.live());
+      // Un élément masqué (glissé, fantôme peint à sa place) n'a pas de badge à l'écran.
+      const hidden = new Set<string>();
+      for (const p of parts) for (const id of p.hidden) hidden.add(id);
       const badges: ElementBadges[] = [];
       for (const id of sel) {
+        if (hidden.has(id)) continue;
         const look = doc.element(id)?.look;
         const link = look?.link !== undefined;
         const copy = look?.dragCopy === true;
@@ -1250,7 +1255,7 @@ export function createEngine(deps: EngineDeps): Engine {
         if (b !== null) badges.push({ bounds: b, link, copy });
       }
       // Le calque que l'écran peint (éditeur de points à la place de l'outil Sélection, cadre masqué au rognage).
-      return overlayKeepOut(paintedOverlay(liveTools().map((t) => t.live())), camera, lastPointer !== "mouse", badges);
+      return overlayKeepOut(paintedOverlay(parts), camera, lastPointer !== "mouse", badges);
     },
     group,
     ungroup,

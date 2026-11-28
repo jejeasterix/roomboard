@@ -3074,6 +3074,19 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(engine.editLinePoints()).toBe(true);
     expect(engine.selectionKeepOut()).toContainEqual(keepSq(engine.camera(), 150, 50, 12));
   });
+  it("OG41 (DA2) selectionKeepOut : après un appui au doigt, badge de lien de l'élément choisi, cible de 44 px", () => {
+    const { engine, doc, rect } = og12();
+    const id = rect(100, 100, 300, 200);
+    engine.setTool("pen");
+    engine.sink.begin(1, "pen", [{ ...sample, x: 900, y: 600 }], "touch");
+    engine.sink.close(1, "end");
+    engine.setTool("select");
+    engine.select([id]);
+    expect(engine.setLink("https://example.org")).toBe(true);
+    const lb = linkBadgeBox(doc.bounds([id])!, engine.camera());
+    const keep = engine.selectionKeepOut();
+    expect(keep).toContainEqual({ x: lb.x + lb.size / 2 - 22, y: lb.y + lb.size / 2 - 22, w: 44, h: 44 });
+  });
   it("Ctrl+Entrée : Modifier les points sur la flèche seule sélectionnée ; l'outil reste Sélection, la sélection est gardée", () => {
     const { engine, line } = og12();
     const id = line("arrow");

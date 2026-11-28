@@ -73,6 +73,16 @@ describe("overlayKeepOut (OG41, DA2)", () => {
     const r = overlayKeepOut({ ...EMPTY_OVERLAY, frame, handles: true, links: [{ dir: "up", x: 200, y: 160 }] }, IDENTITY, true);
     expect(r).toContainEqual(sq(200, 160, 22));
   });
+  it("overlayKeepOut : zoom 2 et caméra décalée : centres en px de la scène, « Déplacer » 28 px écran au-dessus, prises non zoomées", () => {
+    const cam = { zoom: 2, tx: 40, ty: -30 };
+    const o = { ...EMPTY_OVERLAY, frame, handles: true, move: true, links: [{ dir: "up" as const, x: 200, y: 160 }] };
+    const r = overlayKeepOut(o, cam, true);
+    expect(r).toContainEqual(sq(240, 370, 12));
+    expect(r).toContainEqual(sq(640, 570, 12));
+    expect(r).toContainEqual(sq(440, 342, 22));
+    expect(r).toContainEqual(sq(440, 290, 22));
+    expect(r).toHaveLength(10);
+  });
   it("overlayKeepOut : badges de lien et de copie, cible de 44 px au doigt, 24 à la souris", () => {
     const o = { ...EMPTY_OVERLAY, frame, handles: true };
     const lb = linkBadgeBox(frame, IDENTITY);
