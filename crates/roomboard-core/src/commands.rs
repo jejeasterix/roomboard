@@ -477,7 +477,7 @@ impl std::fmt::Display for CommandError {
             ),
             CommandError::BadFill => write!(
                 f,
-                "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)"
+                "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle, d'un losange, d'une ellipse ou d'une ligne fermée attendus)"
             ),
             CommandError::BadMedia => write!(
                 f,

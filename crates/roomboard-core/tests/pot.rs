@@ -267,7 +267,7 @@ fn bad_fill_is_refused_in_core_order_without_step() {
 fn bad_fill_message_is_readable() {
     assert_eq!(
         CommandError::BadFill.to_string(),
-        "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)"
+        "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle, d'un losange, d'une ellipse ou d'une ligne fermée attendus)"
     );
 }
 
