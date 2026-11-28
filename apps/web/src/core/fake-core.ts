@@ -78,7 +78,7 @@ import type {
   TextSpan,
   FillData,
 } from "./api";
-import type { BindHit, LineBinding, LinkDir } from "./api";
+import type { BindHit, LineBinding, LinkDir, ShapeKind } from "./api";
 import {
   BAD_GROUP_MESSAGE,
   BAD_MEDIA_MESSAGE,
@@ -118,9 +118,13 @@ import { elbowedOf, newSeed, STROKE_STYLES, toLook, VARIABILITY_CONSTANT, type L
 import { arrangeUnknown, isArrangeHow, planArrange, type ArrangeUnit, type Reach } from "./arrange";
 import { ARROWHEADS, END_ARROWHEAD_DEFAULT, FILL_STYLES, START_ARROWHEAD_DEFAULT, TEXT_ALIGNS, validLink as validLookLink } from "./look";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
-import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
-import { ANCHOR_RATIOS, anchorPoint, BIND_RATIO_MAX, bindGap, invertMatrix, lineGeomOf, linePath, MAX_INNER_POINTS, type BindBox } from "./shapes";
+import { applyMatrix, boxPolygon, composeMatrix, isClosedShape, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
+import { ANCHOR_RATIOS, anchorPoint, BIND_RATIO_MAX, bindGap, invertMatrix, lineGeomOf, linePath, MAX_INNER_POINTS, type BindBox, type Outline } from "./shapes";
 import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
+
+/** C4a : intérieur remplissable (pot, `SetStyle.fill`), miroir de `ShapeFields::fillable` : toute forme sauf un segment,
+ *  et la ligne fermée. */
+const isFillableShape = (s: ShapeData): boolean => !isSegment(s.shape) || isClosedShape(s);
 
 /** Réglages d'une image (C5), tels que le cœur les range à plat sur l'élément. */
 const IMAGE_PARAM_KEYS = ["crop", "flipX", "flipY", "quarterTurns", "brightness", "contrast", "transparent"] as const;
@@ -310,7 +314,9 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
       changed = true;
     }
   }
-  if ("fill" in p && shape && (shape.shape === "rect" || shape.shape === "ellipse")) {
+  // OG12 lot 2a : fond et motif aussi sur un losange et une ligne fermée (`style.rs`).
+  const fillable = shape !== undefined && isFillableShape(shape);
+  if ("fill" in p && shape && fillable) {
     const f = p.fill ?? null;
     if (shape.fill !== f) {
       shape = { ...shape, fill: f };
@@ -331,11 +337,12 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
     }
   }
   // OG12 (T1) : `roundness` aussi sur une ligne ou une flèche (courbe).
-  if ("roundness" in p && (shape?.shape === "rect" || shape?.shape === "line" || shape?.shape === "arrow")) put("roundness", p.roundness ?? undefined);
+  // OG12 lot 2a (H5) : inapplicable sur une ligne fermée (aucune étape).
+  if ("roundness" in p && shape && !isClosedShape(shape) && (shape.shape === "rect" || shape.shape === "line" || shape.shape === "arrow")) put("roundness", p.roundness ?? undefined);
   const aspect = kind === "stroke" || kind === "shape" || kind === "text" || kind === "image"; // `look_view` : jamais tableau, média, objet 3D
   if (opacity !== undefined && aspect) put("opacity", opacity < 100 ? opacity : undefined);
   // T12 (`writes_for`) : une pointe égale à son défaut retire le champ, jamais elle ne s'écrit.
-  if ("fillStyle" in p && shape && (shape.shape === "rect" || shape.shape === "ellipse")) put("fillStyle", p.fillStyle ?? undefined);
+  if ("fillStyle" in p && shape && fillable) put("fillStyle", p.fillStyle ?? undefined);
   if (shape?.shape === "arrow") {
     const head = <D extends string>(v: D | null | undefined, d: string): D | undefined => (absent(v) || v === d ? undefined : v);
     if ("startArrowhead" in p) put("startArrowhead", head(p.startArrowhead, START_ARROWHEAD_DEFAULT));
@@ -772,14 +779,16 @@ type Pt2 = [number, number];
 /** OG12 : boîte d'accroche (miroir de `bind_box`) ; null pour un trait, une ligne, une flèche, un `fill`, un inconnu. */
 function bindBoxOf(e: FakeElement): BindBox | null {
   if (e.malformed || e.unknown || e.fill || e.local !== undefined) return null;
-  const box = (w: number, h: number, ellipse: boolean, width: number): BindBox | null =>
-    positive(w) && positive(h) ? { id: e.id, m: e.transform, w, h, ellipse, gap: bindGap(width) } : null;
-  if (e.shape) return isSegment(e.shape.shape) ? null : box(e.shape.w, e.shape.h, e.shape.shape === "ellipse", e.style.width);
-  if (e.text) return box(e.text.boxWidth, e.text.boxHeight, false, 0);
-  if (e.image) return box(...displaySize(e.image), false, 0);
-  if (e.table) return box(tableWidth(e.table), tableHeight(e.table), false, 0);
-  if (e.media) return box(e.media.w, e.media.h, false, 0);
-  if (e.model3d) return box(e.model3d.w, e.model3d.h, false, 0);
+  const box = (w: number, h: number, outline: Outline, width: number): BindBox | null =>
+    positive(w) && positive(h) ? { id: e.id, m: e.transform, w, h, outline, gap: bindGap(width) } : null;
+  // OG12 lot 2a : la ligne fermée reste un segment, non accrochable.
+  const outlineOf = (k: ShapeKind): Outline => (k === "ellipse" ? "ellipse" : k === "diamond" ? "diamond" : "box");
+  if (e.shape) return isSegment(e.shape.shape) ? null : box(e.shape.w, e.shape.h, outlineOf(e.shape.shape), e.style.width);
+  if (e.text) return box(e.text.boxWidth, e.text.boxHeight, "box", 0);
+  if (e.image) return box(...displaySize(e.image), "box", 0);
+  if (e.table) return box(tableWidth(e.table), tableHeight(e.table), "box", 0);
+  if (e.media) return box(e.media.w, e.media.h, "box", 0);
+  if (e.model3d) return box(e.model3d.w, e.model3d.h, "box", 0);
   return null;
 }
 /** Points monde d'une ligne (`world_of`). */
@@ -832,7 +841,25 @@ const validInner = (p: readonly number[]): boolean =>
   p.length % 2 === 0 && p.length <= 2 * MAX_INNER_POINTS && p.every((v) => Number.isFinite(v)) && fitsF32(p);
 /** Point du contour le plus proche de (qx, qy) local, sa distance locale, et le point dedans (`nearest_outline`). */
 function nearestOutline(b: BindBox, qx: number, qy: number): { readonly p: Pt2; readonly d: number; readonly contains: boolean } {
-  if (b.ellipse) {
+  if (b.outline === "diamond") {
+    // OG12 lot 2a : point le plus proche des quatre arêtes du losange inscrit.
+    const cx = b.w / 2;
+    const cy = b.h / 2;
+    const v: Pt2[] = [[cx, 0], [b.w, cy], [cx, b.h], [0, cy]];
+    let best: { p: Pt2; d: number } = { p: v[0]!, d: Number.POSITIVE_INFINITY };
+    for (let i = 0; i < 4; i++) {
+      const a = v[i]!;
+      const c = v[(i + 1) % 4]!;
+      const ex = c[0] - a[0];
+      const ey = c[1] - a[1];
+      const t = Math.min(Math.max(((qx - a[0]) * ex + (qy - a[1]) * ey) / (ex * ex + ey * ey), 0), 1);
+      const p: Pt2 = [a[0] + t * ex, a[1] + t * ey];
+      const d = Math.hypot(qx - p[0], qy - p[1]);
+      if (d < best.d) best = { p, d };
+    }
+    return { ...best, contains: Math.abs(qx - cx) / cx + Math.abs(qy - cy) / cy <= 1 };
+  }
+  if (b.outline === "ellipse") {
     const cx = b.w / 2;
     const cy = b.h / 2;
     const r = Math.sqrt(((qx - cx) / cx) ** 2 + ((qy - cy) / cy) ** 2);
@@ -1247,9 +1274,14 @@ class FakeDocument implements CoreDocument {
     return pick?.hit ?? null;
   }
 
-  /** OG12 (DA-2) : liaison vers un objet absent de la page de la ligne (C1) lue libre, sans écriture. */
+  /** OG12 (DA-2) : liaison vers un objet absent de la page de la ligne (C1) lue libre, sans écriture ; lot 2a (Review
+   *  Focus 1, n° 9) : de même vers un objet présent devenu non accrochable (forme convertie en ligne fermée). */
   private shapeView(s: ShapeData, page: FakePage): ShapeData {
-    const gone = (b: LineBinding | undefined): boolean => b !== undefined && !page.elements.some((x) => x.id === b.id);
+    const gone = (b: LineBinding | undefined): boolean => {
+      if (b === undefined) return false;
+      const t = page.elements.find((x) => x.id === b.id);
+      return t === undefined || bindBoxOf(t) === null;
+    };
     if (!gone(s.start) && !gone(s.end)) return s;
     const { start, end, ...rest } = s;
     return { ...rest, ...(start && !gone(start) ? { start } : {}), ...(end && !gone(end) ? { end } : {}) };
@@ -1268,6 +1300,11 @@ class FakeDocument implements CoreDocument {
         if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
         const e = found.element;
         if (!e.shape || !isSegment(e.shape.shape)) throw new Error(MESSAGES.badShape);
+        // OG12 lot 2a (n° 12 b) : ligne fermée, ni liaison ni moins de 3 sommets.
+        if (isClosedShape(e.shape)) {
+          if (cmd.start || cmd.end) throw new Error(MESSAGES.badShape);
+          if (n < 3) throw new Error("points invalides");
+        }
         const sb = cmd.start ? this.checkedBinding(found.page.id, cmd.start) : null;
         const eb = cmd.end ? this.checkedBinding(found.page.id, cmd.end) : null;
         const given: Pt2[] = [];
@@ -1286,6 +1323,39 @@ class FakeDocument implements CoreDocument {
           return { pages: [pageId], ids: [cmd.id], removed: [] };
         });
       }
+      case "ShapeToPolygon": {
+        // OG12 lot 2a (n° 34, H5) : `cmd_shape_to_polygon` ; sommets locaux de la forme mis en monde, écrits par `withLine`
+        // (miroir de `line_writes` : départ = translation, points intérieurs, dernier = (w, h), fermeture implicite, le
+        // départ jamais répété : DA-1) ; `shape` = "line", `polygon` = true, `roundness` retiré ; une étape (D38).
+        const found = this.find(cmd.id);
+        if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
+        const e = found.element;
+        const s = e.shape;
+        if (!s || isSegment(s.shape) || !positive(s.w) || !positive(s.h)) throw new Error(MESSAGES.badShape);
+        const { w, h } = s;
+        const local: Pt2[] = s.shape === "rect"
+          ? [[0, 0], [w, 0], [w, h], [0, h]]
+          : s.shape === "diamond"
+            ? [[w / 2, 0], [w, h / 2], [w / 2, h], [0, h / 2]]
+            : Array.from({ length: 16 }, (_, k): Pt2 => {
+              const a = -Math.PI / 2 + (2 * Math.PI * k) / 16;
+              return [w / 2 + (w / 2) * Math.cos(a), h / 2 + (h / 2) * Math.sin(a)];
+            });
+        const world = local.map(([x, y]) => applyMatrix(e.transform, x, y));
+        const next = withLine({ ...e, shape: { ...s, shape: "line", polygon: true } }, world, null, null);
+        if (next === "badMatrix") throw new Error(MESSAGES.badMatrix);
+        if (next === "badPoints") throw new Error("points invalides");
+        const { look: before, ...bare } = next;
+        const { roundness: _r, ...kept } = before ?? {};
+        const placed: FakeElement = { ...bare, ...(Object.keys(kept).length > 0 ? { look: kept } : {}) };
+        const pageId = found.page.id;
+        return this.step((st) => {
+          const p = st.pages.find((q) => q.id === pageId);
+          const i = p ? p.elements.findIndex((x) => x.id === cmd.id) : -1;
+          if (p && i >= 0) p.elements[i] = placed;
+          return { pages: [pageId], ids: [cmd.id], removed: [] };
+        });
+      }
       case "AddLinked": {
         // OG12 (n° 27, DA-4) : `cmd_add_linked` ; copie par `copyElements`, flèche coudée liée aux deux, une étape.
         const dir = LINK_DIRS[cmd.dir];
@@ -1293,7 +1363,7 @@ class FakeDocument implements CoreDocument {
         const found = this.find(cmd.id);
         if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
         const e = found.element;
-        const src = e.shape && (e.shape.shape === "rect" || e.shape.shape === "ellipse") ? bindBoxOf(e) : null;
+        const src = e.shape && (e.shape.shape === "rect" || e.shape.shape === "ellipse" || e.shape.shape === "diamond") ? bindBoxOf(e) : null;
         if (!src) throw new Error(MESSAGES.badShape);
         const others = found.page.elements.map(bindBoxOf).filter((x): x is BindBox => x !== null && x.id !== cmd.id).map(worldBox);
         const [x0, y0, x1, y1] = worldBox(src);
@@ -2299,8 +2369,8 @@ class FakeDocument implements CoreDocument {
         }
         const shape = e.shape;
         const inside = t.kind === "inside";
-        // `field_for` du cœur : contour = `color` d'un trait ou de toute forme ; intérieur = `fill` d'un rectangle ou d'une ellipse.
-        const key = !inside && (e.local !== undefined || shape) ? "color" : inside && shape && !isSegment(shape.shape) ? "fill" : null;
+        // `field_for` du cœur : contour = `color` d'un trait ou de toute forme ; intérieur = `fill` d'une forme remplissable (C4a).
+        const key = !inside && (e.local !== undefined || shape) ? "color" : inside && shape && isFillableShape(shape) ? "fill" : null;
         if (key === null) throw new Error(MESSAGES.badFill);
         const write = (next: (old: FakeElement) => FakeElement): Change =>
           this.step((s) => {
@@ -2454,13 +2524,13 @@ class FakeDocument implements CoreDocument {
     return null;
   }
   edgeHit(id: string, x: number, y: number, tol: number): boolean {
-    // Miroir d'`edge_hit` (`fill.rs`) : tracé `shapePolygon(kind, w, h, 0)` porté par la matrice, arêtes seules (jamais
+    // Miroir d'`edge_hit` (`fill.rs`) : tracé `shapePolygon(kind, w, h, 0, géométrie)` porté par la matrice, arêtes seules (jamais
     // l'intérieur, à l'inverse de `polygonHit`), bande = tol + demi-épaisseur × (facteur de similitude, sinon racine du
     // déterminant ; pas la plus petite valeur singulière de `strokeHalfWidth`).
     const e = this.find(id)?.element;
     const s = e?.shape;
-    if (!e || !s || isSegment(s.shape)) return false;
-    const local = shapePolygon(s.shape, s.w, s.h, 0);
+    if (!e || !s || !isFillableShape(s)) return false;
+    const local = shapePolygon(s.shape, s.w, s.h, 0, lineGeomOf(s));
     const world: number[] = [];
     for (let i = 0; i + 1 < local.length; i += 2) world.push(...applyMatrix(e.transform, local[i] ?? 0, local[i + 1] ?? 0));
     const n = world.length / 2;

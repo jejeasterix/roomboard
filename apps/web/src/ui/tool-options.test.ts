@@ -125,6 +125,21 @@ describe("tool-options lot 2 (T15)", () => {
   });
 });
 
+describe("tool-options : losange et ligne fermée (OG12 lot 2a)", () => {
+  const sh = (shape: string, extra: object = {}): ElementView =>
+    ({ id: "x", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000", width: 4 }, shape: { shape, w: 10, h: 10, fill: "#fff", ...extra } }) as unknown as ElementView;
+  it("losange et ligne fermée : options de forme, sans Angles ni pointes", () => {
+    expect(sectionsFor("select", [sh("diamond")], false)).not.toContain("roundness");
+    expect(sectionsFor("diamond" as never, [], false)).not.toContain("roundness");
+    expect(sectionsFor("select", [sh("line", { polygon: true })], false)).toEqual(
+      ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity", "layers", "transform", "actions"]);
+    expect(sectionsFor("select", [sh("line")], false)).toContain("roundness");
+  });
+  it("showsPanel : l'outil losange montre le panneau", () => {
+    expect(showsPanel("diamond" as never, 0, false)).toBe(true);
+  });
+});
+
 describe("tool-options OG23 (T2) : accordéon, pression, disposition", () => {
   const stroke = { id: "s", kind: "stroke" } as unknown as ElementView;
   it("sectionOpen : défauts puis état gardé", () => {

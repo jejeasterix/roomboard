@@ -8,7 +8,7 @@ import { PDF_PAGE_KIND } from "../../core/api";
 import { endArrowheadOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, type Arrowhead, type Look, type TextAlign } from "../../core/look";
 import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, Model3dData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
-import { arrowWings, catmullRom, flattenPath, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
+import { arrowWings, catmullRom, flattenPath, isFillable, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
 import { worldToScreen, type Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, pageFrame, visibleGridRect, visiblePageRect, type PageRect } from "../page";
 import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
@@ -271,6 +271,12 @@ export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: n
     ctx.rect(0, 0, s.w, s.h);
   } else if (s.shape === "ellipse") {
     ctx.ellipse(s.w / 2, s.h / 2, s.w / 2, s.h / 2, 0, 0, Math.PI * 2);
+  } else if (s.shape === "diamond") {
+    ctx.moveTo(s.w / 2, 0);
+    ctx.lineTo(s.w, s.h / 2);
+    ctx.lineTo(s.w / 2, s.h);
+    ctx.lineTo(0, s.h / 2);
+    ctx.closePath();
   } else {
     // OG12 : chemin à points intérieurs (polyligne) ou courbe (Bézier de Catmull-Rom) ; jamais `quadraticCurveTo`.
     const g = lineGeomOf(s, look);
@@ -278,6 +284,7 @@ export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: n
     ctx.moveTo(0, 0);
     if (g.curve && pts.length > 2) for (const [, c1, c2, p] of catmullRom(pts)) ctx.bezierCurveTo(c1[0], c1[1], c2[0], c2[1], p[0], p[1]);
     else for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]);
+    if (g.closed === true) ctx.closePath();
     const [fx, fy] = headFrom(pts, g.curve);
     const head = s.shape === "arrow" && !noHead ? headWings(s.w, s.h, fx, fy, width) : null;
     if (head) {
@@ -357,7 +364,7 @@ export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: S
     return;
   }
   traceShape(ctx, s, style.width, roundnessOf(look) === "round", look);
-  if (s.fill !== null && (s.shape === "rect" || s.shape === "ellipse")) {
+  if (s.fill !== null && isFillable(s)) {
     ctx.fillStyle = s.fill;
     ctx.fill();
   }
@@ -750,7 +757,7 @@ export class Canvas2DRenderer implements Renderer {
       ctx.transform(1, 0, 0, 1, n.tx, n.ty);
       applyOpacity(ctx, s.look);
       const pts = s.points !== undefined && s.points.length > 0 ? s.points.map((v, i) => v - (i % 2 === 0 ? s.x0 : s.y0)) : undefined;
-      paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill, ...(pts ? { points: pts } : {}) }, s.style, s.look, s.seed);
+      paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill, ...(pts ? { points: pts } : {}), ...(s.polygon ? { polygon: true as const } : {}) }, s.style, s.look, s.seed);
       ctx.restore();
     }
   }

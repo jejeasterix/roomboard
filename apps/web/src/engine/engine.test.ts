@@ -777,6 +777,51 @@ describe("createEngine", () => {
     expect(doc.version()).toBe(v);
   });
 
+  describe("flèches du clavier et lettres des outils", () => {
+
+  const bounds = (e: { state(): { selectionBounds: unknown } }) => e.state().selectionBounds as { x0: number; y0: number };
+    it("la flèche déplace la sélection de 1 px, Maj de 5 px, une étape d'annulation par appui", () => {
+      const { engine, rect, sel } = editSetup();
+      const a = rect(100, 100, 200, 200);
+      sel().setSelection([a]);
+      const x0 = bounds(engine).x0;
+      const y0 = bounds(engine).y0;
+      expect(engine.key(key("ArrowRight"))).toBe(true);
+      expect(bounds(engine).x0).toBe(x0 + 1);
+      expect(engine.key(key("ArrowDown", { shiftKey: true }))).toBe(true);
+      expect(bounds(engine).y0).toBe(y0 + 5);
+      engine.undo();
+      expect(bounds(engine).y0).toBe(y0);
+      expect(bounds(engine).x0).toBe(x0 + 1);
+      engine.undo();
+      expect(bounds(engine).x0).toBe(x0);
+    });
+    it("sans sélection, dans un champ ou avec Ctrl : la touche passe", () => {
+      const { engine, doc, rect, sel } = editSetup();
+      expect(engine.key(key("ArrowLeft"))).toBe(false);
+      const a = rect(100, 100, 200, 200);
+      sel().setSelection([a]);
+      const v = doc.version();
+      expect(engine.key(key("ArrowLeft", { target: { tagName: "TEXTAREA" } }))).toBe(false);
+      expect(engine.key(key("ArrowLeft", { ctrlKey: true }))).toBe(false);
+      expect(doc.version()).toBe(v);
+    });
+
+    it("une lettre libre change l'outil ; S et G ne le changent pas ; un champ garde la lettre", () => {
+      const { engine } = editSetup();
+      expect(engine.key(key("r"))).toBe(true);
+      expect(engine.state().tool).toBe("rect");
+      expect(engine.key(key("h"))).toBe(true);
+      expect(engine.state().tool).toBe("hand");
+      expect(engine.key(key("4"))).toBe(true);
+      expect(engine.state().tool).toBe("ellipse");
+      expect(engine.key(key("s"))).toBe(false);
+      expect(engine.state().tool).toBe("ellipse");
+      expect(engine.key(key("r", { target: { tagName: "INPUT", type: "text" } }))).toBe(false);
+      expect(engine.state().tool).toBe("ellipse");
+    });
+
+  });
   it("changer d'outil ou de page fait quitter l'outil (leave) et vide la sélection", () => {
     const { engine, rect, sel, leaves } = editSetup();
     const a = rect(100, 100, 200, 200);
@@ -3050,10 +3095,58 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     engine.select([id]);
     expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(false);
     expect(engine.state().lineEditing).toBeNull();
-    engine.select([rect(300, 300, 400, 400)]);
+    engine.select([rect(300, 300, 400, 400), rect(500, 500, 600, 600)]);
     expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(false);
     expect(engine.editLinePoints()).toBe(false);
     expect(engine.state().lineEditing).toBeNull();
+  });
+
+  it("Ctrl+Entrée sur un rectangle : ligne fermée et « Modifier les points »", () => {
+    const { engine, doc, rect } = og12();
+    const id = rect(300, 300, 400, 350);
+    engine.select([id]);
+    expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(true);
+    const v = doc.element(id)!;
+    expect(v.kind === "shape" && v.shape.shape === "line" && v.shape.polygon === true).toBe(true);
+    expect(engine.state().lineEditing).toBe(id);
+    expect(doc.undo()).not.toBeNull();
+    expect((doc.element(id) as { shape: { shape: string } }).shape.shape).toBe("rect");
+  });
+
+  it("la conversion passe par commit : un lot runAll d'avant s'annule encore en une étape (C4b)", () => {
+    const { engine, doc, rect } = og12();
+    const id = rect(300, 300, 400, 350);
+    const page = engine.state().page;
+    const add = (x: number) => ({ type: "SetText" as const, page, id: null, x, y: 10, content: "t", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    const n0 = doc.elementIds(page).length;
+    engine.runAll([add(0), add(300), add(600)]);
+    engine.select([id]);
+    expect(engine.editLinePoints()).toBe(true);
+    engine.undo(); // la conversion
+    expect((doc.element(id) as { shape: { shape: string } }).shape.shape).toBe("rect");
+    expect(doc.elementIds(page).length).toBe(n0 + 3);
+    engine.undo(); // tout le lot, d'un geste
+    expect(doc.elementIds(page).length).toBe(n0);
+  });
+
+  it("conversion refusée par le cœur : l'erreur arrive à l'état (C4b)", () => {
+    const { engine, doc, rect } = og12();
+    const id = rect(300, 300, 400, 350);
+    engine.select([id]);
+    vi.spyOn(doc, "apply").mockImplementation(() => { throw new Error("refus"); });
+    expect(engine.editLinePoints()).toBe(false);
+    expect(engine.state().error).toBe("refus");
+  });
+
+  it("Ctrl+Entrée sur un rectangle refusé par le cœur : ni éditeur, ni étape", () => {
+    const { engine, doc, rect } = og12();
+    const id = rect(300, 300, 400, 350);
+    engine.select([id]);
+    const before = doc.version();
+    vi.spyOn(doc, "apply").mockImplementation(() => { throw new Error("refus"); });
+    expect(engine.editLinePoints()).toBe(false);
+    expect(engine.state().lineEditing).toBeNull();
+    expect(doc.version()).toBe(before);
   });
 
   it("lineEdit : en édition, un appui sur une poignée va à l'éditeur, Suppr retire le point choisi, Échap sort", () => {
@@ -3226,6 +3319,24 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(sent).toEqual([{ type: "Arrange", ids: [a, b], how: "align-left" }]);
     expect(doc.bounds([b])!.x0).toBe(doc.bounds([a])!.x0);
     expect(doc.elementIds(page)).toHaveLength(5);
+  });
+
+  it("flèche pendant « Modifier les points » : la sélection ne bouge pas (OG23 × OG12)", () => {
+    const { engine, doc, line } = og12();
+    const l = line();
+    engine.select([l]);
+    expect(engine.editLinePoints()).toBe(true);
+    const before = doc.bounds([l])!;
+    const sent: Command[] = [];
+    const apply = doc.apply.bind(doc);
+    vi.spyOn(doc, "apply").mockImplementation((c) => { sent.push(c); return apply(c); });
+    for (const k of ["ArrowRight", "ArrowDown"]) {
+      engine.key(key(k));
+      engine.key(key(k, { shiftKey: true }));
+    }
+    expect(sent).toEqual([]);
+    expect(doc.bounds([l])).toEqual(before);
+    expect(engine.state().lineEditing).toBe(l);
   });
 
   it("Ctrl tenu : ctx.ctrl() vrai jusqu'au keyUp et à la perte du focus ; la touche n'est pas prise", () => {

@@ -312,6 +312,11 @@ pub enum Command {
         id: String,
         dir: crate::linear::LinkDir,
     },
+    /// OG12 lot 2a (n° 34, H5) : rectangle, losange ou ellipse convertis en place en ligne fermée, une étape ;
+    /// `BadShape` sinon (ligne, flèche, boîte nulle).
+    ShapeToPolygon {
+        id: String,
+    },
     /// Média (C14, M5) : élément, métadonnée du média (avec `linked` s'il est lié) et du poster ; une transaction, une
     /// étape.
     AddMedia {
@@ -523,11 +528,18 @@ pub(crate) struct ShapeFields {
     /// Flèche coudée (`elbowed: true`, flèche seule).
     #[allow(dead_code)] // lu par T4 (route coudée)
     pub elbowed: bool,
+    /// OG12 lot 2a (n° 34) : ligne fermée (`polygon: true`, ligne seule) ; fermeture implicite vers le départ.
+    pub polygon: bool,
     pub start: Option<BindInput>,
     pub end: Option<BindInput>,
 }
 
 impl ShapeFields {
+    /// C4a : intérieur remplissable (pot, murs de zone) : toute forme sauf un segment, et la ligne fermée (n° 34).
+    pub fn fillable(&self) -> bool {
+        !self.kind.is_segment() || self.polygon
+    }
+
     pub fn geom(&self) -> ShapeGeom<'_> {
         ShapeGeom {
             kind: self.kind,
@@ -535,6 +547,7 @@ impl ShapeFields {
             h: self.h,
             path: &self.points,
             curve: self.curve,
+            closed: self.polygon,
         }
     }
 }
@@ -551,6 +564,8 @@ pub(crate) fn read_shape<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<ShapeFields>
         Look::default()
     };
     let elbowed = kind == ShapeKind::Arrow && look.elbowed == Some(true);
+    // U3 : seul `true` ferme la ligne ; toute autre valeur se lit ouverte et reste telle quelle.
+    let polygon = kind == ShapeKind::Line && crate::element::read_polygon(txn, e);
     Some(ShapeFields {
         kind,
         w: out_f64(e.get(txn, "w"))?,
@@ -562,8 +577,9 @@ pub(crate) fn read_shape<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<ShapeFields>
         } else {
             Vec::new()
         },
-        curve: seg && !elbowed && look.roundness.as_deref() == Some("round"),
+        curve: seg && !elbowed && !polygon && look.roundness.as_deref() == Some("round"),
         elbowed,
+        polygon,
         start: if seg {
             linear::read_binding(txn, e, linear::End::Start)
         } else {
@@ -889,6 +905,7 @@ impl Document {
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
             Command::Arrange { ids, how } => self.cmd_arrange(&ids, how),
             Command::AddLinked { id, dir } => self.cmd_add_linked(&id, dir),
+            Command::ShapeToPolygon { id } => self.cmd_shape_to_polygon(&id),
             Command::SetText {
                 page,
                 id,
@@ -1291,6 +1308,15 @@ impl Document {
                 .ok_or(CommandError::BadShape)?;
             let t = out_transform(found.element.get(&txn, "transform"))
                 .ok_or(CommandError::BadShape)?;
+            // Lot 2a (n° 34) : une ligne fermée n'a ni liaison ni moins de trois sommets.
+            if s.polygon {
+                if start.is_some() || end.is_some() {
+                    return Err(CommandError::BadShape);
+                }
+                if n < 3 {
+                    return Err(CommandError::BadPoints);
+                }
+            }
             let a = start
                 .map(|b| self.checked_binding(&txn, &found.page_id, b))
                 .transpose()?;
@@ -1337,6 +1363,61 @@ impl Document {
         if plan.is_empty() {
             return Ok(self.unchanged());
         }
+        {
+            let mut txn = self.transact_local();
+            for (k, v) in plan {
+                crate::fill::set_or_remove(&e, &mut txn, k, v);
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: vec![id.to_string()],
+            ..Default::default()
+        }))
+    }
+
+    /// `ShapeToPolygon` (n° 34) : sommets locaux de la forme, mis en monde par sa transform, écrits par `line_writes`
+    /// (départ = translation, dernier = (w, h), fermeture implicite, DA-1) ; `shape` = "line", `polygon` = true,
+    /// `roundness` retiré ; fond, couleurs, trait gardés. Une transaction.
+    fn cmd_shape_to_polygon(&mut self, id: &str) -> Result<Change, CommandError> {
+        let (e, page, plan) = {
+            let txn = self.read();
+            let found = self
+                .find_element(&txn, id)
+                .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
+            let s = read_shape(&txn, &found.element).ok_or(CommandError::BadShape)?;
+            let t = out_transform(found.element.get(&txn, "transform"))
+                .ok_or(CommandError::BadShape)?;
+            let (w, h) = (s.w, s.h);
+            if !(finite_positive(w) && finite_positive(h)) {
+                return Err(CommandError::BadShape);
+            }
+            let local: Vec<(f64, f64)> = match s.kind {
+                ShapeKind::Rect => vec![(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)],
+                ShapeKind::Diamond => {
+                    vec![(w / 2.0, 0.0), (w, h / 2.0), (w / 2.0, h), (0.0, h / 2.0)]
+                }
+                // 16 sommets, départ en haut, sens horaire à l'écran (comme le losange).
+                ShapeKind::Ellipse => (0..16)
+                    .map(|k| {
+                        let a = -std::f64::consts::FRAC_PI_2
+                            + std::f64::consts::TAU * f64::from(k) / 16.0;
+                        (w / 2.0 + w / 2.0 * a.cos(), h / 2.0 + h / 2.0 * a.sin())
+                    })
+                    .collect(),
+                ShapeKind::Line | ShapeKind::Arrow => return Err(CommandError::BadShape),
+            };
+            let world: Vec<(f64, f64)> = local
+                .iter()
+                .map(|p| apply_transform(&t, p.0, p.1))
+                .collect();
+            let mut plan = linear::line_writes(&t, &world, None, None)?;
+            plan.push(("shape", Some(In::Any(Any::from("line")))));
+            plan.push(("polygon", Some(In::Any(Any::Bool(true)))));
+            // H5 : `roundness` retiré comme `cmd_set_style` pour un neutre, dans la même transaction.
+            plan.push(("roundness", None));
+            (found.element, found.page_id, plan)
+        };
         {
             let mut txn = self.transact_local();
             for (k, v) in plan {
@@ -3205,6 +3286,7 @@ pub(crate) mod tests {
                 h: 150.0,
                 fill: None,
                 points: None,
+                polygon: None,
                 start: None,
                 end: None,
             })
@@ -3337,6 +3419,7 @@ pub(crate) mod tests {
                 h: -150.0,
                 fill: Some("#ff0000".into()),
                 points: None,
+                polygon: None,
                 start: None,
                 end: None,
             })

@@ -182,7 +182,7 @@ describe("profil de barre (T83, usage § 8)", () => {
   });
 
   it("tables : chaque outil du moteur a son entrée ; actions de l'ancienne barre présentes", () => {
-    expect(Object.keys(TOOL_TABLE).sort()).toEqual(["arrow", "ellipse", "eraser", "fill", "hand", "line", "pen", "rect", "select", "table", "text"]);
+    expect(Object.keys(TOOL_TABLE).sort()).toEqual(["arrow", "diamond", "ellipse", "eraser", "fill", "hand", "line", "pen", "rect", "select", "table", "text"]);
     for (const a of ["eraser-mode", "undo", "redo", "page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "fit-page", "file-new", "file-open", "file-save", "file-save-as", "settings", "profiles", "grid"]) {
       expect(ACTION_TABLE[a], a).toBeDefined();
     }
@@ -650,5 +650,11 @@ describe("personnalisation-1a T2 : reprise d'un profil ancien, en mémoire (déc
     expect(warnings.some((w) => w.includes("pageMode") && w.includes("carre"))).toBe(true);
     expect(profile.behavior).toEqual({ startMode: "board", pageMode: "landscape", rest: {} });
     expect(errs({ ...base(), behavior: { pageMode: 3 } })).toEqual(["behavior.pageMode : chaîne attendue"]);
+  });
+});
+
+describe("OG12 lot 2a : losange", () => {
+  it("losange : entrée de la barre et icône", () => {
+    expect(TOOL_TABLE.diamond).toEqual({ label: "Losange", choice: "diamond" });
   });
 });

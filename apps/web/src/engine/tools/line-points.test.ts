@@ -34,4 +34,14 @@ describe("line-points (OG12)", () => {
     expect(pickLink(h, 125, 25, 2)).toBe("right");
     expect(pickLink(h, 140, 25, 2)).toBeNull();
   });
+
+  it("segment de fermeture : milieu entre le dernier et le premier sommet", () => {
+    const pts: [number, number][] = [[0, 0], [100, 0], [100, 50], [0, 50]];
+    const open = pointHandles(pts, [], 1, true).filter((h) => h.kind === "mid");
+    const closed = pointHandles(pts, [], 1, true, true).filter((h) => h.kind === "mid");
+    expect(closed.length).toBe(open.length + 1);
+    expect(closed[closed.length - 1]).toMatchObject({ x: 0, y: 25 });
+    expect(pickHandle(pts, 0, 25, 1, false, true, true)).toEqual({ kind: "mid", index: 3 });
+    expect(pickHandle(pts, 0, 25, 1, false, true)).toBeNull();
+  });
 });

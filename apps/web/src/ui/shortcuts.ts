@@ -2,6 +2,10 @@
 import { inEditable, type KeyLike } from "../engine/input/keys";
 export interface Shortcut { readonly id: string; readonly group: string; readonly label: string; readonly keys: string }
 const s = (id: string, group: string, label: string, keys: string): Shortcut => Object.freeze({ id, group, label, keys });
+const TOOL_ROWS: ReadonlyArray<readonly [string, string, string, string]> = [
+  ["select", "Sélection", "V", "1"], ["rect", "Rectangle", "R", "2"], ["diamond", "Losange", "D", "3"], ["ellipse", "Ellipse", "O", "4"],
+  ["arrow", "Flèche", "A", "5"], ["line", "Ligne", "L", "6"], ["pen", "Crayon", "P", "7"], ["text", "Texte", "T", "8"], ["eraser", "Gomme", "E", "0"],
+];
 export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("file-new", "Fichier", "Nouveau", "Ctrl+N"),
   s("file-open", "Fichier", "Ouvrir", "Ctrl+O"),
@@ -64,6 +68,9 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("page-next", "Pages", "Page suivante", "Pg suiv"),
   s("page-number", "Pages", "Barre latérale, onglet Pages", "Ctrl+Maj+P"),
   // OG25 (déc. 27) : coupe ou rallume la gomme automatique à la paume (réglage de l'appareil), avec un avis.
+  // Lot 2a (n° 35) : lettres et chiffres d'outil d'Excalidraw ; S et G (sélecteurs de couleur) restent pris, 9 sans outil.
+  ...TOOL_ROWS.flatMap(([id, label, letter, digit]) => [s(`tool-${id}`, "Outils", label, letter), s(`tool-${id}-num`, "Outils", `${label} (chiffre)`, digit)]),
+  s("tool-hand", "Outils", "Main", "H"),
   s("palm-eraser", "Outils", "Gomme automatique à la paume", "Ctrl+Maj+H"),
 ]);
 const MAC: ReadonlyArray<readonly [string, string]> = [["Ctrl+", "⌘"], ["Maj+", "⇧"], ["Alt+", "⌥"]];
