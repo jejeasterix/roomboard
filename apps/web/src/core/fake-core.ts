@@ -70,6 +70,7 @@ import type {
   StrokeBuilderApi,
   StrokeStyle,
   TableAxis,
+  TableBorder,
   TableCell,
   TableCol,
   TableData,
@@ -78,7 +79,7 @@ import type {
   TextSpan,
   FillData,
 } from "./api";
-import type { BindHit, LineBinding, LinkDir, ShapeKind } from "./api";
+import type { BindHit, CellLook, LineBinding, LinkDir, ShapeKind } from "./api";
 import {
   BAD_GROUP_MESSAGE,
   BAD_MEDIA_MESSAGE,
@@ -97,6 +98,7 @@ import {
   DEFAULT_GRID_LINE_WIDTH,
   DEFAULT_TABLE_COLOR,
   DEFAULT_TABLE_SIZE,
+  isCellLookShape,
   MAX_GRID_DOTS,
   MAX_GRID_LEVELS,
   MAX_GRID_LINE_WIDTH,
@@ -109,6 +111,7 @@ import {
   PDF_PAGE_KIND,
   PAGE_WIDTH,
   TABLE_MAX_LINES,
+  TABLE_MESSAGE,
   UNKNOWN_BOX,
   unknownKindMessage,
 } from "./api";
@@ -191,6 +194,11 @@ interface FakeCell {
   /** personnalisation-3 (T9) : asset de l'image de fond. */
   readonly bg: string | null;
   readonly span: readonly [string, string] | null;
+  /** personnalisation-3 (suite OG32, DS1) : valeurs écrites seulement (défauts `left`, `top` absents) ; `open` : case ombrée. */
+  readonly ha?: "center" | "right";
+  readonly va?: "middle" | "bottom";
+  readonly border?: TableBorder;
+  readonly open?: true;
 }
 /** Tableau (C10a) : objets repris tels quels d'une étape à l'autre, sauf ceux qu'une commande change. */
 interface FakeTable {
@@ -227,7 +235,7 @@ const MESSAGES = {
   badImage: "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)",
   badFormat: "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)",
   badGrid: "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)",
-  badTable: "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)",
+  badTable: TABLE_MESSAGE,
   badFill: "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)",
   badGroup: BAD_GROUP_MESSAGE,
   badImageParams: BAD_IMAGE_PARAMS_MESSAGE,
@@ -483,14 +491,71 @@ function validMerges(merges: readonly (readonly [number, number, number, number]
   return true;
 }
 
-/** Vue (T13, F29) : cellules non vides (texte, remplissage ou ombrage) dans l'ordre de lecture ; zones par `mergesOf`. */
+const LOOK_HA: readonly string[] = ["left", "center", "right"];
+const LOOK_VA: readonly string[] = ["top", "middle", "bottom"];
+const LOOK_STYLES: readonly string[] = ["solid", "dashed", "dotted", "none"];
+const MAX_BORDER_WIDTH = 32;
+const MAX_ACCEPT = 64;
+const MAX_LABEL_CHARS = 200;
+/** DS1, comme `check` du cœur (`table_look.rs`) : la valeur admise, sinon null (refus avant la recherche du tableau). La
+ *  forme (types) est celle de l'adaptateur Wasm (`isCellLookShape`, C1) ; s'y ajoutent les domaines du cœur. */
+function checkedLook(l: unknown): CellLook | null {
+  if (!isCellLookShape(l)) return null;
+  const ok =
+    l.key === "ha" ? LOOK_HA.includes(l.value)
+    : l.key === "va" ? LOOK_VA.includes(l.value)
+    : l.key === "border" ? l.value === null || (validColor(l.value[0]) && finitePositive(l.value[1]) && l.value[1] <= MAX_BORDER_WIDTH && LOOK_STYLES.includes(l.value[2]))
+    : l.key === "open" ? true
+    : l.value.length <= MAX_ACCEPT && l.value.every((x) => x.trim() !== "" && [...x].length <= MAX_LABEL_CHARS);
+  return ok ? l : null;
+}
+/** Comparaison par valeurs, comme `differs` du cœur (jamais par identité du tableau). */
+const sameBorder = (a: TableBorder | undefined, b: TableBorder | undefined): boolean =>
+  a === b || (a !== undefined && b !== undefined && a[0] === b[0] && a[1] === b[1] && a[2] === b[2]);
+/** Case après `look` (DS1, `differs` puis `write` du cœur) ; la même référence si rien ne change (case absente : aucune
+ *  valeur ; `left` et `top` s'écrivent « absent » ; `open` : case ombrée seulement). */
+function lookCell(cell: FakeCell | undefined, look: Exclude<CellLook, { key: "accept" }>): FakeCell | undefined {
+  const base = cell ?? EMPTY_CELL;
+  if (look.key === "ha") {
+    const v = look.value === "left" ? undefined : look.value;
+    if (base.ha === v) return cell;
+    const { ha: _h, ...rest } = base;
+    return v === undefined ? rest : { ...rest, ha: v };
+  }
+  if (look.key === "va") {
+    const v = look.value === "top" ? undefined : look.value;
+    if (base.va === v) return cell;
+    const { va: _v, ...rest } = base;
+    return v === undefined ? rest : { ...rest, va: v };
+  }
+  if (look.key === "border") {
+    const v = look.value ?? undefined;
+    if (sameBorder(base.border, v)) return cell;
+    const { border: _b, ...rest } = base;
+    return v === undefined ? rest : { ...rest, border: [v[0], v[1], v[2]] };
+  }
+  if (cell === undefined || cell.shade === null || (cell.open === true) === look.value) return cell;
+  const { open: _o, ...rest } = cell;
+  return look.value ? { ...rest, open: true } : rest;
+}
+const sameList = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+/** Vue (T13, F29) : cellules non vides (texte, remplissage, ombrage, image de fond, alignements `ha` et `va`, bordure)
+ *  dans l'ordre de lecture ; zones par `mergesOf`. */
 function tableView(t: FakeTable): TableData {
   const cells: TableCell[] = [];
   for (const r of t.rows) {
     for (const c of t.cols) {
       const cell = t.cells.get(cellKey(r.id, c.id));
-      if (cell && (cell.text !== "" || cell.fill !== null || cell.shade !== null || cell.bg !== null)) {
-        cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill, shade: cell.shade, spans: cell.spans, ...(cell.bg === null ? {} : { bg: cell.bg }) });
+      if (cell && (cell.text !== "" || cell.fill !== null || cell.shade !== null || cell.bg !== null || cell.ha !== undefined || cell.va !== undefined || cell.border !== undefined)) {
+        cells.push({
+          row: r.id, col: c.id, text: cell.text, fill: cell.fill, shade: cell.shade, spans: cell.spans,
+          ...(cell.bg === null ? {} : { bg: cell.bg }),
+          ...(cell.ha === undefined ? {} : { ha: cell.ha }),
+          ...(cell.va === undefined ? {} : { va: cell.va }),
+          ...(cell.border === undefined ? {} : { border: cell.border }),
+          // Comme la vue du cœur (`cell.open && cell.shade.is_some()`).
+          ...(cell.open === true && cell.shade !== null ? { open: true as const } : {}),
+        });
       }
     }
   }
@@ -1146,8 +1211,11 @@ class FakeDocument implements CoreDocument {
     for (const [r, c] of targets(rect, mergesOf(t))) {
       const k = keyAt(t, r, c);
       const cell = t.cells.get(k) ?? EMPTY_CELL;
-      if (cell[key] === value) continue;
-      cells.set(k, { ...cell, [key]: value });
+      // personnalisation-3 (DS3) : Ombrer referme une case ouverte même à la même couleur ; Ombrer et Désombrer retirent `open`.
+      const reopen = key === "shade" && cell.open === true;
+      if (cell[key] === value && !reopen) continue;
+      const { open: _o, ...rest } = cell;
+      cells.set(k, key === "shade" ? { ...rest, shade: value } : { ...cell, [key]: value });
       changed = true;
     }
     return changed ? this.writeTable(found, id, { ...t, cells }) : this.unchanged();
@@ -1769,6 +1837,56 @@ class FakeDocument implements CoreDocument {
           }
           return { pages: [pageId], ids: [cmd.id], removed: [image] };
         });
+      }
+      case "SetTableLook": {
+        // suite OG32 (DS1), comme `cmd_set_table_look` : valeur d'abord, puis tableau, coins, seulement ce qui change.
+        const look = checkedLook(cmd.look);
+        if (look === null) throw new Error(MESSAGES.badTable);
+        const { found, t } = this.tableOf(cmd.id);
+        const rect = rectOf(t, cmd.from, cmd.to);
+        if (rect === null) throw new Error(MESSAGES.badTable);
+        if (look.key === "accept") {
+          // `set_accept` : les colonnes de la plage, jamais les cases ; liste vide : clé retirée.
+          const cols = t.cols.map((c, i): TableCol => {
+            if (i < rect.c0 || i > rect.c1 || sameList(c.accept ?? [], look.value)) return c;
+            const { accept: _a, ...rest } = c;
+            return look.value.length === 0 ? rest : { ...rest, accept: [...look.value] };
+          });
+          return cols.every((c, i) => c === t.cols[i]) ? this.unchanged() : this.writeTable(found, cmd.id, { ...t, cols });
+        }
+        const cells = new Map(t.cells);
+        let changed = false;
+        for (const [r, c] of targets(rect, mergesOf(t))) {
+          const k = keyAt(t, r, c);
+          const cur = t.cells.get(k);
+          const next = lookCell(cur, look);
+          if (next === cur || next === undefined) continue;
+          cells.set(k, next);
+          changed = true;
+        }
+        return changed ? this.writeTable(found, cmd.id, { ...t, cells }) : this.unchanged();
+      }
+      case "ReorderTableLines": {
+        // personnalisation-3 (D18), comme `cmd_reorder_table_lines` : valeur seule d'abord (vide, doublon), puis tableau,
+        // permutation, zones ni coupées ni retournées, puis écriture : les entrées recopiées telles quelles (clés
+        // inconnues comprises), cellules par ids inchangées, suivi des objets liés par writeTable.
+        const order = [...cmd.order];
+        // Doublon : tri d'une copie puis voisins comparés (`order` non borné : O(n log n)), comme le cœur.
+        const sorted = [...order].sort();
+        if (order.length === 0 || sorted.some((x, i) => i > 0 && x === sorted[i - 1])) throw new Error(MESSAGES.badTable);
+        const { found, t } = this.tableOf(cmd.id);
+        const lines: readonly (TableRow | TableCol)[] = cmd.axis === "row" ? t.rows : t.cols;
+        const ids = lines.map((l) => l.id);
+        if (order.length !== ids.length || ids.some((x) => !order.includes(x))) throw new Error(MESSAGES.badTable);
+        if (ids.every((x, i) => x === order[i])) return this.unchanged();
+        for (const m of mergesOf(t)) {
+          const [a, b] = cmd.axis === "row" ? [m.r0, m.r1] : [m.c0, m.c1];
+          const start = order.indexOf(ids[a] ?? "");
+          for (let k = a; k <= b; k++) if (order.indexOf(ids[k] ?? "") !== start + (k - a)) throw new Error(MESSAGES.badTable);
+        }
+        const pick = <L extends TableRow | TableCol>(from: readonly L[]): L[] =>
+          order.map((x) => from.find((l) => l.id === x)).filter((l): l is L => l !== undefined);
+        return this.writeTable(found, cmd.id, cmd.axis === "row" ? { ...t, rows: pick(t.rows) } : { ...t, cols: pick(t.cols) });
       }
       case "PlaceInCell": {
         // personnalisation-3 (D3), refus dans l'ordre de `cmd_place_in_cell` (section T1a) : 1 matrice, 2 tableau parmi les

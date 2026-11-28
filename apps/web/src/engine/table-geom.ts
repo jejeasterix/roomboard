@@ -7,7 +7,7 @@
  * (`layoutRich`, B1) ; sur une ancre de plusieurs lignes, la dernière ligne porte le reste (F7). Tailles par défaut en
  * unités de page (T4) ; la largeur de page se lit sur la page, jamais ici.
  */
-import type { Bounds, CellLink, CoreDocument, ElementView, Matrix, TableData, TableElement, TextSpan } from "../core/api";
+import type { Bounds, CellLink, CoreDocument, ElementView, HAlign, Matrix, TableAxis, TableBorder, TableData, TableElement, TextSpan, VAlign } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
@@ -26,7 +26,7 @@ export const TABLE_SHADE_HATCH_STEP = 16;
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
 /** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
 export const TABLE_HEADER_FILL = "#E0E0E8";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none" | "row-up" | "row-down" | "col-left" | "col-right";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -48,8 +48,16 @@ export interface TableCellState {
   readonly shaded?: boolean;
   /** personnalisation-3 (D17) : la ligne 0 est un en-tête, `#stage[data-table-header]`. */
   readonly header?: boolean;
+  /** DS10 : les objets logés rétrécissent au lieu d'agrandir la case (`fit`), lu par le panneau. */
+  readonly fit?: "shrink";
+  readonly border?: TableBorder | null;
+  /** D15 : alignements de la cellule active (absents : gauche, haut), `#stage[data-table-align]`. */
+  readonly ha?: HAlign;
+  readonly va?: VAlign;
   /** personnalisation-3 : nombre d'objets logés dans ce tableau (`cell[0]`), `#stage[data-table-linked]`. */
   readonly linked?: number;
+  /** D18 : textes de la colonne active, de haut en bas, `#stage[data-table-column]`. */
+  readonly column?: readonly string[];
 }
 export interface TableHit { readonly id: string; readonly transform: Matrix; readonly table: TableData; readonly cell: Cell }
 
@@ -170,6 +178,20 @@ export function cellContent(
   return { text: c?.text ?? "", spans: c?.spans ?? plainSpans(c?.text ?? ""), fill: c?.fill ?? null, shade: c?.shade ?? null, ...(c?.bg === undefined ? {} : { bg: c.bg }) };
 }
 
+/** Segments affichés d'une case (D17) : ceux de son contenu, mis en gras dans la ligne 0 d'un tableau à en-tête. Seule
+ *  source de ce que le peintre pose (`cellTextBoxes`), lue par chaque mesure du texte d'une case : largeur naturelle,
+ *  hauteur exigée (`rowHeightsFor`), pot (`fill-target.ts`), saisie (`openActive`). Jamais écrits dans une commande :
+ *  le gras d'en-tête n'est qu'un affichage. */
+export function shownSpans(t: TableData, c: Cell): readonly TextSpan[] {
+  return headerSpans(t, c.row, cellContent(t, t.rows[c.row]?.id ?? "", t.cols[c.col]?.id ?? "").spans);
+}
+
+/** Segments `spans` de la ligne `row`, mis en gras si c'est la ligne 0 d'un tableau à en-tête ; sinon inchangés. Sert
+ *  `shownSpans` et la hauteur exigée à l'écriture d'une case (`commit` de l'outil Tableau). */
+export function headerSpans(t: TableData, row: number, spans: readonly TextSpan[]): readonly TextSpan[] {
+  return t.header === true && row === 0 ? spans.map((s) => ({ text: s.text, attrs: { ...s.attrs, bold: true as const } })) : spans;
+}
+
 /** Le tableau le plus haut de `tables` (ordre de la pile) sous (x, y) monde (I2) ; matrice non inversible : sauté. */
 export function tableHitIn(tables: readonly TableElement[], x: number, y: number): TableHit | null {
   for (let i = tables.length - 1; i >= 0; i--) {
@@ -268,6 +290,24 @@ export function cellInnerBox(t: TableData, c: Cell): CellBox {
   return { x: r.x0 + TABLE_PADDING, y: r.y0 + TABLE_PADDING, w: innerWidth(r.x1 - r.x0), h: Math.max(0, r.y1 - r.y0 - 2 * TABLE_PADDING) };
 }
 
+/** Réglages d'une case (DS1) ; absents : gauche, haut, trait du tableau, fermé. */
+export function cellLook(t: TableData, rowId: string, colId: string): { readonly ha: HAlign; readonly va: VAlign; readonly border: TableBorder | null; readonly open: boolean } {
+  const c = t.cells.find((x) => x.row === rowId && x.col === colId);
+  return { ha: c?.ha ?? "left", va: c?.va ?? "top", border: c?.border ?? null, open: c?.open === true && c.shade !== null };
+}
+
+/** Cadre du texte d'une case (D15, DS6) : boîte intérieure de sa zone, descendue selon `va` d'après la hauteur des
+ *  lignes `textHeight` (milieu : la moitié de la place libre ; bas : toute) ; `ha` porté pour `lineShift`. Seul calcul
+ *  de l'alignement d'une case : dessin (`paintCellTexts`), pot (`fill-target.ts`), saisie (`openActive`). */
+export interface CellTextFrame extends CellBox { readonly ha: HAlign }
+export function cellTextFrame(t: TableData, cell: Cell, textHeight: number): CellTextFrame {
+  const box = cellInnerBox(t, cell);
+  const look = cellLook(t, t.rows[cell.row]?.id ?? "", t.cols[cell.col]?.id ?? "");
+  const free = Math.max(0, box.h - textHeight);
+  const dy = look.va === "middle" ? free / 2 : look.va === "bottom" ? free : 0;
+  return { x: box.x, y: box.y + dy, w: box.w, h: box.h - dy, ha: look.ha };
+}
+
 /** Hauteur exigée par les segments `spans` (C7b, R17) dans une colonne de `colWidth` (T5, B1) : lignes du dessin + deux marges. */
 export function cellHeight(spans: readonly TextSpan[], size: number, colWidth: number, measure: Measure): number {
   return richBoxHeight(layoutRich(spans, { size }, innerWidth(colWidth), measure)) + 2 * TABLE_PADDING;
@@ -279,7 +319,7 @@ export function cellHeight(spans: readonly TextSpan[], size: number, colWidth: n
 export function rowHeightsFor(t: TableData, colWidths: readonly number[], measure: Measure): number[] {
   const zones = mergeRanges(t);
   const width = (c0: number, c1: number): number => sum(t.cols.slice(c0, c1 + 1).map((c, i) => colWidths[c0 + i] ?? c.width));
-  const spans = (r: number, c: number): readonly TextSpan[] => cellContent(t, t.rows[r]?.id ?? "", t.cols[c]?.id ?? "").spans;
+  const spans = (r: number, c: number): readonly TextSpan[] => shownSpans(t, { row: r, col: c });
   const empty = cellHeight(plainSpans(""), t.size, colWidths[0] ?? t.cols[0]?.width ?? 1, measure);
   const heights = t.rows.map((_, r) => {
     let h = 0;
@@ -351,7 +391,7 @@ export function edgeAt(t: TableData, lx: number, ly: number, tol: number): EdgeH
 }
 
 /** Échelle d'une matrice (longueur de l'image du vecteur x) ; 1 si nulle. */
-const scaleOf = (m: Matrix): number => Math.hypot(m[0], m[1]) || 1;
+export const scaleOf = (m: Matrix): number => Math.hypot(m[0], m[1]) || 1;
 
 /** Bordure du tableau le plus haut à ± `tolPx` px écran de (x, y) monde (D13), au zoom `zoom`. */
 export function tableEdgeAt(
@@ -408,4 +448,77 @@ export function linkedBoxes(
     const ys = pts.map((p) => p[1]);
     return [{ row: cell[1], col: cell[2], w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }];
   });
+}
+
+/** Double appui (D14, H15) : 300 ms entre deux appuis, 8 px écran ; largeur ajustée bornée (H16). */
+export const DOUBLE_TAP_MS = 300;
+export const DOUBLE_TAP_PX = 8;
+export const FIT_MAX_WIDTH = 4 * TABLE_COL_WIDTH;
+/** Largeur « sans retour » pour la largeur naturelle. */
+const NO_WRAP = 1e9;
+
+/** Largeur naturelle d'une colonne (D14) : ligne de texte la plus longue sans retour automatique, sur les ancres d'une
+ *  seule colonne (une zone de plusieurs colonnes et une cellule couverte sont ignorées), plus deux marges. */
+export function naturalWidth(t: TableData, col: number, measure: Measure): number {
+  const k = t.cols[col];
+  if (k === undefined) return 2 * TABLE_PADDING;
+  const zones = mergeRanges(t);
+  let w = 0;
+  t.rows.forEach((_, i) => {
+    const z = zones.find((x) => inRange(x, { row: i, col }));
+    if (z !== undefined && (z.c0 !== z.c1 || z.r0 !== i)) return;
+    for (const line of layoutRich(shownSpans(t, { row: i, col }), { size: t.size }, NO_WRAP, measure)) {
+      const last = line.segments[line.segments.length - 1];
+      if (last !== undefined) w = Math.max(w, last.x + last.width);
+    }
+  });
+  return w + 2 * TABLE_PADDING;
+}
+
+export const REORDER_REFUSED = "Une cellule fusionnée empêche ce déplacement.";
+
+/** D18 : bloc `a..b` remis au rang `to` de la liste privée du bloc (0 ≤ to ≤ n − taille), ordre des autres gardé. */
+export function movedOrder(ids: readonly string[], a: number, b: number, to: number): string[] {
+  const block = ids.slice(a, b + 1);
+  const rest = [...ids.slice(0, a), ...ids.slice(b + 1)];
+  const at = Math.max(0, Math.min(to, rest.length));
+  return [...rest.slice(0, at), ...block, ...rest.slice(at)];
+}
+
+/** Rang `to` de `movedOrder` pour une arrivée sur la ligne `k` : avant elle si elle précède le bloc, après elle sinon. */
+export function destOf(a: number, b: number, k: number): number {
+  return k < a ? k : k > b ? k - (b - a) : a;
+}
+
+/** D18 : chaque zone reste entière et dans son ordre (même règle que `cmd_reorder_table_lines`). */
+export function keepsMerges(t: TableData, axis: TableAxis, order: readonly string[]): boolean {
+  const ids = (axis === "row" ? t.rows : t.cols).map((l) => l.id);
+  const pos = new Map(order.map((x, i) => [x, i]));
+  return mergeRanges(t).every((z) => {
+    const [a, b] = axis === "row" ? [z.r0, z.r1] : [z.c0, z.c1];
+    const first = pos.get(ids[a] ?? "") ?? -1;
+    for (let k = a; k <= b; k++) if (pos.get(ids[k] ?? "") !== first + (k - a)) return false;
+    return true;
+  });
+}
+
+/** Poignées de déplacement (D18, DS8), repère local : à `off` unités à gauche du tableau au milieu du bloc de lignes,
+ *  au-dessus du tableau au milieu du bloc de colonnes. */
+export interface MoveGrip { readonly kind: "row-move" | "col-move"; readonly x: number; readonly y: number }
+export function moveGrips(t: TableData, span: Range, off: number): MoveGrip[] {
+  const r = rangeRect(t, span);
+  return [
+    { kind: "row-move", x: -off, y: (r.y0 + r.y1) / 2 },
+    { kind: "col-move", x: (r.x0 + r.x1) / 2, y: -off },
+  ];
+}
+
+/** Bande sous `v` (repère local), bornée à 0..n − 1 (le doigt peut sortir du tableau). */
+export function lineAt(sizes: readonly number[], v: number): number {
+  let acc = 0;
+  for (let i = 0; i < sizes.length; i++) {
+    acc += sizes[i] ?? 0;
+    if (v < acc) return i;
+  }
+  return Math.max(0, sizes.length - 1);
 }

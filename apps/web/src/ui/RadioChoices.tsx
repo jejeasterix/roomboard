@@ -16,6 +16,8 @@ export interface RadioOption<T extends string> {
   readonly detail?: string;
   /** Infobulle du segment (survol, focus clavier, appui long), comme un `IconButton` ; absente : pas de bulle. */
   readonly tip?: string;
+  /** Raccourci propre au segment : `aria-keyshortcuts` et bulle (il règle exactement cette valeur). */
+  readonly shortcut?: { readonly text: string; readonly aria: string | null } | null;
 }
 
 /** Focus clavier au sens du navigateur (`:focus-visible`) ; sélecteur inconnu : l'infobulle décide seule. */
@@ -42,6 +44,8 @@ export interface RadioChoicesProps<T extends string> {
   readonly disabled?: boolean;
   /** Un appui ne prend pas le focus (pointerdown et mousedown annulés) : la zone de saisie du texte le garde (T31). */
   readonly keepFocus?: boolean;
+  /** Raccourci du groupe entier (un geste qui fait défiler les valeurs) : `aria-keyshortcuts` du groupe, texte dans la bulle de chaque segment. */
+  readonly shortcut?: { readonly text: string; readonly aria: string | null } | null;
   choose(v: T): void;
 }
 
@@ -65,13 +69,14 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
     queueMicrotask(() => group?.querySelectorAll<HTMLElement>('[role="radio"]')[rank]?.focus());
   };
   return (
-    <div ref={group} class="rb-radios" role="radiogroup" aria-label={props.label} data-edit={props.name} data-look={props.look}>
+    <div ref={group} class="rb-radios" role="radiogroup" aria-label={props.label} data-edit={props.name} data-look={props.look} aria-keyshortcuts={props.shortcut?.aria ?? undefined}>
       <For each={props.options}>
         {(o, i) => {
           const on = (): boolean => o.value === props.value;
           const tip = createTip();
           let button: HTMLButtonElement | undefined;
-          const hasTip = (): boolean => o.tip !== undefined;
+          const keys = (): { readonly text: string; readonly aria: string | null } | null => o.shortcut ?? props.shortcut ?? null;
+          const hasTip = (): boolean => o.tip !== undefined || keys() !== null;
           return (
             <>
             <button
@@ -83,6 +88,7 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
               disabled={props.disabled === true}
               tabIndex={on() || (i() === 0 && !known()) ? 0 : -1}
               data-choice={o.value}
+              aria-keyshortcuts={o.shortcut?.aria ?? undefined}
               {...(props.valueAttr ? { [props.valueAttr]: o.value } : {})}
               {...(hasTip() ? tipPointerHandlers(tip) : {})}
               onPointerDown={(e) => { keep(e); if (hasTip()) tip.down(e.pointerType); }}
@@ -101,7 +107,7 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
               <span class="rb-radio-label">{o.label}</span>
               <Show when={o.detail}>{(d) => <span class="rb-radio-detail">{d()}</span>}</Show>
             </button>
-            <Show when={o.tip}>{(label) => <TipBubble tip={tip} label={label()} anchor={() => button!} />}</Show>
+            <Show when={hasTip()}><TipBubble tip={tip} label={o.tip ?? o.label} anchor={() => button!} keys={keys()?.text} /></Show>
             </>
           );
         }}

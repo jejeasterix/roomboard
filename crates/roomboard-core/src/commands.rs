@@ -284,6 +284,22 @@ pub enum Command {
         col: String,
         from: Option<String>,
     },
+    /// personnalisation-3 (suite OG32, DS1) : une clé de case (`ha`, `va`, `border`, `open`) sur les ancres et cellules
+    /// simples de la plage, ou `accept` sur ses colonnes ; valeur refusée : `BadTable` avant la recherche du tableau ;
+    /// rien ne change : aucune étape.
+    SetTableLook {
+        id: String,
+        from: (String, String),
+        to: (String, String),
+        look: crate::table_look::CellLook,
+    },
+    /// personnalisation-3 (D18) : réordonne les lignes (`Row`) ou colonnes (`Col`) ; `order` = tous les ids lisibles ;
+    /// zone coupée ou ordre invalide : `BadTable` ; ordre inchangé : aucune étape ; objets liés suivis.
+    ReorderTableLines {
+        id: String,
+        axis: crate::table::TableAxis,
+        order: Vec<String>,
+    },
     /// Pot (C6a, D12, DA1) : contour (`color`), intérieur (`fill`) ou fond de la page (`background`) ; `None` = « Aucune »
     /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38). C6b : image
     /// (nouvel asset, `sourceAsset`, B2-B4).
@@ -1046,6 +1062,15 @@ impl Document {
             }
             Command::SetCellImage { id, row, col, from } => {
                 self.cmd_set_cell_image(&id, &row, &col, from.as_deref())
+            }
+            Command::SetTableLook { id, from, to, look } => self.cmd_set_table_look(
+                &id,
+                (from.0.as_str(), from.1.as_str()),
+                (to.0.as_str(), to.1.as_str()),
+                &look,
+            ),
+            Command::ReorderTableLines { id, axis, order } => {
+                self.cmd_reorder_table_lines(&id, axis, &order)
             }
             Command::ImportTable {
                 page,

@@ -4,6 +4,7 @@
  * attribut. Coupure gloutonne aux espaces, un mot peut traverser plusieurs segments, mot trop long coupé par graphème.
  */
 import type { TextAttrs, TextSpan } from "../core/api";
+import type { TextAlign } from "../core/look";
 import { TEXT_ATTR_KEYS } from "../core/rich-text";
 
 export const TEXT_FONT_FAMILY = '"Atkinson Hyperlegible", system-ui, sans-serif';
@@ -262,13 +263,22 @@ export function layoutRich(spans: readonly TextSpan[], base: { readonly size: nu
   return lines;
 }
 
+/** Décalage horizontal d'une ligne dans sa boîte (OG11 ; D15, DS6) : seul calcul de l'alignement, lu par le dessin
+ *  (`paintText`) et par la collision du texte (`offsetAt`). Droite : `boxWidth - largeur` ; centre : la moitié. */
+export function lineShift(line: RichLine, boxWidth: number, align: TextAlign): number {
+  const last = line.segments[line.segments.length - 1];
+  const rest = align === "left" || last === undefined ? 0 : boxWidth - (last.x + last.width);
+  return align === "right" ? rest : align === "center" ? rest / 2 : 0;
+}
+
 /**
  * Caractère sous un point local de la boîte (C6a, D6) : rang UTF-16, dans le contenu (`spans` bout à bout), du graphème
  * dont la case [x, x + largeur) × [haut de ligne, haut + hauteur) contient (lx, ly). Mêmes lignes que le dessin
  * (`layoutRich`) : chaque ligne est retrouvée dans le contenu à partir de la fin de la précédente (seules des espaces ou
  * un saut de ligne les séparent). null hors des caractères : marge, après la fin d'une ligne, sous la dernière.
+ * `align` (D15) : la ligne est décalée de `lineShift`, comme au dessin ; absent : gauche (texte libre inchangé).
  */
-export function offsetAt(spans: readonly TextSpan[], base: { readonly size: number }, boxWidth: number, measure: Measure, lx: number, ly: number): number | null {
+export function offsetAt(spans: readonly TextSpan[], base: { readonly size: number }, boxWidth: number, measure: Measure, lx: number, ly: number, align: TextAlign = "left"): number | null {
   if (!Number.isFinite(lx) || !Number.isFinite(ly) || lx < 0 || ly < 0) return null;
   const content = spans.map((s) => s.text).join("");
   let cursor = 0;
@@ -278,6 +288,8 @@ export function offsetAt(spans: readonly TextSpan[], base: { readonly size: numb
     const start = found < 0 ? cursor : found;
     cursor = start + text.length;
     if (ly < line.top || ly >= line.top + line.height) continue;
+    // D15 : la ligne est dessinée décalée de `lineShift` ; le point est ramené dans son repère (avant : hors du texte).
+    const px = lx - lineShift(line, boxWidth, align);
     let at = start;
     for (const seg of line.segments) {
       const face = faceOf(seg.style);
@@ -285,7 +297,7 @@ export function offsetAt(spans: readonly TextSpan[], base: { readonly size: numb
       for (const g of graphemes(seg.text)) {
         const x0 = seg.x + measure(seg.text.slice(0, k), seg.style.size, face);
         const x1 = seg.x + measure(seg.text.slice(0, k + g.length), seg.style.size, face);
-        if (lx >= x0 && lx < x1) return at + k;
+        if (px >= x0 && px < x1) return at + k;
         k += g.length;
       }
       at += seg.text.length;

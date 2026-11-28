@@ -14,7 +14,7 @@
 // élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
 // C10b : MergeTableCells, SplitTableCell, SetTableShade, ImportTable ; RemoveTableLine.to, SetTableFill.to (plages) ;
 // TableData.merges (zones calculées par le cœur, règle F2 : la page les lit, ne les recalcule pas) ; TableCell.shade (F8).
-// personnalisation-3 : PlaceInCell, SetTableLineSizes (une étape chacune) ; ElementBase.cell (lien de case, D1), suivi des objets liés (D5, D6).
+// personnalisation-3 : PlaceInCell, SetTableLineSizes, SetTableLook, ReorderTableLines (une étape chacune) ; ElementBase.cell (lien de case, D1), suivi des objets liés (D5, D6).
 // C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
 // C6a : Fill (contour, intérieur, fond de page ; une étape, D38) ; edgeHit (bord d'une forme, mesuré par le cœur, DA2).
 // C3 : Group, Ungroup ; ElementBase.group ; extract, insertFragment, insertPages, saveFragment(Parts), loadFragment(Parts).
@@ -215,6 +215,10 @@ export type Command =
   | { readonly type: "SetTableOptions"; readonly id: string; readonly fit?: "grow" | "shrink"; readonly header?: boolean }
   /** personnalisation-3 (T9) : l'image logée `from` devient le fond de la case et quitte la page ; null retire le fond ; une étape. */
   | { readonly type: "SetCellImage"; readonly id: string; readonly row: string; readonly col: string; readonly from: string | null }
+  /** personnalisation-3 (suite OG32, DS1) : une clé de case ou la liste `accept` des colonnes ; une étape. */
+  | { readonly type: "SetTableLook"; readonly id: string; readonly from: CellIds; readonly to: CellIds; readonly look: CellLook }
+  /** personnalisation-3 (D18) : `order` = tous les ids de l'axe, dans l'ordre voulu ; zone coupée refusée ; objets liés suivis ; une étape. */
+  | { readonly type: "ReorderTableLines"; readonly id: string; readonly axis: TableAxis; readonly order: readonly string[] }
   /** C10b (F18) : tableau rempli ; cells = rows × cols textes en rangées ; merges = [ligne, colonne, lignes, colonnes]. */
   | {
       readonly type: "ImportTable";
@@ -328,7 +332,8 @@ export type TableAxis = "row" | "col";
 export type CellLink = readonly [table: string, row: string, col: string];
 /** personnalisation-3 (D3) : taille d'une ligne ou d'une colonne, `[tableau, axe, ligne, taille]`. */
 export type LineSize = readonly [table: string, axis: TableAxis, line: string, size: number];
-export interface TableCol { readonly id: string; readonly width: number }
+/** personnalisation-3 (DS5) : `accept` = étiquettes admises par la colonne (tableau de tri) ; absent : aucune règle. */
+export interface TableCol { readonly id: string; readonly width: number; readonly accept?: readonly string[] }
 export interface TableRow { readonly id: string; readonly height: number }
 /** Cellule par ids (C10b). */
 export interface CellIds { readonly row: string; readonly col: string }
@@ -343,6 +348,45 @@ export interface TableCell {
   readonly spans: readonly TextSpan[];
   /** personnalisation-3 (T9) : id d'asset de l'image de fond de la case ; absent : aucun. */
   readonly bg?: string;
+  /** personnalisation-3 (suite OG32, DS1) : alignements ; absents : `left` et `top`. */
+  readonly ha?: "center" | "right";
+  readonly va?: "middle" | "bottom";
+  /** personnalisation-3 (D16, DS4) : bordure de la case ; absente : trait du tableau. */
+  readonly border?: TableBorder;
+  /** personnalisation-3 (DS3) : case ombrée ouverte ; absent : fermée (Ombrer et Désombrer referment). */
+  readonly open?: true;
+}
+export type HAlign = "left" | "center" | "right";
+export type VAlign = "top" | "middle" | "bottom";
+export type BorderStyle = "solid" | "dashed" | "dotted" | "none";
+/** personnalisation-3 (D16, DS4) : `[couleur, épaisseur, style]`. */
+export type TableBorder = readonly [color: string, width: number, style: BorderStyle];
+/** personnalisation-3 (DS1) : une clé par commande ; `left` / `top` retirent ; `border` null retire ; `accept` [] retire. */
+export type CellLook =
+  | { readonly key: "ha"; readonly value: HAlign }
+  | { readonly key: "va"; readonly value: VAlign }
+  | { readonly key: "border"; readonly value: TableBorder | null }
+  | { readonly key: "open"; readonly value: boolean }
+  | { readonly key: "accept"; readonly value: readonly string[] };
+/** C1 (DS1) : forme d'un `CellLook`, types seulement (clé connue, valeur du type de sa clé ; domaines non vérifiés).
+ *  Seul contrôle de forme : l'adaptateur Wasm le fait avant l'appel (le cœur lit des types primitifs, les domaines restent
+ *  à `check` de `table_look.rs`) ; la fausse liaison y ajoute ces domaines (`checkedLook`). */
+export function isCellLookShape(l: unknown): l is CellLook {
+  if (typeof l !== "object" || l === null) return false;
+  const { key, value: v } = l as { key?: unknown; value?: unknown };
+  switch (key) {
+    case "ha":
+    case "va":
+      return typeof v === "string";
+    case "border":
+      return v === null || (Array.isArray(v) && v.length === 3 && typeof v[0] === "string" && typeof v[1] === "number" && typeof v[2] === "string");
+    case "open":
+      return typeof v === "boolean";
+    case "accept":
+      return Array.isArray(v) && v.every((x) => typeof x === "string");
+    default:
+      return false;
+  }
 }
 /** Zone fusionnée (F29) : ancre par ids, étendue en rangs, après la règle F2 du cœur. */
 export interface TableMerge { readonly row: string; readonly col: string; readonly rows: number; readonly cols: number }
@@ -558,6 +602,9 @@ export const DEFAULT_TABLE_COLOR = "#000000";
 export const DEFAULT_TABLE_SIZE = 36;
 /** Messages C3 du cœur (G10), repris à l'identique par la fausse liaison. */
 export const BAD_GROUP_MESSAGE = "groupe invalide (au moins deux objets ou groupes d'une même page, ids connus attendus)";
+/** Message de `BadTable` du cœur, repris par la fausse liaison et par l'adaptateur Wasm (forme d'un `CellLook`, C1). */
+export const TABLE_MESSAGE =
+  "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)";
 
 /** C5 (I5) : message de `BadImageParams` du cœur, repris par la fausse liaison. */
 export const BAD_IMAGE_PARAMS_MESSAGE =

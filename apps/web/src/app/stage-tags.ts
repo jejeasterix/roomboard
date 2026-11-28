@@ -34,7 +34,7 @@ export interface StageExtras {
 export function stageTags(
   s: EngineState,
   extra: StageExtras = {},
-): Record<"page" | "pageMode" | "selection" | "bounds" | "tool" | "table" | "tableLinked" | "tableHeader" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image" | "pot" | "zones" | "zoneMs" | "zoneCells" | "lineEdit" | "bind" | "linePoints", string> {
+): Record<"page" | "pageMode" | "selection" | "bounds" | "tool" | "table" | "tableLinked" | "tableHeader" | "tableAlign" | "tableBorder" | "tableColumn" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image" | "pot" | "zones" | "zoneMs" | "zoneCells" | "lineEdit" | "bind" | "linePoints", string> {
   return {
     page: `${s.pageIndex + 1}/${s.pageCount}`,
     pageMode: s.pageLayout,
@@ -44,6 +44,11 @@ export function stageTags(
     table: tableTag(s.tableCell),
     tableLinked: s.tableCell?.linked === undefined ? "" : String(s.tableCell.linked),
     tableHeader: s.tableCell === null ? "" : s.tableCell.header === true ? "1" : "0",
+    // D15 : `#stage[data-table-align]` = « ha,va » de la case active ; vide sans case.
+    tableAlign: s.tableCell === null ? "" : `${s.tableCell.ha ?? "left"},${s.tableCell.va ?? "top"}`,
+    tableColumn: s.tableCell?.column?.join("|") ?? "",
+    // S9 : `#stage[data-table-border]` = « couleur,épaisseur,style » de la case active ; vide sans bordure réglée.
+    tableBorder: s.tableCell?.border ? s.tableCell.border.join(",") : "",
     tableMerges: String(s.tableMerges),
     tableShades: String(s.tableShades),
     units: String(s.selectionUnits),
