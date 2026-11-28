@@ -56,24 +56,29 @@ function splitLabel(text: string): readonly [string, string] {
   return at < 0 ? [text, ""] : [text.slice(0, at), text.slice(at + 3)];
 }
 
-/** Nom, séparateur (lu, pas montré) et valeur d'une rangée : `textContent` = libellé complet. */
-function RowText(props: { text: string; hideValue?: boolean; afterName?: JSX.Element }): JSX.Element {
+/** Nom, séparateur (pas montré) et valeur d'une rangée : `textContent` = libellé complet. `hideValue` (interrupteur) :
+ *  valeur ni montrée ni lue, `aria-checked` dit l'état et le nom accessible ne change pas à chaque appui. */
+function RowText(props: { text: string; hideValue?: boolean; reload?: boolean }): JSX.Element {
   const parts = () => splitLabel(props.text);
+  const hidden = (): "true" | undefined => (props.hideValue === true ? "true" : undefined);
   return (
     <>
       <span class="rb-set-name">{parts()[0]}</span>
-      {props.afterName}
-      <span class="rb-set-sep"> : </span>
-      <span class="rb-set-val" classList={{ "rb-set-sr": props.hideValue === true }}>{parts()[1]}</span>
+      <Show when={props.reload}>
+        <Icon name="reset" />
+      </Show>
+      <span class="rb-sr" aria-hidden={hidden()}> : </span>
+      <span class="rb-set-val" classList={{ "rb-sr": props.hideValue === true }} aria-hidden={hidden()}>{parts()[1]}</span>
     </>
   );
 }
 
-/** Section titrée du panneau (OG39) : icône Lucide et titre comme l'en-tête du panneau d'options, sans accordéon. */
+/** Section titrée du panneau (OG39) : icône Lucide et titre comme l'en-tête du panneau d'options, sans accordéon ; sans
+ *  nom accessible, la section n'ajoute aucun repère `region` (le titre h3 suffit à la navigation). */
 function Section(props: { id: string; icon: string; title: string; children: JSX.Element }): JSX.Element {
   return (
-    <section class="rb-set-sec" data-section={props.id} aria-labelledby={`reglages-h-${props.id}`}>
-      <h3 class="rb-set-h" id={`reglages-h-${props.id}`}>
+    <section class="rb-set-sec" data-section={props.id}>
+      <h3 class="rb-set-h">
         <Icon name={props.icon} />
         <span>{props.title}</span>
       </h3>
@@ -82,11 +87,11 @@ function Section(props: { id: string; icon: string; title: string; children: JSX
   );
 }
 
-/** Interrupteur d'un réglage oui / non (OG39) : `role="switch"`, poignée à droite, valeur lue par le lecteur d'écran. */
-function SwitchRow(props: { reglage: string; on: boolean; label: string; toggle(): void }): JSX.Element {
+/** Interrupteur d'un réglage oui / non (OG39) : `role="switch"`, poignée à droite, état dit par `aria-checked`. */
+function SwitchRow(props: { reglage: string; on: boolean; labels: { readonly on: string; readonly off: string }; toggle(): void }): JSX.Element {
   return (
     <button type="button" class="rb-set-row" role="switch" aria-checked={props.on} data-reglage={props.reglage} onClick={() => props.toggle()}>
-      <RowText text={props.label} hideValue />
+      <RowText text={props.on ? props.labels.on : props.labels.off} hideValue />
       <span class="rb-set-knob" aria-hidden="true" />
     </button>
   );
@@ -121,25 +126,28 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
   };
 
   /** Rangée d'un réglage du moteur : un appui passe à la valeur suivante (`cycleSetting`), comme avant OG39. */
-  const engineRow = (key: SettingKey): JSX.Element => (
-    <button
-      type="button"
-      class="rb-set-row"
-      data-reglage={key}
-      title={needsReload(key) ? RELOAD_HINT : undefined}
-      aria-describedby={needsReload(key) ? "reglages-recharge" : undefined}
-      onClick={() => void click(key)}
-    >
-      <RowText text={settingLabel(key, settings(), props.effective())} afterName={needsReload(key) ? <Icon name="reset" /> : undefined} />
-    </button>
-  );
+  const engineRow = (key: SettingKey): JSX.Element => {
+    const reload = needsReload(key);
+    return (
+      <button
+        type="button"
+        class="rb-set-row"
+        data-reglage={key}
+        title={reload ? RELOAD_HINT : undefined}
+        aria-describedby={reload ? "reglages-recharge" : undefined}
+        onClick={() => void click(key)}
+      >
+        <RowText text={settingLabel(key, settings(), props.effective())} reload={reload} />
+      </button>
+    );
+  };
 
   return (
     <div id="reglages" class="rb-settings" role="group" aria-label="Réglages du moteur">
       <Section id="saisie" icon="hand" title="Stylet et doigt">
         <For each={SAISIE}>{engineRow}</For>
         <Show when={palmDevice}>
-          {(dev) => <SwitchRow reglage="gomme-paume" on={palmOn()} label={palmOn() ? PALM_ERASER_LABELS.on : PALM_ERASER_LABELS.off} toggle={() => void dev().setPalmEraser(!dev().palmEraser())} />}
+          {(dev) => <SwitchRow reglage="gomme-paume" on={palmOn()} labels={PALM_ERASER_LABELS} toggle={() => void dev().setPalmEraser(!dev().palmEraser())} />}
         </Show>
       </Section>
       <Section id="rendu" icon="pen-line" title="Rendu de l'encre">
@@ -149,7 +157,7 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
       <Show when={device}>
         {(dev) => (
           <Section id="annotation" icon="annotate" title="Annotation">
-            <SwitchRow reglage="cadre" on={frame()} label={frame() ? FRAME_LABELS.on : FRAME_LABELS.off} toggle={() => void dev().setFrame(!dev().frame())} />
+            <SwitchRow reglage="cadre" on={frame()} labels={FRAME_LABELS} toggle={() => void dev().setFrame(!dev().frame())} />
           </Section>
         )}
       </Show>

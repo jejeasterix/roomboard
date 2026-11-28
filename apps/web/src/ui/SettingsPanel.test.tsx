@@ -233,6 +233,8 @@ describe("SettingsPanel : design des îlots (OG39)", () => {
     device.setFrame(false);
     expect(btn("cadre").getAttribute("aria-checked")).toBe("false");
     expect(btn("palm").getAttribute("role")).toBeNull();
+    expect(btn("gomme-paume").querySelector(".rb-set-val")?.getAttribute("aria-hidden")).toBe("true");
+    expect(btn("palm").querySelector(".rb-set-val")?.hasAttribute("aria-hidden")).toBe(false);
   });
 
   it("OG39 rechargement : É3 et É4 portent l'icône « reset » et la note visible du rechargement", () => {
@@ -254,6 +256,9 @@ describe("SettingsPanel : design des îlots (OG39)", () => {
 
 describe("settings.css (OG39)", () => {
   const css = readFileSync(join(__dirname, "settings.css"), "utf8").replace(/\s+/g, " ");
+  it("piste coupée de l'interrupteur en gris lisible (3:1 au moins), jamais en gris 300", () => {
+    expect(css).toMatch(/\.rb-set-knob \{[^}]*background: var\(--rf-text-muted-aa\)/);
+  });
   it("rangées à 44 px au moins (cible tactile), jetons de la charte seulement", () => {
     expect(css).toMatch(/\.rb-set-row \{[^}]*min-block-size: 44px/);
     const colors = css.replace(/\/\*.*?\*\//g, "").match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
