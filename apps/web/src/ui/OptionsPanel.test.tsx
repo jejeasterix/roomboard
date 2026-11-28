@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ElementView } from "../core/api";
 import { createDeviceSettings } from "../device-settings";
 import type { EngineState } from "../engine/engine";
+import type { TableCellState } from "../engine/table-geom";
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../engine/item-style";
 import { builtinProfile } from "../toolbar-profiles";
 import type { ButtonSize } from "../toolbar";
@@ -16,7 +17,7 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { openImage?: (s: "crop" | "background" | null) => void; units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean; lineEditing?: string | null; linePoints?: number }
+interface Opts { openImage?: (s: "crop" | "background" | null) => void; units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean; lineEditing?: string | null; linePoints?: number; tableCell?: TableCellState }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
   const picks: ((c: string | null) => void)[] = [];
@@ -35,8 +36,10 @@ function mount(o: Opts) {
     cancelPick: vi.fn(),
     editLinePoints: vi.fn(() => true),
     removeLinePoints: vi.fn(() => true),
+    tableAction: vi.fn(),
+    tableLook: vi.fn(),
   };
-  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, selectionUnits: o.units ?? o.selection.length, textFormat: o.editing ? {} : null, lineEditing: o.lineEditing ?? null, linePointsSelected: o.linePoints ?? 0 } as unknown as EngineState;
+  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, selectionUnits: o.units ?? o.selection.length, textFormat: o.editing ? {} : null, lineEditing: o.lineEditing ?? null, linePointsSelected: o.linePoints ?? 0, tableCell: o.tableCell ?? null } as unknown as EngineState;
   const settings = createDeviceSettings(null);
   const r = render(() => (
     <OptionsPanel
@@ -785,5 +788,14 @@ describe("OptionsPanel : Modifier les points (OG12 T11)", () => {
     expect(b).not.toBeNull();
     fireEvent.click(b!);
     expect(engine.removeLinePoints).toHaveBeenCalledTimes(1);
+  });
+  it("DS10 : outil Tableau, case active : quatre sections ; un appui va à engine.tableLook", () => {
+    const { container, engine } = mount({ tool: "table", selection: [], tableCell: { id: "t", row: 0, col: 0, rows: 2, cols: 2, ha: "left", va: "top", border: null } });
+    expect([...container.querySelectorAll("[data-option]")].map((e) => e.getAttribute("data-option"))).toEqual(["tableObjects", "tableAlign", "tableBorder", "tableRows"]);
+    fireEvent.click(container.querySelector('[data-option="tableAlign"] [data-option-value="center"]')!);
+    expect(engine.tableLook).toHaveBeenCalledWith({ key: "ha", value: "center" });
+  });
+  it("DS10 : outil Tableau sans case active : aucun panneau", () => {
+    expect(mount({ tool: "table", selection: [] }).container.querySelector("[data-options]")).toBeNull();
   });
 });

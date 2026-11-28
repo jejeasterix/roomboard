@@ -70,8 +70,14 @@ describe("tool-options", () => {
       { color: "#bfdbfe", label: "Bleu" },
     ]);
   });
-  it("showsPanel : masqué avec Main, Gomme, Pot, Tableau sans sélection, et en annotation", () => {
-    for (const t of ["hand", "eraser", "fill", "table", "select"] as const) expect(showsPanel(t as never, 0, false)).toBe(false);
+  it("DS10 : showsPanel(table) ; sections du tableau seulement avec une case active, dans l'ordre", () => {
+    expect(showsPanel("table" as never, 0, false)).toBe(true);
+    expect(sectionsFor("table" as never, [], false, null, 0, false)).toEqual([]);
+    expect(sectionsFor("table" as never, [], false, null, 0, true)).toEqual(["tableObjects", "tableAlign", "tableBorder", "tableRows"]);
+    expect(sectionsFor("rect", [], false, null, 0, true)).not.toContain("tableAlign");
+  });
+  it("showsPanel : masqué avec Main, Gomme, Pot, Sélection sans sélection, et en annotation", () => {
+    for (const t of ["hand", "eraser", "fill", "select"] as const) expect(showsPanel(t as never, 0, false)).toBe(false);
     expect(showsPanel("rect", 0, false)).toBe(true);
     expect(showsPanel("select", 1, false)).toBe(true);
     expect(showsPanel("rect", 0, true)).toBe(false);
