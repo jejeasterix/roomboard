@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_REQUIRES, ACTION_TABLE, ANNOTATION_MAIN_ACTIONS, ANNOTATION_ROLE, HISTORY_ROLE, MENU_ROLE, PANELS_ROLE, annotationBarOf, ANNOTATION_ONLY_ACTIONS, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
+  ACTION_REQUIRES, ACTION_TABLE, RETIRED_ACTIONS, ANNOTATION_MAIN_ACTIONS, ANNOTATION_ROLE, HISTORY_ROLE, MENU_ROLE, PANELS_ROLE, annotationBarOf, ANNOTATION_ONLY_ACTIONS, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
   resolveStartMode, serializeProfile, FILL_COLORS, FILL_NONE_LABEL, fillChoices, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities, type Toolbar,
   BAR_ANCHORS, sideActions, withPageNav,
 } from "./toolbar";
@@ -650,5 +650,24 @@ describe("personnalisation-1a T2 : reprise d'un profil ancien, en mémoire (déc
     expect(warnings.some((w) => w.includes("pageMode") && w.includes("carre"))).toBe(true);
     expect(profile.behavior).toEqual({ startMode: "board", pageMode: "landscape", rest: {} });
     expect(errs({ ...base(), behavior: { pageMode: 3 } })).toEqual(["behavior.pageMode : chaîne attendue"]);
+  });
+});
+
+describe("OG41 : action retirée eraser-mode (D12, U13, S4)", () => {
+  it("action retirée lue sans avertissement : gardée et réécrite, jamais montrée", () => {
+    const { profile, warnings } = ok(JSON.parse(OLD_45484DB));
+    expect(warnings.filter((w) => w.includes("eraser-mode"))).toEqual([]);
+    expect(RETIRED_ACTIONS.has("eraser-mode")).toBe(true);
+    expect((ACTION_TABLE as Record<string, unknown>)["eraser-mode"]).toBeUndefined();
+    const tools = profile.toolbars.find((b) => b.role === "tools")!;
+    expect(tools.groups.flatMap((g) => g.items).some((i) => i.action === "eraser-mode")).toBe(true);
+    expect(visibleItems(tools, ALL).some((i) => i.action === "eraser-mode")).toBe(false);
+    const ann = profile.toolbars.find((b) => b.role === "annotation");
+    if (ann !== undefined) expect(visibleItems(ann, ALL).some((i) => i.action === "eraser-mode")).toBe(false);
+    expect(JSON.stringify(serializeProfile(profile))).toContain('"eraser-mode"');
+  });
+  it("une action vraiment inconnue reste signalée", () => {
+    const json = JSON.parse(OLD_45484DB.split('"action": "eraser-mode"').join('"action": "inconnue-og41"'));
+    expect(ok(json).warnings).toContain("action inconnue masquée : inconnue-og41");
   });
 });

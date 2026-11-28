@@ -127,9 +127,11 @@ describe("Toolbar", () => {
     const { container } = setup(mkBar([tool("pen"), sep, tool("eraser")]));
     expect(container.querySelector('.rb-sep[role="separator"]')).not.toBeNull();
   });
-  it("libellé de l'état : gomme partielle", () => {
+  it("OG41 (D1) : une seule gomme : l'outil eraser, aucun bouton eraser-mode", () => {
     const { container } = setup();
-    expect(container.querySelector('button[data-item="eraser-mode"]')!.textContent).toBe("Gomme : partielle");
+    expect(container.querySelectorAll('button[data-item="eraser"]')).toHaveLength(1);
+    expect(container.querySelector('button[data-item="eraser-mode"]')).toBeNull();
+    expect(container.querySelector('[data-icon="eraser-part"]')).toBeNull();
   });
   it("zone de dépôt : un dépôt appelle host.dropFiles", () => {
     const zone: ToolItem = { id: "zone", kind: "dropzone", label: "Déposer", requires: [], rest: {} };
