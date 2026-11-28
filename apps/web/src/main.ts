@@ -462,8 +462,8 @@ async function start(): Promise<void> {
       });
     });
   }
-  // Collage (R19, C3, C10b) : objets RoomBoard, puis un tableau HTML, puis les images jointes (F19, HB-9) ; zone de
-  // texte : collage normal.
+  // Collage (R19, C3, C10b) : objets RoomBoard, puis un tableau HTML, puis un texte à tabulations (point 15), puis les
+  // images jointes (F19, HB-9) ; zone de texte ou texte ordinaire : collage normal.
   window.addEventListener("paste", (e) => {
     const done = handlePaste(e, workspace);
     if (done === null) return;
