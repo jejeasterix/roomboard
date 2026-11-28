@@ -62,6 +62,7 @@ import {
   type CellRef,
   type EdgeHit,
   type Grip,
+  type LinkedBox,
   type Range,
 } from "../table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "../text-layout";
@@ -213,6 +214,16 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     return (edge.axis === "col" ? need.cols : need.rows)[edge.index] ?? 0;
   };
 
+  /** Lignes que le texte et les objets logés exigent plus hautes aux largeurs `widths` (glisser `resizeTo`, ajuster
+   *  `fitContent`) ; `exact` : cette ligne prend sa hauteur exigée, plus basse comprise (D14). */
+  const rowsNeeding = (t: TableData, linked: readonly LinkedBox[], widths: readonly number[], exact: number | null = null): (readonly [string, number])[] => {
+    const need = requiredSizes(t, linked, widths, measure).rows;
+    return t.rows.flatMap((r, i): (readonly [string, number])[] => {
+      const h = need[i] ?? r.height;
+      return (i === exact ? h !== r.height : h > r.height) ? [[r.id, h]] : [];
+    });
+  };
+
   /** Écrit la taille (D13) en une SetTableLineSizes ; colonne : les lignes qui exigent plus regrandissent dans la même
    *  commande. Même taille : aucune commande. */
   const resizeTo = (id: string, transform: Matrix, t: TableData, edge: EdgeHit, size: number): void => {
@@ -226,8 +237,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     const col = t.cols[edge.index];
     if (col === undefined || col.width === v) return;
     const widths = t.cols.map((c, i) => (i === edge.index ? v : c.width));
-    const need = requiredSizes(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }), widths, measure);
-    const rows = t.rows.flatMap((r, i): (readonly [string, number])[] => ((need.rows[i] ?? 0) > r.height ? [[r.id, need.rows[i] ?? 0]] : []));
+    const rows = rowsNeeding(t, linkedBoxes(ctx.doc, ctx.page(), { id, transform }), widths);
     ctx.run({ type: "SetTableLineSizes", id, cols: [[col.id, v]], rows });
   };
 
@@ -514,8 +524,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     menu.open(p.sx, p.sy, items);
   };
 
-  /** Ajuster au contenu (D14, DS7) : colonne = max(largeur naturelle, objets) bornée, lignes qui exigent plus
-   *  regrandies ; ligne = hauteur exigée. Une SetTableLineSizes ; rien ne change : aucune. */
+  /** Ajuster au contenu (D14, DS7) : colonne = largeur naturelle bornée à FIT_MAX_WIDTH, jamais sous les objets logés
+   *  (cadrage § 9), lignes qui exigent plus regrandies ; ligne = hauteur exigée. Une SetTableLineSizes ; rien ne change : aucune. */
   const fitContent = (id: string, col: number | null, row: number | null): void => {
     const el = ctx.doc.element(id);
     if (el?.kind !== "table") return;
@@ -526,18 +536,14 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     if (col !== null) {
       const k = t.cols[col];
       const objs = requiredSizes(t, linked, widths, measure).cols[col] ?? 0;
-      const w = Math.min(FIT_MAX_WIDTH, Math.max(naturalWidth(t, col, measure), objs));
+      // Cadrage § 9 : bornée à FIT_MAX_WIDTH, jamais sous les objets logés (comme au glisser, `minSize`).
+      const w = Math.max(objs, Math.min(FIT_MAX_WIDTH, naturalWidth(t, col, measure)));
       if (k !== undefined && k.width !== w) {
         cols.push([k.id, w]);
         widths[col] = w;
       }
     }
-    const need = requiredSizes(t, linked, widths, measure).rows;
-    const rows = t.rows.flatMap((r, i): (readonly [string, number])[] => {
-      const h = need[i] ?? r.height;
-      if (i === row) return h !== r.height ? [[r.id, h]] : [];
-      return h > r.height ? [[r.id, h]] : [];
-    });
+    const rows = rowsNeeding(t, linked, widths, row);
     if (cols.length > 0 || rows.length > 0) ctx.run({ type: "SetTableLineSizes", id, cols, rows });
   };
 
@@ -796,7 +802,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           break;
         }
         case "fit-content":
-          fitContent(ref.id, span.c1, span.r1);
+          // DS7 : la colonne et la ligne de la case active, pas le coin de la plage.
+          fitContent(ref.id, at.cell.col, at.cell.row);
           break;
         case "ha-next": {
           // D15 : la case active donne la valeur de départ ; gauche → centre → droite → gauche, une SetTableLook.
