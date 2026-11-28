@@ -143,6 +143,7 @@ describe("écouteur de collage : tableau avant images (F19, PC9, constat T13)", 
         calls.push(`tableau:${html}`);
         return tableDone;
       },
+      pasteText: async (_text: string) => false,
       importFiles: async (files: readonly DroppedFile[]) => {
         calls.push(`images:${files.map((x) => x.name).join(",")}`);
       },

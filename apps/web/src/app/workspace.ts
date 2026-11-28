@@ -275,6 +275,20 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       console.warn(`RoomBoard : ${a[0]} (boîte indisponible : ${messageOf(e)})`);
     }
   };
+  // Collage d'une grille (HTML ou texte tabulé) : la taille est contrôlée avant toute analyse, l'analyse n'a lieu qu'une fois ;
+  // vrai si pris (tableau posé ou refusé pour sa taille), faux sans onglet ou sans grille lisible.
+  const pasteGrid = async (raw: string, toGrid: (raw: string) => TableGrid | null): Promise<boolean> => {
+    const t = tabs.active()?.session;
+    if (t === undefined) return false;
+    if (raw.length > PASTE_MAX_CHARS) {
+      await say(PASTE_TOO_BIG);
+      return true;
+    }
+    const grid = toGrid(raw);
+    if (grid === null) return false;
+    await insertTableGrid(imageTarget(t), grid, null, 0, say);
+    return true;
+  };
   const ask = async (message: string): Promise<boolean> => {
     try {
       return await shell.confirm(message);
@@ -752,30 +766,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       if (thumb === undefined || released.has(tab)) return null;
       return renderPageThumb(tab.board.doc, tab.assets, pageId, width, thumb);
     },
-    async pasteTable(html) {
-      const t = tabs.active()?.session;
-      if (t === undefined) return false;
-      if (html.length > PASTE_MAX_CHARS) {
-        await say(PASTE_TOO_BIG);
-        return true;
-      }
-      const grid = tableFromHtml(html, parseHtml);
-      if (grid === null) return false;
-      await insertTableGrid(imageTarget(t), grid, null, 0, say);
-      return true;
-    },
-    async pasteText(text) {
-      const t = tabs.active()?.session;
-      if (t === undefined) return false;
-      if (text.length > PASTE_MAX_CHARS) {
-        await say(PASTE_TOO_BIG);
-        return true;
-      }
-      const grid = tsvGrid(text);
-      if (grid === null) return false;
-      await insertTableGrid(imageTarget(t), grid, null, 0, say);
-      return true;
-    },
+    pasteTable: (html) => pasteGrid(html, (h) => tableFromHtml(h, parseHtml)),
+    pasteText: (text) => pasteGrid(text, tsvGrid),
     hasSelection: () => ws.active().board.engine.state().selection.length > 0,
     copySelection(cut) {
       const tab = ws.active();
