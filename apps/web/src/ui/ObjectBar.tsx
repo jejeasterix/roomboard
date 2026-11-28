@@ -307,13 +307,14 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
             icon={a.icon}
             label={a.label}
             shortcut={barShortcut(a.shortcut)}
+            keepFocus
             attrs={{ "data-selection-action": a.id, "data-object-button": "" }}
             onPress={unlessHeld(() => play(a))}
           />
         )}
       </For>
       <Show when={more().length > 0}>
-        <IconButton icon="ellipsis" label={MORE_LABEL} attrs={{ "data-object-more": "", "data-object-button": "", "aria-haspopup": "menu" }} onPress={pressMore} />
+        <IconButton icon="ellipsis" label={MORE_LABEL} keepFocus attrs={{ "data-object-more": "", "data-object-button": "", "aria-haspopup": "menu" }} onPress={pressMore} />
       </Show>
       <Show when={open()}>
         <div
