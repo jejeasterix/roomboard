@@ -8,7 +8,7 @@ import type { ToolbarView } from "./item-state";
 
 afterEach(cleanup);
 
-const VIEW: ToolbarView = { tool: "text", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
+const VIEW: ToolbarView = { tool: "text", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
 const PLAIN: FormatState = { bold: false, italic: false, underline: false, size: 36, color: "default" };
 
 function setup(view: ToolbarView = VIEW) {

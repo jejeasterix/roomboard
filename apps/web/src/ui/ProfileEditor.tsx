@@ -56,6 +56,7 @@ import {
   MENU_ROLE,
   PANELS_ROLE,
   isKnownItem,
+  RETIRED_ACTIONS,
   presetsOf,
   START_MODES,
   TOOL_TABLE,
@@ -292,7 +293,8 @@ function BarBlock(props: {
   refocus: Refocus;
   row: RowShared;
 }): JSX.Element {
-  const items = (): readonly ToolItem[] => props.bar.groups.flatMap((g) => g.items);
+  // U13 : une action retirée reste dans le profil (réécrite telle quelle) mais n'a pas de ligne.
+  const items = (): readonly ToolItem[] => props.bar.groups.flatMap((g) => g.items).filter((it) => !(it.kind === "action" && it.action !== undefined && RETIRED_ACTIONS.has(it.action)));
   const choices = (): readonly CatalogEntry[] => catalog(props.draft(), props.bar.id);
   const [adding, setAdding] = createSignal(false);
   let addButton: HTMLButtonElement | undefined;

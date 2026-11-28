@@ -5,7 +5,7 @@ import { ICONS } from "./icons";
 import { ACTION_STATE, itemState, type ToolbarView } from "./item-state";
 
 const view = (over: Partial<ToolbarView> = {}): ToolbarView => ({
-  tool: "pen", eraserMode: "partial", canUndo: true, canRedo: true, pageIndex: 1, pageCount: 3, ...over,
+  tool: "pen", canUndo: true, canRedo: true, pageIndex: 1, pageCount: 3, ...over,
 });
 const tool = (t: string, label = t): ToolItem => ({ id: t, kind: "tool", tool: t, label, requires: [], rest: {} });
 const action = (a: string, label = a): ToolItem => ({ id: a, kind: "action", action: a, label, requires: [], rest: {} });
@@ -21,10 +21,6 @@ describe("itemState", () => {
   });
   it("outil : libellé de l'élément", () => {
     expect(itemState(tool("pen", "Stylo"), view()).label).toBe("Stylo");
-  });
-  it("eraser-mode : libellé et pressé suivent le mode", () => {
-    expect(itemState(action("eraser-mode"), view())).toMatchObject({ pressed: false, label: "Gomme : partielle" });
-    expect(itemState(action("eraser-mode"), view({ eraserMode: "object" }))).toMatchObject({ pressed: true, label: "Gomme : objet" });
   });
   it("undo désactivé sans étape", () => {
     expect(itemState(action("undo"), view({ canUndo: false })).disabled).toBe(true);
@@ -131,7 +127,7 @@ describe("« − Ligne » / « − Colonne » selon l'étendue réelle (constat 
 });
 
 describe("annotation (C11a, P6, P8, P15, P20)", () => {
-  const base: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: true, canRedo: true, pageIndex: 0, pageCount: 1 };
+  const base: ToolbarView = { tool: "pen", canUndo: true, canRedo: true, pageIndex: 0, pageCount: 1 };
   const act = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: ACTION_TABLE[a]?.label ?? a, requires: [], rest: {} });
   const on = (pointer: "draw" | "mouse" = "draw", screens = 2): ToolbarView => ({ ...base, annotation: { active: true, pointer, screens } });
   it("desktop-annotation : « Annotation du bureau » au tableau, « Quitter l'annotation » enfoncé en annotation", () => {
@@ -158,7 +154,7 @@ describe("annotation (C11a, P6, P8, P15, P20)", () => {
 });
 
 describe("annotation (C11b, P6, P16, P18, P29)", () => {
-  const base: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: true, canRedo: true, pageIndex: 0, pageCount: 1 };
+  const base: ToolbarView = { tool: "pen", canUndo: true, canRedo: true, pageIndex: 0, pageCount: 1 };
   const act = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: ACTION_TABLE[a]?.label ?? a, requires: [], rest: {} });
   const on = (o: { frozen?: boolean; live?: boolean; sendTarget?: "origin" | "new" } = {}): ToolbarView => ({
     ...base,
@@ -193,10 +189,6 @@ describe("icône d'état (design-l1, L1-3)", () => {
     expect(itemState(action("annotation-freeze"), ann({ live: false }))).toMatchObject({ label: "Recapturer le bureau", icon: "reset" });
     expect(itemState(action("annotation-freeze"), ann()).icon).toBeUndefined();
     expect(itemState(action("annotation-freeze"), ann({ frozen: true })).icon).toBeUndefined();
-  });
-  it("eraser-mode : aucune icône d'état dans les deux modes (H13)", () => {
-    expect(itemState(action("eraser-mode"), view()).icon).toBeUndefined();
-    expect(itemState(action("eraser-mode"), view({ eraserMode: "object" })).icon).toBeUndefined();
   });
   it("chaque icône d'état est une clé d'ICONS", () => {
     for (const icon of ["pointer", "pen-line", "reset"]) expect(Object.hasOwn(ICONS, icon), icon).toBe(true);

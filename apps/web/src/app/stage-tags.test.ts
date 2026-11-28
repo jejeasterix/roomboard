@@ -6,7 +6,6 @@ import { stageTags } from "./stage-tags";
 
 const base: EngineState = {
   tool: "pen",
-  eraserMode: "partial",
   canUndo: false,
   canRedo: false,
   page: "p",

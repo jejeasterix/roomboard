@@ -110,7 +110,7 @@ const defaultAnnotationBar = () => ({
   dock: "top",
   groups: [
     { id: "mode", items: [pointer()] },
-    { id: "dessin", items: [sep("ann-sep-1"), annTool("pen", "Stylo"), annTool("eraser", "Gomme"), annAction("eraser-mode", "Gomme : partielle"), annTool("arrow", "Flèche"), annTool("rect", "Rectangle"), annTool("text", "Texte")] },
+    { id: "dessin", items: [sep("ann-sep-1"), annTool("pen", "Stylo"), annTool("eraser", "Gomme"), annTool("arrow", "Flèche"), annTool("rect", "Rectangle"), annTool("text", "Texte")] },
     { id: "bureau", items: [sep("ann-sep-2"), annAction("undo", "Annuler"), freeze(), screen()] },
     { id: "envoi", items: [sep("ann-sep-3"), annotationZone(), send(), sendNew()] },
     { id: "sortie", items: [sep("ann-sep-4"), leave()] },
@@ -151,7 +151,7 @@ const defaultToolbars = () => [
     dock: "floating",
     groups: [
       { id: "navigation", items: [tool("select", "Sélection"), tool("hand", "Main")] },
-      { id: "dessin", items: [sep("sep-1"), tool("pen", "Stylo"), tool("eraser", "Gomme"), action("eraser-mode", "Gomme : partielle")] },
+      { id: "dessin", items: [sep("sep-1"), tool("pen", "Stylo"), tool("eraser", "Gomme")] },
       { id: "edition", items: [sep("sep-2"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
       { id: "page", items: [sep("sep-fonds"), action("backgrounds", "Fonds")] },
       { id: "bureau", items: [sep("sep-3"), annotationEntry()] },

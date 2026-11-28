@@ -114,7 +114,6 @@ export const TOOL_TABLE: Readonly<Record<ToolId, ToolEntry>> = Object.freeze({
 
 /** Actions connues : celles de l'ancienne barre (inventaire du plan du lot 5b), et « Grille » (C9 éditeur). */
 export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>> = Object.freeze({
-  "eraser-mode": { label: "Gomme : partielle" },
   undo: { label: "Annuler" },
   redo: { label: "Rétablir" },
   "page-prev": { label: "Page précédente" },
@@ -213,6 +212,10 @@ export function isKnownAction(id: string): boolean {
   return Object.hasOwn(ACTION_TABLE, id);
 }
 
+/** OG41 (D12, U13) : actions retirées du catalogue ; un profil qui les porte les garde et les réécrit telles quelles,
+ *  jamais montrées (`visibleItems` les masque comme toute action inconnue), sans avis. */
+export const RETIRED_ACTIONS: ReadonlySet<string> = new Set(["eraser-mode"]);
+
 /** Action qui ouvre le menu Profil : jamais masquable, toujours présente dans une barre `tools` (C1, P33). */
 export const PROFILES_ACTION: ActionId = "profiles";
 
@@ -306,7 +309,7 @@ const ITEM_RULES: Readonly<Record<ItemKind, (raw: Raw, id: string, path: string,
   action: (raw, id, path, ctx) => {
     requireLabel(raw, id, ctx);
     if (!isNonEmpty(raw.action)) ctx.errors.push(`${path}.action : identifiant d'action attendu`);
-    else if (!isKnownAction(raw.action)) ctx.warnings.push(`action inconnue masquée : ${raw.action}`);
+    else if (!isKnownAction(raw.action) && !RETIRED_ACTIONS.has(raw.action)) ctx.warnings.push(`action inconnue masquée : ${raw.action}`);
   },
   dropzone: (raw, id, _path, ctx) => requireLabel(raw, id, ctx),
   separator: () => undefined,
@@ -725,7 +728,7 @@ const ANNOTATION_ACTION: ActionId = "desktop-annotation";
 const ANNOTATION_POINTER_ACTION: ActionId = "annotation-pointer";
 const ANNOTATION_SCREEN_ACTION: ActionId = "annotation-screen";
 /** C11a (P20) : actions rejouées dans `annotate` (outils, préréglages, pot et format y vont par leurs méthodes de l'hôte). */
-export const ANNOTATION_REMOTE_ACTIONS: ReadonlySet<ActionId> = new Set(["undo", "redo", "eraser-mode"]);
+export const ANNOTATION_REMOTE_ACTIONS: ReadonlySet<ActionId> = new Set(["undo", "redo"]);
 /** C11b (P5, P16, P29) : figer le bureau, envoyer au tableau, envoyer dans un nouvel onglet ; masquées en mode tableau. */
 const ANNOTATION_FREEZE_ACTION: ActionId = "annotation-freeze";
 const ANNOTATION_SEND_ACTION: ActionId = "annotation-send";

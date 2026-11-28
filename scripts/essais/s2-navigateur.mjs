@@ -167,11 +167,9 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
     await page.keyboard.up("Space");
     await frames();
     check((await elements()) === 5 && (await ink(LEFT)) > 0, "espace + glisser : la vue suit, aucun trait");
-    await click("eraser-mode");
-    check((await pressed("eraser-mode")) === "true", "gomme d'objet choisie dans la barre");
     await click("eraser");
     await drag([[500, 210], [500, 250], [500, 290]]); // premier trait (y = 250), vue décalée de 150 px : x de 250 à 750
-    check((await elements()) === 4, "gomme d'objet : le premier trait part en entier (5 → 4)");
+    check((await elements()) === 6, "gomme : le premier trait est coupé en deux, jamais effacé entier (5 → 6)");
   }
 
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);

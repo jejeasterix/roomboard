@@ -15,6 +15,7 @@ import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
 import type { GridPreview, ImagePreview, LiveLayer, PageView, Renderer } from "./render/renderer";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import { stageTags } from "../app/stage-tags";
+import { createEraserTool } from "./tools/eraser";
 import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
 import { worldPoints } from "./tools/line-points";
@@ -163,6 +164,43 @@ const key = (k: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
 });
 
 describe("createEngine", () => {
+  it("OG41 gomme : un annuler rend traits et objets (D5, effet de bord 3)", () => {
+    const doc = fakeCore.blank();
+    const frames = new Frames();
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames, tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => createEraserTool(ctx) } });
+    engine.resize(1280, 720, 1);
+    const page = engine.state().page;
+    const rect = engine.run({ type: "AddShape", page, shape: "rect", x0: 100, y0: 100, x1: 300, y1: 200, style: PEN, fill: "#facc15" })?.ids[0] ?? "";
+    engine.run({ type: "CommitStroke", page, points: new Float32Array([400, 50, 0.5, 400, 150, 0.5, 400, 250, 0.5]), style: PEN });
+    const cam = engine.camera();
+    const at = (x: number, y: number): InputSample => {
+      const [sx, sy] = worldToScreen(cam, x, y);
+      return { x: sx, y: sy, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 };
+    };
+    engine.sink.begin(1, "eraser", [at(50, 150)]);
+    engine.sink.extend(1, [at(450, 150)], []);
+    engine.sink.close(1, "end");
+    expect(doc.element(rect)).toBeNull();
+    engine.undo();
+    expect(doc.element(rect)?.kind).toBe("shape");
+    expect(doc.elementIdsOfKind(page, "stroke")).toHaveLength(1);
+    engine.redo();
+    expect(doc.element(rect)).toBeNull();
+  });
+
+  it("OG41 gomme : un appui dans le vide n'écrit rien, ni version ni étape d'annulation (D38)", () => {
+    const doc = fakeCore.blank();
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => createEraserTool(ctx) } });
+    engine.resize(1280, 720, 1);
+    const version = doc.version();
+    const canUndo = engine.state().canUndo;
+    engine.sink.begin(1, "eraser", [{ x: 600, y: 300, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }]);
+    engine.sink.close(1, "end");
+    expect(doc.version()).toBe(version);
+    expect(engine.state().canUndo).toBe(canUndo);
+    expect(doc.canUndo()).toBe(false);
+  });
+
   it("redraw : une scène de plus à l'image suivante (bitmap arrivé)", () => {
     const { engine, frames, renderer } = setup();
     engine.resize(800, 600, 1);
@@ -177,7 +215,6 @@ describe("createEngine", () => {
     const { doc, engine } = setup();
     expect(engine.state()).toMatchObject({
       tool: "pen",
-      eraserMode: "partial",
       canUndo: false,
       canRedo: false,
       elementCount: 0,

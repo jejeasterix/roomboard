@@ -22,7 +22,7 @@ const bar: Toolbar = {
 };
 const IDS = ["a", "b", "c"];
 const ROW = 100;
-const view = (over: Partial<ToolbarView> = {}): ToolbarView => ({ tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 3, ...over });
+const view = (over: Partial<ToolbarView> = {}): ToolbarView => ({ tool: "pen", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 3, ...over });
 
 const CAPS: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
 

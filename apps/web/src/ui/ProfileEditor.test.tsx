@@ -201,8 +201,8 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
 
   it("Monter au clavier deux fois : le focus reste sur le bouton de la ligne déplacée (P14)", async () => {
     const { q, save } = setup();
-    fireEvent.click(q(grip("eraser-mode")));
-    const up = (): HTMLButtonElement => q<HTMLButtonElement>('[data-edit-item="eraser-mode"] button[data-edit="up"]');
+    fireEvent.click(q(grip("text")));
+    const up = (): HTMLButtonElement => q<HTMLButtonElement>('[data-edit-item="text"] button[data-edit="up"]');
     up().focus();
     fireEvent.click(document.activeElement!); // Entrée ou Espace sur un bouton = clic
     await tick();
@@ -210,9 +210,9 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     fireEvent.click(document.activeElement!);
     await tick();
     expect(document.activeElement).toBe(up());
-    expect((document.activeElement as HTMLElement).closest("[data-edit-item]")!.getAttribute("data-edit-item")).toBe("eraser-mode");
+    expect((document.activeElement as HTMLElement).closest("[data-edit-item]")!.getAttribute("data-edit-item")).toBe("text");
     fireEvent.click(q('button[data-edit="save"]'));
-    expect(outils(last(save)).groups[1]!.items.map((i) => i.id)).toEqual(["sep-1", "eraser-mode", "pen", "eraser"]);
+    expect(outils(last(save)).groups[2]!.items.map((i) => i.id)).toEqual(["sep-2", "rect", "ellipse", "text", "line", "arrow", "table", "fill"]);
   });
 
   it("Monter jusqu'en tête : le bouton grisé rend le focus à l'autre bouton de la ligne", async () => {
@@ -313,6 +313,18 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     const p = last(save);
     expect(outils(p).groups[0]!.items.map((i) => i.id)).toEqual(["select", "hand", "laser"]);
     expect(itemOf(p, "laser")).toEqual(itemOf(r.profile, "laser"));
+  });
+
+  it("U13 : une action retirée (eraser-mode) n'est pas montrée, mais gardée et réécrite telle quelle", () => {
+    const json = JSON.parse(JSON.stringify(DEFAULT_PROFILE_JSON)) as Record<string, any>;
+    json.toolbars[0].groups[0].items.splice(1, 0, { id: "eraser-mode", kind: "action", action: "eraser-mode", label: "Mode gomme" });
+    const r = parseProfile(json);
+    if ("errors" in r) throw new Error(r.errors.join(" ; "));
+    const { q, container, save } = setup(r.profile);
+    expect(container.querySelector('[data-edit-item="eraser-mode"]')).toBeNull();
+    expect(container.textContent).not.toContain("inconnu (version plus récente)");
+    fireEvent.click(q('button[data-edit="save"]'));
+    expect(itemOf(last(save), "eraser-mode")).toEqual(itemOf(r.profile, "eraser-mode"));
   });
 
   it("P16 : élément inconnu déplacé à la flèche de sa poignée, réécrit tel quel", async () => {

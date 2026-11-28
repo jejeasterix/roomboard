@@ -61,7 +61,6 @@ export type AnnotationView = ToolbarView & { readonly itemStyle?: ItemStyle };
 export function viewOf(s: EngineState): AnnotationView {
   return {
     tool: s.tool,
-    eraserMode: s.eraserMode,
     canUndo: s.canUndo,
     canRedo: s.canRedo,
     pageIndex: s.pageIndex,

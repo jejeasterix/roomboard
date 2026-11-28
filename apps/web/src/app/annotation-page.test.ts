@@ -29,14 +29,14 @@ function channel() {
 function fakeBoard(doc: CoreDocument) {
   let tool = "pen";
   const cbs = new Set<(s: EngineState) => void>();
-  const state = () => ({ tool, eraserMode: "partial", canUndo: false, canRedo: false, page: doc.pageIds()[0] ?? "", pageIndex: 0, pageCount: 1, selection: [], selectionBounds: null, selectionUnits: 0, selectionGrouped: false, tableCell: null, tableMerges: 0, tableShades: 0, textFormat: null, elementCount: 0, version: doc.version(), error: null }) as unknown as EngineState;
+  const state = () => ({ tool, canUndo: false, canRedo: false, page: doc.pageIds()[0] ?? "", pageIndex: 0, pageCount: 1, selection: [], selectionBounds: null, selectionUnits: 0, selectionGrouped: false, tableCell: null, tableMerges: 0, tableShades: 0, textFormat: null, elementCount: 0, version: doc.version(), error: null }) as unknown as EngineState;
   const engine = {
     state,
     onState: (cb: (s: EngineState) => void) => { cbs.add(cb); return () => cbs.delete(cb); },
     camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
     key: vi.fn(() => true),
     setTool: vi.fn((t: string) => { tool = t; for (const cb of cbs) cb(state()); }),
-    setPenStyle: vi.fn(), setFillColor: vi.fn(), setFillTolerance: vi.fn(), setEraserMode: vi.fn(), undo: vi.fn(), redo: vi.fn(), textFormat: vi.fn(),
+    setPenStyle: vi.fn(), setFillColor: vi.fn(), setFillTolerance: vi.fn(), undo: vi.fn(), redo: vi.fn(), textFormat: vi.fn(),
     bump: () => { for (const cb of cbs) cb(state()); },
   };
   const board = { doc, engine, stage: {}, activate: vi.fn(), dispose: vi.fn() } as unknown as BoardSession;
@@ -387,19 +387,19 @@ describe("viewOf : style courant (OG11 T9)", () => {
   it("viewOf porte itemStyle, sans autre champ neuf", () => {
     const itemStyle = { ...DEFAULT_ITEM_STYLE, strokeStyle: "dashed" as const, opacity: 40 };
     const s = {
-      tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, textFormat: null,
+      tool: "pen", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, textFormat: null,
       selection: ["x"], selectionBounds: null, selectionUnits: 1, selectionGrouped: false, tableCell: null,
       tableMerges: 0, tableShades: 0, elementCount: 1, version: 3, error: null, page: "p", itemStyle,
     } as unknown as EngineState;
     const v = viewOf(s);
     expect(v.itemStyle).toEqual(itemStyle);
-    expect(Object.keys(v).sort()).toEqual(["canRedo", "canUndo", "eraserMode", "itemStyle", "pageCount", "pageIndex", "pageLayout", "pageMode", "textFormat", "tool"]);
+    expect(Object.keys(v).sort()).toEqual(["canRedo", "canUndo", "itemStyle", "pageCount", "pageIndex", "pageLayout", "pageMode", "textFormat", "tool"]);
   });
 });
 
 describe("viewOf", () => {
   it("viewOf projette pageMode, pageLayout", () => {
-    const v = viewOf({ tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, pageMode: "page", pageLayout: "portrait", textFormat: null } as never);
+    const v = viewOf({ tool: "pen", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, pageMode: "page", pageLayout: "portrait", textFormat: null } as never);
     expect(v).toMatchObject({ pageMode: "page", pageLayout: "portrait" });
   });
 });
