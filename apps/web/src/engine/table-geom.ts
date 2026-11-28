@@ -50,8 +50,8 @@ export interface TableCellState {
   readonly header?: boolean;
   /** DS10 : les objets logés rétrécissent au lieu d'agrandir la case (`fit`), lu par le panneau. */
   readonly fit?: "shrink";
-  /** D15 : alignements de la cellule active (absents : gauche, haut), `#stage[data-table-align]`. */
   readonly border?: TableBorder | null;
+  /** D15 : alignements de la cellule active (absents : gauche, haut), `#stage[data-table-align]`. */
   readonly ha?: HAlign;
   readonly va?: VAlign;
   /** personnalisation-3 : nombre d'objets logés dans ce tableau (`cell[0]`), `#stage[data-table-linked]`. */
