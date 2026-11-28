@@ -361,6 +361,26 @@ export type CellLook =
   | { readonly key: "border"; readonly value: TableBorder | null }
   | { readonly key: "open"; readonly value: boolean }
   | { readonly key: "accept"; readonly value: readonly string[] };
+/** C1 (DS1) : forme d'un `CellLook`, types seulement (clé connue, valeur du type de sa clé ; domaines non vérifiés).
+ *  Seul contrôle de forme : l'adaptateur Wasm le fait avant l'appel (le cœur lit des types primitifs, les domaines restent
+ *  à `check` de `table_look.rs`) ; la fausse liaison y ajoute ces domaines (`checkedLook`). */
+export function isCellLookShape(l: unknown): l is CellLook {
+  if (typeof l !== "object" || l === null) return false;
+  const { key, value: v } = l as { key?: unknown; value?: unknown };
+  switch (key) {
+    case "ha":
+    case "va":
+      return typeof v === "string";
+    case "border":
+      return v === null || (Array.isArray(v) && v.length === 3 && typeof v[0] === "string" && typeof v[1] === "number" && typeof v[2] === "string");
+    case "open":
+      return typeof v === "boolean";
+    case "accept":
+      return Array.isArray(v) && v.every((x) => typeof x === "string");
+    default:
+      return false;
+  }
+}
 /** Zone fusionnée (F29) : ancre par ids, étendue en rangs, après la règle F2 du cœur. */
 export interface TableMerge { readonly row: string; readonly col: string; readonly rows: number; readonly cols: number }
 /** Tableau (T13) : boîte locale (0, 0)-(somme des largeurs, somme des hauteurs) ; cellules non vides dans l'ordre de lecture ;
@@ -575,6 +595,9 @@ export const DEFAULT_TABLE_COLOR = "#000000";
 export const DEFAULT_TABLE_SIZE = 36;
 /** Messages C3 du cœur (G10), repris à l'identique par la fausse liaison. */
 export const BAD_GROUP_MESSAGE = "groupe invalide (au moins deux objets ou groupes d'une même page, ids connus attendus)";
+/** Message de `BadTable` du cœur, repris par la fausse liaison et par l'adaptateur Wasm (forme d'un `CellLook`, C1). */
+export const TABLE_MESSAGE =
+  "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)";
 
 /** C5 (I5) : message de `BadImageParams` du cœur, repris par la fausse liaison. */
 export const BAD_IMAGE_PARAMS_MESSAGE =

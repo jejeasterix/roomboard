@@ -98,6 +98,7 @@ import {
   DEFAULT_GRID_LINE_WIDTH,
   DEFAULT_TABLE_COLOR,
   DEFAULT_TABLE_SIZE,
+  isCellLookShape,
   MAX_GRID_DOTS,
   MAX_GRID_LEVELS,
   MAX_GRID_LINE_WIDTH,
@@ -110,6 +111,7 @@ import {
   PDF_PAGE_KIND,
   PAGE_WIDTH,
   TABLE_MAX_LINES,
+  TABLE_MESSAGE,
   UNKNOWN_BOX,
   unknownKindMessage,
 } from "./api";
@@ -229,7 +231,7 @@ const MESSAGES = {
   badImage: "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)",
   badFormat: "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)",
   badGrid: "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)",
-  badTable: "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)",
+  badTable: TABLE_MESSAGE,
   badFill: "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)",
   badGroup: BAD_GROUP_MESSAGE,
   badImageParams: BAD_IMAGE_PARAMS_MESSAGE,
@@ -482,25 +484,23 @@ function validMerges(merges: readonly (readonly [number, number, number, number]
   return true;
 }
 
-/** Vue (T13, F29) : cellules non vides (texte, remplissage ou ombrage) dans l'ordre de lecture ; zones par `mergesOf`. */
-const LOOK_HA = ["left", "center", "right"];
-const LOOK_VA = ["top", "middle", "bottom"];
-const LOOK_STYLES = ["solid", "dashed", "dotted", "none"];
+const LOOK_HA: readonly string[] = ["left", "center", "right"];
+const LOOK_VA: readonly string[] = ["top", "middle", "bottom"];
+const LOOK_STYLES: readonly string[] = ["solid", "dashed", "dotted", "none"];
 const MAX_BORDER_WIDTH = 32;
 const MAX_ACCEPT = 64;
 const MAX_LABEL_CHARS = 200;
-/** DS1, comme `check` du cœur (`table_look.rs`) : la valeur admise, sinon null (refus avant la recherche du tableau). */
+/** DS1, comme `check` du cœur (`table_look.rs`) : la valeur admise, sinon null (refus avant la recherche du tableau). La
+ *  forme (types) est celle de l'adaptateur Wasm (`isCellLookShape`, C1) ; s'y ajoutent les domaines du cœur. */
 function checkedLook(l: unknown): CellLook | null {
-  if (!isRecord(l)) return null;
-  const v = l["value"];
+  if (!isCellLookShape(l)) return null;
   const ok =
-    l["key"] === "ha" ? typeof v === "string" && LOOK_HA.includes(v)
-    : l["key"] === "va" ? typeof v === "string" && LOOK_VA.includes(v)
-    : l["key"] === "border" ? v === null || (Array.isArray(v) && v.length === 3 && typeof v[0] === "string" && validColor(v[0]) && finitePositive(v[1]) && v[1] <= MAX_BORDER_WIDTH && typeof v[2] === "string" && LOOK_STYLES.includes(v[2]))
-    : l["key"] === "open" ? typeof v === "boolean"
-    : l["key"] === "accept" ? Array.isArray(v) && v.length <= MAX_ACCEPT && v.every((x) => typeof x === "string" && x.trim() !== "" && [...x].length <= MAX_LABEL_CHARS)
-    : false;
-  return ok ? (l as unknown as CellLook) : null;
+    l.key === "ha" ? LOOK_HA.includes(l.value)
+    : l.key === "va" ? LOOK_VA.includes(l.value)
+    : l.key === "border" ? l.value === null || (validColor(l.value[0]) && finitePositive(l.value[1]) && l.value[1] <= MAX_BORDER_WIDTH && LOOK_STYLES.includes(l.value[2]))
+    : l.key === "open" ? true
+    : l.value.length <= MAX_ACCEPT && l.value.every((x) => x.trim() !== "" && [...x].length <= MAX_LABEL_CHARS);
+  return ok ? l : null;
 }
 /** Comparaison par valeurs, comme `differs` du cœur (jamais par identité du tableau). */
 const sameBorder = (a: TableBorder | undefined, b: TableBorder | undefined): boolean =>
@@ -532,6 +532,8 @@ function lookCell(cell: FakeCell | undefined, look: Exclude<CellLook, { key: "ac
   return look.value ? { ...rest, open: true } : rest;
 }
 const sameList = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+/** Vue (T13, F29) : cellules non vides (texte, remplissage, ombrage, image de fond, alignements `ha` et `va`, bordure)
+ *  dans l'ordre de lecture ; zones par `mergesOf`. */
 function tableView(t: FakeTable): TableData {
   const cells: TableCell[] = [];
   for (const r of t.rows) {
@@ -1799,7 +1801,9 @@ class FakeDocument implements CoreDocument {
         // permutation, zones ni coupées ni retournées, puis écriture : les entrées recopiées telles quelles (clés
         // inconnues comprises), cellules par ids inchangées, suivi des objets liés par writeTable.
         const order = [...cmd.order];
-        if (order.length === 0 || order.some((x, i) => order.indexOf(x) !== i)) throw new Error(MESSAGES.badTable);
+        // Doublon : tri d'une copie puis voisins comparés (`order` non borné : O(n log n)), comme le cœur.
+        const sorted = [...order].sort();
+        if (order.length === 0 || sorted.some((x, i) => i > 0 && x === sorted[i - 1])) throw new Error(MESSAGES.badTable);
         const { found, t } = this.tableOf(cmd.id);
         const lines: readonly (TableRow | TableCol)[] = cmd.axis === "row" ? t.rows : t.cols;
         const ids = lines.map((l) => l.id);

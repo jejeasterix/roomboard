@@ -359,11 +359,11 @@ impl Document {
         order: &[String],
     ) -> Result<Change, CommandError> {
         // La valeur seule d'abord, avant la recherche du tableau (comme `cmd_set_table_look`) : vide ou id cité deux
-        // fois. Recherche linéaire (64 lignes au plus, G4 : aucun code de hachage neuf).
-        let repeated = order
-            .iter()
-            .enumerate()
-            .any(|(i, o)| order[..i].contains(o));
+        // fois. `order` n'est pas borné : doublon par tri d'une copie des références puis voisins comparés, en
+        // O(n log n) (G4 : aucun code de hachage neuf).
+        let mut sorted: Vec<&String> = order.iter().collect();
+        sorted.sort_unstable();
+        let repeated = sorted.windows(2).any(|w| w[0] == w[1]);
         if order.is_empty() || repeated {
             return Err(CommandError::BadTable);
         }
