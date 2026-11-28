@@ -16,7 +16,7 @@ import { TIP_HOVER_MS } from "./tooltip";
 afterEach(cleanup);
 
 const NO_CAPS: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
-const VIEW: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 };
+const VIEW: ToolbarView = { tool: "pen", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 };
 const outils = BUILTIN_PROFILES[0]!.toolbars.find((b) => b.id === "outils")!;
 const historique = BUILTIN_PROFILES[0]!.toolbars.find((b) => b.id === "historique")!;
 

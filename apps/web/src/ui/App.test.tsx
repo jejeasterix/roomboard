@@ -411,7 +411,7 @@ describe("App (T95)", () => {
 
   it("inventaire : chaque bouton de l'ancienne barre a son élément", () => {
     const { container } = renderApp();
-    for (const id of ["pen", "eraser", "hand", "eraser-mode", "undo", "redo", "select", "rect", "ellipse", "line", "arrow", "text",
+    for (const id of ["pen", "eraser", "hand", "undo", "redo", "select", "rect", "ellipse", "line", "arrow", "text",
       "page-prev", "page-next", "page-add", "page-remove", "file-new", "file-open", "file-save", "file-save-as", "fit-page", "settings", "profiles", "grid"]) {
       expect(container.querySelector(`button[data-item="${id}"]`), id).not.toBeNull();
     }
@@ -678,7 +678,7 @@ describe("App — profils (C1)", () => {
     expect(container.querySelector('[data-toolbar="pages"]')).toBeNull();
     click(container.querySelector('[data-item="ann-pen"]'));
     expect(a.remoteCalls).toEqual(["setTool pen"]);
-    a.view({ tool: "eraser", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 });
+    a.view({ tool: "eraser", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 });
     expect(container.querySelector('[data-item="ann-eraser"]')?.getAttribute("aria-pressed")).toBe("true");
     const exit = container.querySelector('[data-item="ann-desktop-annotation"]');
     expect(exit?.textContent).toBe("Quitter l'annotation");
@@ -695,7 +695,7 @@ describe("App — profils (C1)", () => {
     };
     const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: ui });
     await a.control.enter();
-    a.view({ tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, annotation: { active: true, pointer: "draw", screens: 1 } });
+    a.view({ tool: "pen", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, annotation: { active: true, pointer: "draw", screens: 1 } });
     click(container.querySelector('[data-segment="mouse"]'));
     expect(a.remoteCalls).toEqual(["runAction annotation-pointer"]);
   });
@@ -761,10 +761,10 @@ describe("App — profils (C1)", () => {
     const a = fakeAnnotationUi();
     const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
     await a.control.enter();
-    const pressed = () => container.querySelector('[data-item="ann-eraser-mode"]')?.getAttribute("aria-pressed");
+    const pressed = () => container.querySelector<HTMLButtonElement>('[data-item="ann-undo"]')?.disabled;
     const before = pressed();
-    a.view({ tool: "select", eraserMode: "object", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 });
-    expect(pressed()).toBe("true");
+    a.view({ tool: "select", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 });
+    expect(pressed()).toBe(false);
     await a.control.exit();
     await a.control.enter();
     expect(pressed()).toBe(before);

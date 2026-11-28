@@ -49,7 +49,7 @@ const OPTION_ICONS = ["copy-plus", "link", "external-link", "trash-2", "sliders-
   "chevron-up", "chevron-down", "align-left", "align-center", "align-right", "fill-solid", "fill-hachure", "fill-cross", "head-none", "head-arrow", "head-triangle", "head-triangle-outline", "palette", "width-thin", "width-medium", "width-thick",
   "pressure-constant", "pressure-variable", "align-start-vertical", "align-center-vertical", "align-end-vertical", "align-start-horizontal", "align-center-horizontal", "align-end-horizontal", "align-horizontal-space-around", "align-vertical-space-around", "flip-horizontal", "flip-vertical", "rotate-ccw-square", "rotate-cw-square", "pipette", "crop"];
 const DIALOG_ICONS = ["search", "image-plus", "layout-template"];
-const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "eraser-part", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
+const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
 /** personnalisation-1a (T6, GC4) : icônes Lucide du lot 1, recopiées telles quelles (trait 2 d'origine, rendu à 1,5 par la feuille de style). */
 const LOT1: Readonly<Record<string, IconNode>> = {
   copy: [["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" }], ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" }]],
@@ -81,10 +81,10 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     expect(TOOL_ICONS.eraser).toBe("eraser");
     expect(NOTICE).not.toContain("`eraser-part`");
   });
-  it("ICONS : 131 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes)", () => {
+  it("ICONS : 130 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes)", () => {
     const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(131);
+    expect(Object.keys(ICONS)).toHaveLength(130);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -104,12 +104,12 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
   it("calage : viewBox -0.25 -0.25 24 24", () => {
     expect(ICON_VIEWBOX).toBe("-0.25 -0.25 24 24");
   });
-  it("chaque outil et chaque action connus ont une icône de la table (11 + 43)", () => {
+  it("chaque outil et chaque action connus ont une icône de la table (11 + 42)", () => {
     expect(Object.keys(TOOL_ICONS).sort()).toEqual(Object.keys(TOOL_TABLE).sort());
     expect(Object.keys(ACTION_ICONS).sort()).toEqual(Object.keys(ACTION_TABLE).sort());
     for (const name of [...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS)]) expect(Object.hasOwn(ICONS, name), name).toBe(true);
     expect(Object.keys(TOOL_ICONS)).toHaveLength(11);
-    expect(Object.keys(ACTION_ICONS)).toHaveLength(43);
+    expect(Object.keys(ACTION_ICONS)).toHaveLength(42);
   });
   it("balises admises, attributs en chaînes non vides", () => {
     for (const [name, node] of Object.entries(ICONS)) {
@@ -120,16 +120,15 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
       }
     }
   });
-  it("les 35 icônes des maquettes sont recopiées à l'identique de 01-tableau.html", () => {
-    // T12 : eraser-part a une base redessinée (netteté à 100 %) ; son corps reste celui de la maquette.
-    for (const name of FROM_MOCKUP) expect(ICONS[name], name).toEqual(name === "eraser-part" ? [...symbol(name).slice(0, 2), ["path", { d: "M17 21h4" }]] : symbol(name));
+  it("les 34 icônes des maquettes sont recopiées à l'identique de 01-tableau.html", () => {
+    for (const name of FROM_MOCKUP) expect(ICONS[name], name).toEqual(symbol(name));
   });
   it("row-remove et col-remove : les rectangles de between-*-start, coordonnées entières", () => {
     expect(ICONS["row-remove"]).toEqual([ICONS["between-horizontal-start"]![0], ["path", { d: "M2 12h4" }], ICONS["between-horizontal-start"]![2]]);
     expect(ICONS["col-remove"]).toEqual([ICONS["between-vertical-start"]![0], ["path", { d: "M10 4h4" }], ICONS["between-vertical-start"]![2]]);
   });
   it("attribution du § 2 bis (échantillon)", () => {
-    expect([TOOL_ICONS.rect, ACTION_ICONS["eraser-mode"], ACTION_ICONS["edit-original"], ACTION_ICONS["file-save-as"], ACTION_ICONS["annotation-send-new"], ACTION_ICONS["table-unshade"]]).toEqual(["rect", "eraser-part", "square-arrow-up-right-exit", "save", "plus", "droplet-off"]);
+    expect([TOOL_ICONS.rect, TOOL_ICONS.eraser, ACTION_ICONS["edit-original"], ACTION_ICONS["file-save-as"], ACTION_ICONS["annotation-send-new"], ACTION_ICONS["table-unshade"]]).toEqual(["rect", "eraser", "square-arrow-up-right-exit", "save", "plus", "droplet-off"]);
   });
   it("iconFor : item.icon connu prioritaire, puis icône d'état, puis table", () => {
     expect(iconFor(tool("pen", "rect"))).toBe("rect");
@@ -152,12 +151,10 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     expect(ICONS["image-plus"]).toEqual([["path", { d: "M16 5h6" }], ["path", { d: "M19 2v6" }], ["path", { d: "M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5" }], ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" }], ["circle", { cx: "9", cy: "9", r: "2" }]]);
     expect(ACTION_ICONS["backgrounds"]).toBe("wallpaper");
   });
-  it("design-l2 T12 : « Insérer des pages… » a sa propre icône (Lucide file-plus), distincte d'Importer ; notice à jour ; base de eraser-part en tirets d'au moins 2 unités", () => {
+  it("design-l2 T12 : « Insérer des pages… » a sa propre icône (Lucide file-plus), distincte d'Importer ; notice à jour ", () => {
     expect(ACTION_ICONS["page-insert-file"]).toBe("file-plus");
     expect(ACTION_ICONS["page-insert-file"]).not.toBe(ACTION_ICONS["file-import"]);
     expect(NOTICE).toContain("`file-plus`");
-    const dashes = ICONS["eraser-part"]!.map(([, a]) => a["d"]!).filter((d) => /^M\d+ 21h(\d+)$/.test(d));
-    for (const d of dashes) expect(Number(/h(\d+)$/.exec(d)![1])).toBeGreaterThanOrEqual(2);
   });
 
   it("personnalisation-1a T6 : icônes neuves présentes, tracés Lucide à l'identique, viewBox -0.25 -0.25 24 24, notice à jour", () => {

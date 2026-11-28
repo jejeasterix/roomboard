@@ -7,7 +7,7 @@ import type { ToolbarView } from "./item-state";
 import { SELECTION_ACTIONS, SelectionRow } from "./SelectionRow";
 
 afterEach(cleanup);
-const base: ToolbarView = { tool: "select", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
+const base: ToolbarView = { tool: "select", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
 const btn = (c: HTMLElement, id: string): HTMLButtonElement | null => c.querySelector(`[data-selection-action="${id}"]`);
 function setup(v: ToolbarView) {
   const [view, setView] = createSignal(v);

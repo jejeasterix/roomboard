@@ -11,7 +11,7 @@ import { PointerSwitch } from "./PointerSwitch";
 afterEach(cleanup);
 
 const ITEM: ToolItem = { id: "annotation-pointer", kind: "action", action: "annotation-pointer", label: "Souris", requires: ["desktopAnnotation"], rest: {} };
-const VIEW: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
+const VIEW: ToolbarView = { tool: "pen", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
 const on = (pointer: "draw" | "mouse"): ToolbarView => ({ ...VIEW, annotation: { active: true, pointer, screens: 1 } });
 
 function setup(view: ToolbarView, withPointer = true) {

@@ -43,7 +43,7 @@ const VIOLET_600 = hex("#6044EB");
 const VIOLET_700 = hex("#4F35C4");
 const MAQUETTE = join(ROOT, "docs", "design", "maquettes", "03-profils");
 /** Barre d'annotation de `defaut`, dans l'ordre (apps/web/src/toolbar-profiles.ts, `defaultAnnotationBar`). */
-const ANNOTATION_ORDER = ["annotation-pointer", "ann-sep-1", "ann-pen", "ann-eraser", "ann-eraser-mode", "ann-arrow", "ann-rect", "ann-text", "ann-sep-2", "ann-undo", "annotation-freeze", "annotation-screen", "ann-sep-3", "depot-annotation", "annotation-send", "annotation-send-new", "ann-sep-4", "ann-desktop-annotation"];
+const ANNOTATION_ORDER = ["annotation-pointer", "ann-sep-1", "ann-pen", "ann-eraser", "ann-arrow", "ann-rect", "ann-text", "ann-sep-2", "ann-undo", "annotation-freeze", "annotation-screen", "ann-sep-3", "depot-annotation", "annotation-send", "annotation-send-new", "ann-sep-4", "ann-desktop-annotation"];
 const KEYS = ["format", "schema", "minor", "id", "label", "basedOn", "interface", "toolbars", "presets", "behavior"];
 /** Zones comparées à la maquette 03 : sélecteurs de l'application, puis de la maquette (union des boîtes). */
 const ZONES = {

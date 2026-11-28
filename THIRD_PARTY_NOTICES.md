@@ -616,7 +616,7 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   `profile`, `grid`, `library`, `pointer`, `screen`, `freeze`, `board`, `reset`.
 - Lus au commit par `gh api`, noms Lucide : `square-arrow-up-right-exit`, `pen-line`, `between-horizontal-start`,
   `between-vertical-start`, `columns-3`, `table-cells-merge`, `table-cells-split`, `droplet`, `droplet-off`.
-- Dessinées pour RoomBoard dans le même style (grille de 24, trait 1,5) : `annotate`, `eraser-part`, `line`,
+- Dessinées pour RoomBoard dans le même style (grille de 24, trait 1,5) : `annotate`, `line`,
   `row-remove`, `col-remove`.
 - Lue dans Lucide au même commit (design L2, correctif T12) : `file-plus` (Lucide `file-plus`), pour « Insérer des pages… ».
 - Reprises de la maquette `docs/design/maquettes/02-annotation-bureau.html` (design L4, tracés Lucide au même commit),
