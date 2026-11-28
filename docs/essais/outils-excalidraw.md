@@ -97,7 +97,7 @@ appliqué à la création, non appliqué au suivi d'une cible déplacée (le cœ
 | glisser, Maj : carré ou cercle | `App.tsx` | copié | `outils-excalidraw-navigateur.mjs` S1 (pose des rectangles) |
 | double toucher = texte lié, Entrée | `App.tsx` | lot 2 (lot 2b) | — |
 | « Modifier les points » vers une forme libre | `linearElementEditor.ts`, `actionTogglePolygon` (`polygon`) | adapté : conversion en ligne fermée (même id, fond gardé), fermeture implicite du dernier sommet vers le départ (écart, DA-1), ellipse en 16 sommets droits ; Ctrl+Entrée, bouton du panneau (pas de double toucher sur la forme) | `outils-excalidraw-navigateur.mjs` S8 (`Lire : S8.polygon=1`, `S8.after=5`, `S8.ellipse=16`), S9 ; `tests/formes.rs::shape_to_polygon_rect_in_one_step_undo_restores` |
-| losange | `element/src/shape.ts` (`diamond`), `Tools.tsx` | copié (`ShapeKind::Diamond`) ; au doigt : toucher dans un coin de la boîte, hors du losange, ne sélectionne rien | `outils-excalidraw-navigateur.mjs` S7 (`Lire : S7.diamond=1`, `S7.corner=none`) ; `tests/formes.rs::diamond_hits_inside_not_box_corners` |
+| losange | `element/src/shape.ts` (`diamond`), `Tools.tsx` | copié (`ShapeKind::Diamond`) ; atteint par la rangée Formes (choix 1 du plan 2b), hors de la barre ; au doigt : toucher dans un coin de la boîte, hors du losange, ne sélectionne rien | `outils-excalidraw-navigateur.mjs` S7 (`Lire : S7.diamond=1`, `S7.corner=none`) ; `tests/formes.rs::diamond_hits_inside_not_box_corners` ; `outils-excalidraw-2b-navigateur.mjs` m1 (`Lire : M1.tool=diamond`) |
 
 ## Crayon
 
@@ -136,4 +136,4 @@ appliqué à la création, non appliqué au suivi d'une cible déplacée (le cœ
 
 | comportement | source Excalidraw (fichier:fonction) | état | essai |
 |---|---|---|---|
-| lettres et chiffres | `keys.ts` | lot 2 (S et G déjà pris par les pipettes d'OG14, à arbitrer) (lot 2b) | — |
+| lettres et chiffres | `keys.ts` | copié : les lettres et chiffres existent ; l'infobulle de chaque outil les montre (« R ou 2 », `aria-keyshortcuts` « R 2 ») ; S et G restent aux pipettes d'OG14 | `outils-excalidraw-2b-navigateur.mjs` m1 (`Lire : M1.tip=R ou 2`) ; `shortcuts.test.ts` (`toolShortcut`) |
