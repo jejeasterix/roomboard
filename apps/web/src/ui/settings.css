@@ -1,0 +1,27 @@
+/* OG39 : panneau Réglages au design des îlots (docs/plans/reglages-design-cadrage.md). Habillage d'îlot posé par
+   .rb-popover (rb.css) ; ici le contenu : sections titrées comme les en-têtes du panneau d'options (14 px, graisse 500,
+   icône Lucide navy de 24 px calée), rangées de 44 px au moins, valeur en pastille grise, interrupteur violet repris de
+   la fenêtre des fonds (.rb-bg-knob), piste coupée en gris 4,8:1 (WCAG 1.4.11, 3:1) et non en gris 300, jetons de rb.css seulement. */
+.rb-settings { display: grid; gap: var(--rf-space-md); box-sizing: border-box; inline-size: min(400px, calc(100vw - 64px)); padding: 12px; color: var(--rf-navy-500); font-size: 14px; line-height: 20px; }
+.rb-set-sec { display: grid; gap: 2px; min-inline-size: 0; }
+.rb-set-sec + .rb-set-sec { padding-block-start: var(--rf-space-md); box-shadow: 0 -1px 0 var(--rf-gray-300); }
+.rb-set-h { display: flex; align-items: center; gap: var(--rf-space-sm); margin: 0 0 var(--rf-space-xs); padding: 0 4px; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--rf-gray-800); }
+.rb-set-h > .rb-icon { flex: none; color: var(--rf-navy-500); }
+.rb-set-row { position: relative; display: flex; align-items: center; gap: var(--rf-space-sm); inline-size: 100%; min-block-size: 44px; padding: 6px 8px; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; text-align: start; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.rb-set-row:hover { background: var(--rf-gray-50); }
+.rb-set-row:active { background: var(--rf-gray-300); }
+.rb-set-row:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+.rb-set-name { flex: 0 1 auto; min-inline-size: 0; }
+.rb-set-val { flex: 0 1 auto; margin-inline-start: auto; max-inline-size: 60%; padding: 2px 8px; border-radius: var(--rf-radius-md); background: var(--rf-gray-50); color: var(--rf-navy-700); text-align: end; overflow-wrap: anywhere; }
+.rb-set-row:hover .rb-set-val { background: var(--rf-white); }
+.rb-set-row > .rb-icon { flex: none; color: var(--rf-text-muted-aa); }
+.rb-set-knob { position: relative; flex: none; margin-inline-start: auto; inline-size: 40px; block-size: 24px; border-radius: 12px; background: var(--rf-text-muted-aa); transition: background-color 120ms; }
+.rb-set-knob::after { content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 20px; block-size: 20px; border-radius: 50%; background: var(--rf-white); box-shadow: var(--rf-shadow-card); transition: inset-inline-start 120ms ease-out; }
+.rb-set-row[aria-checked="true"] .rb-set-knob { background: var(--rf-violet-600); }
+.rb-set-row[aria-checked="true"] .rb-set-knob::after { inset-inline-start: 18px; }
+.rb-set-hint { margin: 2px 0 0; padding: 0 8px; font-size: 13px; line-height: 18px; color: var(--rf-text-muted-aa); }
+.rb-set-foot { display: grid; gap: var(--rf-space-xs); padding: var(--rf-space-sm) 8px 0; box-shadow: 0 -1px 0 var(--rf-gray-300); font-size: 13px; line-height: 18px; color: var(--rf-text-muted-aa); }
+.rb-set-foot p { margin: 0; }
+.rb-settings #echelons-notes { margin: 0; color: var(--rf-danger-text); }
+.rb-settings #echelons-notes[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .rb-set-knob, .rb-set-knob::after { transition: none; } }

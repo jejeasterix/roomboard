@@ -175,6 +175,8 @@ if [ "$E2E" = 1 ]; then
   echo "restes OG27 : OK"
   node scripts/essais/restes-og23-navigateur.mjs
   echo "restes OG23 : OK"
+  node scripts/essais/reglages-design-navigateur.mjs
+  echo "reglages design : OK"
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"
