@@ -271,10 +271,11 @@ describe("Island (design-l2 L2-7 à L2-16)", () => {
 });
 
 describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
-  function layer(bars: readonly Bar[], onTopFree?: (y: number) => void) {
+  function layer(bars: readonly Bar[] | Accessor<readonly Bar[]>, onTopFree?: (y: number) => void) {
     const rendered = vi.fn((b: Bar, c: Accessor<boolean>) => <div data-toolbar={b.id} data-c={c() ? "1" : "0"} />);
+    const list = typeof bars === "function" ? bars : () => bars;
     const r = render(() => (
-      <IslandLayer bars={() => bars} render={rendered} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} {...(onTopFree !== undefined ? { onTopFree } : {})} />
+      <IslandLayer bars={list} render={rendered} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} {...(onTopFree !== undefined ? { onTopFree } : {})} />
     ));
     const ids = (sel: string): (string | null)[] => [...r.container.querySelectorAll(sel)].map((e) => e.getAttribute("data-island"));
     return { ...r, rendered, ids };
@@ -312,7 +313,8 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     }
     vi.stubGlobal("ResizeObserver", FakeRO);
     try {
-      const { container, unmount } = layer(ALL);
+      const [bars, setBars] = createSignal<readonly Bar[]>(ALL);
+      const { container, unmount } = layer(bars);
       const islands = [...container.querySelectorAll(".rb-island[data-island]")];
       const sizes = made.filter((o) => islands.every((e) => o.seen.has(e)));
       expect(sizes).toHaveLength(1);
@@ -321,6 +323,9 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
       container.addEventListener(ISLANDS_RESIZED, heard);
       sizes[0]!.cb([], sizes[0] as unknown as ResizeObserver);
       expect(heard).toHaveBeenCalledTimes(1);
+      // Une barre retirée n'est plus observée (`unobserve` de son `Island`), le calque vivant.
+      setBars(ALL.filter((b) => b.id !== "zoom"));
+      expect(sizes[0]!.seen.size).toBe(islands.length - 1);
       unmount();
       expect(sizes[0]!.seen.size).toBe(0);
     } finally {
