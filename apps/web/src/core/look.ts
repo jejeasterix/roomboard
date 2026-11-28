@@ -4,7 +4,7 @@ export type Roughness = 0 | 1 | 2;
 export type Roundness = "sharp" | "round";
 /** Lot 2 (T12) : remplissage ; le plein est le neutre. */
 export type FillKind = "solid" | "hachure" | "cross-hatch";
-export type Arrowhead = "none" | "arrow" | "triangle" | "triangle_outline" | "bar" | "circle" | "circle_outline";
+export type Arrowhead = "none" | "arrow" | "triangle" | "triangle_outline" | "bar" | "circle" | "circle_outline" | "diamond" | "diamond_outline";
 export type TextAlign = "left" | "center" | "right";
 /** Vue du cœur (champs absents = neutres), noms d'Excalidraw. */
 export interface Look {
@@ -53,7 +53,7 @@ export interface LookPatch {
 export const STROKE_STYLES: readonly string[] = ["dashed", "dotted"];
 /** Copie d'`element.rs` (T12) : remplissages non pleins, pointes, alignements non gauches. */
 export const FILL_STYLES: readonly string[] = ["hachure", "cross-hatch"];
-export const ARROWHEADS: readonly string[] = ["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline"];
+export const ARROWHEADS: readonly string[] = ["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline", "diamond", "diamond_outline"];
 export const START_ARROWHEAD_DEFAULT: Arrowhead = "none";
 export const END_ARROWHEAD_DEFAULT: Arrowhead = "arrow";
 export const TEXT_ALIGNS: readonly string[] = ["center", "right"];

@@ -471,7 +471,7 @@ pub const STROKE_STYLES: [&str; 2] = ["dashed", "dotted"];
 pub const FILL_STYLES: [&str; 2] = ["hachure", "cross-hatch"];
 
 /// Pointes lisibles, aux deux bouts ; le neutre est `none` au début et `arrow` à la fin (jamais écrit).
-pub const ARROWHEADS: [&str; 7] = [
+pub const ARROWHEADS: [&str; 9] = [
     "none",
     "arrow",
     "triangle",
@@ -479,6 +479,8 @@ pub const ARROWHEADS: [&str; 7] = [
     "bar",
     "circle",
     "circle_outline",
+    "diamond",
+    "diamond_outline",
 ];
 pub const START_ARROWHEAD_DEFAULT: &str = "none";
 pub const END_ARROWHEAD_DEFAULT: &str = "arrow";

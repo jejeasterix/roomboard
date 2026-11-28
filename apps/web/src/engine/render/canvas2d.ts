@@ -325,6 +325,26 @@ export function arrowhead(
     }
     return true;
   }
+  if (kind === "diamond" || kind === "diamond_outline") {
+    // Losange (Excalidraw arrowheads.ts, MIT) : L le long du fût, demi-largeur 0,6 L, arrière à 2 L.
+    const l = Math.max(6, 2 * width);
+    const d = Math.hypot(tipX - fromX, tipY - fromY) || 1;
+    const ux = (tipX - fromX) / d;
+    const uy = (tipY - fromY) / d;
+    const nx = -uy * 0.6 * l;
+    const ny = ux * 0.6 * l;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX - ux * l + nx, tipY - uy * l + ny);
+    ctx.lineTo(tipX - 2 * l * ux, tipY - 2 * l * uy);
+    ctx.lineTo(tipX - ux * l - nx, tipY - uy * l - ny);
+    ctx.closePath();
+    if (kind === "diamond") {
+      if (color !== undefined) ctx.fillStyle = color;
+      ctx.fill();
+    }
+    return true;
+  }
   const head = kind === "none" ? null : headWings(tipX, tipY, fromX, fromY, width);
   if (!head) return false;
   ctx.beginPath();

@@ -111,6 +111,8 @@ const HEADS: readonly RadioOption<Arrowhead>[] = [
   { value: "bar", label: "Barre", icon: "head-bar" },
   { value: "circle", label: "Rond", icon: "head-circle" },
   { value: "circle_outline", label: "Rond creux", icon: "head-circle-outline" },
+  { value: "diamond", label: "Losange", icon: "head-diamond" },
+  { value: "diamond_outline", label: "Losange creux", icon: "head-diamond-outline" },
 ];
 const ARROW_TYPES: readonly RadioOption<ArrowType>[] = [
   { value: "sharp", label: "Droite", icon: "arrow-type-sharp" },

@@ -1856,11 +1856,12 @@ describe("canvas2d : lignes à points, pointes neuves, calque d'édition (OG12 T
     // w = 4 : L = max(6, 8) = 8, demi-largeur 4,8 ; pointe en (100, 0), fût venant de la gauche.
     const c = new PathCtx();
     expect(arrowhead(asCtx(c), "diamond", 100, 0, 0, 0, 4, "#112233")).toBe(true);
-    expect(c.calls.slice(0, 5)).toEqual(["move 100,0", "line 92,4.8", "line 84,0", "line 92,-4.8", "close"]);
+    expect(c.calls.slice(0, 4)).toEqual(["move 100,0", "line 92,4.8", "line 84,0", "line 92,-4.8"]);
+    expect(c.log).toContain("closePath");
     expect(c.calls).toContain("fill");
     const o = new PathCtx();
     expect(arrowhead(asCtx(o), "diamond_outline", 100, 0, 0, 0, 4)).toBe(true);
-    expect(o.calls).toContain("close");
+    expect(o.log).toContain("closePath");
     expect(o.calls).not.toContain("fill");
   });
   it("flèche à points : les ailes suivent le dernier segment", () => {

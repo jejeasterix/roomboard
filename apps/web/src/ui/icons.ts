@@ -184,6 +184,8 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "head-bar": [["path", { d: "M4 12h16" }], ["path", { d: "M20 6v12" }]],
   "head-circle": [["path", { d: "M4 12h11" }], ["circle", { cx: "17.5", cy: "12", r: "2.5" }], ["circle", { cx: "17.5", cy: "12", r: "1" }]],
   "head-circle-outline": [["path", { d: "M4 12h11" }], ["circle", { cx: "17.5", cy: "12", r: "2.5" }]],
+  "head-diamond": [["path", { d: "M4 12h9" }], ["path", { d: "M13 12l3.5-3 3.5 3-3.5 3z" }], ["path", { d: "M15 12h3" }]],
+  "head-diamond-outline": [["path", { d: "M4 12h9" }], ["path", { d: "M13 12l3.5-3 3.5 3-3.5 3z" }]],
   "edit-points": [["circle", { cx: "19", cy: "5", r: "2" }], ["circle", { cx: "5", cy: "19", r: "2" }], ["path", { d: "M5 17A12 12 0 0 1 17 5" }]],
   "point-remove": [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M8 12h8" }]],
   "arrow-binding": [["path", { d: "M3 12h9" }], ["rect", { x: "14", y: "6", width: "7", height: "12", rx: "1" }], ["circle", { cx: "12.5", cy: "12", r: "1.5" }]],

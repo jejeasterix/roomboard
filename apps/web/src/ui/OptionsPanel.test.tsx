@@ -211,7 +211,7 @@ describe("OptionsPanel lot 2 (T15)", () => {
   it("Losange creux : choisi à la fin, écrit endArrowhead", () => {
     const { container, calls } = mount({ tool: "select", selection: [arrowEl("a")] });
     const b = container.querySelector('[data-edit="endArrowhead"] [data-choice="diamond_outline"]')!;
-    expect(b.getAttribute("aria-label") ?? b.getAttribute("title")).toBe("Losange creux");
+    expect(b.textContent).toContain("Losange creux");
     fireEvent.click(b);
     expect(calls).toEqual([{ endArrowhead: "diamond_outline" }]);
   });

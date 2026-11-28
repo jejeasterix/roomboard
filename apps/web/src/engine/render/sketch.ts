@@ -191,6 +191,17 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
           }
           return;
         }
+        if (k === "diamond" || k === "diamond_outline") {
+          const l = Math.max(6, 2 * w);
+          const d = Math.hypot(tx - fx, ty - fy) || 1;
+          const ux = (tx - fx) / d;
+          const uy = (ty - fy) / d;
+          const nx = -uy * 0.6 * l;
+          const ny = ux * 0.6 * l;
+          const poly: [number, number][] = [[tx, ty], [tx - ux * l + nx, ty - uy * l + ny], [tx - 2 * l * ux, ty - 2 * l * uy], [tx - ux * l - nx, ty - uy * l - ny]];
+          add(gen.polygon(poly, k === "diamond" ? { ...wing, fill: style.color, fillStyle: "solid" } : wing).sets, wd);
+          return;
+        }
         const head = headWings(tx, ty, fx, fy, w);
         if (!head) return;
         if (k === "arrow") {
