@@ -11,7 +11,9 @@ import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from 
 import { arrowWings, catmullRom, flattenPath, isFillable, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
 import { worldToScreen, type Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, pageFrame, visibleGridRect, visiblePageRect, type PageRect } from "../page";
-import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
+import { faceOf, layoutRich, measureWith, richBoxHeight, textFont, type RichLine } from "../text-layout";
+import { LABEL_SIZE, labelBox, labelTop } from "../../core/shape-label";
+import { plainSpans } from "../../core/rich-text";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import type { ImageSource } from "./image-cache";
 import type { MediaFrames } from "./media-frames";
@@ -417,6 +419,8 @@ export class Canvas2DRenderer implements Renderer {
   /** Tracés roughjs par id (clé : forme, taille, remplissage, couleur, épaisseur, aspect, graine), invalidés comme `paths`. */
   private readonly sketches = new Map<string, SketchPlan>();
   /** Lignes des textes par id (clé : taille, largeur de boîte, segments), invalidées par `Change` comme `paths`. */
+  /** OG33 : lignes du texte de forme, par forme. */
+  private readonly labelLines = new Map<string, { readonly key: string; readonly lines: readonly RichLine[] }>();
   private readonly textLines = new Map<string, { readonly key: string; readonly lines: readonly RichLine[] }>();
   /** Lignes du texte des cellules, par tableau (B1) : même cache et même invalidation que `textLines`. */
   private readonly cellLines = new Map<string, { readonly key: string; readonly lines: readonly (readonly RichLine[])[] }>();
@@ -654,7 +658,7 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   /** Un élément dans son repère ; `pre` : matrice provisoire posée avant la sienne (fantôme, D38). */
-  private paintElement(ctx: CanvasRenderingContext2D, el: ElementView, pre: Matrix | null): void {
+  private paintElement(ctx: CanvasRenderingContext2D, el: ElementView, pre: Matrix | null, opts?: { readonly noLabel?: boolean }): void {
     const path = el.kind === "stroke" || el.kind === "fill" ? this.pathOf(el.id, el.kind) : null;
     if ((el.kind === "stroke" || el.kind === "fill") && !path) return;
     ctx.save();
@@ -671,6 +675,15 @@ export class Canvas2DRenderer implements Renderer {
       ctx.fill(path, "evenodd");
     } else if (el.kind === "shape") {
       paintShape(ctx, el.shape, el.style, el.look, el.look === undefined ? undefined : (el.look.seed ?? seedOf(el.id)), { id: el.id, cache: this.sketches });
+      // OG33 (choix 8) : texte de la forme, centré dans sa boîte, dans le repère de la forme.
+      const box = el.shape.label !== undefined && opts?.noLabel !== true ? labelBox(el.shape) : null;
+      if (box !== null && el.shape.label !== undefined) {
+        const lines = this.labelLinesOf(ctx, el.id, el.shape.label, box.w);
+        ctx.save();
+        ctx.transform(1, 0, 0, 1, box.x, labelTop(box, richBoxHeight(lines)));
+        paintText(ctx, lines, el.style.color, box.w, "center");
+        ctx.restore();
+      }
     } else if (el.kind === "text") {
       paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color, el.text.boxWidth, textAlignOf(el.look));
     } else if (el.kind === "image") {
@@ -761,7 +774,7 @@ export class Canvas2DRenderer implements Renderer {
   private paintOverlayContent(ctx: CanvasRenderingContext2D, o: EditOverlay): void {
     for (const g of o.ghosts) {
       const el = this.source.element(g.id);
-      if (el) this.paintElement(ctx, this.withImagePreview(el), g.matrix);
+      if (el) this.paintElement(ctx, this.withImagePreview(el), g.matrix, g.noLabel ? { noLabel: true } : undefined);
     }
     for (const s of o.shapes) {
       const n = normalizeShape(s.shape, s.x0, s.y0, s.x1, s.y1);
@@ -927,6 +940,7 @@ export class Canvas2DRenderer implements Renderer {
       this.paths.clear();
       this.sketches.clear();
       this.textLines.clear();
+      this.labelLines.clear();
       this.cellLines.clear();
       return;
     }
@@ -934,6 +948,7 @@ export class Canvas2DRenderer implements Renderer {
       this.paths.delete(id);
       this.sketches.delete(id);
       this.textLines.delete(id);
+      this.labelLines.delete(id);
       this.cellLines.delete(id);
     }
   }
@@ -962,6 +977,16 @@ export class Canvas2DRenderer implements Renderer {
     if (cached && cached.key === key) return cached.lines;
     const lines = layoutRich(t.spans, { size: t.size }, t.boxWidth, measureWith(ctx));
     this.textLines.set(id, { key, lines });
+    return lines;
+  }
+
+  /** OG33 : lignes du texte d'une forme, mises en cache par forme (clé : largeur et texte). */
+  private labelLinesOf(ctx: CanvasRenderingContext2D, id: string, label: string, w: number): readonly RichLine[] {
+    const key = `${w}|${label}`;
+    const cached = this.labelLines.get(id);
+    if (cached && cached.key === key) return cached.lines;
+    const lines = layoutRich(plainSpans(label), { size: LABEL_SIZE }, w, measureWith(ctx));
+    this.labelLines.set(id, { key, lines });
     return lines;
   }
 
