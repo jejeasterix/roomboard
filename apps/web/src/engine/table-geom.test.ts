@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { sortedRows, destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { acceptsDrop, parseLabels, sortedRows, destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -355,5 +355,28 @@ describe("sortedRows (D20, DS9)", () => {
     const t = col(["z", "y"], false, [{ row: "r0", col: "a", rows: 1, cols: 2 }]);
     expect(sortedRows(t, 0, "asc")).toEqual(["r1", "r0"]);
     expect(sortedRows(t, 1, "asc")).toEqual(["r0", "r1"]);
+  });
+});
+
+describe("acceptsDrop, parseLabels (D21, DS5)", () => {
+  const t = (header: boolean): TableData => ({
+    color: "#000", size: 36, merges: [], cells: [], ...(header ? { header: true } : {}),
+    cols: [{ id: "a", width: 100, accept: ["chat", "Chien"] }, { id: "b", width: 100 }],
+    rows: [{ id: "r0", height: 64 }, { id: "r1", height: 64 }],
+  });
+  it("acceptsDrop : libellé de la liste (casse, blancs de bord) ; autre libellé, objet non texte : refus ; colonne sans liste : tout", () => {
+    expect(acceptsDrop(t(false), { row: 1, col: 0 }, "  CHAT ")).toBe(true);
+    expect(acceptsDrop(t(false), { row: 1, col: 0 }, "chien")).toBe(true);
+    expect(acceptsDrop(t(false), { row: 1, col: 0 }, "truite")).toBe(false);
+    expect(acceptsDrop(t(false), { row: 1, col: 0 }, null)).toBe(false);
+    expect(acceptsDrop(t(false), { row: 1, col: 1 }, null)).toBe(true);
+  });
+  it("acceptsDrop : case d'en-tête d'une colonne à liste : refus", () => {
+    expect(acceptsDrop(t(true), { row: 0, col: 0 }, "chat")).toBe(false);
+    expect(acceptsDrop(t(true), { row: 0, col: 1 }, "chat")).toBe(true);
+  });
+  it("parseLabels : virgule, point-virgule, retour ; blancs, vides et doublons (sans casse) retirés ; 64 au plus", () => {
+    expect(parseLabels(" chat, chien ;Chat\n\n poisson ")).toEqual(["chat", "chien", "poisson"]);
+    expect(parseLabels(Array.from({ length: 70 }, (_, i) => `e${i}`).join(","))).toHaveLength(64);
   });
 });

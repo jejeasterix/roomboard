@@ -102,4 +102,12 @@ describe("TableOptions (DS10)", () => {
     expect(container.querySelector('[data-table-border-color="#000000"]')?.getAttribute("aria-pressed")).toBe("false");
     expect(container.querySelector(".rb-swatch")).toBeNull();
   });
+  it("S14, DS10 : Tableau de tri : le champ montre la liste ; Entrée écrit look accept (libellés nettoyés)", () => {
+    const { container, host } = mount("tableAccept", cell({ accept: ["chat"] }));
+    const input = container.querySelector<HTMLInputElement>('[data-table-option="accept"]')!;
+    expect(input.value).toBe("chat");
+    fireEvent.input(input, { target: { value: "chat, chien ; Chat" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(host.look).toHaveBeenLastCalledWith({ key: "accept", value: ["chat", "chien"] });
+  });
 });

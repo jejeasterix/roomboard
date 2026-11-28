@@ -230,3 +230,70 @@ describe("glisser vers une case (cell-drop, DA3)", () => {
     s.tool.close(1, "cancel");
   });
 });
+
+describe("glisser vers une case — S14 tableau de tri (DS5)", () => {
+  /** Colonne 1 acceptant « chat, chien » ; `text` pose une étiquette de 200 × 45 en (x, y). */
+  const sorting = () => {
+    const s = setup();
+    const t = s.t();
+    const c1 = { row: t.rows[0]?.id ?? "", col: t.cols[1]?.id ?? "" };
+    s.doc.apply({ type: "SetTableLook", id: s.table, from: c1, to: c1, look: { key: "accept", value: ["chat", "chien"] } });
+    const text = (content: string, x: number, y: number): string =>
+      s.doc.apply({ type: "SetText", page: s.page, id: null, x, y, content, color: "#000000", size: 36, boxWidth: 200, boxHeight: 45 }).ids[0] ?? "";
+    return { ...s, text };
+  };
+  it("S14 : « chat » lâché sur (1, 1) : PlaceInCell, logé ; « Chat » (casse) sur (2, 1) aussi", () => {
+    const s = sorting();
+    const a = s.text("chat", 1500, 200);
+    s.move([1520, 220], [360, 96]);
+    expect(s.runs.at(-1)?.type).toBe("PlaceInCell");
+    expect(s.doc.element(a)?.cell?.[2]).toBe(s.t().cols[1]?.id);
+    s.text("Chat", 1500, 400);
+    s.move([1520, 420], [360, 160]);
+    expect(s.runs.at(-1)?.type).toBe("PlaceInCell");
+  });
+  it("S14 : truite refusée : aucune commande, aucune étape, l'objet reste à sa place ; aucun cadre de case visée", () => {
+    const s = sorting();
+    const a = s.text("truite", 1500, 200);
+    const before = s.doc.bounds([a]);
+    const v = s.doc.version();
+    const n = s.runs.length;
+    s.tool.begin(1, [at(1520, 220)]);
+    s.tool.extend(1, [at(360, 96)], []);
+    expect(s.tool.live().overlay?.target ?? null).toBeNull();
+    s.tool.close(1, "end");
+    expect(s.runs.length).toBe(n);
+    expect(s.doc.version()).toBe(v);
+    expect(s.doc.bounds([a])).toEqual(before);
+  });
+  it("S14 : une image (pas un texte) lâchée sur la colonne à liste : refusée, aucune commande", () => {
+    const s = sorting();
+    const n = s.runs.length;
+    s.move([1200, 1150], [360, 96]);
+    expect(s.runs.length).toBe(n);
+  });
+  it("S14 : colonne sans liste : l'image loge comme avant", () => {
+    const s = sorting();
+    s.move([1200, 1150], [600, 96]);
+    expect(s.runs.at(-1)?.type).toBe("PlaceInCell");
+  });
+  it("S14 : Alt tenue : « truite » refusée quand même (aucune commande) ; « chat » se déplace librement (Transform)", () => {
+    const s = sorting();
+    s.text("truite", 1500, 200);
+    s.setAlt(true);
+    const n = s.runs.length;
+    s.move([1520, 220], [360, 96]);
+    expect(s.runs.length).toBe(n);
+    s.text("chat", 1500, 400);
+    s.move([1520, 420], [360, 96]);
+    expect(s.runs.at(-1)?.type).toBe("Transform");
+  });
+  it("S14 : Alt+Entrée (place) : « truite » au-dessus de (1, 1) : null ; « chat » : PlaceInCell", () => {
+    const s = sorting();
+    const bad = s.text("truite", 260, 74);
+    expect(s.drop.place([bad], false)).toBeNull();
+    const good = s.text("chat", 260, 74);
+    expect(s.drop.place([good], false)?.type).toBe("PlaceInCell");
+  });
+});
+
