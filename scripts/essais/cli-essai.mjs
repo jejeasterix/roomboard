@@ -711,6 +711,18 @@ try {
   verifie("T-S12 : SetTableLook open sur la case ombrée", caseDe(5, lr2, lc0)?.open === true, look.brut);
   verifie("T-S12 : trois undo, une étape chacun : open, ombrage et accept retirés, bordure gardée", caseDe(9, lr2, lc0) === undefined && tabDe(9)?.cols?.find((c) => c.id === lc1)?.accept === undefined && caseDe(9, lr0, lc0)?.border !== undefined, look.brut);
   egal("T-S9 : réouverture : bordure présente", etat(pl).pages[0].elements.find((e) => e.id === tab.id)?.table?.cells?.find((x) => x.row === lr0 && x.col === lc0)?.border, ["#dc2626", 8, "dashed"]);
+  // personnalisation-3 suite (T4, D18) : ReorderTableLines inverse les lignes, relu par `state` ; undo : une étape.
+  const rows0 = etat(pl).pages[0].elements.find((e) => e.id === tab.id).table.rows.map((r) => r.id);
+  const ordre = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "ReorderTableLines", id: tab.id, axis: "row", order: [...rows0].reverse() },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+  ));
+  const rowsDe = (i) => ((ordre.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id)?.table?.rows ?? []).map((r) => r.id);
+  verifie("T-S11 : ReorderTableLines inverse les lignes, relu par state", ordre.code === 0 && rows0.length > 1 && JSON.stringify(rowsDe(1)) === JSON.stringify([...rows0].reverse()), ordre.brut);
+  verifie("T-S11 : undo, une étape : ordre d'origine", JSON.stringify(rowsDe(3)) === JSON.stringify(rows0), ordre.brut);
+  egal("T-S11 : réouverture : ordre d'origine", etat(pl).pages[0].elements.find((e) => e.id === tab.id)?.table?.rows?.map((r) => r.id), rows0);
   // OG12 (S5) : deux rectangles, une flèche liée, Transform suivi puis undo en une étape, SetLinePoints refusé, AddLinked.
   {
     const f = join(dir, "fleches.roomboard");
