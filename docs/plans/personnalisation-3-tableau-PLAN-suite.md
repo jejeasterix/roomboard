@@ -20,7 +20,7 @@ Deux commandes Rust neuves seulement (DS1, DS2) : `SetTableLook` (clés de case 
 | T1 | Mineurs PR 74 : bouton En-tête enfoncé, zone d'en-tête entière, `scaleOf` exporté, tests manquants | — | apps/web/src/ui/{item-state.ts,item-state.test.ts,Toolbar.tsx}, apps/web/src/engine/render/{table-paint.ts,table-paint.test.ts}, apps/web/src/engine/{table-geom.ts,engine.test.ts}, apps/web/src/engine/tools/{table.ts,table.test.ts}, apps/web/src/toolbar.test.ts | partagé | implementeur-tdd | vitest `-t "PR 74\|dix actions"` : 7 passés (6 « PR 74 » + le titre « dix actions ») | S10 | #tache-t1 |
 | T2 | Cœur : `SetTableLook` (ha, va, border, open, accept), lecture tolérante, export Wasm | — | crates/roomboard-core/src/{table.rs,table_look.rs,commands.rs,lib.rs}, crates/roomboard-wasm/src/lib.rs | isolé | implementeur-tdd | `cargo test -p roomboard-core table_look` : 8 passés dont `look_reload_keeps_bytes`, `old_reader_ignores_look_keys` ; `cargo test -p roomboard-wasm set_table_look` : 1 ; commande M : principal ≤ 1 532 864, formats ≤ 3 104 768 | S8, S9, S12, S14, S17 | #tache-t2 |
 | T3 | Contrat TS de `SetTableLook` : api, vrai et faux cœur, CLI | T2 | apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/cli/src/{ops.ts,ops.test.ts,formats.ts,formats.test.ts}, scripts/essais/cli-essai.mjs | partagé | concepteur-critique | contrat `-t "SetTableLook"` : 10 passés (5 × 2 fabriques, « vrai module wasm » présent) ; `ops.test.ts`, `formats.test.ts` verts ; `cli-essai.mjs` : T-S8, T-S9, T-S12, T-S14 puis `CLI : OK` | S8, S9, S12, S14, S16 | #tache-t3 |
-| T4 | `ReorderTableLines` : cœur, Wasm, contrat, CLI | T3 | crates/roomboard-core/src/{table_links.rs,table.rs,commands.rs}, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/cli/src/{ops.ts,ops.test.ts,formats.ts,formats.test.ts}, scripts/essais/cli-essai.mjs | partagé | concepteur-critique | `cargo test -p roomboard-core reorder` : 5 passés dont `reorder_refuses_cut_merge`, `reorder_moves_linked_objects` ; contrat `-t "ReorderTableLines"` : 6 ; `cli-essai.mjs` : T-S11 puis `CLI : OK` ; commande M | S11, S13, S16, S17 | #tache-t4 |
+| T4 | `ReorderTableLines` : cœur, Wasm, contrat, CLI | T3 | crates/roomboard-core/src/{table_links.rs,commands.rs}, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts,wasm-core.ts,fake-core.ts,wasm-core.contract.test.ts}, apps/cli/src/{ops.ts,ops.test.ts,formats.ts,formats.test.ts}, scripts/essais/cli-essai.mjs | partagé | concepteur-critique | `cargo test -p roomboard-core reorder` : 5 passés dont `reorder_refuses_cut_merge`, `reorder_moves_linked_objects` ; contrat `-t "ReorderTableLines"` : 6 ; `cli-essai.mjs` : T-S11 puis `CLI : OK` ; commande M | S11, S13, S16, S17 | #tache-t4 |
 | T5 | Point 7 : double appui et Alt+A, ajuster au contenu | T1 | apps/web/src/engine/{table-geom.ts,table-geom.test.ts}, apps/web/src/engine/tools/{table.ts,table.test.ts}, apps/web/src/engine/input/{keys.ts,keys.test.ts}, apps/web/src/ui/{shortcuts.ts,shortcuts.test.ts} | isolé | implementeur-tdd | vitest `-t "naturalWidth\|S7"` : 6 passés ; `keys.test.ts`, `shortcuts.test.ts` verts | S7 | #tache-t5 |
 | T6 | Point 8 : alignement, un seul calcul (`cellTextFrame`, `lineShift`) lu par dessin, pot et saisie | T3, T5 | apps/web/src/engine/{text-layout.ts,text-layout.test.ts,table-geom.ts,table-geom.test.ts,fill-target.ts,fill-target.test.ts,engine.ts,engine.test.ts}, apps/web/src/engine/tools/{table.ts,table.test.ts,text.ts,tool.ts}, apps/web/src/engine/render/{canvas2d.ts,canvas2d.test.ts}, apps/web/src/engine/input/{keys.ts,keys.test.ts}, apps/web/src/ui/{shortcuts.ts,shortcuts.test.ts}, apps/web/src/app/{text-editor.ts,stage-tags.ts,board-session.ts} | partagé | concepteur-critique | vitest `-t "D15\|lineShift\|cellTextFrame"` : 8 passés ; `zone-s6-banc.test.ts` : ligne `S6 empreinte :` identique à celle d'avant la tâche | S8 | #tache-t6 |
 | T7 | Point 9 : bordures par case (dessin par bord, Alt+B, Alt+Maj+B) | T6 | apps/web/src/engine/render/{table-paint.ts,table-paint.test.ts}, apps/web/src/app/{pdf-overlay-vector.test.ts,stage-tags.ts,board-session.ts}, apps/web/src/engine/table-geom.ts, apps/web/src/engine/tools/{table.ts,table.test.ts}, apps/web/src/engine/input/{keys.ts,keys.test.ts}, apps/web/src/ui/{shortcuts.ts,shortcuts.test.ts} | partagé | implementeur-tdd | vitest `-t "S9"` : 6 passés dont « S9 PDF » ; tests existants de `table-paint.test.ts` verts sans retouche | S9 | #tache-t7 |
@@ -44,7 +44,7 @@ hypothèse de l'état, jamais un comportement à moitié livré.
 | fichier | rôle | tâches |
 |---|---|---|
 | `crates/roomboard-core/src/table_look.rs` (nouveau) | `CellLook`, contrôles, `cmd_set_table_look`, lectures `read_border`, `read_accept`, tests | T2 |
-| `crates/roomboard-core/src/table.rs` | `RawCell.{ha,va,border,open}`, `TableCellView`, `TableColView.accept`, `targets`/`rect`/`key` en `pub(crate)`, Ombrer retire `open` ; `axis` en `pub(crate)` | T2, T4 |
+| `crates/roomboard-core/src/table.rs` | `RawCell.{ha,va,border,open}`, `TableCellView`, `TableColView.accept`, `targets`/`rect`/`key` en `pub(crate)`, Ombrer retire `open` | T2 |
 | `crates/roomboard-core/src/table_links.rs` | `cmd_reorder_table_lines`, tests | T4 |
 | `crates/roomboard-core/src/commands.rs`, `crates/roomboard-wasm/src/lib.rs` | variantes et exports `set_table_look`, `reorder_table_lines` | T2, T4 |
 | `apps/web/src/core/{api,wasm-core,fake-core}.ts`, contrat | types `CellLook`, `TableBorder`, parité | T3, T4 |
@@ -321,7 +321,7 @@ Désombrer retirent `open`. Lecture tolérante, vues publiées, export Wasm à t
     (`skip_serializing_if = "std::ops::Not::not"`, vrai seulement si ombrée) ; `TableColView.accept: Option<Vec<String>>`.
   - Wasm : `set_table_look(&mut self, id: &str, from_row: &str, from_col: &str, to_row: &str, to_col: &str, key: &str, text: Option<String>, width: f64, labels: Vec<String>) -> Result<JsValue, JsError>` et `set_table_look_inner(&mut self, id: &str, from: [&str; 2], to: [&str; 2], key: &str, text: Option<String>, width: f64, labels: Vec<String>) -> Result<Change, CommandError>` ; `key` : `ha` / `va` (`text` = valeur), `border` (`text` = couleur, absente = retirer ; `width` ; `labels[0]` = style), `open` (`width != 0`), `accept` (`labels`) ; autre : `BadTable`.
 - Réutilise : `crates/roomboard-core/src/table.rs:509` `targets`, `:487` `cells_map`, `:495` `insert_cell`, `:602` `RawTable::rect`, `:613` `RawTable::key` — ancres de la plage et écriture (étendre : `pub(crate)`).
-- Réutilise : `crates/roomboard-core/src/table.rs:868` `set_on_targets` — Ombrer et Désombrer retirent aussi `open` (étendre).
+- Réutilise : `crates/roomboard-core/src/table.rs:1013` `set_on_targets` — Ombrer et Désombrer retirent aussi `open` (étendre).
 - Réutilise : `crates/roomboard-core/src/table_links.rs:1063` `old_reader_ignores_new_keys`, `:1091` `cell_reload_keeps_bytes` — patrons des tests U3 (réutiliser).
 
 **Test et commande bornée** :
@@ -1325,7 +1325,7 @@ suivi par `follow_in` comme `cmd_set_table_line_sizes` (`crates/roomboard-core/s
 
 **Interfaces**
 - Consomme : `offsets`, `follow_in`, `table_done_with` (`table_links.rs:48`, `:229`, `:311`) ; `merges_of`, `RawTable::axis`
-  (`table.rs:288`, `:586`, à passer en `pub(crate)` s'il ne l'est pas) ; `table_axis(row: bool)` (`roomboard-wasm/src/lib.rs:207`).
+  (`table.rs:288`, `:586`, déjà `pub(crate)` : `table.rs` n'est pas touché) ; `table_axis(row: bool)` (`roomboard-wasm/src/lib.rs:207`).
 - Produit : `Command::ReorderTableLines { id: String, axis: TableAxis, order: Vec<String> }` ; Wasm
   `reorder_table_lines(&mut self, id: &str, row: bool, order: Vec<String>) -> Result<JsValue, JsError>` et
   `reorder_table_lines_inner(&mut self, id: &str, row: bool, order: &[String]) -> Result<Change, CommandError>` ; TS
@@ -1453,7 +1453,7 @@ Wasm, à côté du test de T2 :
 
 - [ ] **2. Rouge** — `cargo test -p roomboard-core reorder` : compilation refusée (variante absente) ; commande M (avant).
 
-- [ ] **3. Cœur** — `table_links.rs`, dans `impl Document` (importer `HashMap` s'il manque ; `merges_of` depuis
+- [ ] **3. Cœur** — `table_links.rs`, dans `impl Document` (aucun `HashMap` : recherche linéaire, 64 lignes au plus, pas de code de hachage neuf dans le Wasm ; `merges_of` depuis
   `crate::table`) :
 
 ```rust
@@ -1469,8 +1469,10 @@ Wasm, à côté du test de T2 :
     ) -> Result<Change, CommandError> {
         let (page, e, raw) = self.table_of(id)?;
         let (lines, arr) = raw.axis(axis);
-        let pos: HashMap<&str, usize> = order.iter().enumerate().map(|(i, l)| (l.as_str(), i)).collect();
-        if order.len() != lines.len() || pos.len() != lines.len() || lines.iter().any(|l| !pos.contains_key(l.id.as_str())) {
+        // Rang d'un id dans `order` : recherche linéaire (64 lignes au plus, G4 : aucun code de hachage neuf).
+        let pos = |id: &str| order.iter().position(|o| o == id);
+        let unique = order.iter().enumerate().all(|(i, o)| order[..i].iter().all(|p| p != o));
+        if order.len() != lines.len() || !unique || lines.iter().any(|l| pos(&l.id).is_none()) {
             return Err(CommandError::BadTable);
         }
         if lines.iter().zip(order).all(|(l, o)| &l.id == o) {
@@ -1483,8 +1485,8 @@ Wasm, à côté du test de T2 :
                     TableAxis::Row => (m.r0, m.r1),
                     TableAxis::Col => (m.c0, m.c1),
                 };
-                let first = pos[lines[a].id.as_str()];
-                if (a..=b).any(|k| pos[lines[k].id.as_str()] != first + (k - a)) {
+                let first = pos(&lines[a].id).unwrap_or(usize::MAX);
+                if (a..=b).any(|k| pos(&lines[k].id) != Some(first.wrapping_add(k - a))) {
                     return Err(CommandError::BadTable);
                 }
             }
@@ -3481,6 +3483,9 @@ ouvert montre fond, image de fond et texte, avec un liseré hachuré de 4 unité
 `cd $WT && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/engine/tools/select.test.ts src/engine/render/table-paint.test.ts src/engine/fill-target.test.ts src/engine/tools/table.test.ts src/engine/input/keys.test.ts src/ui/shortcuts.test.ts -t "S12|F10|tableKey|shortcuts|OG23 × OG26" 2>&1 | tail -8`
 (`F10` : 5 existants mis à jour ; `S12` : 5 neufs). Garder verts : `select.test.ts` (hors F10), `table-paint.test.ts`
 (F13 : un cache fermé se dessine comme avant).
+- Témoin S6 (DS16, la tâche touche `fill-target.ts`) : `cd $WT && ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/web exec vitest run src/engine/zone-s6-banc.test.ts 2>&1 | grep "S6 empreinte"`
+  avant la tâche, puis après : lignes identiques (sinon : nouveau hash relevé et noté dans `docs/essais/c8-porte-s6.md`
+  comme la PR 53, aucun seuil touché).
 
 **Contraintes (recopiées)** : G1 TDD · G2 `cd $WT &&` · G3 `nice -n 10`, preuves bornées · G7 un toucher = une commande ·
 G8 toucher au pointeur du moteur · G9 Alt+O lu par `code`, `SHORTCUTS` + `EXPECT`, liste `table` du test « fusion OG23 ×
@@ -3489,7 +3494,7 @@ OG26 » · G10 Sélection hors case ombrée inchangée · G11 même peintre écr
 **Interdits** : aucune boucle neuve par image (`tableOpens` dans `tableCounts`) ; loger dans un cache, ouvert ou non,
 reste refusé (DS3, `cell-drop` inchangé).
 
-**Terminé quand** : preuves vertes, un commit.
+**Terminé quand** : preuves vertes, empreinte S6 identique, ou nouveau hash documenté dans `docs/essais/c8-porte-s6.md` comme la PR 53, un commit.
 
 #### Étapes
 
@@ -3574,7 +3579,7 @@ describe("outil Tableau — S12 cache (DS3)", () => {
 `keys.test.ts` : `tableKey` d'Alt+O → `"shade-open-toggle"` ; liste `table` : `k("o", { code: "KeyO", altKey: true })`.
 `shortcuts.test.ts`, `EXPECT` : `"table-shade-open": ["table", "shade-open-toggle"],`.
 
-- [ ] **2. Rouge** — commande bornée.
+- [ ] **2. Rouge** — commande bornée ; relever la ligne `S6 empreinte :` (avant).
 
 - [ ] **3. Sélection** — `select.ts` : `interface Reveal` gagne `readonly open: boolean;` ; `shadedCellAt` rend
   `{ id, row: r.id, col: k.id, open: cellLook(h.table, r.id, k.id).open }` (importer `cellLook`) ; au relâché :
@@ -3661,7 +3666,7 @@ sans Maj : `if (code === "KeyO") return "shade-open-toggle";`. `ui/shortcuts.ts`
 `s("table-shade-open", "Tableau", "Ouvrir ou refermer le cache", "Alt+O"),`. `app/stage-tags.ts` : clé `tableOpens` =
 `String(s.tableOpens)` ; `app/board-session.ts` : `stage.dataset["tableOpens"] = tags.tableOpens;`.
 
-- [ ] **6. Vert** — commande bornée ; `select.test.ts`, `table-paint.test.ts`, `engine.test.ts` entiers verts.
+- [ ] **6. Vert** — commande bornée ; `select.test.ts`, `table-paint.test.ts`, `engine.test.ts` entiers verts ; témoin S6 (après) identique ou documenté.
 
 - [ ] **7. Commit** — fichiers de la ligne T11 ; message `feat(web): a shaded cell opens and closes on touch or Alt+O, open caches show their content with a hatched rim`.
 
@@ -3868,7 +3873,8 @@ Maj : `if (code === "KeyT") return "sort-asc";`. `ui/shortcuts.ts` : `s("table-s
 
 **Objectif** (D21, DS5, S14) : une colonne qui a `accept` n'accepte qu'un seul texte dont le contenu, sans blancs de bord et
 sans casse, est dans la liste ; sa case d'en-tête refuse tout. Refusé au relâché : **aucune commande**, l'aperçu est
-annulé, l'objet reste à sa place, aucune étape ; Alt+Entrée refusé de même ; pas de cadre de case visée sur une case qui
+annulé, l'objet reste à sa place, aucune étape ; **Alt tenue au relâché ne contourne pas la règle** (choix tranché seul : la
+règle ne se contourne pas par un modificateur ; une étiquette admise avec Alt se déplace librement) ; Alt+Entrée refusé de même ; pas de cadre de case visée sur une case qui
 refuserait. Section « Tableau de tri » du panneau : champ « Accepte » (virgule, point-virgule ou retour), écrit au
 changement (Entrée ou perte du focus) par une `SetTableLook` `accept` sur les colonnes de la plage.
 
@@ -3985,11 +3991,15 @@ describe("glisser vers une case — S14 tableau de tri (DS5)", () => {
     s.move([1200, 1150], [600, 96]);
     expect(s.runs.at(-1)?.type).toBe("PlaceInCell");
   });
-  it("S14 : Alt tenue sur une colonne à liste : déplacement libre (Transform), jamais refusé", () => {
+  it("S14 : Alt tenue : « truite » refusée quand même (aucune commande) ; « chat » se déplace librement (Transform)", () => {
     const s = sorting();
     s.text("truite", 1500, 200);
     s.setAlt(true);
+    const n = s.runs.length;
     s.move([1520, 220], [360, 96]);
+    expect(s.runs.length).toBe(n);
+    s.text("chat", 1500, 400);
+    s.move([1520, 420], [360, 96]);
     expect(s.runs.at(-1)?.type).toBe("Transform");
   });
   it("S14 : Alt+Entrée (place) : « truite » au-dessus de (1, 1) : null ; « chat » : PlaceInCell", () => {
@@ -4077,7 +4087,19 @@ dans `createCellDrop` :
 ```
 
 `target` : `return hit === null || !admits(selection, hit) ? null : transformBounds(…)` ; `drop` :
-`if (hit !== null) return admits(selection, hit) ? placeInto(selection, hit) : REFUSED;` ; `place` (logement) :
+début de `drop` remplacé par (la règle avant Alt, DS5) :
+
+```ts
+    drop(selection, matrix, x, y, alt) {
+      if (selection.length === 0) return null;
+      const hit = aimed(selection, x, y);
+      // DS5 : la règle d'étiquettes ne se contourne pas par Alt ; une étiquette admise avec Alt se déplace librement.
+      if (hit !== null && !admits(selection, hit)) return REFUSED;
+      if (alt) return null;
+      if (hit !== null) return placeInto(selection, hit);
+```
+
+(la suite de `drop`, sortie d'un objet lié, inchangée) ; `place` (logement) :
 `return hit === null || !admits(selection, hit) ? null : placeInto(selection, hit);` (importer `acceptsDrop`).
 
 - [ ] **5. `select.ts`** — au relâché du déplacement :

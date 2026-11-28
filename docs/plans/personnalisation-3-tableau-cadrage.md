@@ -421,6 +421,13 @@ avec `--captures` dans `docs/design/captures/personnalisation-3-tableau/`), sino
 ### Hypothèses à revoir (suite)
 
 - HS1 (niveau 1) Une case cachée ouverte refuse aussi les objets (DS3) ; autre choix : l'accepter et refuser de la refermer.
+- HS7 (niveau 1, à côté de H9, **hypothèse acceptée**, choix tranché seul) Une version d'avant ne connaît pas `open` : si
+  elle désombre puis réombre une case, la clé `open` reste écrite, et de retour dans la version neuve le cache réapparaît
+  ouvert. Raison : cas rare (aller-retour entre deux versions sur la même case), l'enseignant le referme d'un toucher,
+  aucune donnée n'est perdue.
+- HS8 (niveau 2, choix tranché seul) Alt tenue au relâché ne contourne pas la règle d'étiquettes (DS5) : une étiquette
+  refusée revient à sa place ; une étiquette admise se déplace librement. Raison : la règle ne se contourne pas par un
+  modificateur.
 - HS2 (niveau 1) Alt+Maj+C et Alt+Maj+M tournent au lieu de six touches fixes (DS6).
 - HS3 (niveau 1) La règle d'étiquettes ne vit que dans la page ; la CLI peut loger n'importe quoi (DS5).
 - HS4 (niveau 2) Alt+B pose une bordure d'épaisseur 4 à la couleur du style (DS4).
