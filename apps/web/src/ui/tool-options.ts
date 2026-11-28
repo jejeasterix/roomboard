@@ -1,8 +1,10 @@
 // OG11 (DA-1) : sections du panneau d'options et valeurs mixtes. `formValue` adapte `getFormValue` d'Excalidraw
 // (packages/excalidraw/actions/actionProperties.tsx:230-272), Copyright (c) 2020 Excalidraw, licence MIT.
 import type { ElementView } from "../core/api";
+import type { StrokeKind } from "../core/look";
 import type { ToolChoice } from "../engine/input/gesture"; // gesture.ts:27
 import { presetsOf, TABLE_FILLS, type Profile } from "../toolbar";
+import type { RadioOption } from "./RadioChoices";
 
 export type OptionKey =
   | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "pressure" | "strokeStyle" | "roughness" | "roundness"
@@ -91,6 +93,17 @@ export const WIDTHS = [
   { value: "4", label: "Moyen" },
   { value: "8", label: "Épais" },
 ] as const;
+/** Segments d'épaisseur (icônes fine, moyenne, épaisse) : section Épaisseur (`OptionsPanel`) et bordure du tableau
+ *  (`TableOptions`). */
+export const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({
+  value: w.value, label: w.label, icon: w.value === "2" ? "width-thin" : w.value === "4" ? "width-medium" : "width-thick",
+}));
+/** Segments de style de trait : section Style (`OptionsPanel`) ; la bordure du tableau y ajoute « Aucune bordure ». */
+export const STROKES: readonly RadioOption<StrokeKind>[] = [
+  { value: "solid", label: "Plein", icon: "stroke-solid" },
+  { value: "dashed", label: "Tirets", icon: "stroke-dashed" },
+  { value: "dotted", label: "Pointillés", icon: "stroke-dotted" },
+];
 /** Pastille de couleur : valeur (`null` = transparent) et nom lisible (infobulle, `aria-label`). */
 export interface Pick {
   readonly color: string | null;

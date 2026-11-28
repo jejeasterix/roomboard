@@ -46,8 +46,8 @@ export function stageTags(
     tableHeader: s.tableCell === null ? "" : s.tableCell.header === true ? "1" : "0",
     // D15 : `#stage[data-table-align]` = « ha,va » de la case active ; vide sans case.
     tableAlign: s.tableCell === null ? "" : `${s.tableCell.ha ?? "left"},${s.tableCell.va ?? "top"}`,
-    // S9 : `#stage[data-table-border]` = « couleur,épaisseur,style » de la case active ; vide sans bordure réglée.
     tableColumn: s.tableCell?.column?.join("|") ?? "",
+    // S9 : `#stage[data-table-border]` = « couleur,épaisseur,style » de la case active ; vide sans bordure réglée.
     tableBorder: s.tableCell?.border ? s.tableCell.border.join(",") : "",
     tableMerges: String(s.tableMerges),
     tableShades: String(s.tableShades),

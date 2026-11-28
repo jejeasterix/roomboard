@@ -220,6 +220,17 @@ describe("S9 bordures par case (D16, DS4)", () => {
     expect(strokes(ctx).sort()).toEqual([`stroke #000000 ${TABLE_LINE_WIDTH}`, "stroke #dc2626 8"].sort());
     expect(ctx.log).toContain("setLineDash 16,16");
     expect(ctx.log.filter((l) => l === "moveTo")).toHaveLength(24);
+    // Partage : les moveTo de chaque chemin vont au trait qui le ferme ; 12 au rouge tirets, 12 au trait du tableau.
+    const per = new Map<string, number>();
+    let n = 0;
+    for (const l of ctx.log) {
+      if (l === "moveTo") n++;
+      else if (l.startsWith("stroke ")) {
+        per.set(l, (per.get(l) ?? 0) + n);
+        n = 0;
+      }
+    }
+    expect(Object.fromEntries(per)).toEqual({ "stroke #dc2626 8": 12, [`stroke #000000 ${TABLE_LINE_WIDTH}`]: 12 });
   });
   it("S9 : bord commun : la case de droite l'emporte ; « none » efface ses bords", () => {
     const blue: TableBorder = ["#1d4ed8", 2, "solid"];

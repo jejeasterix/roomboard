@@ -263,13 +263,6 @@ export function layoutRich(spans: readonly TextSpan[], base: { readonly size: nu
   return lines;
 }
 
-/**
- * Caractère sous un point local de la boîte (C6a, D6) : rang UTF-16, dans le contenu (`spans` bout à bout), du graphème
- * dont la case [x, x + largeur) × [haut de ligne, haut + hauteur) contient (lx, ly). Mêmes lignes que le dessin
- * (`layoutRich`) : chaque ligne est retrouvée dans le contenu à partir de la fin de la précédente (seules des espaces ou
- * un saut de ligne les séparent). null hors des caractères : marge, après la fin d'une ligne, sous la dernière.
- * `align` (D15) : la ligne est décalée de `lineShift`, comme au dessin ; absent : gauche (texte libre inchangé).
- */
 /** Décalage horizontal d'une ligne dans sa boîte (OG11 ; D15, DS6) : seul calcul de l'alignement, lu par le dessin
  *  (`paintText`) et par la collision du texte (`offsetAt`). Droite : `boxWidth - largeur` ; centre : la moitié. */
 export function lineShift(line: RichLine, boxWidth: number, align: TextAlign): number {
@@ -278,6 +271,13 @@ export function lineShift(line: RichLine, boxWidth: number, align: TextAlign): n
   return align === "right" ? rest : align === "center" ? rest / 2 : 0;
 }
 
+/**
+ * Caractère sous un point local de la boîte (C6a, D6) : rang UTF-16, dans le contenu (`spans` bout à bout), du graphème
+ * dont la case [x, x + largeur) × [haut de ligne, haut + hauteur) contient (lx, ly). Mêmes lignes que le dessin
+ * (`layoutRich`) : chaque ligne est retrouvée dans le contenu à partir de la fin de la précédente (seules des espaces ou
+ * un saut de ligne les séparent). null hors des caractères : marge, après la fin d'une ligne, sous la dernière.
+ * `align` (D15) : la ligne est décalée de `lineShift`, comme au dessin ; absent : gauche (texte libre inchangé).
+ */
 export function offsetAt(spans: readonly TextSpan[], base: { readonly size: number }, boxWidth: number, measure: Measure, lx: number, ly: number, align: TextAlign = "left"): number | null {
   if (!Number.isFinite(lx) || !Number.isFinite(ly) || lx < 0 || ly < 0) return null;
   const content = spans.map((s) => s.text).join("");

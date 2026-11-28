@@ -10,7 +10,7 @@ import { TABLE_LINE_WIDTH, type TableAction, type TableCellState } from "../engi
 import { Icon, IconButton } from "./IconButton";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import { buttonShortcut } from "./shortcuts";
-import { WIDTHS, type Pick } from "./tool-options";
+import { STROKES, WIDTH_OPTIONS, type Pick } from "./tool-options";
 
 export type TableSectionKey = "tableObjects" | "tableAlign" | "tableBorder" | "tableRows";
 export interface TableOptionsHost {
@@ -29,17 +29,15 @@ const VA_OPTIONS: readonly RadioOption<VAlign>[] = [
   { value: "bottom", label: "En bas", icon: "align-end-horizontal" },
 ];
 const STYLE_OPTIONS: readonly RadioOption<BorderStyle>[] = [
-  { value: "solid", label: "Plein", icon: "stroke-solid" },
-  { value: "dashed", label: "Tirets", icon: "stroke-dashed" },
-  { value: "dotted", label: "Pointillés", icon: "stroke-dotted" },
+  ...STROKES,
   { value: "none", label: "Aucune bordure", icon: "ban", shortcut: buttonShortcut("table-border-none") },
 ];
-const WIDTH_OPTIONS: readonly RadioOption<string>[] = WIDTHS.map((w) => ({
-  value: w.value, label: w.label, icon: w.value === "2" ? "width-thin" : w.value === "4" ? "width-medium" : "width-thick",
-}));
+/** Épaisseurs de la section Épaisseur, valeur lue comme chaîne (`String(border[1])`). */
+const BORDER_WIDTHS: readonly RadioOption<string>[] = WIDTH_OPTIONS;
+/** Alt+F bascule : raccourci du groupe (`shortcut` de `RadioChoices`), jamais d'un segment. */
 const FIT_OPTIONS: readonly RadioOption<"grow" | "shrink">[] = [
-  { value: "grow", label: "Agrandir la case", shortcut: buttonShortcut("table-fit") },
-  { value: "shrink", label: "Rétrécir l'objet", shortcut: buttonShortcut("table-fit") },
+  { value: "grow", label: "Agrandir la case" },
+  { value: "shrink", label: "Rétrécir l'objet" },
 ];
 
 export function TableSection(props: {
@@ -58,7 +56,7 @@ export function TableSection(props: {
     tableObjects: () => (
       <div class="rb-opt-stack">
         <RadioChoices keepFocus name="tableFit" label="Objets dans les cases" look="segment" options={FIT_OPTIONS} valueAttr="data-option-value"
-          value={fit()} choose={(v) => { if (v !== fit()) props.host.act("fit-toggle"); }} />
+          shortcut={buttonShortcut("table-fit")} value={fit()} choose={(v) => { if (v !== fit()) props.host.act("fit-toggle"); }} />
         <IconButton keepFocus icon={null} label="Ajuster au contenu" shortcut={buttonShortcut("table-fit-content")}
           attrs={{ "data-table-option": "fit-content", class: "rb-opt-btn rb-opt-wide" }} onPress={() => props.host.act("fit-content")}>
           <Icon name="move-horizontal" />
@@ -76,10 +74,11 @@ export function TableSection(props: {
     ),
     tableBorder: () => (
       <>
-        <div class="rb-pick-row">
+        {/* Alt+B pose une bordure, pas la couleur d'une pastille : raccourci du groupe, comme l'alignement. */}
+        <div class="rb-pick-row" role="group" aria-label="Couleur de la bordure" aria-keyshortcuts={buttonShortcut("table-border-set")?.aria ?? undefined}>
           <For each={props.picks().filter((p) => p.color !== null)}>
             {(p) => (
-              <IconButton keepFocus icon={null} label={p.label} pressed={props.cell()?.border?.[0] === p.color} shortcut={buttonShortcut("table-border-set")}
+              <IconButton keepFocus icon={null} label={p.label} pressed={props.cell()?.border?.[0] === p.color}
                 attrs={{ "data-table-border-color": p.color ?? "", class: "rb-pick" }}
                 onPress={() => border([p.color ?? "#000000", cur()[1], styled(cur()[2])])}>
                 <span class="rb-pick-dot" aria-hidden="true" style={{ background: p.color ?? "transparent" }} />
@@ -87,7 +86,7 @@ export function TableSection(props: {
             )}
           </For>
         </div>
-        <RadioChoices keepFocus name="tableBorderWidth" label="Épaisseur de la bordure" look="segment" options={WIDTH_OPTIONS} valueAttr="data-option-value"
+        <RadioChoices keepFocus name="tableBorderWidth" label="Épaisseur de la bordure" look="segment" options={BORDER_WIDTHS} valueAttr="data-option-value"
           value={props.cell()?.border ? String(props.cell()!.border![1]) : null} choose={(w) => border([cur()[0], Number(w), styled(cur()[2])])} />
         <RadioChoices keepFocus name="tableBorderStyle" label="Style de la bordure" look="segment" options={STYLE_OPTIONS} valueAttr="data-option-value"
           value={props.cell()?.border?.[2] ?? null} choose={(s) => border([cur()[0], cur()[1], s])} />

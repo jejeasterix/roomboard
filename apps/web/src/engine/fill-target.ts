@@ -10,7 +10,7 @@ import type { Command, CoreDocument, TableElement, TextElement } from "../core/a
 import { sourcePixelAt } from "../core/image-params";
 import { formatSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix, isSegment } from "../core/shapes";
-import { cellAt, cellContent, cellInnerBox, cellTextFrame } from "./table-geom";
+import { cellAt, cellContent, cellInnerBox, cellTextFrame, shownSpans } from "./table-geom";
 import { layoutRich, offsetAt, richBoxHeight, wordAt, type Measure } from "./text-layout";
 
 /** Tolérance de toucher, en px d'écran (celle de l'outil Texte, D3). */
@@ -70,10 +70,12 @@ function tableCommand(page: string, el: TableElement, x: number, y: number, colo
   const fill: Command = { type: "SetTableFill", id: el.id, row, col, fill: color };
   const content = cellContent(t, row, col);
   if (content.text === "" || content.shade !== null) return fill;
-  // D15 : même cadre aligné que le dessin (`paintCellTexts`) ; `offsetAt` décale la ligne par `lineShift`.
+  // D15 : même cadre aligné que le dessin (`paintCellTexts`) ; `offsetAt` décale la ligne par `lineShift`. Mise en lignes
+  // sur les segments affichés (gras d'en-tête, `shownSpans`) ; la commande garde ceux du contenu.
   const box = cellInnerBox(t, cell);
-  const frame = cellTextFrame(t, cell, richBoxHeight(layoutRich(content.spans, { size: t.size }, box.w, measure)));
-  const at = offsetAt(content.spans, { size: t.size }, frame.w, measure, cx - frame.x, cy - frame.y, frame.ha);
+  const shown = shownSpans(t, cell);
+  const frame = cellTextFrame(t, cell, richBoxHeight(layoutRich(shown, { size: t.size }, box.w, measure)));
+  const at = offsetAt(shown, { size: t.size }, frame.w, measure, cx - frame.x, cy - frame.y, frame.ha);
   const word = at === null ? null : wordAt(content.text, at);
   if (word === null) return fill;
   return { type: "SetTableCell", id: el.id, row, col, content: content.text, spans: formatSpans(content.spans, word[0], word[1] - word[0], { color }) };
