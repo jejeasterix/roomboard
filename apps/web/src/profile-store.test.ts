@@ -249,6 +249,14 @@ describe("magasin : écriture refusée (T11)", () => {
     expect(s.hasOverride("simple")).toBe(true);
   });
 
+  it("OG45 : un profil d'exactement MAX_JSON_DEPTH niveaux s'enregistre et se recharge", () => {
+    const kv = fakeKv();
+    let deep: unknown = 1;
+    for (let i = 0; i < MAX_JSON_DEPTH - 1; i++) deep = [deep];
+    createProfileStore(kv, BUILTIN_PROFILES).save({ ...user("limite"), rest: { x: deep } });
+    expect(createProfileStore(kv, BUILTIN_PROFILES).get("limite")).not.toBeNull();
+  });
+
   it("chargement : profil stocké au-delà de MAX_JSON_DEPTH (OG45) écarté avec un avertissement, les autres gardés", () => {
     const kv = fakeKv();
     let deep: unknown = 1;

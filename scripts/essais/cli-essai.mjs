@@ -77,7 +77,11 @@ const egal = (nom, a, b) => {
  *  `processCommands` de `apps/cli/src/office-node.ts`). */
 const processusAvec = (needle) => {
   if (!existsSync("/proc")) {
-    const ps = spawnSync("/bin/ps", ["-axww", "-o", "pid=,command="], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const ps = spawnSync("/bin/ps", ["-axww", "-o", "pid=,command="], {
+      encoding: "utf8",
+      env: { ...process.env, LC_ALL: "en_US.UTF-8" }, // sinon `ps` écrit les accents en `M-CM-)`
+      maxBuffer: 64 * 1024 * 1024,
+    });
     if (ps.status !== 0) throw new Ecart(`ps : code ${ps.status} ${ps.stderr}`);
     return ps.stdout.split("\n").filter((l) => l.includes(needle));
   }

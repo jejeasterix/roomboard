@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -186,6 +187,18 @@ describe("killLeftovers (cli-lot4, D79, G4)", () => {
   });
   it("D79 — pas de /proc (macOS) : ps lu, aucun processus ne cite la racine, rien tué", () =>
     expect(killLeftovers(join(tmpDir(), "racine"), 1, join(tmpDir(), "absent"), () => undefined)).toEqual([]));
+  it("OG45 — pas de /proc : un vrai processus qui cite la racine est trouvé par ps et lui seul est visé", async () => {
+    const root = join(tmpDir(), "racine é");
+    const child = spawn("/bin/sh", ["-c", "sleep 30; :", `${root}/conversions/77-1/source.docx`], { stdio: "ignore" });
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      const calls: number[] = [];
+      expect(killLeftovers(root, 77, join(tmpDir(), "absent"), (p) => void calls.push(p))).toEqual([child.pid]);
+      expect(calls).toEqual([-child.pid!]);
+    } finally {
+      child.kill("SIGKILL");
+    }
+  });
   it("OG45 — pas de /proc : ps liste les processus vivants, le processus courant compris", () => {
     const self = processCommands(join(tmpDir(), "absent")).find((p) => p.pid === process.pid);
     expect(self?.cmd).toMatch(/node|vitest/);

@@ -90,15 +90,19 @@ export function parsePs(out: string): Array<{ pid: number; cmd: string }> {
   });
 }
 
-/** Processus vivants (D79, OG45) : `procDir` (`/proc`, Linux) ; illisible (macOS) : `ps`, chemin absolu (pas de `PATH`) ;
- *  `ps` en échec : aucun. */
+/** Processus vivants (D79, OG45) : `procDir` (`/proc`, Linux) ; illisible (macOS) : `ps`, chemin absolu (pas de `PATH`),
+ *  en locale UTF-8 (sinon `ps` écrit `é` en `M-CM-)` et une racine accentuée n'est plus trouvée) ; `ps` en échec : aucun. */
 export function processCommands(procDir = "/proc"): Array<{ pid: number; cmd: string }> {
   let names: string[];
   try {
     names = readdirSync(procDir).filter((n) => /^\d+$/.test(n));
   } catch {
     try {
-      return parsePs(execFileSync("/bin/ps", ["-axww", "-o", "pid=,command="], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
+      return parsePs(execFileSync("/bin/ps", ["-axww", "-o", "pid=,command="], {
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "en_US.UTF-8" },
+        maxBuffer: 64 * 1024 * 1024,
+      }));
     } catch {
       return [];
     }
