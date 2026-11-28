@@ -268,7 +268,10 @@ const ZONE = '[role="textbox"][aria-label="Texte"]';
 const FILL = `${OPT} [data-option="background"] [data-option-value]:not([data-option-value="transparent"])`;
 /** Forme remplie au doigt (outil `id`, fond du panneau), puis Sélection et toucher au centre : la forme est choisie. */
 async function pickFilled(page, cdp, id, a, b) {
-  await tool(page, id);
+  if (id === "diamond") {
+    await page.keyboard.press("KeyD");
+    await waitAttr(page, "data-tool", "diamond");
+  } else await tool(page, id);
   await press(page, "doigt", FILL);
   await touchDrag(page, cdp, a, b);
   await tool(page, "select");
