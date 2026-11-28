@@ -182,10 +182,22 @@ export function optionsWidth(btn: number): number {
 export function placeLinkAvoiding(box: Rect, obstacles: readonly Rect[], maxX: number): number {
   let x = box.x;
   for (const o of [...obstacles].sort((a, b) => a.x - b.x)) {
-    if (x < o.x + o.w && o.x < x + box.w && box.y < o.y + o.h && o.y < box.y + box.h) x = o.x + o.w + GAP;
+    if (crosses({ x, y: box.y, w: box.w, h: box.h }, o)) x = o.x + o.w + GAP;
   }
   return Math.round(Math.max(8, Math.min(x, maxX)));
 }
+
+/** Rectangles (px de la fenêtre) non vides des éléments de `root` qui portent `selector`, lus à l'appel. */
+export function visibleRects(root: ParentNode, selector: string): Rect[] {
+  const out: Rect[] = [];
+  for (const el of root.querySelectorAll(selector)) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+  }
+  return out;
+}
+/** OG41 (D20) : barres flottantes (média, objet 3D) et panneaux passagers (Image, Aide, Bibliothèque, Grille) : obstacles de la barre d'objet. */
+export const POPOVER_OBSTACLES = ".rb-media-bar, .rb-popover";
 
 /** OG41 (D20) : écart entre la barre d'objet et ce qui entoure le cadre, et marge aux bords de la vue. */
 export const OBJECT_BAR_GAP = 8;

@@ -387,6 +387,11 @@ describe("rb.css (T33)", () => {
 });
 
 describe("barre d'objet (OG41, D18, D26)", () => {
+  it("T12-3 : la barre d'objet ne passe pas au-dessus des panneaux passagers ni des toasts", () => {
+    const z = (sel: string): number => Number(/z-index: (\d+)/.exec(rule(sel))?.[1] ?? NaN);
+    expect(z(".rb-object-bar")).toBeLessThanOrEqual(z(".rb-popover"));
+    expect(z(".rb-object-bar")).toBeLessThan(z(".rb-toasts"));
+  });
   it("îlot blanc rayon xl, filet et ombre ; caché par [hidden] ; boutons de 36 px, cible de 44 px", () => {
     expect(rule(".rb-object-bar")).toContain("position: absolute");
     expect(rule(".rb-object-bar")).toContain("block-size: 44px");
