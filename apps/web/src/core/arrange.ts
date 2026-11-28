@@ -104,6 +104,9 @@ export function planArrange(units: readonly ArrangeUnit[], how: ArrangeHow): Arr
   return out;
 }
 
+/** `MIN_SHIFT` du cœur (arrange.rs) : translation en dessous de laquelle un membre `place` ne bouge pas. */
+const MIN_SHIFT = 1e-9;
+
 /** `apply_full` du cœur : matrice `full` aux membres `matrix`, translation de leur centre aux membres `place` (H5). */
 function applyFull(units: readonly ArrangeUnit[], full: Matrix, out: Array<readonly [string, Matrix]>): void {
   for (const m of units.flatMap((u) => u.members)) {
@@ -112,7 +115,8 @@ function applyFull(units: readonly ArrangeUnit[], full: Matrix, out: Array<reado
     } else {
       const [px, py] = [(m.bounds.x0 + m.bounds.x1) / 2, (m.bounds.y0 + m.bounds.y1) / 2];
       const [nx, ny] = [full[0] * px + full[2] * py + full[4], full[1] * px + full[3] * py + full[5]];
-      if (nx !== px || ny !== py) out.push([m.id, shift(nx - px, ny - py)]);
+      // C5 : translation de moins de 1e-9 (résidu d'arrondi d'une rotation sur son centre) omise, comme le cœur.
+      if (Math.abs(nx - px) >= MIN_SHIFT || Math.abs(ny - py) >= MIN_SHIFT) out.push([m.id, shift(nx - px, ny - py)]);
     }
   }
 }
@@ -128,15 +132,18 @@ export function rotationMatrix(cx: number, cy: number, deg: number): Matrix {
 }
 
 /** OG33 : matrice pleine d'une rotation autour du centre des boîtes réunies (celle que le suivi des flèches liées reçoit,
- *  comme `plan_rotate` du cœur la rend) ; null : rien ne tourne (unité sans boîte, aucune unité, angle nul modulo 360). */
+ *  comme `plan_rotate` du cœur la rend) ; null : rien ne tourne (unité sans boîte, aucune unité, angle nul modulo 360,
+ *  matrice arrondie à l'identité). L'angle passe par `rem_euclid` du cœur (`r < 0 ? r + 360 : r`), à l'identique. */
 export function rotationOf(units: readonly ArrangeUnit[], deg: number): Matrix | null {
   const boxes = units.map(boxOf).filter((b): b is Bounds => b !== null);
-  if (boxes.length !== units.length || boxes.length === 0 || ((deg % 360) + 360) % 360 === 0) return null;
+  const r = deg % 360;
+  if (boxes.length !== units.length || boxes.length === 0 || (r < 0 ? r + 360 : r) === 0) return null;
   const sel = boxes.slice(1).reduce((a, b) => union(a, b), boxes[0] as Bounds);
-  return rotationMatrix((sel.x0 + sel.x1) / 2, (sel.y0 + sel.y1) / 2, deg);
+  const full = rotationMatrix((sel.x0 + sel.x1) / 2, (sel.y0 + sel.y1) / 2, deg);
+  return full[0] === 1 && full[1] === 0 && full[2] === 0 && full[3] === 1 && full[4] === 0 && full[5] === 0 ? null : full;
 }
 
-/** OG33 : `plan_rotate` du cœur ; identité et translation nulle omises. */
+/** OG33 : `plan_rotate` du cœur ; identité (matrice arrondie) et translation de moins de 1e-9 omises (C5, D38). */
 export function planRotate(units: readonly ArrangeUnit[], deg: number): Array<readonly [string, Matrix]> {
   const full = rotationOf(units, deg);
   const out: Array<readonly [string, Matrix]> = [];
