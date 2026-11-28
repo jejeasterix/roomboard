@@ -812,10 +812,23 @@ export class Canvas2DRenderer implements Renderer {
       ctx.strokeStyle = SELECTION_COLOR;
       ctx.lineWidth = 1.5 * px;
       for (const g of o.grips) {
+        const big = g.kind === "row-move" || g.kind === "col-move";
         ctx.beginPath();
-        ctx.arc(g.x, g.y, 8 * px, 0, 2 * Math.PI);
+        ctx.arc(g.x, g.y, (big ? 12 : 8) * px, 0, 2 * Math.PI);
         ctx.fill();
         ctx.stroke();
+        if (big) {
+          // Lucide grip-vertical (cx 9 / 15, cy 5 / 12 / 19) ou grip-horizontal (cx 5 / 12 / 19, cy 9 / 15), grille 24 → 16 px.
+          const pts = g.kind === "row-move" ? [[9, 5], [15, 5], [9, 12], [15, 12], [9, 19], [15, 19]] : [[5, 9], [12, 9], [19, 9], [5, 15], [12, 15], [19, 15]];
+          ctx.save();
+          ctx.fillStyle = SELECTION_COLOR;
+          for (const [cx, cy] of pts) {
+            ctx.beginPath();
+            ctx.arc(g.x + ((cx ?? 12) - 12) * (16 / 24) * px, g.y + ((cy ?? 12) - 12) * (16 / 24) * px, 1.25 * px, 0, 2 * Math.PI);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
       }
       ctx.restore();
     }

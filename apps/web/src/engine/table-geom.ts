@@ -7,7 +7,7 @@
  * (`layoutRich`, B1) ; sur une ancre de plusieurs lignes, la dernière ligne porte le reste (F7). Tailles par défaut en
  * unités de page (T4) ; la largeur de page se lit sur la page, jamais ici.
  */
-import type { Bounds, CellLink, CoreDocument, ElementView, HAlign, Matrix, TableBorder, TableData, TableElement, TextSpan, VAlign } from "../core/api";
+import type { Bounds, CellLink, CoreDocument, ElementView, HAlign, Matrix, TableAxis, TableBorder, TableData, TableElement, TextSpan, VAlign } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
@@ -26,7 +26,7 @@ export const TABLE_SHADE_HATCH_STEP = 16;
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
 /** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
 export const TABLE_HEADER_FILL = "#E0E0E8";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none" | "row-up" | "row-down" | "col-left" | "col-right";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -54,6 +54,8 @@ export interface TableCellState {
   readonly va?: VAlign;
   /** personnalisation-3 : nombre d'objets logés dans ce tableau (`cell[0]`), `#stage[data-table-linked]`. */
   readonly linked?: number;
+  /** D18 : textes de la colonne active, de haut en bas, `#stage[data-table-column]`. */
+  readonly column?: readonly string[];
 }
 export interface TableHit { readonly id: string; readonly transform: Matrix; readonly table: TableData; readonly cell: Cell }
 
@@ -455,4 +457,52 @@ export function naturalWidth(t: TableData, col: number, measure: Measure): numbe
     }
   });
   return w + 2 * TABLE_PADDING;
+}
+
+export const REORDER_REFUSED = "Une cellule fusionnée empêche ce déplacement.";
+
+/** D18 : bloc `a..b` remis au rang `to` de la liste privée du bloc (0 ≤ to ≤ n − taille), ordre des autres gardé. */
+export function movedOrder(ids: readonly string[], a: number, b: number, to: number): string[] {
+  const block = ids.slice(a, b + 1);
+  const rest = [...ids.slice(0, a), ...ids.slice(b + 1)];
+  const at = Math.max(0, Math.min(to, rest.length));
+  return [...rest.slice(0, at), ...block, ...rest.slice(at)];
+}
+
+/** Rang `to` de `movedOrder` pour une arrivée sur la ligne `k` : avant elle si elle précède le bloc, après elle sinon. */
+export function destOf(a: number, b: number, k: number): number {
+  return k < a ? k : k > b ? k - (b - a) : a;
+}
+
+/** D18 : chaque zone reste entière et dans son ordre (même règle que `cmd_reorder_table_lines`). */
+export function keepsMerges(t: TableData, axis: TableAxis, order: readonly string[]): boolean {
+  const ids = (axis === "row" ? t.rows : t.cols).map((l) => l.id);
+  const pos = new Map(order.map((x, i) => [x, i]));
+  return mergeRanges(t).every((z) => {
+    const [a, b] = axis === "row" ? [z.r0, z.r1] : [z.c0, z.c1];
+    const first = pos.get(ids[a] ?? "") ?? -1;
+    for (let k = a; k <= b; k++) if (pos.get(ids[k] ?? "") !== first + (k - a)) return false;
+    return true;
+  });
+}
+
+/** Poignées de déplacement (D18, DS8), repère local : à `off` unités à gauche du tableau au milieu du bloc de lignes,
+ *  au-dessus du tableau au milieu du bloc de colonnes. */
+export interface MoveGrip { readonly kind: "row-move" | "col-move"; readonly x: number; readonly y: number }
+export function moveGrips(t: TableData, span: Range, off: number): MoveGrip[] {
+  const r = rangeRect(t, span);
+  return [
+    { kind: "row-move", x: -off, y: (r.y0 + r.y1) / 2 },
+    { kind: "col-move", x: (r.x0 + r.x1) / 2, y: -off },
+  ];
+}
+
+/** Bande sous `v` (repère local), bornée à 0..n − 1 (le doigt peut sortir du tableau). */
+export function lineAt(sizes: readonly number[], v: number): number {
+  let acc = 0;
+  for (let i = 0; i < sizes.length; i++) {
+    acc += sizes[i] ?? 0;
+    if (v < acc) return i;
+  }
+  return Math.max(0, sizes.length - 1);
 }

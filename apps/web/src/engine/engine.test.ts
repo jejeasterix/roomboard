@@ -1107,6 +1107,13 @@ describe("moteur — outil Tableau (C10a, contrat T4)", () => {
     expect(log).toContain("act header-toggle");
   });
   const CELL: TableCellState = { id: "t", row: 0, col: 1, rows: 3, cols: 4 };
+  it("S11 : Ctrl+Maj+↑ avec l'outil Tableau et une case : row-up", () => {
+    const { engine, log, table } = setupTable();
+    table.setCell(CELL);
+    engine.setTool("table");
+    expect(engine.key({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null })).toBe(true);
+    expect(log).toContain("act row-up");
+  });
 
   it("D15 : tableLook relaie à l'outil Tableau ; Alt+Maj+C avec une case : ha-next", () => {
     const { engine, log, table } = setupTable();
@@ -3326,15 +3333,5 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     spy.mockClear();
     engine.hover(10, 10);
     expect(spy).toHaveBeenCalled();
-  });
-});
-
-describe("moteur — outil Tableau S11 (déplacer une ligne)", () => {
-  it("S11 : Ctrl+Maj+↑ avec l'outil Tableau et une case : row-up", () => {
-    const { engine, log, table } = setupTable();
-    table.setCell(CELL);
-    engine.setTool("table");
-    expect(engine.key({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null })).toBe(true);
-    expect(log).toContain("act row-up");
   });
 });

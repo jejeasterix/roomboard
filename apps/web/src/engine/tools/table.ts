@@ -16,7 +16,7 @@ import type { FormatAction, FormatState } from "../rich-edit";
 import { applyMatrix, composeMatrix, invertMatrix, translateMatrix } from "../../core/shapes";
 import type { CellMenu, CellMenuItem } from "../../ui/cell-menu";
 import { screenToWorld, worldToScreen } from "../camera";
-import { EMPTY_OVERLAY } from "../render/overlay";
+import { EMPTY_OVERLAY, type OverlayGrip } from "../render/overlay";
 import {
   anchorOf,
   cellContent,
@@ -33,7 +33,14 @@ import {
   TABLE_LINE_WIDTH,
   expandRange,
   FIT_MAX_WIDTH,
+  destOf,
   GRIP_PX,
+  keepsMerges,
+  lineAt,
+  moveGrips,
+  movedOrder,
+  REORDER_REFUSED,
+  type MoveGrip,
   linkedBoxes,
   linkedIn,
   mergeAt,
@@ -131,6 +138,9 @@ const GRIP_MIN_PX = 24;
 
 export const SHADE_REFUSED = "Retirez d'abord les objets de la case.";
 
+/** Ligne ou colonne tirée par sa poignée (D18) : bloc a..b, ligne d'arrivée k. */
+interface Moving { readonly pointerId: number; readonly id: string; readonly axis: TableAxis; readonly a: number; readonly b: number; k: number }
+
 export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu, cellDrop?: Pick<CellDrop, "place">, notify?: (text: string) => void): TableTool {
   let active: CellRef | null = null;
   /** Autre coin de la plage (F14), dans le tableau de `active` ; null : aucune plage. */
@@ -140,6 +150,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   let swallowed: number | null = null;
   let opened: Opened | null = null;
   let resize: Resize | null = null;
+  let moving: Moving | null = null;
   /** Dernier appui sur une bordure ou une poignée (D14) : le suivant, proche dans le temps et l'espace, ajuste. */
   let lastTap: { readonly id: string; readonly axis: "col" | "row"; readonly index: number; readonly t: number; readonly sx: number; readonly sy: number } | null = null;
   const stopHold = (p: Press | null): void => {
@@ -253,6 +264,32 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     return e === null ? null : { ...e, grip: false };
   };
 
+  /** Écart local de la poignée de déplacement : son centre à GRIP_PX / 2 px écran du bord du tableau. */
+  const moveOff = (m: Matrix): number => GRIP_PX / 2 / (ctx.camera().zoom * scaleOf(m));
+  const moveGripsOf = (at: Located): MoveGrip[] => moveGrips(at.table, rangeOf(at) ?? zoneOf(at), moveOff(at.transform));
+  /** Poignée de déplacement sous le point écran (44 px). */
+  const moveAt = (sx: number, sy: number): { at: Located; axis: TableAxis } | null => {
+    const at = locate(active);
+    if (at === null) return null;
+    for (const g of moveGripsOf(at)) {
+      const [wx, wy] = applyMatrix(at.transform, g.x, g.y);
+      const [gx, gy] = worldToScreen(ctx.camera(), wx, wy);
+      if (Math.abs(gx - sx) <= GRIP_PX / 2 && Math.abs(gy - sy) <= GRIP_PX / 2) return { at, axis: g.kind === "row-move" ? "row" : "col" };
+    }
+    return null;
+  };
+  /** Bloc `a..b` le long de `axis` remis au rang `to` : une ReorderTableLines ; zone coupée : message, rien. */
+  const reorderTo = (at: Located, axis: TableAxis, a: number, b: number, to: number): void => {
+    const ids = (axis === "row" ? at.table.rows : at.table.cols).map((l) => l.id);
+    const order = movedOrder(ids, a, b, to);
+    if (order.every((x, i) => x === ids[i])) return;
+    if (!keepsMerges(at.table, axis, order)) {
+      notify?.(REORDER_REFUSED);
+      return;
+    }
+    ctx.run({ type: "ReorderTableLines", id: at.ref.id, axis, order });
+  };
+
   /** Cadre de la plage, sinon de la cellule active (boîte monde de ses quatre coins), redemandé à chaque changement ;
    *  poignées de taille de la case active ; pendant un glisser de bordure, le cadre montre la taille d'arrivée (G7). */
   const refresh = (): void => {
@@ -261,10 +298,19 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     if (at === null) {
       live = NO_LIVE;
     } else {
-      const grips = gripsOf(at).map((g) => {
+      const grips: OverlayGrip[] = gripsOf(at).map((g) => {
         const [x, y] = applyMatrix(at.transform, g.x, g.y);
         return { x, y, kind: g.kind };
       });
+      for (const g of moveGripsOf(at)) {
+        const [x, y] = applyMatrix(at.transform, g.x, g.y);
+        grips.push({ x, y, kind: g.kind });
+      }
+      const mv = moving;
+      const target =
+        mv !== null && (mv.k < mv.a || mv.k > mv.b)
+          ? transformBounds(at.transform, rangeRect(at.table, mv.axis === "row" ? { r0: mv.k, c0: 0, r1: mv.k, c1: at.table.cols.length - 1 } : { r0: 0, c0: mv.k, r1: at.table.rows.length - 1, c1: mv.k }))
+          : null;
       const rz = resize?.armed === true ? resize : null;
       const el = rz === null ? null : ctx.doc.element(rz.id);
       const frame =
@@ -276,7 +322,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
               y1: el.table.rows.reduce((s, x) => s + x.height, 0) + (rz.edge.axis === "row" ? rz.size - rz.size0 : 0),
             })
           : transformBounds(at.transform, r === null ? cellRect(at.table, at.cell) : rangeRect(at.table, r));
-      live = { ...NO_LIVE, overlay: { ...EMPTY_OVERLAY, frame, grips } };
+      live = { ...NO_LIVE, overlay: { ...EMPTY_OVERLAY, frame, grips, target } };
     }
     ctx.requestFrame?.();
   };
@@ -525,6 +571,14 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       }
       swallowed = null;
       const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
+      const mv = moveAt(s.x, s.y);
+      if (mv !== null) {
+        const span = rangeOf(mv.at) ?? zoneOf(mv.at);
+        const [a, b] = mv.axis === "row" ? [span.r0, span.r1] : [span.c0, span.c1];
+        moving = { pointerId, id: mv.at.ref.id, axis: mv.axis, a, b, k: a };
+        refresh();
+        return;
+      }
       const grab = grabAt(s.x, s.y, x, y);
       if (grab !== null) {
         lastTap = { id: grab.id, axis: grab.edge.axis, index: grab.edge.index, t: s.t, sx: s.x, sy: s.y };
@@ -559,6 +613,17 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       picker.open({ x: s.x, y: s.y }, (cols, rows) => create(x, y, cols, rows));
     },
     extend(pointerId, samples) {
+      const mvg = moving;
+      if (mvg !== null && mvg.pointerId === pointerId) {
+        const s0 = samples[samples.length - 1];
+        const el = ctx.doc.element(mvg.id);
+        if (!s0 || el?.kind !== "table") return;
+        const v = localAlong(el.transform, mvg.axis, s0.x, s0.y);
+        if (v === null) return;
+        mvg.k = lineAt(mvg.axis === "row" ? el.table.rows.map((r) => r.height) : el.table.cols.map((c) => c.width), v);
+        refresh();
+        return;
+      }
       const rz = resize;
       if (rz !== null && rz.pointerId === pointerId && !rz.armed) {
         const s1 = samples[samples.length - 1];
@@ -605,6 +670,15 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         swallowed = null;
         return;
       }
+      const mvg = moving;
+      if (mvg !== null && mvg.pointerId === pointerId) {
+        moving = null;
+        const at = locate(active);
+        if (how === "end" && at !== null && at.ref.id === mvg.id && (mvg.k < mvg.a || mvg.k > mvg.b)) reorderTo(at, mvg.axis, mvg.a, mvg.b, destOf(mvg.a, mvg.b, mvg.k));
+        refresh();
+        ctx.stateChanged?.();
+        return;
+      }
       const rz = resize;
       if (rz !== null && rz.pointerId === pointerId && !rz.armed) resize = null;
       else if (rz !== null && rz.pointerId === pointerId) {
@@ -634,6 +708,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       gate.request();
       picker.close();
       resize = null;
+      moving = null;
       press = null;
       swallowed = null;
       if (active !== null) setActive(null);
@@ -653,7 +728,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
       const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
       const look = cellLook(t, at.ref.row, at.ref.col);
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ha: look.ha, va: look.va, border: look.border };
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, column: t.rows.map((r) => cellContent(t, r.id, t.cols[at.cell.col]?.id ?? "").text), ha: look.ha, va: look.va, border: look.border };
     },
     act(a) {
       if (!settle()) return;
@@ -706,6 +781,17 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           const now = axis === "col" ? t.cols[index]?.width : t.rows[index]?.height;
           const sign = a === "col-wider" || a === "row-taller" ? 1 : -1;
           if (now !== undefined) resizeTo(ref.id, at.transform, t, { axis, index }, now + sign * SIZE_STEP);
+          break;
+        }
+        case "row-up":
+        case "row-down":
+        case "col-left":
+        case "col-right": {
+          const axis: TableAxis = a === "row-up" || a === "row-down" ? "row" : "col";
+          const [s0, s1] = axis === "row" ? [span.r0, span.r1] : [span.c0, span.c1];
+          const n = axis === "row" ? t.rows.length : t.cols.length;
+          const back = a === "row-up" || a === "col-left";
+          if (back ? s0 > 0 : s1 < n - 1) reorderTo(at, axis, s0, s1, back ? s0 - 1 : s0 + 1);
           break;
         }
         case "fit-content":

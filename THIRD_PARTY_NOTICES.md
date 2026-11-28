@@ -621,6 +621,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
 - Lue dans Lucide au même commit (design L2, correctif T12) : `file-plus` (Lucide `file-plus`), pour « Insérer des pages… ».
 - Reprises de la maquette `docs/design/maquettes/02-annotation-bureau.html` (design L4, tracés Lucide au même commit),
   noms RoomBoard : `check` (Lucide `check`), `drop` (Lucide `file-down`).
+- Lues dans Lucide (personnalisation-3 suite, T8) : `grip-vertical` et `grip-horizontal` (six points recopiés dans
+  `apps/web/src/engine/render/canvas2d.ts`, poignées de déplacement du tableau).
 - Lue dans Lucide (personnalisation 2, T18) : `link` (Lucide `link`), pour le bouton Lien, l'éditeur de lien et le
   badge des éléments liés (mêmes tracés dans `apps/web/src/engine/render/link-badge.ts`).
 - Lue dans Lucide au même commit (personnalisation 2, T39) : `external-link` (Lucide `external-link`), pour « Ouvrir le lien »

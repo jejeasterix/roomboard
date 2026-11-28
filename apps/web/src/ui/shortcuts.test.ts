@@ -112,7 +112,9 @@ describe("shortcuts", () => {
     expect(ariaShortcut("align-left", false)).toBe("Alt+Shift+ArrowLeft");
   });
   it("fusion lot 2 + OG19 : aucune touche ne sert deux actions de la table", () => {
-    const keys = SHORTCUTS.map((s) => s.keys);
+    // D18 : Ctrl+Maj+↑ / ↓ servent aussi l'ordre des objets (front, back) ; le moteur les donne à la table seulement
+    // en outil Tableau (test « S11 » d'engine.test.ts), donc ces deux lignes sont écartées du contrôle de doublon.
+    const keys = SHORTCUTS.filter((s) => s.id !== "table-row-up" && s.id !== "table-row-down").map((s) => s.keys);
     expect(keys.filter((k, i) => keys.indexOf(k) !== i)).toEqual([]);
   });
   it("ids uniques", () => {

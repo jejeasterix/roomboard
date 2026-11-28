@@ -986,7 +986,8 @@ describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
   });
   it("TB1 live : la case active publie ses deux poignées dans l'aperçu", () => {
     const { s } = ready();
-    expect(s.tool.live().overlay?.grips).toEqual([{ x: 580, y: 296, kind: "col" }, { x: 460, y: 328, kind: "row" }]);
+    // Les poignées de déplacement (D18) s'ajoutent à celles de taille : ce test lit les deux de taille.
+    expect(s.tool.live().overlay?.grips?.filter((g) => g.kind === "col" || g.kind === "row")).toEqual([{ x: 580, y: 296, kind: "col" }, { x: 460, y: 328, kind: "row" }]);
   });
   it("TB1 : le minimum est lu une fois à l'armement, aucun parcours du document par mouvement", () => {
     const { s } = ready();
@@ -1015,7 +1016,7 @@ describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
     expect(s.table(id).rows[0]?.height).toBe(20);
     s.click(150, 210);
     s.tool.requestCommit();
-    expect(s.tool.live().overlay?.grips?.map((g) => g.kind)).toEqual(["row"]);
+    expect(s.tool.live().overlay?.grips?.map((g) => g.kind).filter((k) => k === "col" || k === "row")).toEqual(["row"]);
   });
   const narrowCols = () => {
     const s = setup();
