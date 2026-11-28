@@ -220,7 +220,9 @@ try {
     await t.drag([cell(2, 2).map((v, i) => v - (i === 0 ? 40 : 0)), cell(2, 2).map((v, i) => v + (i === 0 ? 40 : 0))]);
     await t.kinds("s3-avant-gomme");
     await clickItem(page, "eraser");
-    await touchDrag(page, cdp, cell(0, 0), cell(2, 2), { steps: 30 });
+    await touchDrag(page, cdp, cell(0, 0), cell(1, 1), { steps: 20 }); // l'image logée en (1, 1)
+    const [ex, ey] = cell(2, 2);
+    await touchDrag(page, cdp, [ex, ey - 30], [ex, ey + 30], { steps: 10 }); // en travers du trait, à son milieu
     const s = await t.kinds("s3-apres-gomme");
     await t.shot("l1-tableau-contenu-efface.png");
     const table = s.find((e) => e.kind === "table");
@@ -246,7 +248,7 @@ try {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await frames(page);
     const del = page.locator('.rb-cell-menu button[data-menu-item="delete-table"]');
-    const h = (await del.boundingBox())?.height ?? 0;
+    const h = (await del.count()) === 1 ? ((await del.boundingBox())?.height ?? 0) : 0;
     check((await del.count()) === 1 && h >= 44, `S3 : le menu de case propose « Supprimer le tableau » (${h} px de haut)`);
     if ((await del.count()) === 1) await del.click();
     else await page.keyboard.press("Escape");

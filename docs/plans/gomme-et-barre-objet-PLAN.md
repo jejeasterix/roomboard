@@ -1385,7 +1385,9 @@ try {
     await clickItem(page, "pen");
     await t.drag([cell(2, 2).map((v, i) => v - (i === 0 ? 40 : 0)), cell(2, 2).map((v, i) => v + (i === 0 ? 40 : 0))]);
     await clickItem(page, "eraser");
-    await touchDrag(page, cdp, cell(0, 0), cell(2, 2), { steps: 30 });
+    await touchDrag(page, cdp, cell(0, 0), cell(1, 1), { steps: 20 });
+    const [ex, ey] = cell(2, 2);
+    await touchDrag(page, cdp, [ex, ey - 30], [ex, ey + 30], { steps: 10 }); // perpendiculaire, traverse le trait en son milieu : ≥ 2 morceaux
     const s = await t.kinds("s3-apres-gomme");
     const table = s.find((e) => e.kind === "table");
     check(table !== undefined, "S3 : le tableau reste");
