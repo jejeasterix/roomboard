@@ -621,6 +621,56 @@ fn rotate_zero_and_nan() {
     assert_eq!(d.version(), v);
 }
 
+/// C5 (constat 3) : matrice arrondie à l'identité (angle quasi nul, `rem_euclid` de -1e-20 compris) : rien à faire (D38).
+#[test]
+fn rotate_near_zero_no_step() {
+    let mut d = blank();
+    let r = add_rect(&mut d, 0.0, 0.0, 50.0, 50.0);
+    let v = d.version();
+    for a in [1e-14, -1e-13, -1e-20] {
+        assert!(
+            rotate(&mut d, &[&r], a).expect("quasi nul").ids.is_empty(),
+            "angle {a}"
+        );
+    }
+    assert_eq!(d.version(), v);
+}
+
+/// C5 (constat 3) : texte seul 100 × 30 en (200, 0) tourné sur son centre : translation résiduelle (~1e-14) omise.
+#[test]
+fn rotate_lone_text_no_step() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let t = d
+        .apply(Command::SetText {
+            page,
+            id: None,
+            x: 200.0,
+            y: 0.0,
+            content: "abc".into(),
+            color: "#000000".into(),
+            size: 20.0,
+            box_width: 100.0,
+            box_height: 30.0,
+            spans: None,
+            look: Look::default(),
+        })
+        .expect("texte")
+        .ids[0]
+        .clone();
+    let v = d.version();
+    let moved: Vec<i32> = (1..360)
+        .filter(|a| {
+            !rotate(&mut d, &[&t], f64::from(*a))
+                .expect("tourner")
+                .ids
+                .is_empty()
+        })
+        .collect();
+    assert_eq!(moved, Vec::<i32>::new());
+    assert_eq!(d.version(), v);
+}
+
 #[test]
 fn rotate_unknown_id_refused() {
     let mut d = blank();

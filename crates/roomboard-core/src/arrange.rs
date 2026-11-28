@@ -190,7 +190,8 @@ fn apply_full(units: &[Unit], full: Transform, out: &mut Vec<(String, Transform)
                     full[0] * px + full[2] * py + full[4],
                     full[1] * px + full[3] * py + full[5],
                 );
-                if nx != px || ny != py {
+                // C5 : résidu d'arrondi (rotation sur son centre) de moins de 1e-9 omis, comme `applyFull`.
+                if (nx - px).abs() >= 1e-9 || (ny - py).abs() >= 1e-9 {
                     out.push((m.id.clone(), shift(nx - px, ny - py)));
                 }
             }
@@ -220,7 +221,8 @@ pub(crate) fn rotation(cx: f64, cy: f64, deg: f64) -> Transform {
 /// Plan d'une disposition : matrices à composer, et matrice pleine passée à `linear::follow` (suivi des flèches liées).
 pub(crate) type Planned = (Vec<(String, Transform)>, Option<Transform>);
 
-/// OG33 : plan d'une rotation autour du centre des boîtes réunies ; angle nul modulo 360 : rien (D38). La matrice pleine
+/// OG33 : plan d'une rotation autour du centre des boîtes réunies ; angle nul modulo 360 ou matrice arrondie à
+/// l'identité : rien (D38). La matrice pleine
 /// est rendue aussi : `Rotate` suit les flèches liées comme `cmd_transform` (n° 7).
 pub(crate) fn plan_rotate(units: &[Unit], deg: f64) -> Planned {
     let boxes: Vec<Bounds> = units.iter().filter_map(box_of).collect();
@@ -229,6 +231,10 @@ pub(crate) fn plan_rotate(units: &[Unit], deg: f64) -> Planned {
     }
     let sel = boxes.iter().skip(1).fold(boxes[0], |a, b| a.union(*b));
     let full = rotation((sel.x0 + sel.x1) / 2.0, (sel.y0 + sel.y1) / 2.0, deg);
+    // C5 : matrice arrondie à l'identité (angle quasi nul) : rien à faire (D38), comme `rotationOf`.
+    if full == [1.0, 0.0, 0.0, 1.0, 0.0, 0.0] {
+        return (Vec::new(), None);
+    }
     let mut out = Vec::new();
     apply_full(units, full, &mut out);
     (out, Some(full))
