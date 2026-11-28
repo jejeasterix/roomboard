@@ -8,8 +8,8 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { DIST, Echec, frames, gitSha, item, loadPlaywright, ROOT, serve, stageBox, VIEWPORT } from "./commun.mjs";
-import { attr, BIN, newPage, saved, tapAt, tapStage, touchDrag, touchDragWithLateFinger, useTool, waitAttr } from "./gestes.mjs";
+import { DIST, Echec, frames, gitSha, inkIn, item, loadPlaywright, ROOT, serve, stageBox, VIEWPORT } from "./commun.mjs";
+import { attr, BIN, doubleTouch, newPage, OPT, press, saved, tapAt, tapStage, touchDrag, touchDragWithLateFinger, useTool, waitAttr } from "./gestes.mjs";
 import { fringes, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "outils-excalidraw-2b";
@@ -262,6 +262,126 @@ async function capturesM2(browser, base, nom) {
   await ctx.close();
 }
 
+// ------------------------------------------------------------------------------------------------------------- M3
+
+const ZONE = '[role="textbox"][aria-label="Texte"]';
+const FILL = `${OPT} [data-option="background"] [data-option-value]:not([data-option-value="transparent"])`;
+/** Forme remplie au doigt (outil `id`, fond du panneau), puis Sélection et toucher au centre : la forme est choisie. */
+async function pickFilled(page, cdp, id, a, b) {
+  await tool(page, id);
+  await press(page, "doigt", FILL);
+  await touchDrag(page, cdp, a, b);
+  await tool(page, "select");
+  const c = centerOf(a, b);
+  await tapStage(page, c[0], c[1]);
+  await waitAttr(page, "data-selection", "1");
+}
+/** Boîte d'encre au centre d'une forme (px de la scène), demi-largeur 40 et demi-hauteur 12. */
+const midBox = (a, b) => {
+  const [cx, cy] = centerOf(a, b);
+  return [cx - 40, cy - 12, cx + 40, cy + 12];
+};
+/** Ouvre la zone de texte par `ouvrir`, écrit `texte`, ferme par Échap. */
+async function write(page, ouvrir, texte) {
+  await ouvrir();
+  await page.waitForSelector(ZONE, { state: "visible", timeout: 5000 });
+  await page.keyboard.type(texte);
+  await page.keyboard.press("Escape");
+  await frames(page);
+}
+const labelsOf = async (page, tmp, name) => (await saved(page, tmp, name)).elements.filter((e) => e.shape?.shape);
+
+/** M3 (S12) : texte dans une forme : double toucher au doigt (rectangle), puis Entrée au clavier (losange). */
+async function m3(browser, base, tmp) {
+  const { ctx, page, cdp, errors } = await newPage(browser, base, { scale: 2 });
+  const A = [[480, 220], [680, 360]];
+  await pickFilled(page, cdp, "rect", ...A);
+  const c = centerOf(...A);
+  const ink0 = await inkIn(page, midBox(...A));
+  await page.waitForTimeout(600);
+  await write(page, () => doubleTouch(page, cdp, c), "Bonjour");
+  let els = await labelsOf(page, tmp, "m3a.roomboard");
+  const rect = els.find((e) => e.shape.shape === "rect");
+  lire("M3.label", rect?.shape.label);
+  check(rect?.shape.label === "Bonjour", "M3 : double toucher au doigt : le texte « Bonjour » est dans le rectangle");
+  lire("M3.shape", rect?.shape.shape);
+  check(rect?.shape.shape === "rect" && els.length === 1, "M3 : la forme reste un rectangle, aucun élément texte en plus");
+  const ink1 = await inkIn(page, midBox(...A));
+  lire("M3.encre", ink1 - ink0);
+  check(ink1 > ink0, "M3 : de l'encre est apparue au centre de la forme (le texte est peint)");
+  // Glisser la forme de 150 px : le texte la suit.
+  await tapStage(page, c[0], c[1]);
+  await touchDrag(page, cdp, c, [c[0] + 150, c[1]]);
+  const B = [[A[0][0] + 150, A[0][1]], [A[1][0] + 150, A[1][1]]];
+  const inkOld = await inkIn(page, midBox(...A));
+  const inkNew = await inkIn(page, midBox(...B));
+  lire("M3.suit", inkNew > inkOld ? 1 : 0);
+  check(inkNew > inkOld, "M3 : la forme glissée de 150 px emporte son texte (encre au nouveau centre)");
+  // Clavier : Losange par la touche D, posé, choisi, Entrée.
+  await page.keyboard.press("KeyD");
+  await waitAttr(page, "data-tool", "diamond");
+  await press(page, "doigt", FILL);
+  const D = [[800, 480], [1000, 640]];
+  await touchDrag(page, cdp, D[0], D[1]);
+  await tool(page, "select");
+  const cd = centerOf(...D);
+  await tapStage(page, cd[0], cd[1]);
+  await waitAttr(page, "data-selection", "1");
+  await write(page, () => page.keyboard.press("Enter"), "Losange");
+  els = await labelsOf(page, tmp, "m3b.roomboard");
+  const losange = els.find((e) => e.shape.shape === "diamond");
+  lire("M3.enter", losange?.shape.label);
+  check(losange?.shape.label === "Losange", "M3 : Entrée sur le losange choisi : le texte « Losange » y est écrit");
+  await page.keyboard.press("Control+z");
+  await frames(page);
+  els = await labelsOf(page, tmp, "m3c.roomboard");
+  const l2 = els.find((e) => e.shape.shape === "diamond");
+  lire("M3.undo", l2?.shape.label ? l2.shape.label : "absent");
+  check(!l2?.shape.label, "M3 : Ctrl+Z : le texte du losange disparaît en une étape");
+  check(els.find((e) => e.shape.shape === "rect")?.shape.label === "Bonjour", "M3 : le texte du rectangle est resté");
+  check(errors.length === 0, "M3 : aucune erreur dans la page");
+  await ctx.close();
+}
+
+/** Captures M3 à 2x. « avant » : double toucher sans effet. « apres » : texte dans le rectangle, rectangle tourné de 30°,
+ *  puis (autre page) losange tourné de 30° avec son texte. */
+async function capturesM3(browser, base, nom) {
+  const A = [[480, 220], [680, 360]];
+  const clip = async (page) => {
+    const b = await stageBox(page);
+    return { x: b.x + 400, y: b.y + 170, width: 360, height: 240 };
+  };
+  let { ctx, page, cdp } = await newPage(browser, base, { scale: 2 });
+  await pickFilled(page, cdp, "rect", ...A);
+  await page.waitForTimeout(600);
+  if (nom === "avant") {
+    await doubleTouch(page, cdp, centerOf(...A));
+    await page.keyboard.type("Bonjour");
+    await page.keyboard.press("Escape");
+  } else {
+    await write(page, () => doubleTouch(page, cdp, centerOf(...A)), "Bonjour");
+  }
+  await loin(page);
+  await shoot(page, `${nom}-texte-forme`, await clip(page));
+  if (nom === "apres") {
+    await page.keyboard.press("Alt+KeyT");
+    await page.keyboard.press("Alt+KeyT");
+    await frames(page);
+    await shoot(page, "apres-texte-forme-tournee", await clip(page));
+  }
+  await ctx.close();
+  if (nom !== "apres") return;
+  ({ ctx, page, cdp } = await newPage(browser, base, { scale: 2 }));
+  await pickFilled(page, cdp, "diamond", ...A);
+  await write(page, () => page.keyboard.press("Enter"), "Losange");
+  await page.keyboard.press("Alt+KeyT");
+  await page.keyboard.press("Alt+KeyT");
+  await frames(page);
+  await loin(page);
+  await shoot(page, "apres-texte-losange", await clip(page));
+  await ctx.close();
+}
+
 // ------------------------------------------------------------------------------------------------------------- main
 
 async function main() {
@@ -301,12 +421,14 @@ async function main() {
       const only = arg("--only");
       if (only === undefined || only === "m1") await capturesM1(browser, base, nom);
       if (only === undefined || only === "m2") await capturesM2(browser, base, nom);
+      if (only === undefined || only === "m3") await capturesM3(browser, base, nom);
       return 0;
     }
     const only = arg("--only");
     const on = (n) => only === undefined || only === n;
     if (on("m1")) await m1(browser, base, tmp);
     if (on("m2")) await m2(browser, base, tmp);
+    if (on("m3")) await m3(browser, base, tmp);
     console.log(`${LABEL} : OK`);
     return 0;
   } catch (e) {
