@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { appShortcut, arrangeKey, cellKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
-import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
+import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText, toolShortcut } from "./shortcuts";
 
 /** Valeur attendue de chaque raccourci, par reconnaisseur : une ligne ajoutée à SHORTCUTS sans ligne ici fait échouer le test. */
 const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
@@ -148,3 +148,13 @@ describe("lettres des outils", () => {
   });
 });
 
+
+describe("toolShortcut (OG33 lot 2b)", () => {
+  it("toolShortcut : lettre puis chiffre, aria à deux raccourcis ; Main : la lettre ; sans lettre : null", () => {
+    expect(toolShortcut("rect")).toEqual({ text: "R ou 2", aria: "R 2" });
+    expect(toolShortcut("pen")).toEqual({ text: "P ou 7", aria: "P 7" });
+    expect(toolShortcut("hand")).toEqual({ text: "H", aria: "H" });
+    expect(toolShortcut("table")).toBeNull();
+    expect(toolShortcut(undefined)).toBeNull();
+  });
+});

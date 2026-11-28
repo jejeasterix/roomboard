@@ -25,6 +25,17 @@ const mkBar = (items: ToolItem[], dock: Bar["dock"] = "top"): Bar => ({
 });
 const tool = (id: string, t = id): ToolItem => ({ id, kind: "tool", tool: t, label: id, requires: [], rest: {} });
 
+/** Infobulle d'un bouton (minuteries factices exigées) : texte et raccourci montrés au survol. */
+const tipOf = (container: HTMLElement, sel: string): { text: string | null; keys: string | null } | null => {
+  const el = container.querySelector<HTMLElement>(sel)!;
+  fireEvent.pointerEnter(el, { pointerType: "mouse" });
+  vi.advanceTimersByTime(TIP_HOVER_MS);
+  const tip = document.querySelector('[role="tooltip"]');
+  const seen = tip === null ? null : { text: tip.textContent, keys: tip.getAttribute("data-keys") };
+  fireEvent.pointerLeave(el, { pointerType: "mouse" });
+  return seen;
+};
+
 function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m", presets?: PresetTable, mode?: StartMode) {
   const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), fillColor: vi.fn(), fillTolerance: vi.fn(), textFormat: vi.fn(), selection: vi.fn(), imagePanel: vi.fn() };
   const [c, setC] = createSignal(caps);
@@ -493,15 +504,6 @@ describe("Toolbar — barre d'annotation (design-l4)", () => {
   it("OG19 (H1-11) : l'infobulle d'un bouton porte son raccourci (table unique), le libellé reste le texte", () => {
     vi.useFakeTimers();
     try {
-      const tipOf = (container: HTMLElement, sel: string): { text: string | null; keys: string | null } | null => {
-        const el = container.querySelector<HTMLElement>(sel)!;
-        fireEvent.pointerEnter(el, { pointerType: "mouse" });
-        vi.advanceTimersByTime(TIP_HOVER_MS);
-        const tip = document.querySelector('[role="tooltip"]');
-        const seen = tip === null ? null : { text: tip.textContent, keys: tip.getAttribute("data-keys") };
-        fireEvent.pointerLeave(el, { pointerType: "mouse" });
-        return seen;
-      };
       const { container } = setup();
       expect(tipOf(container, 'button[data-item="backgrounds"]')).toEqual({ text: "Fonds", keys: "Ctrl+Maj+F" });
       expect(container.querySelector('button[data-item="backgrounds"]')!.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+F");
@@ -509,8 +511,10 @@ describe("Toolbar — barre d'annotation (design-l4)", () => {
       expect(tipOf(container, '[data-item="page-number"]')).toEqual({ text: "Numéro de page", keys: "Ctrl+Maj+P" });
       expect(container.querySelector('[data-item="page-number"]')!.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+P");
       // Sans raccourci dans la table : ni attribut, ni texte en plus.
-      expect(tipOf(container, 'button[data-item="pen"]')).toEqual({ text: "Stylo", keys: null });
-      expect(container.querySelector('button[data-item="pen"]')!.hasAttribute("aria-keyshortcuts")).toBe(false);
+      expect(tipOf(container, 'button[data-item="table"]')).toEqual({ text: "Tableau", keys: null });
+      expect(container.querySelector('button[data-item="table"]')!.hasAttribute("aria-keyshortcuts")).toBe(false);
+      // OG33 (lot 2b) : le Stylo montre sa lettre et son chiffre.
+      expect(tipOf(container, 'button[data-item="pen"]')).toEqual({ text: "Stylo", keys: "P ou 7" });
       cleanup();
       const h = setup(historique);
       expect(tipOf(h.container, 'button[data-item="undo"]')).toEqual({ text: "Annuler", keys: "Ctrl+Z" });
@@ -615,5 +619,40 @@ describe("Toolbar — compteur de pages (personnalisation-1a, T6)", () => {
     const b = container.querySelector<HTMLButtonElement>('button[data-item="page-next"]')!;
     expect(b.disabled).toBe(false);
     expect(b.getAttribute("aria-label")).toBe("Nouvelle page");
+  });
+});
+
+describe("Toolbar — rangée Formes (OG33 lot 2b)", () => {
+  const shapes = (c: HTMLElement) => [...c.querySelectorAll("[data-shape-choice]")].map((b) => b.getAttribute("data-shape-choice"));
+  it("rangée Formes : Rectangle actif dans le profil par défaut : trois formes, hors de la barre, dans l'îlot contextuel", () => {
+    const { container, setV } = setup();
+    expect(shapes(container)).toEqual([]);
+    setV({ ...VIEW, tool: "rect" });
+    expect(shapes(container)).toEqual(["rect", "diamond", "ellipse"]);
+    expect(container.querySelector("[data-island-context] [data-shape-choice='diamond']")).not.toBeNull();
+    expect(container.querySelector('[data-item="diamond"]')).toBeNull();
+  });
+  it("rangée Formes : toucher Losange → setTool(diamond) ; Losange actif : la rangée reste, Losange enfoncé", () => {
+    const { container, setV, host } = setup();
+    setV({ ...VIEW, tool: "rect" });
+    fireEvent.click(container.querySelector("[data-shape-choice='diamond']")!);
+    expect(host.setTool).toHaveBeenCalledWith("diamond");
+    setV({ ...VIEW, tool: "diamond" });
+    expect(container.querySelector("[data-shape-choice='diamond']")!.getAttribute("aria-pressed")).toBe("true");
+  });
+  it("rangée Formes : barre qui porte déjà les trois formes : aucune rangée", () => {
+    const { container, setV } = setup(mkBar([tool("rect"), tool("diamond"), tool("ellipse")], "floating"));
+    setV({ ...VIEW, tool: "rect" });
+    expect(shapes(container)).toEqual([]);
+  });
+  it("lettre de l'outil : l'infobulle de Rectangle porte « R ou 2 », aria-keyshortcuts « R 2 »", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = setup();
+      expect(tipOf(container, 'button[data-item="rect"]')).toEqual({ text: "Rectangle", keys: "R ou 2" });
+      expect(container.querySelector('button[data-item="rect"]')!.getAttribute("aria-keyshortcuts")).toBe("R 2");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
