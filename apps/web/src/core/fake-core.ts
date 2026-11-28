@@ -227,7 +227,7 @@ interface FakePage {
 interface State { readonly pages: FakePage[]; readonly assets: Map<string, unknown> }
 
 /** OG33 : plafond du texte d'une forme, en caractères (`MAX_LABEL_CHARS`, label.rs). */
-const MAX_LABEL_CHARS = 10_000;
+const MAX_SHAPE_LABEL_CHARS = 10_000;
 
 const MESSAGES = {
   badShape: "forme invalide (rect, ellipse, line ou arrow, coins finis attendus)",
@@ -1492,7 +1492,7 @@ class FakeDocument implements CoreDocument {
       }
       case "SetShapeLabel": {
         // OG33 (lot 2b, choix 8) : `cmd_set_shape_label` (label.rs), même ordre de refus ; vide : clé retirée (GC8).
-        if ([...cmd.label].length > MAX_LABEL_CHARS) throw new Error(MESSAGES.badText);
+        if ([...cmd.label].length > MAX_SHAPE_LABEL_CHARS) throw new Error(MESSAGES.badText);
         const found = this.find(cmd.id);
         if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
         const e = found.element;
