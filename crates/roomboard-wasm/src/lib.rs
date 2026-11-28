@@ -1323,6 +1323,20 @@ impl Document {
         )
     }
 
+    /// personnalisation-3 (D18) : `row` vrai = lignes, faux = colonnes ; `order` = tous les ids de l'axe.
+    pub fn reorder_table_lines(
+        &mut self,
+        id: &str,
+        row: bool,
+        order: Vec<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .reorder_table_lines_inner(id, row, &order)
+                .map_err(cmd_err)?,
+        )
+    }
+
     /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
     #[allow(clippy::too_many_arguments)]
     pub fn import_table(
@@ -2484,6 +2498,19 @@ impl Document {
             from: (from[0].to_string(), from[1].to_string()),
             to: (to[0].to_string(), to[1].to_string()),
             look,
+        })
+    }
+
+    pub fn reorder_table_lines_inner(
+        &mut self,
+        id: &str,
+        row: bool,
+        order: &[String],
+    ) -> Result<Change, CommandError> {
+        self.run(Command::ReorderTableLines {
+            id: id.to_string(),
+            axis: table_axis(row),
+            order: order.to_vec(),
         })
     }
 
@@ -4340,7 +4367,11 @@ mod tests {
             .expect("tableau")
             .ids[0]
             .clone();
-        let r: Vec<String> = table_of(&d, &id).rows.iter().map(|x| x.id.clone()).collect();
+        let r: Vec<String> = table_of(&d, &id)
+            .rows
+            .iter()
+            .map(|x| x.id.clone())
+            .collect();
         d.reorder_table_lines_inner(&id, true, &[r[1].clone(), r[0].clone()])
             .expect("ordre");
         assert_eq!(

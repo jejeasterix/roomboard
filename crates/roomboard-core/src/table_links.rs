@@ -346,6 +346,66 @@ impl Document {
         Ok(self.table_done_with(page, id, moved))
     }
 
+    /// `ReorderTableLines` (D18) : `order` = permutation des ids lisibles de l'axe. Les places brutes des entrées
+    /// lisibles (`Line.index`, lues avant la transaction) reçoivent, dans l'ordre demandé, une recopie de chaque entrée
+    /// prise avant toute écriture (`as_prelim` : clés inconnues gardées) ; une place = `remove` puis `insert` au même
+    /// rang, la longueur du `Y.Array` ne bouge pas et aucune place ne glisse. Entrées illisibles laissées à leur place ;
+    /// cellules (par ids) inchangées ; une zone ne peut pas être coupée ni retournée ; objets liés suivis dans la même
+    /// transaction (`follow_in`, comme `cmd_set_table_line_sizes`) ; ordre inchangé : aucune étape.
+    pub(crate) fn cmd_reorder_table_lines(
+        &mut self,
+        id: &str,
+        axis: TableAxis,
+        order: &[String],
+    ) -> Result<Change, CommandError> {
+        // La valeur seule d'abord, avant la recherche du tableau (comme `cmd_set_table_look`) : vide ou id cité deux
+        // fois. Recherche linéaire (64 lignes au plus, G4 : aucun code de hachage neuf).
+        let repeated = order
+            .iter()
+            .enumerate()
+            .any(|(i, o)| order[..i].contains(o));
+        if order.is_empty() || repeated {
+            return Err(CommandError::BadTable);
+        }
+        let (page, e, raw) = self.table_of(id)?;
+        let (lines, arr) = raw.axis(axis);
+        let pos = |id: &str| order.iter().position(|o| o == id);
+        if order.len() != lines.len() || lines.iter().any(|l| pos(&l.id).is_none()) {
+            return Err(CommandError::BadTable);
+        }
+        if lines.iter().zip(order).all(|(l, o)| &l.id == o) {
+            return Ok(self.unchanged());
+        }
+        {
+            let txn = self.read();
+            for m in merges_of(&raw, &txn) {
+                let (a, b) = match axis {
+                    TableAxis::Row => (m.r0, m.r1),
+                    TableAxis::Col => (m.c0, m.c1),
+                };
+                let start = pos(&lines[a].id);
+                if (a..=b).any(|k| pos(&lines[k].id) != start.map(|s| s + (k - a))) {
+                    return Err(CommandError::BadTable);
+                }
+            }
+        }
+        let before = offsets(&raw);
+        let moved = {
+            let mut txn = self.transact_local();
+            let copies: Vec<MapPrelim> = order
+                .iter()
+                .filter_map(|o| lines.iter().find(|l| &l.id == o))
+                .map(|l| l.map.as_prelim(&txn))
+                .collect();
+            for (l, copy) in lines.iter().zip(copies) {
+                arr.remove(&mut txn, l.index);
+                arr.insert(&mut txn, l.index, copy);
+            }
+            self.follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())
+        };
+        Ok(self.table_done_with(page, id, moved))
+    }
+
     /// `SetTableOptions` (T7) : `fit` et `header`, seulement ce qui change ; une étape ; rien ne change : aucune étape.
     pub(crate) fn cmd_set_table_options(
         &mut self,
@@ -1691,8 +1751,11 @@ mod tests {
         let r = row_ids(&d, &t);
         d.apply(reorder(&t, vec![r[2].clone(), r[1].clone(), r[0].clone()]))
             .expect("ordre");
-        let file = save(&load(&save(&d, &meta).expect("save")).expect("load 1"), &meta)
-            .expect("resave 1");
+        let file = save(
+            &load(&save(&d, &meta).expect("save")).expect("load 1"),
+            &meta,
+        )
+        .expect("resave 1");
         let again = save(&load(&file).expect("load 2"), &meta).expect("resave 2");
         assert_eq!(file, again);
         assert_eq!(

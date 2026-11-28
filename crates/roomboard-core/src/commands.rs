@@ -293,6 +293,13 @@ pub enum Command {
         to: (String, String),
         look: crate::table_look::CellLook,
     },
+    /// personnalisation-3 (D18) : réordonne les lignes (`Row`) ou colonnes (`Col`) ; `order` = tous les ids lisibles ;
+    /// zone coupée ou ordre invalide : `BadTable` ; ordre inchangé : aucune étape ; objets liés suivis.
+    ReorderTableLines {
+        id: String,
+        axis: crate::table::TableAxis,
+        order: Vec<String>,
+    },
     /// Pot (C6a, D12, DA1) : contour (`color`), intérieur (`fill`) ou fond de la page (`background`) ; `None` = « Aucune »
     /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38). C6b : image
     /// (nouvel asset, `sourceAsset`, B2-B4).
@@ -1043,6 +1050,9 @@ impl Document {
                 (to.0.as_str(), to.1.as_str()),
                 &look,
             ),
+            Command::ReorderTableLines { id, axis, order } => {
+                self.cmd_reorder_table_lines(&id, axis, &order)
+            }
             Command::ImportTable {
                 page,
                 matrix,
