@@ -14,6 +14,7 @@ import {
   cellRect,
   mergeRanges,
   rangeRect,
+  shownSpans,
   TABLE_HEADER_FILL,
   TABLE_LINE_WIDTH,
   TABLE_SHADE_HATCH,
@@ -239,7 +240,7 @@ export function cellTextBoxes(t: TableData): CellTextBox[] {
     if (cell.text === "" || cell.shade !== null) continue;
     const at = visibleCell(t, zones, cell);
     if (at === null) continue;
-    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: t.header === true && at.row === 0 ? cell.spans.map((s) => ({ text: s.text, attrs: { ...s.attrs, bold: true as const } })) : cell.spans });
+    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: shownSpans(t, at) });
   }
   return out;
 }

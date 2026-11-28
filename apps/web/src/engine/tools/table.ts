@@ -49,6 +49,7 @@ import {
   rangeRect,
   rangeSize,
   requiredSizes,
+  shownSpans,
   SIZE_STEP,
   step,
   scaleOf,
@@ -379,7 +380,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     const colWidth = r.x1 - r.x0;
     const inner = cellInnerBox(at.table, at.cell);
     const { text, spans, fill } = cellContent(at.table, at.ref.row, at.ref.col);
-    const frame = cellTextFrame(at.table, at.cell, richBoxHeight(layoutRich(spans, { size: at.table.size }, inner.w, measure)));
+    const frame = cellTextFrame(at.table, at.cell, richBoxHeight(layoutRich(shownSpans(at.table, at.cell), { size: at.table.size }, inner.w, measure)));
     opened = { ref: at.ref, initial: text, initialSpans: spans, colWidth, size: at.table.size };
     gate.reset();
     editor.open(

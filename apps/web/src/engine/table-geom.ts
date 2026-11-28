@@ -178,6 +178,15 @@ export function cellContent(
   return { text: c?.text ?? "", spans: c?.spans ?? plainSpans(c?.text ?? ""), fill: c?.fill ?? null, shade: c?.shade ?? null, ...(c?.bg === undefined ? {} : { bg: c.bg }) };
 }
 
+/** Segments affichés d'une case (D17) : ceux de son contenu, mis en gras dans la ligne 0 d'un tableau à en-tête. Seule
+ *  source de ce que le peintre pose (`cellTextBoxes`), lue par chaque mesure du texte d'une case : largeur naturelle,
+ *  hauteur exigée (`rowHeightsFor`), pot (`fill-target.ts`), saisie (`openActive`). Jamais écrits dans une commande :
+ *  le gras d'en-tête n'est qu'un affichage. */
+export function shownSpans(t: TableData, c: Cell): readonly TextSpan[] {
+  const spans = cellContent(t, t.rows[c.row]?.id ?? "", t.cols[c.col]?.id ?? "").spans;
+  return t.header === true && c.row === 0 ? spans.map((s) => ({ text: s.text, attrs: { ...s.attrs, bold: true as const } })) : spans;
+}
+
 /** Le tableau le plus haut de `tables` (ordre de la pile) sous (x, y) monde (I2) ; matrice non inversible : sauté. */
 export function tableHitIn(tables: readonly TableElement[], x: number, y: number): TableHit | null {
   for (let i = tables.length - 1; i >= 0; i--) {
@@ -305,7 +314,7 @@ export function cellHeight(spans: readonly TextSpan[], size: number, colWidth: n
 export function rowHeightsFor(t: TableData, colWidths: readonly number[], measure: Measure): number[] {
   const zones = mergeRanges(t);
   const width = (c0: number, c1: number): number => sum(t.cols.slice(c0, c1 + 1).map((c, i) => colWidths[c0 + i] ?? c.width));
-  const spans = (r: number, c: number): readonly TextSpan[] => cellContent(t, t.rows[r]?.id ?? "", t.cols[c]?.id ?? "").spans;
+  const spans = (r: number, c: number): readonly TextSpan[] => shownSpans(t, { row: r, col: c });
   const empty = cellHeight(plainSpans(""), t.size, colWidths[0] ?? t.cols[0]?.width ?? 1, measure);
   const heights = t.rows.map((_, r) => {
     let h = 0;
@@ -450,10 +459,10 @@ export function naturalWidth(t: TableData, col: number, measure: Measure): numbe
   if (k === undefined) return 2 * TABLE_PADDING;
   const zones = mergeRanges(t);
   let w = 0;
-  t.rows.forEach((r, i) => {
+  t.rows.forEach((_, i) => {
     const z = zones.find((x) => inRange(x, { row: i, col }));
     if (z !== undefined && (z.c0 !== z.c1 || z.r0 !== i)) return;
-    for (const line of layoutRich(cellContent(t, r.id, k.id).spans, { size: t.size }, NO_WRAP, measure)) {
+    for (const line of layoutRich(shownSpans(t, { row: i, col }), { size: t.size }, NO_WRAP, measure)) {
       const last = line.segments[line.segments.length - 1];
       if (last !== undefined) w = Math.max(w, last.x + last.width);
     }
