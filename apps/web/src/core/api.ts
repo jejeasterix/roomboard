@@ -13,7 +13,7 @@
 // élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
 // C10b : MergeTableCells, SplitTableCell, SetTableShade, ImportTable ; RemoveTableLine.to, SetTableFill.to (plages) ;
 // TableData.merges (zones calculées par le cœur, règle F2 : la page les lit, ne les recalcule pas) ; TableCell.shade (F8).
-// personnalisation-3 : PlaceInCell, SetTableLineSizes (une étape chacune) ; ElementBase.cell (lien de case, D1), suivi des objets liés (D5, D6).
+// personnalisation-3 : PlaceInCell, SetTableLineSizes, SetTableLook (une étape chacune) ; ElementBase.cell (lien de case, D1), suivi des objets liés (D5, D6).
 // C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
 // C6a : Fill (contour, intérieur, fond de page ; une étape, D38) ; edgeHit (bord d'une forme, mesuré par le cœur, DA2).
 // C3 : Group, Ungroup ; ElementBase.group ; extract, insertFragment, insertPages, saveFragment(Parts), loadFragment(Parts).
@@ -211,6 +211,8 @@ export type Command =
   | { readonly type: "SetTableOptions"; readonly id: string; readonly fit?: "grow" | "shrink"; readonly header?: boolean }
   /** personnalisation-3 (T9) : l'image logée `from` devient le fond de la case et quitte la page ; null retire le fond ; une étape. */
   | { readonly type: "SetCellImage"; readonly id: string; readonly row: string; readonly col: string; readonly from: string | null }
+  /** personnalisation-3 (suite OG32, DS1) : une clé de case ou la liste `accept` des colonnes ; une étape. */
+  | { readonly type: "SetTableLook"; readonly id: string; readonly from: CellIds; readonly to: CellIds; readonly look: CellLook }
   /** C10b (F18) : tableau rempli ; cells = rows × cols textes en rangées ; merges = [ligne, colonne, lignes, colonnes]. */
   | {
       readonly type: "ImportTable";
@@ -321,7 +323,8 @@ export type TableAxis = "row" | "col";
 export type CellLink = readonly [table: string, row: string, col: string];
 /** personnalisation-3 (D3) : taille d'une ligne ou d'une colonne, `[tableau, axe, ligne, taille]`. */
 export type LineSize = readonly [table: string, axis: TableAxis, line: string, size: number];
-export interface TableCol { readonly id: string; readonly width: number }
+/** personnalisation-3 (DS5) : `accept` = étiquettes admises par la colonne (tableau de tri) ; absent : aucune règle. */
+export interface TableCol { readonly id: string; readonly width: number; readonly accept?: readonly string[] }
 export interface TableRow { readonly id: string; readonly height: number }
 /** Cellule par ids (C10b). */
 export interface CellIds { readonly row: string; readonly col: string }
@@ -336,7 +339,26 @@ export interface TableCell {
   readonly spans: readonly TextSpan[];
   /** personnalisation-3 (T9) : id d'asset de l'image de fond de la case ; absent : aucun. */
   readonly bg?: string;
+  /** personnalisation-3 (suite OG32, DS1) : alignements ; absents : `left` et `top`. */
+  readonly ha?: "center" | "right";
+  readonly va?: "middle" | "bottom";
+  /** personnalisation-3 (D16, DS4) : bordure de la case ; absente : trait du tableau. */
+  readonly border?: TableBorder;
+  /** personnalisation-3 (DS3) : case ombrée ouverte ; absent : fermée (Ombrer et Désombrer referment). */
+  readonly open?: true;
 }
+export type HAlign = "left" | "center" | "right";
+export type VAlign = "top" | "middle" | "bottom";
+export type BorderStyle = "solid" | "dashed" | "dotted" | "none";
+/** personnalisation-3 (D16, DS4) : `[couleur, épaisseur, style]`. */
+export type TableBorder = readonly [color: string, width: number, style: BorderStyle];
+/** personnalisation-3 (DS1) : une clé par commande ; `left` / `top` retirent ; `border` null retire ; `accept` [] retire. */
+export type CellLook =
+  | { readonly key: "ha"; readonly value: HAlign }
+  | { readonly key: "va"; readonly value: VAlign }
+  | { readonly key: "border"; readonly value: TableBorder | null }
+  | { readonly key: "open"; readonly value: boolean }
+  | { readonly key: "accept"; readonly value: readonly string[] };
 /** Zone fusionnée (F29) : ancre par ids, étendue en rangs, après la règle F2 du cœur. */
 export interface TableMerge { readonly row: string; readonly col: string; readonly rows: number; readonly cols: number }
 /** Tableau (T13) : boîte locale (0, 0)-(somme des largeurs, somme des hauteurs) ; cellules non vides dans l'ordre de lecture ;

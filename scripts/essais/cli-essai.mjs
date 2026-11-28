@@ -686,6 +686,31 @@ try {
   verifie("D4 : SetTableLineSizes change la hauteur de la ligne", tailles.code === 0 && h0 !== 100 && hauteurDe(tailles, 1) === 100, tailles.brut);
   verifie("D4 : l'objet logé suit la ligne agrandie", yForme(tailles, 1) === yForme(taillesAvant, 0) + (100 - h0), tailles.brut);
   verifie("D4 : undo, une étape : hauteur et objet reviennent", hauteurDe(tailles, 3) === h0 && yForme(tailles, 3) === yForme(taillesAvant, 0), tailles.brut);
+  // personnalisation-3 suite (T3, DS1) : SetTableLook ha, border, accept, open ; relus par `state` ; undo : une étape.
+  const lr0 = tab.table.rows[0].id;
+  const lr2 = tab.table.rows[2].id;
+  const lc0 = tab.table.cols[0].id;
+  const lc1 = tab.table.cols[1].id;
+  const look = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "SetTableLook", id: tab.id, from: { row: lr0, col: lc0 }, to: { row: lr0, col: lc1 }, look: { key: "ha", value: "center" } },
+    { type: "SetTableLook", id: tab.id, from: { row: lr0, col: lc0 }, to: { row: lr0, col: lc0 }, look: { key: "border", value: ["#dc2626", 8, "dashed"] } },
+    { type: "SetTableLook", id: tab.id, from: { row: lr0, col: lc1 }, to: { row: lr0, col: lc1 }, look: { key: "accept", value: ["chat", "chien"] } },
+    { type: "SetTableShade", id: tab.id, from: { row: lr2, col: lc0 }, to: { row: lr2, col: lc0 }, shade: "#94a3b8" },
+    { type: "SetTableLook", id: tab.id, from: { row: lr2, col: lc0 }, to: { row: lr2, col: lc0 }, look: { key: "open", value: true } },
+    { op: "state" },
+    { op: "undo" },
+    { op: "undo" },
+    { op: "undo" },
+    { op: "state" },
+  ));
+  const tabDe = (i) => (look.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === tab.id)?.table;
+  const caseDe = (i, r, c) => tabDe(i)?.cells?.find((x) => x.row === r && x.col === c);
+  verifie("T-S8 : SetTableLook ha center sur deux cases, relu par state", look.code === 0 && caseDe(5, lr0, lc0)?.ha === "center" && caseDe(5, lr0, lc1)?.ha === "center", look.brut);
+  verifie("T-S9 : SetTableLook border relu [couleur, épaisseur, style]", JSON.stringify(caseDe(5, lr0, lc0)?.border) === JSON.stringify(["#dc2626", 8, "dashed"]), look.brut);
+  verifie("T-S14 : SetTableLook accept relu sur la colonne", JSON.stringify(tabDe(5)?.cols?.find((c) => c.id === lc1)?.accept) === JSON.stringify(["chat", "chien"]), look.brut);
+  verifie("T-S12 : SetTableLook open sur la case ombrée", caseDe(5, lr2, lc0)?.open === true, look.brut);
+  verifie("T-S12 : trois undo, une étape chacun : open, ombrage et accept retirés, bordure gardée", caseDe(9, lr2, lc0) === undefined && tabDe(9)?.cols?.find((c) => c.id === lc1)?.accept === undefined && caseDe(9, lr0, lc0)?.border !== undefined, look.brut);
+  egal("T-S9 : réouverture : bordure présente", etat(pl).pages[0].elements.find((e) => e.id === tab.id)?.table?.cells?.find((x) => x.row === lr0 && x.col === lc0)?.border, ["#dc2626", 8, "dashed"]);
   // OG12 (S5) : deux rectangles, une flèche liée, Transform suivi puis undo en une étape, SetLinePoints refusé, AddLinked.
   {
     const f = join(dir, "fleches.roomboard");
