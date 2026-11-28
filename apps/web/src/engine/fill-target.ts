@@ -10,8 +10,8 @@ import type { Command, CoreDocument, TableElement, TextElement } from "../core/a
 import { sourcePixelAt } from "../core/image-params";
 import { formatSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix, isSegment } from "../core/shapes";
-import { cellAt, cellContent, cellInnerBox } from "./table-geom";
-import { offsetAt, wordAt, type Measure } from "./text-layout";
+import { cellAt, cellContent, cellInnerBox, cellTextFrame } from "./table-geom";
+import { layoutRich, offsetAt, richBoxHeight, wordAt, type Measure } from "./text-layout";
 
 /** Tolérance de toucher, en px d'écran (celle de l'outil Texte, D3). */
 export const FILL_HIT_TOL_PX = 6;
@@ -54,7 +54,8 @@ function textCommand(el: TextElement, x: number, y: number, color: string | null
 }
 
 /** Mot d'une cellule par `SetTableCell.spans` (jamais `FormatText`, qui ne vise qu'un texte), mis en lignes comme le
- *  dessin des cellules (`cellTextBoxes` : boîte intérieure de la zone, taille du tableau) ; sinon remplissage (D8, D9). */
+ *  dessin des cellules (`cellTextBoxes` : boîte intérieure de la zone, taille du tableau ; cadre aligné `cellTextFrame`,
+ *  D15) ; sinon remplissage (D8, D9). */
 function tableCommand(page: string, el: TableElement, x: number, y: number, color: string | null, measure: Measure): Command {
   const t = el.table;
   const inv = invertMatrix(el.transform);
@@ -69,8 +70,10 @@ function tableCommand(page: string, el: TableElement, x: number, y: number, colo
   const fill: Command = { type: "SetTableFill", id: el.id, row, col, fill: color };
   const content = cellContent(t, row, col);
   if (content.text === "" || content.shade !== null) return fill;
+  // D15 : même cadre aligné que le dessin (`paintCellTexts`) ; `offsetAt` décale la ligne par `lineShift`.
   const box = cellInnerBox(t, cell);
-  const at = offsetAt(content.spans, { size: t.size }, box.w, measure, cx - box.x, cy - box.y);
+  const frame = cellTextFrame(t, cell, richBoxHeight(layoutRich(content.spans, { size: t.size }, box.w, measure)));
+  const at = offsetAt(content.spans, { size: t.size }, frame.w, measure, cx - frame.x, cy - frame.y, frame.ha);
   const word = at === null ? null : wordAt(content.text, at);
   if (word === null) return fill;
   return { type: "SetTableCell", id: el.id, row, col, content: content.text, spans: formatSpans(content.spans, word[0], word[1] - word[0], { color }) };

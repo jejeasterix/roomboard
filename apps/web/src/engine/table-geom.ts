@@ -7,7 +7,7 @@
  * (`layoutRich`, B1) ; sur une ancre de plusieurs lignes, la dernière ligne porte le reste (F7). Tailles par défaut en
  * unités de page (T4) ; la largeur de page se lit sur la page, jamais ici.
  */
-import type { Bounds, CellLink, CoreDocument, ElementView, Matrix, TableData, TableElement, TextSpan } from "../core/api";
+import type { Bounds, CellLink, CoreDocument, ElementView, HAlign, Matrix, TableBorder, TableData, TableElement, TextSpan, VAlign } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
@@ -26,7 +26,7 @@ export const TABLE_SHADE_HATCH_STEP = 16;
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
 /** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
 export const TABLE_HEADER_FILL = "#E0E0E8";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -48,6 +48,9 @@ export interface TableCellState {
   readonly shaded?: boolean;
   /** personnalisation-3 (D17) : la ligne 0 est un en-tête, `#stage[data-table-header]`. */
   readonly header?: boolean;
+  /** D15 : alignements de la cellule active (absents : gauche, haut), `#stage[data-table-align]`. */
+  readonly ha?: HAlign;
+  readonly va?: VAlign;
   /** personnalisation-3 : nombre d'objets logés dans ce tableau (`cell[0]`), `#stage[data-table-linked]`. */
   readonly linked?: number;
 }
@@ -266,6 +269,24 @@ export interface CellBox { readonly x: number; readonly y: number; readonly w: n
 export function cellInnerBox(t: TableData, c: Cell): CellBox {
   const r = cellRect(t, c);
   return { x: r.x0 + TABLE_PADDING, y: r.y0 + TABLE_PADDING, w: innerWidth(r.x1 - r.x0), h: Math.max(0, r.y1 - r.y0 - 2 * TABLE_PADDING) };
+}
+
+/** Réglages d'une case (DS1) ; absents : gauche, haut, trait du tableau, fermé. */
+export function cellLook(t: TableData, rowId: string, colId: string): { readonly ha: HAlign; readonly va: VAlign; readonly border: TableBorder | null; readonly open: boolean } {
+  const c = t.cells.find((x) => x.row === rowId && x.col === colId);
+  return { ha: c?.ha ?? "left", va: c?.va ?? "top", border: c?.border ?? null, open: c?.open === true && c.shade !== null };
+}
+
+/** Cadre du texte d'une case (D15, DS6) : boîte intérieure de sa zone, descendue selon `va` d'après la hauteur des
+ *  lignes `textHeight` (milieu : la moitié de la place libre ; bas : toute) ; `ha` porté pour `lineShift`. Seul calcul
+ *  de l'alignement d'une case : dessin (`paintCellTexts`), pot (`fill-target.ts`), saisie (`openActive`). */
+export interface CellTextFrame extends CellBox { readonly ha: HAlign }
+export function cellTextFrame(t: TableData, cell: Cell, textHeight: number): CellTextFrame {
+  const box = cellInnerBox(t, cell);
+  const look = cellLook(t, t.rows[cell.row]?.id ?? "", t.cols[cell.col]?.id ?? "");
+  const free = Math.max(0, box.h - textHeight);
+  const dy = look.va === "middle" ? free / 2 : look.va === "bottom" ? free : 0;
+  return { x: box.x, y: box.y + dy, w: box.w, h: box.h - dy, ha: look.ha };
 }
 
 /** Hauteur exigée par les segments `spans` (C7b, R17) dans une colonne de `colWidth` (T5, B1) : lignes du dessin + deux marges. */
