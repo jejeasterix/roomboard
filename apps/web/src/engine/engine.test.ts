@@ -1027,6 +1027,9 @@ function fakeTableTool(ctx: ToolContext, log: string[]) {
     act: (a) => {
       log.push(`act ${a}`);
     },
+    look: (l) => {
+      log.push(`look ${l.key}`);
+    },
     fill: (c) => {
       log.push(`fill ${String(c)}`);
     },
@@ -1104,6 +1107,16 @@ describe("moteur — outil Tableau (C10a, contrat T4)", () => {
     expect(log).toContain("act header-toggle");
   });
   const CELL: TableCellState = { id: "t", row: 0, col: 1, rows: 3, cols: 4 };
+
+  it("D15 : tableLook relaie à l'outil Tableau ; Alt+Maj+C avec une case : ha-next", () => {
+    const { engine, log, table } = setupTable();
+    engine.setTool("table");
+    engine.tableLook({ key: "va", value: "bottom" });
+    expect(log).toContain("look va");
+    table.setCell(CELL);
+    expect(engine.key({ key: "C", code: "KeyC", ctrlKey: false, metaKey: false, shiftKey: true, altKey: true, isComposing: false, target: null })).toBe(true);
+    expect(log).toContain("act ha-next");
+  });
 
   it("Alt+I sans cellule active : la touche passe ; avec une cellule : cell-image", () => {
     const { engine, log, table } = setupTable();

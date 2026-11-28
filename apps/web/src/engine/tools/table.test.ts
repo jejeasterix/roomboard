@@ -1203,3 +1203,41 @@ describe("outil Tableau — S7 ajuster au contenu (D14, DS7)", () => {
     expect(s.table(id).rows[0]?.height).toBe(64);
   });
 });
+
+describe("outil Tableau — D15 alignement (S8)", () => {
+  it("D15 : look ha sur une plage : une SetTableLook ; ha-next tourne gauche → centre → droite → gauche", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    s.setShift(true);
+    s.click(100 + 240 + 120, 232);
+    s.setShift(false);
+    const before = s.runs.length;
+    s.tool.look({ key: "ha", value: "center" });
+    const t = s.table(id);
+    expect(s.runs.length).toBe(before + 1);
+    expect(s.last()).toEqual({ type: "SetTableLook", id, from: { row: t.rows[0]?.id, col: t.cols[0]?.id }, to: { row: t.rows[0]?.id, col: t.cols[1]?.id }, look: { key: "ha", value: "center" } });
+    s.tool.act("ha-next");
+    expect(s.tool.cellState()?.ha).toBe("right");
+    s.tool.act("ha-next");
+    expect(s.tool.cellState()?.ha).toBe("left");
+    s.tool.act("va-next");
+    expect(s.tool.cellState()?.va).toBe("middle");
+  });
+  it("D15 : saisie ouverte au cadre aligné : case milieu-centre → boîte descendue, align center", () => {
+    const s = setup();
+    const id = s.create(100, 200, 1, 1);
+    s.type("ab");
+    s.tool.requestCommit();
+    const t = s.table(id);
+    s.doc.apply({ type: "SetTableLineSizes", id, cols: [], rows: [[t.rows[0]?.id ?? "", 164]] });
+    const c = { row: t.rows[0]?.id ?? "", col: t.cols[0]?.id ?? "" };
+    s.doc.apply({ type: "SetTableLook", id, from: c, to: c, look: { key: "ha", value: "center" } });
+    s.doc.apply({ type: "SetTableLook", id, from: c, to: c, look: { key: "va", value: "middle" } });
+    s.click(220, 280);
+    const o = s.host.last();
+    expect(o.align).toBe("center");
+    expect(o.matrix).toEqual([1, 0, 0, 1, 108, 208 + 51.5]);
+    expect(o.boxWidth).toBe(224);
+  });
+});
