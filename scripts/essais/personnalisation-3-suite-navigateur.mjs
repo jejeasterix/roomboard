@@ -242,6 +242,8 @@ async function scenario(page, url, { captures }) {
   await typeIn(c12(0, 0), "secret");
   await page.click('[data-table-action="table-shade"]');
   await fr();
+  // Captures du cache sans le toast de S11 (C4).
+  await page.waitForSelector(".rb-toast", { state: "detached", timeout: 15000 });
   await capture("cache-ferme");
   await page.click(item("select"));
   await fr();
@@ -254,6 +256,7 @@ async function scenario(page, url, { captures }) {
   const ferme1 = await zone12();
   await tap(c12(0, 0));
   check((await attr("data-table-opens")) === "1", "S12 : toucher le cache l'ouvre (data-table-opens=1)");
+  await page.waitForSelector(".rb-toast", { state: "detached", timeout: 15000 });
   await capture("cache-ouvert");
   check(!(await zone12()).equals(ferme1), "S12 : cache ouvert : la zone de la case change (la réponse apparaît)");
   await page.keyboard.press("Control+z");
@@ -280,9 +283,50 @@ async function scenario(page, url, { captures }) {
   check((await attr("data-table-opens")) === "0", "S12 : Ctrl+Z annule Alt+O en une étape");
   await page.keyboard.press("Alt+KeyO");
   await fr();
+  // C4 (D35) : une étiquette glissée sur le cache ouvert n'y loge pas ; après Désombrer, la case redevient normale.
+  const spot12 = [origin[0] + RX2, origin[1] + 170];
+  await page.click(item("text"));
+  await fr();
+  await mouse.click(...screen(c, spot12[0], spot12[1]));
+  await page.keyboard.type("indice");
+  await page.keyboard.press("Escape");
+  await fr();
+  await page.click(item("select"));
+  await fr();
+  await touchDrag(screen(c, spot12[0] + 20, spot12[1] + 20), c12(0, 0));
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...c12(0, 0));
+  await page.keyboard.press("Escape");
+  await fr();
+  check((await attr("data-table-opens")) === "1" && (await attr("data-table-linked")) === "0", `S12 : étiquette glissée sur le cache ouvert : non logée (data-table-linked=${await attr("data-table-linked")})`);
+  const shades12 = Number(await attr("data-table-shades"));
   await page.click('[data-table-action="table-unshade"]');
   await fr();
   check((await attr("data-table-opens")) === "0", "S12 : Désombrer retire le cache");
+  check(Number(await attr("data-table-shades")) === shades12 - 1, "S12 : Désombrer : la case n'est plus ombrée (data-table-shades − 1)");
+  await page.click(item("select"));
+  await fr();
+  const p12 = c12(0, 0);
+  await touchDrag(p12, [p12[0] + 12, p12[1] + 4]);
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...c12(0, 0));
+  await page.keyboard.press("Escape");
+  await fr();
+  check((await attr("data-table-linked")) === "1", `S12 : après Désombrer, la case redevient normale : l'étiquette y loge (data-table-linked=${await attr("data-table-linked")})`);
+  // Étiquette d'essai retirée (elle recouvrirait « secret » dans les captures suivantes).
+  await page.click(item("select"));
+  await fr();
+  await mouse.click(...c12(0, 0));
+  await page.keyboard.press("Delete");
+  await fr();
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...c12(0, 0));
+  await page.keyboard.press("Escape");
+  await fr();
+  check((await attr("data-table-linked")) === "0", `S12 : étiquette d'essai supprimée, tableau gardé (data-table-linked=${await attr("data-table-linked")})`);
 
   // S13 (D20, DS9) : 2 × 4 à en-tête, colonne 0 : Nombre, 10, 9, 100 ; Alt+T ; Ctrl+Z ; « Trier décroissant ».
   const c13 = await newTable(RX2, 260, 2, 4);
@@ -309,6 +353,13 @@ async function scenario(page, url, { captures }) {
   await page.keyboard.press("Control+z");
   await fr();
   check((await attr("data-table-column")) === "Nombre|9|10|100", "S13 : Ctrl+Z annule Alt+Maj+T en une étape");
+  // C4 : le bouton « Trier décroissant » du panneau, au doigt.
+  if ((await page.getAttribute('[data-option-head="tableRows"]', "aria-expanded")) !== "true") await page.click('[data-option-head="tableRows"]');
+  await tapBig('[data-option="tableRows"] [data-table-option="sort-desc"]', "S13 : Trier décroissant");
+  check((await attr("data-table-column")) === "Nombre|100|10|9", `S13 : bouton Trier décroissant (doigt) : Nombre|100|10|9 (lu ${await attr("data-table-column")})`);
+  await page.keyboard.press("Control+z");
+  await fr();
+  check((await attr("data-table-column")) === "Nombre|9|10|100", "S13 : Ctrl+Z annule le tri du bouton en une étape");
 
   // S14 (D21, DS5) : 2 × 3 à en-tête « Mammifères », colonne 0 acceptant « chat, chien » ; « chat » loge, « truite » revient.
   const c14 = await newTable(RX2, 560, 2, 3);
