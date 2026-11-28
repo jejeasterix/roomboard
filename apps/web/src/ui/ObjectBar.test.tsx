@@ -352,4 +352,11 @@ describe("ObjectBar (OG41, D18-D27)", () => {
     expect(document.activeElement).toBe(ok);
     expect(t.bar().contains(document.activeElement)).toBe(false);
   });
+  it("c3 : un clic au pointeur sur un bouton de la barre ne lui donne pas le focus (Échap désélectionne ensuite) ; « … » de même", () => {
+    const t = setup();
+    for (const b of [t.bar().querySelector('[data-selection-action="duplicate"]')!, t.bar().querySelector("[data-object-more]")!]) {
+      expect(fireEvent.pointerDown(b)).toBe(false);
+      expect(fireEvent.mouseDown(b)).toBe(false);
+    }
+  });
 });
