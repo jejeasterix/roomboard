@@ -823,10 +823,12 @@ impl Document {
         txn: &T,
         ids: &[String],
     ) -> Vec<(String, FoundElement)> {
-        let unique: BTreeSet<&String> = ids.iter().collect();
-        unique
+        sorted_unique(ids.iter().cloned())
             .into_iter()
-            .filter_map(|id| Some((id.clone(), self.find_element(txn, id)?)))
+            .filter_map(|id| {
+                let found = self.find_element(txn, &id)?;
+                Some((id, found))
+            })
             .collect()
     }
 
@@ -1799,7 +1801,7 @@ impl Document {
             if found.iter().any(|(_, f)| f.page_id != page) {
                 return Err(CommandError::MixedPages);
             }
-            found.sort_by_key(|(_, f)| f.index);
+            crate::order::sort_stable_by(&mut found, |(_, a), (_, b)| a.index.cmp(&b.index));
             let n = found.len() as u32;
             if to.checked_add(n).is_none_or(|end| end > arr.len(&txn)) {
                 return Err(CommandError::BadIndex);
@@ -1983,7 +1985,7 @@ impl Document {
     }
 
     fn cmd_group(&mut self, ids: &[String]) -> Result<Change, CommandError> {
-        let unique: BTreeSet<&String> = ids.iter().collect();
+        let unique = sorted_unique(ids.iter().cloned());
         let mut targets = self.group_targets(ids);
         if targets.len() != unique.len() {
             return Err(CommandError::BadGroup);
@@ -2027,7 +2029,7 @@ impl Document {
                 }
             }
         }
-        targets.sort_by(|a, b| a.id.cmp(&b.id));
+        crate::order::sort_stable_by(&mut targets, |a, b| a.id.cmp(&b.id));
         let gid = yrs::uuid_v4().to_string();
         {
             let mut txn = self.transact_local();
@@ -2090,7 +2092,7 @@ impl Document {
             return Ok(self.unchanged());
         }
         // Indices décroissants tous tableaux confondus : dans un même tableau, le plus grand part d'abord.
-        targets.sort_by_key(|t| std::cmp::Reverse(t.index));
+        crate::order::sort_stable_by(&mut targets, |a, b| b.index.cmp(&a.index));
         {
             let mut txn = self.transact_local();
             for t in &targets {
