@@ -50,6 +50,9 @@ export interface OptionsPanelProps {
   readonly openLink?: (url: string) => void;
   /** OG23 (T13) : ouvre le panneau de l'image ; `start` arme le rognage ou la baguette, `null` : ouverture simple. */
   readonly openImage?: (start: "crop" | "background" | null) => void;
+  /** OG34 : corps des sections Média et Objet 3D (barres de C14 et C15), rendus par l'appelant qui tient leurs commandes. */
+  readonly media?: () => JSX.Element;
+  readonly model3d?: () => JSX.Element;
 }
 
 const LABEL: Readonly<Record<OptionKey, string>> = {
@@ -68,6 +71,8 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   arrowheads: "Pointes",
   opacity: "Transparence",
   image: "Image",
+  media: "Média",
+  model3d: "Objet 3D",
   layers: "Disposition",
   align: "Aligner",
   transform: "Transformer",
@@ -573,6 +578,8 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         </For>
       </div>
     ),
+    media: () => props.media?.() ?? null,
+    model3d: () => props.model3d?.() ?? null,
     actions: () => (
       <>
       <Show when={showEditPoints() || showRemovePoint()}>
