@@ -76,7 +76,7 @@ class FakePicker implements TablePicker {
   }
 }
 
-function setup() {
+function setup(measure: Measure = narrow) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
@@ -109,7 +109,7 @@ function setup() {
   const notices: string[] = [];
   const menuOpens: { x: number; y: number; items: readonly CellMenuItem[] }[] = [];
   const menu: CellMenu = { open: (x, y, items) => void menuOpens.push({ x, y, items }), close: () => undefined };
-  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow, menu, createCellDrop(ctx, narrow), (text) => void notices.push(text));
+  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), measure, menu, createCellDrop(ctx, measure), (text) => void notices.push(text));
   holder.tool = tool;
   const click = (x: number, y: number): void => {
     tool.begin(1, [at(x, y)]);
@@ -1202,6 +1202,34 @@ describe("outil Tableau — S7 ajuster au contenu (D14, DS7)", () => {
     expect(s.last()?.type).toBe("SetTableLineSizes");
     expect(s.table(id).cols[0]?.width).toBe(146);
     expect(s.table(id).rows[0]?.height).toBe(64);
+  });
+  it("C2 : Alt+A sur la plage (0,0)-(1,1), case active (0,0) : colonne 0 et ligne 0, pas le coin bas-droit (DS7)", () => {
+    const { s, id } = ready();
+    s.setShift(true);
+    s.click(100 + 240 + 120, 200 + 64 + 32);
+    s.setShift(false);
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, range: { r0: 0, c0: 0, r1: 1, c1: 1 } });
+    s.tool.act("fit-content");
+    expect(s.table(id).cols.map((c) => c.width)).toEqual([146, 240, 240]);
+    expect(s.table(id).rows.map((r) => r.height)).toEqual([64, 64, 64]);
+  });
+});
+
+describe("outil Tableau — C2 saisie d'un en-tête cadrée sur le texte en gras", () => {
+  /** 10 unités par caractère, 14 en gras. */
+  const bm: Measure = (s, _size, face) => s.length * (face?.bold === true ? 14 : 10);
+  it("C2 : en-tête, va milieu, « aaaa bbbb » dans 120 de large : cadre d'après deux lignes en gras", () => {
+    const s = setup(bm);
+    const id = s.create(100, 200, 2, 2);
+    s.type("aaaa bbbb");
+    s.tool.requestCommit();
+    s.tool.look({ key: "va", value: "middle" });
+    const t = s.table(id);
+    s.doc.apply({ type: "SetTableOptions", id, header: true });
+    s.doc.apply({ type: "SetTableLineSizes", id, cols: [[t.cols[0]?.id ?? "", 120]], rows: [[t.rows[0]?.id ?? "", 200]] });
+    s.click(100 + 60, 200 + 150);
+    // Boîte intérieure 184 de haut ; deux lignes de 45 en gras : descente (184 − 90) / 2 = 47 (une ligne : 69,5).
+    expect(s.host.last().matrix[5]).toBe(200 + 8 + 47);
   });
 });
 
