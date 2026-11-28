@@ -5,7 +5,6 @@ import { fromEnvelope, type ItemsRefusal } from "./clipboard";
 import { droppedFromFile } from "./drop-web";
 import type { DroppedFile } from "./files";
 import { isEditable } from "./editable";
-import { tsvGrid } from "./html-table";
 
 export interface PasteEventLike {
   readonly target: EventTarget | null;
@@ -74,9 +73,9 @@ export function pastedTableHtml(e: PasteEventLike): string | null {
   return TABLE_TAG.test(html) ? html : null;
 }
 
-/** Texte à tabulations collé (point 15) qui donne une grille ; null sur une cible éditable ou sans tabulation. */
+/** Texte à tabulations collé (point 15) ; test bon marché, la grille est analysée une fois par `pasteText` après le contrôle de taille ; null sur une cible éditable ou sans tabulation. */
 export function pastedTabText(e: PasteEventLike): string | null {
   if (isEditable(e.target)) return null;
   const text = e.clipboardData?.getData?.("text/plain") ?? "";
-  return text.includes("\t") && tsvGrid(text) !== null ? text : null;
+  return text.includes("\t") ? text : null;
 }

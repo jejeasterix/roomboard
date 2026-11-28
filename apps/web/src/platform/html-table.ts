@@ -148,7 +148,25 @@ export function tableFromHtml(html: string, parse: (s: string) => Document): Tab
   return { rows: nRows, cols, cells, merges, sourceRows: trs.length, sourceCols, cutCells: cut };
 }
 
-/** Texte à tabulations (Excel, Word) → grille (point 15, D22) : au moins une tabulation et deux cellules, sinon null.
+/** Champ cité à partir de `start` (un `"`) : [texte, position suivante], ou null si le guillemet fermant n'est pas
+ *  suivi d'une tabulation, d'une fin de ligne ou de la fin du texte (le champ est alors gardé tel quel). */
+function quotedField(text: string, start: number): [string, number] | null {
+  const n = text.length;
+  let i = start + 1;
+  let field = "";
+  while (i < n) {
+    if (text[i] === '"') {
+      if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+      const next = text[i + 1];
+      return i + 1 >= n || next === "\t" || next === "\n" || next === "\r" ? [field, i + 1] : null;
+    }
+    field += text[i];
+    i++;
+  }
+  return null;
+}
+
+/** Texte à tabulations (Excel, Word) → grille (point 15, D22) : au moins une tabulation et deux cellules, sinon null ; une seule ligne exige la fin de ligne qu'Excel ajoute toujours.
  *  Guillemets d'Excel (`"a\nb"`, `""` pour un guillemet) ; `\r\n` ; lignes vides de fin ignorées ; lignes courtes
  *  complétées ; mêmes bornes que le HTML (64 × 64, source comptée à part, texte coupé à 2 000 caractères). */
 export function tsvGrid(text: string): TableGrid | null {
@@ -159,19 +177,10 @@ export function tsvGrid(text: string): TableGrid | null {
   const n = text.length;
   while (i <= n) {
     let field = "";
-    if (text[i] === '"') {
-      i++;
-      for (;;) {
-        if (i >= n) break;
-        if (text[i] === '"') {
-          if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
-          i++;
-          break;
-        }
-        field += text[i];
-        i++;
-      }
-      while (i < n && text[i] !== "\t" && text[i] !== "\n" && text[i] !== "\r") field += text[i++];
+    const quoted = text[i] === '"' ? quotedField(text, i) : null;
+    if (quoted !== null) {
+      field = quoted[0];
+      i = quoted[1];
     } else {
       while (i < n && text[i] !== "\t" && text[i] !== "\n" && text[i] !== "\r") field += text[i++];
     }
@@ -185,9 +194,11 @@ export function tsvGrid(text: string): TableGrid | null {
     row = [];
     if (i >= n) break;
   }
+  const rawRecords = records.length;
   while (records.length > 0 && (records[records.length - 1] ?? []).every((f) => f === "")) records.pop();
   const sourceCols = records.reduce((m, r) => Math.max(m, r.length), 0);
   if (records.length === 0 || records.length * sourceCols < 2) return null;
+  if (rawRecords === 1 && !/[\r\n]$/.test(text)) return null;
   const nRows = Math.min(records.length, TABLE_MAX_LINES);
   const cols = Math.min(sourceCols, TABLE_MAX_LINES);
   let cut = false;
