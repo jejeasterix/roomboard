@@ -168,6 +168,7 @@ if [ "$E2E" = 1 ]; then
   node scripts/essais/gomme-trait-epais-navigateur.mjs
   node scripts/essais/gomme-paume-navigateur.mjs
   node scripts/essais/gomme-objets-navigateur.mjs
+  node scripts/essais/barre-objet-navigateur.mjs
   node scripts/essais/restes-og19-og14-og24-navigateur.mjs
   echo "restes OG19 OG14 OG24 : OK"
   node scripts/essais/restes-og27-navigateur.mjs
