@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_OVERLAY, isEmptyOverlay, mergeOverlays, overlayKey } from "./overlay";
+import { IDENTITY } from "../camera";
+import { copyBadgeBox, linkBadgeBox } from "./link-badge";
+import { EMPTY_OVERLAY, isEmptyOverlay, mergeOverlays, overlayKey, overlayKeepOut } from "./overlay";
 
 describe("calque d'édition", () => {
   it("mergeOverlays : rien → EMPTY_OVERLAY ; un seul → lui-même", () => {
@@ -39,5 +41,57 @@ describe("calque d'édition", () => {
     expect(m.bind?.id).toBe("a");
     expect(isEmptyOverlay(a)).toBe(false);
     expect(isEmptyOverlay(EMPTY_OVERLAY)).toBe(true);
+  });
+});
+
+describe("overlayKeepOut (OG41, DA2)", () => {
+  const frame = { x0: 100, y0: 200, x1: 300, y1: 300 };
+  const sq = (x: number, y: number, half: number) => ({ x: x - half, y: y - half, w: 2 * half, h: 2 * half });
+  it("overlayKeepOut : sans cadre, rien", () => {
+    expect(overlayKeepOut(EMPTY_OVERLAY, IDENTITY, true)).toEqual([]);
+  });
+  it("overlayKeepOut : huit poignées, carrés de 24 px (prise de 12 px) centrés sur les coins et les milieux", () => {
+    const r = overlayKeepOut({ ...EMPTY_OVERLAY, frame, handles: true }, IDENTITY, false);
+    expect(r).toHaveLength(8);
+    expect(r).toContainEqual(sq(100, 200, 12));
+    expect(r).toContainEqual(sq(200, 300, 12));
+  });
+  it("overlayKeepOut : pendant un glisser (handles faux), ni poignées ni « Déplacer »", () => {
+    expect(overlayKeepOut({ ...EMPTY_OVERLAY, frame, handles: false, move: true }, IDENTITY, true)).toEqual([]);
+  });
+  it("overlayKeepOut : « Déplacer » 28 px au-dessus du milieu haut, 22 px au doigt, 12 px à la souris", () => {
+    const o = { ...EMPTY_OVERLAY, frame, handles: true, move: true };
+    expect(overlayKeepOut(o, IDENTITY, true)).toContainEqual(sq(200, 172, 22));
+    expect(overlayKeepOut(o, IDENTITY, false)).toContainEqual(sq(200, 172, 12));
+  });
+  it("overlayKeepOut : ligne seule (sans cadre) : ses points d'extrémité, 22 px au doigt, 12 à la souris", () => {
+    const o = { ...EMPTY_OVERLAY, points: [{ x: 100, y: 100, kind: "point" as const, selected: false }, { x: 300, y: 100, kind: "point" as const, selected: false }] };
+    expect(overlayKeepOut(o, IDENTITY, true)).toEqual([sq(100, 100, 22), sq(300, 100, 22)]);
+    expect(overlayKeepOut(o, IDENTITY, false)).toEqual([sq(100, 100, 12), sq(300, 100, 12)]);
+  });
+  it("overlayKeepOut : poignées « + », prise de 22 px", () => {
+    const r = overlayKeepOut({ ...EMPTY_OVERLAY, frame, handles: true, links: [{ dir: "up", x: 200, y: 160 }] }, IDENTITY, true);
+    expect(r).toContainEqual(sq(200, 160, 22));
+  });
+  it("overlayKeepOut : zoom 2 et caméra décalée : centres en px de la scène, « Déplacer » 28 px écran au-dessus, prises non zoomées", () => {
+    const cam = { zoom: 2, tx: 40, ty: -30 };
+    const o = { ...EMPTY_OVERLAY, frame, handles: true, move: true, links: [{ dir: "up" as const, x: 200, y: 160 }] };
+    const r = overlayKeepOut(o, cam, true);
+    expect(r).toContainEqual(sq(240, 370, 12));
+    expect(r).toContainEqual(sq(640, 570, 12));
+    expect(r).toContainEqual(sq(440, 342, 22));
+    expect(r).toContainEqual(sq(440, 290, 22));
+    expect(r).toHaveLength(10);
+  });
+  it("overlayKeepOut : badges de lien et de copie, cible de 44 px au doigt, 24 à la souris", () => {
+    const o = { ...EMPTY_OVERLAY, frame, handles: true };
+    const lb = linkBadgeBox(frame, IDENTITY);
+    const cb = copyBadgeBox(frame, IDENTITY);
+    const touch = overlayKeepOut(o, IDENTITY, true, [{ bounds: frame, link: true, copy: true }]);
+    expect(touch).toContainEqual(sq(lb.x + lb.size / 2, lb.y + lb.size / 2, 22));
+    expect(touch).toContainEqual(sq(cb.x + cb.size / 2, cb.y + cb.size / 2, 22));
+    const mouse = overlayKeepOut(o, IDENTITY, false, [{ bounds: frame, link: true, copy: false }]);
+    expect(mouse).toContainEqual(sq(lb.x + lb.size / 2, lb.y + lb.size / 2, 12));
+    expect(mouse).toHaveLength(9);
   });
 });
