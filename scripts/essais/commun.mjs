@@ -316,6 +316,6 @@ export async function foldOptions(page, profileId = null) {
 /** OG23 (déc. 7) : toutes les sections du panneau d'options ouvertes avant tout chargement (clé `roomboard.options-sections`
  *  de `device-settings.ts`), pour qu'un essai ancien trouve les corps visibles. À appeler avant `goto`. */
 export async function openOptionSections(page) {
-  const keys = ["strokeColor", "background", "fillStyle", "strokeWidth", "pressure", "strokeStyle", "roughness", "roundness", "font", "fontSize", "textAlign", "arrowType", "arrowheads", "opacity", "image", "layers", "align", "transform", "actions"];
+  const keys = ["strokeColor", "background", "fillStyle", "strokeWidth", "pressure", "strokeStyle", "roughness", "roundness", "font", "fontSize", "textAlign", "arrowType", "arrowheads", "opacity", "image", "media", "model3d", "layers", "align", "transform", "actions"];
   await page.addInitScript((ks) => window.localStorage.setItem("roomboard.options-sections", JSON.stringify(Object.fromEntries(ks.map((k) => [k, true])))), keys);
 }

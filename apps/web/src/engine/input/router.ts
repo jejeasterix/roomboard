@@ -89,7 +89,7 @@ interface PalmGroup {
 }
 
 /** OG25 (déc. 33) : outils sans effet au `begin`, seuls à pouvoir basculer. */
-const SWITCHABLE: ReadonlySet<ToolChoice> = new Set<ToolChoice>(["pen", "eraser", "rect", "ellipse", "line", "arrow", "fill"]);
+const SWITCHABLE: ReadonlySet<ToolChoice> = new Set<ToolChoice>(["pen", "eraser", "rect", "diamond", "ellipse", "line", "arrow", "fill"]);
 
 const lastOf = (samples: readonly InputSample[]): InputSample | undefined => samples[samples.length - 1];
 const boxOf = (t: Track): ContactBox => ({ x: t.x, y: t.y, width: t.w, height: t.h });

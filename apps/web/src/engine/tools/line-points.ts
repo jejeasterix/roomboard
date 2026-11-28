@@ -1,7 +1,7 @@
 /** OG12 : aides pures des poignées de points, de la liaison d'une extrémité et des poignées « + », partagées par les
  *  outils Formes (T8), Sélection (T8) et « Modifier les points » (T9). Distances écran converties par `zoom`. */
 import type { Bounds, CoreDocument, LineBinding, LinkDir, ShapeElement } from "../../core/api";
-import { ANCHOR_RATIOS, applyMatrix, isSegment, linePath } from "../../core/shapes";
+import { ANCHOR_RATIOS, applyMatrix, isClosedShape, isSegment, linePath } from "../../core/shapes";
 import type { BindHint, LinkHandle, PointHandle } from "../render/overlay";
 import { HANDLE_GRAB_PX } from "./handles";
 import { constrainEnd } from "./shape";
@@ -31,7 +31,7 @@ export interface PointHit { readonly kind: "point" | "mid"; readonly index: numb
 
 /** Poignée sous (x, y) monde : le point le plus proche à portée (12 px, 22 au doigt), sinon le milieu d'un segment d'au
  *  moins 40 px écran (si `mids`). */
-export function pickHandle(pts: readonly (readonly [number, number])[], x: number, y: number, zoom: number, touch: boolean, mids: boolean): PointHit | null {
+export function pickHandle(pts: readonly (readonly [number, number])[], x: number, y: number, zoom: number, touch: boolean, mids: boolean, closed = false): PointHit | null {
   const reach = (touch ? POINT_REACH_TOUCH_PX : POINT_REACH_PX) / zoom;
   let best: PointHit | null = null;
   let bestD = reach;
@@ -40,9 +40,9 @@ export function pickHandle(pts: readonly (readonly [number, number])[], x: numbe
     if (d <= bestD) { best = { kind: "point", index: i }; bestD = d; }
   });
   if (best !== null || !mids) return best;
-  for (let i = 0; i + 1 < pts.length; i++) {
+  for (let i = 0; i + 1 < pts.length + (closed && pts.length > 2 ? 1 : 0); i++) {
     const a = pts[i]!;
-    const b = pts[i + 1]!;
+    const b = pts[(i + 1) % pts.length]!;
     if (!longEnough(a, b, zoom)) continue;
     const m = mid(a, b);
     const d = Math.hypot(m[0] - x, m[1] - y);
@@ -51,12 +51,13 @@ export function pickHandle(pts: readonly (readonly [number, number])[], x: numbe
   return best;
 }
 
-export function pointHandles(pts: readonly (readonly [number, number])[], selected: readonly number[], zoom: number, mids: boolean): PointHandle[] {
+export function pointHandles(pts: readonly (readonly [number, number])[], selected: readonly number[], zoom: number, mids: boolean, closed = false): PointHandle[] {
   const out: PointHandle[] = pts.map(([x, y], i) => ({ x, y, kind: "point", selected: selected.includes(i) }));
   if (mids) {
-    for (let i = 0; i + 1 < pts.length; i++) {
-      if (longEnough(pts[i]!, pts[i + 1]!, zoom)) {
-        const [x, y] = mid(pts[i]!, pts[i + 1]!);
+    for (let i = 0; i + 1 < pts.length + (closed && pts.length > 2 ? 1 : 0); i++) {
+      const next = pts[(i + 1) % pts.length]!;
+      if (longEnough(pts[i]!, next, zoom)) {
+        const [x, y] = mid(pts[i]!, next);
         out.push({ x, y, kind: "mid", selected: false });
       }
     }
@@ -115,8 +116,9 @@ export interface DraggedLine {
  *  le pointeur, sans jamais prendre l'objet de l'autre bout (`exclude`) ; l'autre bout garde sa liaison. */
 export function dragLine(ctx: ToolContext, v: ShapeElement, hit: PointHit, x: number, y: number, zoom: number, touch: boolean): DraggedLine {
   const pts = worldPoints(v);
+  const closed = isClosedShape(v.shape);
   const index = hit.kind === "mid" ? hit.index + 1 : hit.index;
-  if (hit.kind === "mid") pts.splice(index, 0, [x, y]);
+  if (hit.kind === "mid") pts.splice(index, 0, [x, y]); // milieu `n - 1` d'une ligne fermée : après le dernier sommet
   let [px, py] = ctx.alt?.() === true ? [x, y] : (ctx.doc.snapPoint(ctx.page(), x, y) ?? [x, y]);
   const n = index === 0 ? pts[1] : pts[index - 1];
   if (ctx.shift?.() === true && n) [px, py] = constrainEnd("line", n[0], n[1], px, py);
@@ -125,7 +127,7 @@ export function dragLine(ctx: ToolContext, v: ShapeElement, hit: PointHit, x: nu
   let end = v.shape.end ?? null;
   let hint: BindHint | null = null;
   const last = pts.length - 1;
-  if (hit.kind === "point" && (index === 0 || index === last)) {
+  if (!closed && hit.kind === "point" && (index === 0 || index === last)) {
     const other = index === 0 ? end : start;
     const b = bindEnd(ctx.doc, ctx.page(), px, py, zoom, touch, bindingOn(ctx), other?.id);
     if (index === 0) start = b.bind;
