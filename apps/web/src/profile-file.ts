@@ -3,6 +3,7 @@
  * sans fichier ni boîte : `platform/profile-files.ts` choisit et écrit le fichier, `app/profile-actions.ts` enchaîne.
  * Un futur dépôt de `.rbprofile` (P26, non attribué) appellera `profileFromText` et `planImport`.
  */
+import { MAX_JSON_DEPTH, textTooDeep } from "./json-depth";
 import { parseProfile, serializeProfile, type ParsedProfile, type Profile } from "./toolbar";
 
 export const PROFILE_EXTENSION = ".rbprofile";
@@ -29,9 +30,11 @@ export function profileToFile(p: Profile): { readonly name: string; readonly tex
   return { name: `${slug(p.label)}${PROFILE_EXTENSION}`, text: JSON.stringify(serializeProfile(p), null, 2) };
 }
 
-/** Texte d'un fichier → profil ; JSON illisible : erreur lisible ; ensuite les règles de `parseProfile` (P24, P33). */
+/** Texte d'un fichier → profil ; trop gros, trop imbriqué (OG45) ou JSON illisible : erreur lisible ; ensuite les
+ *  règles de `parseProfile` (P24, P33). */
 export function profileFromText(text: string): ParsedProfile {
   if (new TextEncoder().encode(text).length > MAX_PROFILE_TEXT) return { errors: ["fichier trop gros (plus d'un mégaoctet)"] };
+  if (textTooDeep(text)) return { errors: [`fichier trop imbriqué (plus de ${MAX_JSON_DEPTH} niveaux)`] };
   let json: unknown;
   try {
     json = JSON.parse(text);

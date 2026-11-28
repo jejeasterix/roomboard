@@ -73,9 +73,15 @@ const egal = (nom, a, b) => {
   ok(nom);
 };
 
-/** Processus vivants dont la ligne de commande cite `needle` (Linux, `/proc`). */
-const processusAvec = (needle) =>
-  readdirSync("/proc")
+/** Processus vivants dont la ligne de commande cite `needle` : `/proc` sous Linux, `ps` sous macOS (OG45, comme
+ *  `processCommands` de `apps/cli/src/office-node.ts`). */
+const processusAvec = (needle) => {
+  if (!existsSync("/proc")) {
+    const ps = spawnSync("/bin/ps", ["-axww", "-o", "pid=,command="], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    if (ps.status !== 0) throw new Ecart(`ps : code ${ps.status} ${ps.stderr}`);
+    return ps.stdout.split("\n").filter((l) => l.includes(needle));
+  }
+  return readdirSync("/proc")
     .filter((n) => /^\d+$/.test(n))
     .flatMap((n) => {
       try {
@@ -85,6 +91,7 @@ const processusAvec = (needle) =>
         return [];
       }
     });
+};
 
 try {
   verifie("CLI construite", existsSync(BIN), BIN);

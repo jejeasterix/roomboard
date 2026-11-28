@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MAX_PROFILE_TEXT, planImport, PROFILE_EXTENSION, PROFILE_MIME, profileFromText, profileToFile, slug } from "./profile-file";
+import { MAX_JSON_DEPTH } from "./json-depth";
 import { uniqueId } from "./toolbar";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
 
@@ -118,5 +119,11 @@ describe("profile-file : plafond de taille (T11)", () => {
   it("exactement le plafond : lu comme un JSON ordinaire", () => {
     const r = profileFromText(" ".repeat(MAX_PROFILE_TEXT));
     expect("errors" in r && r.errors[0]).toMatch(/^fichier de profil illisible/);
+  });
+  it("OG45 : imbrication au-delà de MAX_JSON_DEPTH refusée avant JSON.parse ; à la limite, lue", () => {
+    const at = (n: number): string => `{"format":"roomboard-profile","schema":1,"id":"p","label":"P","x":${"[".repeat(n)}${"]".repeat(n)},"toolbars":[]}`;
+    expect(errorsOf(at(MAX_JSON_DEPTH))).toEqual([`fichier trop imbriqué (plus de ${MAX_JSON_DEPTH} niveaux)`]);
+    expect("profile" in profileFromText(at(MAX_JSON_DEPTH - 1))).toBe(true);
+    expect(errorsOf(at(500_000))).toEqual([`fichier trop imbriqué (plus de ${MAX_JSON_DEPTH} niveaux)`]);
   });
 });
