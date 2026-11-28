@@ -3321,6 +3321,24 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(doc.elementIds(page)).toHaveLength(5);
   });
 
+  it("flèche pendant « Modifier les points » : la sélection ne bouge pas (OG23 × OG12)", () => {
+    const { engine, doc, line } = og12();
+    const l = line();
+    engine.select([l]);
+    expect(engine.editLinePoints()).toBe(true);
+    const before = doc.bounds([l])!;
+    const sent: Command[] = [];
+    const apply = doc.apply.bind(doc);
+    vi.spyOn(doc, "apply").mockImplementation((c) => { sent.push(c); return apply(c); });
+    for (const k of ["ArrowRight", "ArrowDown"]) {
+      engine.key(key(k));
+      engine.key(key(k, { shiftKey: true }));
+    }
+    expect(sent).toEqual([]);
+    expect(doc.bounds([l])).toEqual(before);
+    expect(engine.state().lineEditing).toBe(l);
+  });
+
   it("Ctrl tenu : ctx.ctrl() vrai jusqu'au keyUp et à la perte du focus ; la touche n'est pas prise", () => {
     const { engine, ctx } = og12();
     const ctrl = (): boolean => ctx().ctrl?.() === true;
