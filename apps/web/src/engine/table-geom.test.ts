@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -276,5 +276,59 @@ describe("TB1 bordures", () => {
     };
     expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] })).toEqual([{ row: "r1", col: "b", w: 100, h: 50 }]);
     expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, ["o"])).toEqual([]);
+  });
+});
+
+describe("naturalWidth (D14, DS7)", () => {
+  const m = (s: string) => s.length * 10;
+  const t = (texts: Record<string, string>, merges: TableData["merges"] = []): TableData => ({
+    color: "#000", size: 36, merges,
+    cols: [{ id: "a", width: 100 }, { id: "b", width: 100 }],
+    rows: [{ id: "r0", height: 64 }, { id: "r1", height: 64 }],
+    cells: Object.entries(texts).map(([k, text]) => {
+      const [row, col] = k.split(":");
+      return { row: row ?? "", col: col ?? "", text, fill: null, shade: null, spans: [{ text, attrs: {} }] };
+    }),
+  });
+  it("naturalWidth : ligne la plus longue sans retour + 2 × marge ; paragraphes séparés", () => {
+    expect(naturalWidth(t({ "r0:a": "Photosynthèse", "r1:a": "ab\nabcdef" }), 0, m)).toBe(130 + 16);
+  });
+  it("naturalWidth : zone de deux colonnes ignorée ; colonne vide : 2 × marge", () => {
+    expect(naturalWidth(t({ "r0:a": "abcdefghij" }, [{ row: "r0", col: "a", rows: 1, cols: 2 }]), 0, m)).toBe(16);
+  });
+});
+
+describe("cellTextFrame (D15, DS6)", () => {
+  const base = (cell: Partial<TableData["cells"][number]>): TableData => ({
+    color: "#000", size: 36, merges: [],
+    cols: [{ id: "a", width: 240 }], rows: [{ id: "r", height: 164 }],
+    cells: [{ row: "r", col: "a", text: "x", fill: null, shade: null, spans: [{ text: "x", attrs: {} }], ...cell }],
+  });
+  it("cellTextFrame : sans alignement : la boîte intérieure, ha left", () => {
+    expect(cellTextFrame(base({}), { row: 0, col: 0 }, 45)).toEqual({ x: 8, y: 8, w: 224, h: 148, ha: "left" });
+  });
+  it("cellTextFrame : va middle descend de (148 − 45) / 2, bottom de 148 − 45 ; ha porté", () => {
+    expect(cellTextFrame(base({ va: "middle", ha: "center" }), { row: 0, col: 0 }, 45)).toEqual({ x: 8, y: 8 + 51.5, w: 224, h: 148 - 51.5, ha: "center" });
+    expect(cellTextFrame(base({ va: "bottom" }), { row: 0, col: 0 }, 45)).toMatchObject({ y: 8 + 103 });
+    // Texte plus haut que la case : aucune descente (jamais au-dessus du coin intérieur).
+    expect(cellTextFrame(base({ va: "bottom" }), { row: 0, col: 0 }, 400)).toMatchObject({ y: 8 });
+  });
+});
+
+describe("movedOrder, keepsMerges (D18, DS8)", () => {
+  it("movedOrder : ligne 2 sur la ligne 0 : 2, 0, 1 ; bloc 0..1 sur la ligne 2 : 2, 0, 1", () => {
+    expect(movedOrder(["a", "b", "c"], 2, 2, destOf(2, 2, 0))).toEqual(["c", "a", "b"]);
+    expect(movedOrder(["a", "b", "c"], 0, 1, destOf(0, 1, 2))).toEqual(["c", "a", "b"]);
+  });
+  it("movedOrder : arrivée dans le bloc : ordre inchangé", () => {
+    expect(movedOrder(["a", "b", "c"], 0, 1, destOf(0, 1, 1))).toEqual(["a", "b", "c"]);
+  });
+  it("keepsMerges : zone r0..r1 entière déplacée : vrai ; coupée : faux", () => {
+    const t: TableData = {
+      color: "#000", size: 36, cells: [], merges: [{ row: "a", col: "x", rows: 2, cols: 1 }],
+      cols: [{ id: "x", width: 100 }], rows: [{ id: "a", height: 64 }, { id: "b", height: 64 }, { id: "c", height: 64 }],
+    };
+    expect(keepsMerges(t, "row", ["c", "a", "b"])).toBe(true);
+    expect(keepsMerges(t, "row", ["a", "c", "b"])).toBe(false);
   });
 });

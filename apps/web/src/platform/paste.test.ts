@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import { toEnvelope } from "./clipboard";
+import { tsvGrid } from "./html-table";
 import type { DroppedFile } from "./files";
-import { handlePaste, isEditable, pastedFiles, pastedItems, pastedTableHtml } from "./paste";
+import { handlePaste, isEditable, pastedFiles, pastedItems, pastedTableHtml, pastedTabText } from "./paste";
+
+vi.mock("./html-table", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./html-table")>();
+  return { ...mod, tsvGrid: vi.fn(mod.tsvGrid) };
+});
 
 const files = (...f: File[]) => ({ files: f });
 const png = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
@@ -35,6 +41,7 @@ const withText = (text: string, ...f: File[]) => ({ files: f, getData: (t: strin
 const sinkOf = () => ({
   pasteItems: vi.fn(async (_i: Uint8Array | "newer" | "too-big") => true),
   pasteTable: vi.fn(async (_html: string) => true),
+  pasteText: vi.fn(async (_t: string) => true),
   importFiles: vi.fn(async () => undefined),
 });
 
@@ -136,6 +143,7 @@ describe("écouteur de collage : tableau avant images (F19, PC9, constat T13)", 
         calls.push(`tableau:${html}`);
         return tableDone;
       },
+      pasteText: async (_text: string) => false,
       importFiles: async (files: readonly DroppedFile[]) => {
         calls.push(`images:${files.map((x) => x.name).join(",")}`);
       },
@@ -161,5 +169,53 @@ describe("écouteur de collage : tableau avant images (F19, PC9, constat T13)", 
     expect(handlePaste(event(null, txt), s)).toBeNull();
     expect(handlePaste(event("<p>x</p>"), s)).toBeNull();
     expect(s.calls).toHaveLength(1);
+  });
+});
+
+describe("collage d'un texte tabulé (point 15)", () => {
+  const tsv = "a\tb\nc\td";
+  const mk = (text: string, html = "", f: File[] = []) => ({
+    target: document.body,
+    clipboardData: { files: f, getData: (t: string) => (t === "text/plain" ? text : t === "text/html" ? html : "") },
+  });
+  const sink = sinkOf;
+  it("texte à tabulations sans HTML : pasteText", async () => {
+    const s = sink();
+    await handlePaste(mk(tsv), s);
+    expect(s.pasteText).toHaveBeenCalledWith(tsv);
+    expect(s.pasteTable).not.toHaveBeenCalled();
+  });
+  it("texte tabulé + image jointe : grille posée, image ignorée", async () => {
+    const s = sink();
+    await handlePaste(mk(tsv, "", [png]), s);
+    expect(s.pasteText).toHaveBeenCalledWith(tsv);
+    expect(s.importFiles).not.toHaveBeenCalled();
+  });
+  it("pasteText rend false : repli sur les images jointes", async () => {
+    const s = sink();
+    s.pasteText.mockResolvedValueOnce(false);
+    await handlePaste(mk(tsv, "", [png]), s);
+    expect(s.importFiles).toHaveBeenCalledTimes(1);
+  });
+  it("HTML prioritaire : pasteTable, pas pasteText", async () => {
+    const s = sink();
+    await handlePaste(mk(tsv, "<table><tr><td>a</td></tr></table>"), s);
+    expect(s.pasteTable).toHaveBeenCalledTimes(1);
+    expect(s.pasteText).not.toHaveBeenCalled();
+  });
+  it("texte sans tabulation : null, comportement inchangé", () => {
+    const s = sink();
+    expect(handlePaste(mk("bonjour\nmonde"), s)).toBeNull();
+    expect(s.pasteText).not.toHaveBeenCalled();
+  });
+  it("pastedTabText ne fait qu'un test bon marché : tsvGrid n'est jamais appelé au collage", () => {
+    const spy = vi.mocked(tsvGrid);
+    spy.mockClear();
+    expect(pastedTabText(mk(tsv))).toBe(tsv);
+    expect(spy).not.toHaveBeenCalled();
+  });
+  it("cible éditable : null", () => {
+    const area = document.createElement("textarea");
+    expect(handlePaste({ ...mk(tsv), target: area }, sink())).toBeNull();
   });
 });

@@ -314,6 +314,8 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
       model = createRichEdit(session.spans, { size: session.size, color: session.color });
       s.transform = cssMatrix(camera, session.matrix);
       s.width = `${session.boxWidth}px`;
+      // D15 : zone d'une case alignée ; absent (texte libre) : la règle de la feuille, comme avant.
+      s.textAlign = session.align ?? "";
       s.minHeight = `${session.size * TEXT_LINE_HEIGHT}px`;
       s.font = textFont(session.size, session.font !== undefined ? { font: session.font } : undefined);
       s.lineHeight = String(TEXT_LINE_HEIGHT);

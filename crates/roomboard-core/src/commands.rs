@@ -284,6 +284,22 @@ pub enum Command {
         col: String,
         from: Option<String>,
     },
+    /// personnalisation-3 (suite OG32, DS1) : une clé de case (`ha`, `va`, `border`, `open`) sur les ancres et cellules
+    /// simples de la plage, ou `accept` sur ses colonnes ; valeur refusée : `BadTable` avant la recherche du tableau ;
+    /// rien ne change : aucune étape.
+    SetTableLook {
+        id: String,
+        from: (String, String),
+        to: (String, String),
+        look: crate::table_look::CellLook,
+    },
+    /// personnalisation-3 (D18) : réordonne les lignes (`Row`) ou colonnes (`Col`) ; `order` = tous les ids lisibles ;
+    /// zone coupée ou ordre invalide : `BadTable` ; ordre inchangé : aucune étape ; objets liés suivis.
+    ReorderTableLines {
+        id: String,
+        axis: crate::table::TableAxis,
+        order: Vec<String>,
+    },
     /// Pot (C6a, D12, DA1) : contour (`color`), intérieur (`fill`) ou fond de la page (`background`) ; `None` = « Aucune »
     /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38). C6b : image
     /// (nouvel asset, `sourceAsset`, B2-B4).
@@ -809,14 +825,6 @@ struct Cut {
     look: Vec<(&'static str, Any)>,
 }
 
-/// Les chaînes données, triées et sans doublon.
-fn sorted_unique(items: impl Iterator<Item = String>) -> Vec<String> {
-    let mut v: Vec<String> = items.collect();
-    crate::order::sort_stable_by(&mut v, String::cmp);
-    v.dedup();
-    v
-}
-
 /// Élément visé par `Group` ou `Ungroup` : son chemin lu (vide sans groupe lisible).
 struct GroupTarget {
     id: String,
@@ -839,7 +847,7 @@ impl Document {
         txn: &T,
         ids: &[String],
     ) -> Vec<(String, FoundElement)> {
-        sorted_unique(ids.iter().cloned())
+        crate::order::sorted_unique(ids.iter().cloned())
             .into_iter()
             .filter_map(|id| {
                 let found = self.find_element(txn, &id)?;
@@ -1046,6 +1054,15 @@ impl Document {
             }
             Command::SetCellImage { id, row, col, from } => {
                 self.cmd_set_cell_image(&id, &row, &col, from.as_deref())
+            }
+            Command::SetTableLook { id, from, to, look } => self.cmd_set_table_look(
+                &id,
+                (from.0.as_str(), from.1.as_str()),
+                (to.0.as_str(), to.1.as_str()),
+                &look,
+            ),
+            Command::ReorderTableLines { id, axis, order } => {
+                self.cmd_reorder_table_lines(&id, axis, &order)
             }
             Command::ImportTable {
                 page,
@@ -1474,7 +1491,7 @@ impl Document {
             let moved: Vec<String> = targets.iter().map(|t| t.3.clone()).collect();
             crate::linear::follow(self, &mut txn, &moved, Some(m))
         };
-        let pages = sorted_unique(targets.iter().map(|t| t.2.clone()));
+        let pages = crate::order::sorted_unique(targets.iter().map(|t| t.2.clone()));
         // Ids triés des cibles élargies (sans objet lié : ceux de `find_unique`, déjà triés, G9), puis les lignes suivies
         // (OG12) qui n'y sont pas encore.
         let mut ids: Vec<String> = targets.into_iter().map(|t| t.3).collect();
@@ -2066,7 +2083,7 @@ impl Document {
     }
 
     fn cmd_group(&mut self, ids: &[String]) -> Result<Change, CommandError> {
-        let unique = sorted_unique(ids.iter().cloned());
+        let unique = crate::order::sorted_unique(ids.iter().cloned());
         let mut targets = self.group_targets(ids);
         if targets.len() != unique.len() {
             return Err(CommandError::BadGroup);
@@ -2149,7 +2166,7 @@ impl Document {
                 }
             }
         }
-        let pages = sorted_unique(targets.iter().map(|t| t.page.clone()));
+        let pages = crate::order::sorted_unique(targets.iter().map(|t| t.page.clone()));
         Ok(self.done(Change {
             pages,
             ids: targets.into_iter().map(|t| t.id).collect(),
@@ -2181,7 +2198,7 @@ impl Document {
                 t.elements.remove(&mut txn, t.index);
             }
         }
-        let pages = sorted_unique(targets.iter().map(|t| t.page.clone()));
+        let pages = crate::order::sorted_unique(targets.iter().map(|t| t.page.clone()));
         let removed = targets.into_iter().map(|t| t.id).collect();
         Ok(self.done(Change {
             pages,

@@ -5,7 +5,7 @@
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
-import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
+import { NO_CHANGE, type Bounds, type CellLook, type Change, type Command, type CoreDocument, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, scrollBounds, scrollTo, zoomAt as zoomCamera, type Camera, type ScrollBounds } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
@@ -343,6 +343,8 @@ export interface Engine {
   setFillTolerance(t: number): void;
   /** Bouton de structure de la rangée du tableau (C10a, DAC4) : sur la cellule active de l'outil Tableau. */
   tableAction(a: TableAction): void;
+  /** DS1 : réglage de la case active de l'outil Tableau (plage, sinon zone). */
+  tableLook(l: CellLook): void;
   /** Pastille de remplissage (T12) : sur la cellule active ; null retire le remplissage. */
   tableFill(fill: string | null): void;
   /** Style de texte de l'outil Tableau et de la cible d'import (F21) ; l'outil Texte a `textToolStyle`. */
@@ -391,6 +393,7 @@ function inertTable(): TableTool {
     cell: () => null,
     cellState: () => null,
     act() {},
+    look() {},
     fill() {},
     clearCell: () => false,
     clearRange: () => false,
@@ -1704,6 +1707,9 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     tableAction(a) {
       tableTool.act(a);
+    },
+    tableLook(l) {
+      tableTool.look(l);
     },
     textStyle,
     tableFill(fill) {

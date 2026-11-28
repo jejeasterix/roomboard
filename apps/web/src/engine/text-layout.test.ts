@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faceOf, graphemes, layoutRich, measureOrFallback, offsetAt, wordAt, layoutText, richBoxHeight, styleOf, textBoxHeight, textFont, type Face, type Measure, type RichLine } from "./text-layout";
+import { faceOf, graphemes, layoutRich, lineShift, measureOrFallback, offsetAt, wordAt, layoutText, richBoxHeight, styleOf, textBoxHeight, textFont, type Face, type Measure, type RichLine } from "./text-layout";
 import type { TextSpan } from "../core/api";
 
 /** Chaque caractère vaut 100 unités, quelle que soit la taille. */
@@ -202,5 +202,21 @@ describe("polices (OG11, lot 2)", () => {
     expect(textFont(24, { bold: true })).toBe('bold 24px "Atkinson Hyperlegible", system-ui, sans-serif');
     expect(textFont(24, { font: "Georgia" })).toContain("Georgia, serif");
     expect(textFont(24, { font: "Courier New" })).toBe('24px "Courier New", monospace');
+  });
+});
+
+describe("lineShift (D15, DS6)", () => {
+  const m = (s: string) => s.length * 10;
+  it("lineShift : offsetAt et paintText d'accord : centré dans 100, « ab » (20) décalé de 40 ; le point 45 est sur « a »", () => {
+    const spans = [{ text: "ab", attrs: {} }];
+    const [line] = layoutRich(spans, { size: 36 }, 100, m);
+    expect(lineShift(line!, 100, "center")).toBe(40);
+    expect(lineShift(line!, 100, "right")).toBe(80);
+    expect(lineShift(line!, 100, "left")).toBe(0);
+    expect(offsetAt(spans, { size: 36 }, 100, m, 45, 5, "center")).toBe(0);
+    expect(offsetAt(spans, { size: 36 }, 100, m, 45, 5)).toBeNull();
+    // À droite : « b » occupe 90..100 ; avant le décalage (75), hors du texte.
+    expect(offsetAt(spans, { size: 36 }, 100, m, 95, 5, "right")).toBe(1);
+    expect(offsetAt(spans, { size: 36 }, 100, m, 75, 5, "right")).toBeNull();
   });
 });

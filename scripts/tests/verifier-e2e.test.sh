@@ -28,6 +28,7 @@ grep -q "scripts/essais/design-l4-navigateur.mjs" scripts/verifier.sh || ko "des
 grep -q "scripts/essais/design-l3-navigateur.mjs" scripts/verifier.sh || ko "design-l3-navigateur absent de verifier.sh"
 grep -q "scripts/essais/personnalisation-1a-navigateur.mjs" scripts/verifier.sh || ko "personnalisation-1a-navigateur absent de verifier.sh"
 grep -q "scripts/essais/personnalisation-3-tableau-navigateur.mjs" scripts/verifier.sh || ko "personnalisation-3-tableau-navigateur absent de verifier.sh"
+grep -q "scripts/essais/personnalisation-3-suite-navigateur.mjs" scripts/verifier.sh || ko "personnalisation-3-suite-navigateur absent de verifier.sh"
 # OG24 (page portrait en pleine largeur, ascenseur) : ligne à part, comme personnalisation 1a.
 grep -q "scripts/essais/portrait-pleine-largeur-navigateur.mjs" scripts/verifier.sh || ko "portrait-pleine-largeur-navigateur absent de verifier.sh"
 # design L2 : ligne à part, comme design L3.

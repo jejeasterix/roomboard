@@ -20,7 +20,8 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   "palm-eraser": ["app", "palm-eraser"],
   ...Object.fromEntries(["select", "rect", "diamond", "ellipse", "arrow", "line", "pen", "text", "eraser", "hand"].flatMap((t) => [[`tool-${t}`, ["tool", t]], ...(t === "hand" ? [] : [[`tool-${t}-num`, ["tool", t]]])])),
   "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
-  "table-header": ["table", "header-toggle"], "table-col-wider": ["table", "col-wider"], "table-col-narrower": ["table", "col-narrower"], "table-row-taller": ["table", "row-taller"], "table-row-shorter": ["table", "row-shorter"],
+  "table-fit-content": ["table", "fit-content"], "table-border-set": ["table", "border-set"], "table-border-none": ["table", "border-none"], "table-ha-next": ["table", "ha-next"], "table-va-next": ["table", "va-next"], "table-header": ["table", "header-toggle"], "table-col-wider": ["table", "col-wider"], "table-col-narrower": ["table", "col-narrower"], "table-row-taller": ["table", "row-taller"], "table-row-shorter": ["table", "row-shorter"],
+  "table-row-up": ["table", "row-up"], "table-row-down": ["table", "row-down"], "table-col-left": ["table", "col-left"], "table-col-right": ["table", "col-right"],
 };
 const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight", "Entrée": "Enter" };
 const ARROWS: Readonly<Record<string, string>> = { "→": "ArrowRight", "←": "ArrowLeft", "↑": "ArrowUp", "↓": "ArrowDown" };
@@ -113,8 +114,13 @@ describe("shortcuts", () => {
     expect(ariaShortcut("align-left", false)).toBe("Alt+Shift+ArrowLeft");
   });
   it("fusion lot 2 + OG19 : aucune touche ne sert deux actions de la table", () => {
-    const keys = SHORTCUTS.map((s) => s.keys);
-    expect(keys.filter((k, i) => keys.indexOf(k) !== i)).toEqual([]);
+    // D18 : Ctrl+Maj+↑ / ↓ servent aussi l'ordre des objets (front, back) ; le moteur les donne à la table seulement
+    // en outil Tableau (test « S11 » d'engine.test.ts), donc ces deux lignes sont écartées du contrôle de doublon.
+    // Seul ce couple partage ses touches : tout autre doublon, même avec une de ces deux lignes, échoue ici.
+    const byKeys = new Map<string, string[]>();
+    for (const s of SHORTCUTS) byKeys.set(String(s.keys), [...(byKeys.get(String(s.keys)) ?? []), s.id]);
+    const shared = [...byKeys.values()].filter((ids) => ids.length > 1).map((ids) => [...ids].sort().join(" ↔ "));
+    expect(shared.sort()).toEqual(["back ↔ table-row-down", "front ↔ table-row-up"]);
   });
   it("ids uniques", () => {
     expect(new Set(SHORTCUTS.map((s) => s.id)).size).toBe(SHORTCUTS.length);
