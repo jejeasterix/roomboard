@@ -122,4 +122,14 @@ describe("menu de case (cell-menu, personnalisation-3 T7)", () => {
     root?.querySelector("button")?.dispatchEvent(new KeyboardEvent("keydown", { key: "f", altKey: true, bubbles: true }));
     expect(root?.hidden).toBe(true);
   });
+
+  it("OG41 (D14) : « Supprimer le tableau » porte l'icône trash-2 et une cible de 44 px", () => {
+    const menu = createCellMenu(document.body);
+    menu.open(0, 0, [{ id: "delete-table", label: "Supprimer le tableau", run: () => undefined }]);
+    const b = document.body.querySelector<HTMLButtonElement>('.rb-cell-menu button[data-menu-item="delete-table"]');
+    expect(b?.style.minHeight).toBe("44px");
+    expect(b?.querySelector("svg path")).not.toBeNull();
+    expect(b?.textContent).toContain("Supprimer le tableau");
+    menu.destroy();
+  });
 });

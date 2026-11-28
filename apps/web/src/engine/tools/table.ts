@@ -427,7 +427,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     return ids[ids.length - 1] ?? null;
   };
 
-  /** Appui long (T7) : la cellule appuyée est active ; le menu propose Rétrécir (ou Agrandir), puis, si des objets y logent (T9), « Mettre en fond » (une image) et « Sortir ». */
+  /** Appui long (T7) : la cellule appuyée est active ; le menu propose Rétrécir (ou Agrandir), puis, si des objets y logent (T9), « Mettre en fond » (une image) et « Sortir », puis « Supprimer le tableau » (OG41). */
   const openMenu = (p: Press): void => {
     p.hold = null;
     if (press !== p || menu === undefined) return;
@@ -451,6 +451,15 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       });
     }
     items.push({ id: "header", label: at.table.header === true ? "Retirer l'en-tête" : "En-tête", run: () => api.act("header-toggle") });
+    // OG41 (D14) : la suppression du tableau passe par son menu ; les objets logés restent libres (D15).
+    items.push({
+      id: "delete-table",
+      label: "Supprimer le tableau",
+      run: () => {
+        ctx.run({ type: "Delete", ids: [at.ref.id] });
+        ctx.stateChanged?.();
+      },
+    });
     menu.open(p.sx, p.sy, items);
   };
 
