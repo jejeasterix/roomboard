@@ -36,7 +36,12 @@ pub fn version() -> String {
 }
 
 fn to_js<T: serde::Serialize>(v: &T) -> Result<JsValue, JsError> {
-    serde_wasm_bindgen::to_value(v).map_err(|e| JsError::new(&e.to_string()))
+    serde_wasm_bindgen::to_value(v).map_err(ser_err)
+}
+
+#[inline(never)]
+fn ser_err(e: serde_wasm_bindgen::Error) -> JsError {
+    JsError::new(&e.to_string())
 }
 
 /// Message de l'Error JS : le `Display` du cœur (celui que `fake-core.ts` reproduit).
@@ -61,6 +66,7 @@ fn binding_arg(
     }
 }
 
+#[inline(never)]
 fn cmd_err(e: CommandError) -> JsError {
     JsError::new(&js_message(&e))
 }
@@ -130,6 +136,7 @@ fn look_of(
     })
 }
 
+#[inline(never)]
 fn fmt_err(e: FormatError) -> JsError {
     JsError::new(&js_message(&e))
 }
