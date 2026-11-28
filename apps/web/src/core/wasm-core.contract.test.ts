@@ -2409,6 +2409,57 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     expect(() => d.apply({ type: "SetTableLook", id: "inconnu", from: { row: "a", col: "b" }, to: { row: "a", col: "b" }, look: { key: "ha", value: "zz" } as unknown as CellLook })).toThrow(TABLE_MESSAGE);
     d.free();
   });
+
+  it("ReorderTableLines (D18) : 2, 0, 1 ; une étape ; même ordre : aucune ; annuler", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const r = tableOf(d, s.t).rows.map((x) => x.id);
+    expect(d.apply({ type: "ReorderTableLines", id: s.t, axis: "row", order: [r[2]!, r[0]!, r[1]!] }).ids).toEqual([s.t]);
+    expect(tableOf(d, s.t).rows.map((x) => x.id)).toEqual([r[2], r[0], r[1]]);
+    unchanged(d, () => d.apply({ type: "ReorderTableLines", id: s.t, axis: "row", order: [r[2]!, r[0]!, r[1]!] }));
+    d.undo();
+    expect(tableOf(d, s.t).rows.map((x) => x.id)).toEqual(r);
+    d.free();
+  });
+
+  it("ReorderTableLines refusé : permutation fausse, zone coupée ou retournée, rien d'écrit ; valeur avant tableau ; zone entière déplacée", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const v = tableOf(d, s.t);
+    const r = v.rows.map((x) => x.id);
+    const c0 = v.cols[0]?.id ?? "";
+    for (const order of [[r[0]!, r[1]!], [r[0]!, r[0]!, r[1]!], [r[0]!, r[1]!, "zz"], []]) {
+      unchanged(d, () => expect(() => d.apply({ type: "ReorderTableLines", id: s.t, axis: "row", order })).toThrow(TABLE_MESSAGE));
+    }
+    // Ordre du cœur : la valeur seule (vide, doublon) est refusée avant la recherche du tableau.
+    expect(() => d.apply({ type: "ReorderTableLines", id: "inconnu", axis: "row", order: [r[0]!, r[0]!] })).toThrow(TABLE_MESSAGE);
+    expect(() => d.apply({ type: "ReorderTableLines", id: "inconnu", axis: "row", order: r })).toThrow(/inconnu/);
+    d.apply({ type: "MergeTableCells", id: s.t, from: { row: r[0]!, col: c0 }, to: { row: r[1]!, col: c0 } });
+    for (const order of [[r[0]!, r[2]!, r[1]!], [r[1]!, r[0]!, r[2]!]]) {
+      unchanged(d, () => expect(() => d.apply({ type: "ReorderTableLines", id: s.t, axis: "row", order })).toThrow(TABLE_MESSAGE));
+    }
+    d.apply({ type: "ReorderTableLines", id: s.t, axis: "row", order: [r[2]!, r[0]!, r[1]!] });
+    expect(tableOf(d, s.t).rows.map((x) => x.id)).toEqual([r[2], r[0], r[1]]);
+    d.free();
+  });
+
+  it("ReorderTableLines suivi (D5) : l'objet logé en (1, 1) remonte de la hauteur de la ligne 0 ; colonnes : accept gardé", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Place11(d, s);
+    const y0 = d.element(s.o)?.transform[5] ?? 0;
+    const v = tableOf(d, s.t);
+    const r = v.rows.map((x) => x.id);
+    const c = d.apply({ type: "ReorderTableLines", id: s.t, axis: "row", order: [r[1]!, r[0]!, r[2]!] });
+    expect(c.ids).toEqual([s.t, s.o]);
+    expect(d.element(s.o)?.transform[5]).toBe(y0 - (v.rows[0]?.height ?? 0));
+    p3Look(d, s, [0, 2], [0, 2], { key: "accept", value: ["chat"] });
+    const k = tableOf(d, s.t).cols.map((x) => x.id);
+    d.apply({ type: "ReorderTableLines", id: s.t, axis: "col", order: [k[2]!, k[0]!, k[1]!] });
+    expect(tableOf(d, s.t).cols.map((x) => x.id)).toEqual([k[2], k[0], k[1]]);
+    expect(tableOf(d, s.t).cols[0]?.accept).toEqual(["chat"]);
+    d.free();
+  });
 });
 
 // C7b (R7, R16) : `spans` facultatif de SetText et SetTableCell. T12 branche le vrai module (`c7bFactories = factories`).
