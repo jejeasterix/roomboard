@@ -3,6 +3,7 @@
 //! passent ici par une permutation d'indices triée une seule fois. Les tris des chemins chauds (zone du pot) n'y
 //! passent pas.
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 
 /// Indices `0..n` dans l'ordre de `cmp`, stable comme `sort_by` : deux indices égaux gardent leur ordre.
 #[inline(never)]
@@ -15,20 +16,27 @@ pub(crate) fn sorted_indices(n: usize, cmp: &dyn Fn(usize, usize) -> Ordering) -
 /// `v` trié par `cmp`, stable comme `v.sort_by(cmp)`.
 pub(crate) fn sort_stable_by<T>(v: &mut Vec<T>, cmp: impl Fn(&T, &T) -> Ordering) {
     let order = sorted_indices(v.len(), &|a, b| cmp(&v[a], &v[b]));
+    // `Option` : chaque valeur sort de sa case une fois, sans exiger `Clone`.
     let mut slots: Vec<Option<T>> = v.drain(..).map(Some).collect();
     v.extend(order.into_iter().filter_map(|i| slots[i].take()));
 }
 
 /// Ensemble des chaînes données, rempli par `insert` : `collect()` trierait d'abord un `Vec<String>` par son propre
 /// tri (environ 5 Ko de Wasm), alors que `insert` est déjà dans le module.
-pub(crate) fn string_set(
-    items: impl Iterator<Item = String>,
-) -> std::collections::BTreeSet<String> {
-    let mut set = std::collections::BTreeSet::new();
+pub(crate) fn string_set(items: impl Iterator<Item = String>) -> BTreeSet<String> {
+    let mut set = BTreeSet::new();
     for s in items {
         set.insert(s);
     }
     set
+}
+
+/// Les chaînes données, triées et sans doublon.
+pub(crate) fn sorted_unique(items: impl Iterator<Item = String>) -> Vec<String> {
+    let mut v: Vec<String> = items.collect();
+    sort_stable_by(&mut v, String::cmp);
+    v.dedup();
+    v
 }
 
 #[cfg(test)]
