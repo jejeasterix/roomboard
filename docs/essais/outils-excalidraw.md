@@ -24,7 +24,7 @@ La conversion d'une forme (rectangle, losange, ellipse) en ligne fermée se lanc
 | tap au doigt = flèche fixe | `App.tsx` | écarté : le tap ne crée rien chez nous, comme avant | — |
 | multi-points au clic | `App.tsx` (`handleLinearElementOnPointerDown`) | lot 2 (lot 2b) | — |
 | types Droite, Courbe, Coudée | `actionProperties.tsx:actionChangeArrowType` | copié (panneau « Type de flèche ») | `outils-excalidraw-navigateur.mjs` S2, S3 ; `OptionsPanel.test.tsx` |
-| pointes : barre, rond, rond creux | `actionProperties.tsx:actionChangeArrowhead` | copié (3 au lot 1, `diamond` et `cardinality_*` au lot 2) | `outils-excalidraw-navigateur.mjs` nettete |
+| pointes : barre, rond, rond creux | `actionProperties.tsx:actionChangeArrowhead` | copié (3 au lot 1 ; `diamond` et `diamond_outline` au lot 2b, B9 ; `cardinality_*` hors du lot 2b) | `outils-excalidraw-navigateur.mjs` nettete ; `outils-excalidraw-2b-navigateur.mjs` m4 (`M4.pointe`) |
 | liaison à la création, intérieur et orbite | `binding.ts:bindOrUnbindBindingElement`, `getBindingGap` | copié ; écart `5 + épaisseur / 2` | `outils-excalidraw-navigateur.mjs` S1 ; `tests/fleches.rs::bind_target_prefers_smaller_containing_and_projects_outline` |
 | surlignage de la cible et points d'accroche | `renderer/interactiveScene.ts` | adapté au tactile (data-bind, 4 ancres sous le doigt) | `outils-excalidraw-navigateur.mjs` S1 (`Lire : S1.bind`) |
 | accroche des milieux | `actionToggleMidpointSnapping` | copié | `outils-excalidraw-navigateur.mjs` S1 |
@@ -48,7 +48,8 @@ La conversion d'une forme (rectangle, losange, ellipse) en ligne fermée se lanc
 | étiquette sur flèche | `textWysiwyg` | lot 2 (lot 2b) | — |
 | objet relié en un geste (Ctrl+flèche) | `flowchart.ts:createBindingArrow` | adapté : Alt+Maj+flèche et poignées « + » (Ctrl+flèche pris par ailleurs) ; pointe de fin neutre `arrow`, pas celle du style courant, car `AddLinked { id, dir }` ne porte aucun style (DA-4, écart n° 27) | `outils-excalidraw-navigateur.mjs` S3, S4 ; `tests/fleches.rs::add_linked_places_copy_and_elbow_arrow_in_one_step` |
 | objet relié sur un losange | `flowchart.ts:createBindingArrow` | copié : le losange est copié et relié | `outils-excalidraw-navigateur.mjs` S9 (`Lire : S9.linked=diamond`) ; `tests/formes.rs::add_linked_accepts_diamond` |
-| navigation Alt+flèche entre nœuds, grappe centrée | `flowchart.ts:FlowChartNavigator` | lot 2 (lot 2b) | — |
+| navigation Alt+flèche entre nœuds | `App.flowchart.ts:FlowChartNavigator` | adapté (lot 2b : l'objet relié le plus proche dans la direction, sans grappe ni cycle ; `flow-nav.ts`, `navKey`) | `outils-excalidraw-2b-navigateur.mjs` m4 (`M4.nav`) |
+| grappe centrée du flowchart | `App.flowchart.ts:placeCluster` | hors du lot 2b | — |
 | A répété fait tourner le type | `actionProperties.tsx` | lot 2 (lot 2b) | — |
 | courbe par points intérieurs | `math/curve.ts:curveCatmullRomCubicApproxPoints` | copié | `tests/fleches.rs::curved_arrow_hit_follows_the_curve` |
 | fichier ancien : octets inchangés | — | propre à RoomBoard (DA-1) | `tests/fleches.rs::old_file_keeps_bytes` ; `outils-excalidraw-navigateur.mjs` S2 octets |

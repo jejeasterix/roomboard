@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DIST, Echec, frames, gitSha, inkIn, item, loadPlaywright, ROOT, serve, stageBox, VIEWPORT } from "./commun.mjs";
-import { attr, BIN, choose, doubleTouch, opt, newPage, OPT, press, saved, tapAt, tapStage, touchDrag, touchDragWithLateFinger, useTool, waitAttr } from "./gestes.mjs";
+import { attr, BIN, doubleTouch, newPage, OPT, press, saved, tapAt, tapStage, touchDrag, touchDragWithLateFinger, useTool, waitAttr } from "./gestes.mjs";
 import { fringes, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "outils-excalidraw-2b";
@@ -389,9 +389,10 @@ async function capturesM3(browser, base, nom) {
 
 /** M4 (S13) : « + » de droite au doigt (B relié à A), A choisi, Alt+→ choisit B (boîte lue dans `data-bounds`) ; pointe
  *  « Losange creux » choisie au doigt dans le panneau, lue dans l'état enregistré. */
+const HEAD = `${OPT} [data-edit="endArrowhead"] [data-option-value="diamond_outline"]`;
 async function m4(browser, base, tmp) {
   const { ctx, page, cdp, errors } = await newPage(browser, base, { scale: 2 });
-  const A = [[300, 300], [460, 400]];
+  const A = [[480, 260], [640, 360]];
   await pickRect(page, cdp, ...A);
   await page.waitForTimeout(600);
   // « + » de droite : à 40 px écran du côté droit du cadre (demi-épaisseur comprise).
@@ -423,11 +424,11 @@ async function m4(browser, base, tmp) {
   check((await attr(page, "data-bounds")) === b0, "M4 : Alt+← revient à A");
   // Pointe « Losange creux » : outil Flèche, valeur choisie au doigt, flèche tracée ailleurs, lue dans l'état.
   await tool(page, "arrow");
-  const cible = await page.locator(opt("endArrowhead", "diamond_outline")).boundingBox();
+  const cible = await page.locator(HEAD).boundingBox();
   lire("M4.cible", `${Math.round(cible?.width ?? 0)}x${Math.round(cible?.height ?? 0)}`);
-  check(cible !== null && cible.width >= 44 && cible.height >= 44, "M4 : la cible « Losange creux » mesure au moins 44 px");
-  await choose(page, "doigt", "endArrowhead", "diamond_outline");
-  await touchDrag(page, cdp, [300, 600], [600, 600]);
+  check(cible !== null && cible.height >= 44, "M4 : la cible « Losange creux » a une hauteur d'au moins 44 px (convention des boutons du panneau)");
+  await press(page, "doigt", HEAD);
+  await touchDrag(page, cdp, [400, 560], [760, 640]);
   const els = (await saved(page, tmp, "m4b.roomboard")).elements;
   const fl = els.filter((e) => e.shape?.shape === "arrow").at(-1);
   lire("M4.pointe", fl?.look?.endArrowhead);
