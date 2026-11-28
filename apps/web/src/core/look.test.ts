@@ -68,7 +68,7 @@ describe("look — lot 2 (T12)", () => {
   });
   it("domaines du lot 2", () => {
     expect(FILL_STYLES).toEqual(["hachure", "cross-hatch"]);
-    expect(ARROWHEADS).toEqual(["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline"]);
+    expect(ARROWHEADS).toEqual(["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline", "diamond", "diamond_outline"]);
     expect(TEXT_ALIGNS).toEqual(["center", "right"]);
   });
 });
@@ -99,11 +99,17 @@ describe("dragCopy (OG23, T10)", () => {
 });
 
 describe("look OG12", () => {
+  it("pointe losange : valeurs reconnues, inconnue refusée", () => {
+    expect(ARROWHEADS.slice(-2)).toEqual(["diamond", "diamond_outline"]);
+    expect(toLook({ endArrowhead: "cardinality_one" })).toBeUndefined();
+  });
   it("elbowed et pointes neuves", () => {
     expect(toLook({ elbowed: true })).toEqual({ elbowed: true });
     expect(toLook({ elbowed: "oui" })).toBeUndefined();
+    expect(toLook({ endArrowhead: "diamond_outline" })?.endArrowhead).toBe("diamond_outline");
+    expect(toLook({ startArrowhead: "diamond" })?.startArrowhead).toBe("diamond");
     expect(toLook({ endArrowhead: "circle_outline" })?.endArrowhead).toBe("circle_outline");
-    expect(ARROWHEADS).toHaveLength(7);
+    expect(ARROWHEADS).toHaveLength(9);
     expect(lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100, elbowed: true }, null)).toEqual({ elbowed: true });
     expect(elbowedOf({ elbowed: true })).toBe(true);
     expect(elbowedOf(undefined)).toBe(false);

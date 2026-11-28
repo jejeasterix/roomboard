@@ -352,13 +352,33 @@ fn style_roundness_elbowed_and_new_heads() {
             &mut d,
             &[&a],
             StylePatch {
-                end_arrowhead: Some(Some("diamond".into())),
+                end_arrowhead: Some(Some("cardinality_one".into())),
                 ..StylePatch::default()
             }
         ),
         Err(CommandError::BadStyle),
-        "diamond : lot 2"
+        "cardinality_* : hors du lot 2b"
     );
+}
+
+/// OG33 lot 2b (B9) : `diamond` et `diamond_outline` s'écrivent et se relisent, aux deux bouts.
+#[test]
+fn diamond_heads_round_trip() {
+    let mut d = Document::blank();
+    let a = shape(&mut d, ShapeKind::Arrow, [0.0, 0.0, 200.0, 0.0], LineInit::default()).expect("flèche");
+    for head in ["diamond", "diamond_outline"] {
+        d.apply(Command::SetStyle {
+            ids: vec![a.clone()],
+            patch: StylePatch {
+                start_arrowhead: Some(Some(head.into())),
+                end_arrowhead: Some(Some(head.into())),
+                ..StylePatch::default()
+            },
+        })
+        .expect("pointe");
+        assert_eq!(view(&d, &a)["look"]["startArrowhead"], head);
+        assert_eq!(view(&d, &a)["look"]["endArrowhead"], head);
+    }
 }
 
 /// Effet de bord 5, n° 3 : une flèche courbe touche sa courbe, pas sa corde (collision et mur du pot passent par

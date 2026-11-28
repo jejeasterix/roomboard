@@ -198,15 +198,22 @@ describe("OptionsPanel lot 2 (T15)", () => {
     fireEvent.click(container.querySelector('[data-option="fillStyle"] [data-choice="hachure"]')!);
     expect(calls).toContainEqual({ fillStyle: "hachure" });
   });
-  it("Pointes : début et fin, sept choix chacune", () => {
+  it("Pointes : début et fin, neuf choix chacune", () => {
     const { container, calls } = mount({ tool: "select", selection: [arrowEl("a")] });
     const end = container.querySelectorAll('[data-option="arrowheads"] [data-edit="endArrowhead"] [data-choice]');
-    expect([...end].map((b) => b.getAttribute("data-choice"))).toEqual(["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline"]);
+    expect([...end].map((b) => b.getAttribute("data-choice"))).toEqual(["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline", "diamond", "diamond_outline"]);
     expect(container.querySelector('[data-edit="endArrowhead"] [data-choice="arrow"]')!.getAttribute("aria-checked")).toBe("true");
     expect(container.querySelector('[data-edit="startArrowhead"] [data-choice="none"]')!.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(container.querySelector('[data-edit="endArrowhead"] [data-choice="triangle"]')!);
     fireEvent.click(container.querySelector('[data-edit="startArrowhead"] [data-choice="arrow"]')!);
     expect(calls).toEqual([{ endArrowhead: "triangle" }, { startArrowhead: "arrow" }]);
+  });
+  it("Losange creux : choisi à la fin, écrit endArrowhead", () => {
+    const { container, calls } = mount({ tool: "select", selection: [arrowEl("a")] });
+    const b = container.querySelector('[data-edit="endArrowhead"] [data-choice="diamond_outline"]')!;
+    expect(b.getAttribute("aria-label") ?? b.getAttribute("title")).toBe("Losange creux");
+    fireEvent.click(b);
+    expect(calls).toEqual([{ endArrowhead: "diamond_outline" }]);
   });
   it("Type de flèche : trois choix, écrit arrowType ; coudée enfoncée", () => {
     const { container, calls } = mount({ tool: "arrow", selection: [] });

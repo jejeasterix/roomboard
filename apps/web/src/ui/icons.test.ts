@@ -44,7 +44,7 @@ const PANEL_ICONS: Readonly<Record<string, string>> = {
 const ISLAND_ICONS: Readonly<Record<string, string>> = { menu: "menu", collapse: "chevron-up" };
 /** OG11 (T10) : panneau d'options, Lucide (copy-plus, link (T18), trash-2, sliders-horizontal, chevron-*) et icônes dessinées. */
 /** OG12 (T3) : types de flèche, pointes neuves, « Modifier les points », liaison. */
-const OG12_ICONS = ["arrow-type-sharp", "arrow-type-round", "arrow-type-elbow", "head-bar", "head-circle", "head-circle-outline", "edit-points", "point-remove", "arrow-binding"];
+const OG12_ICONS = ["arrow-type-sharp", "arrow-type-round", "arrow-type-elbow", "head-bar", "head-circle", "head-circle-outline", "head-diamond", "head-diamond-outline", "edit-points", "point-remove", "arrow-binding"];
 const TABLE_SUITE_ICONS = ["move-horizontal", "ban"];
 const OPTION_ICONS = ["copy-plus", "link", "external-link", "trash-2", "sliders-horizontal", "chevron-left", "stroke-solid", "stroke-dashed", "stroke-dotted", "sloppiness-0", "sloppiness-1", "sloppiness-2", "corner-sharp", "corner-round",
   "chevron-up", "chevron-down", "align-left", "align-center", "align-right", "fill-solid", "fill-hachure", "fill-cross", "head-none", "head-arrow", "head-triangle", "head-triangle-outline", "palette", "width-thin", "width-medium", "width-thick",
@@ -78,10 +78,10 @@ const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", too
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 145 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes), OG34 et la suite du Tableau (move-horizontal partagée)", () => {
+  it("ICONS : 147 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes), OG34 et la suite du Tableau (move-horizontal partagée)", () => {
     const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS, ...OG34_ICONS, ...TABLE_SUITE_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(145);
+    expect(Object.keys(ICONS)).toHaveLength(147);
   });
   it("DS10 : move-horizontal et ban recopiées de Lucide (7981a0798a), nommées dans la notice", () => {
     expect(ICONS["move-horizontal"]).toEqual([["path", { d: "m18 8 4 4-4 4" }], ["path", { d: "M2 12h20" }], ["path", { d: "m6 8-4 4 4 4" }]]);

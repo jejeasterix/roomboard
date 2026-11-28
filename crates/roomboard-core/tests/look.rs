@@ -1194,7 +1194,7 @@ fn lot2_out_of_domain_refused() {
             ..Default::default()
         },
         StylePatch {
-            start_arrowhead: s("diamond"),
+            start_arrowhead: s("cardinality_one"),
             ..Default::default()
         },
         StylePatch {

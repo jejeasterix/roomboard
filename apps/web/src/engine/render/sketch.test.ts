@@ -179,6 +179,22 @@ describe("sketch lot 2 : hachures et pointes", () => {
   });
 });
 
+describe("sketch : pointe losange (OG33 lot 2b)", () => {
+  it("pointe losange : polygone roughjs, plein pour diamond", () => {
+    const spy = vi.spyOn(RoughGenerator.prototype, "polygon");
+    try {
+      sketchShape(ctx(rec()), { shape: "arrow", w: 100, h: 0, fill: null }, pen, { roughness: 1, startArrowhead: "diamond_outline", endArrowhead: "diamond" }, 3);
+      const polys = spy.mock.calls.map((c) => c[0] as [number, number][]);
+      expect(polys).toHaveLength(2);
+      expect(polys.every((p) => p.length === 4)).toBe(true);
+      const opts = spy.mock.calls.map((c) => c[1] as { fill?: string });
+      expect(opts.filter((o) => o?.fill !== undefined)).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe("sketch : losange et ligne fermée (OG12 lot 2a)", () => {
   it("losange : roughjs polygon à 4 sommets", () => {
     const spy = vi.spyOn(RoughGenerator.prototype, "polygon");
