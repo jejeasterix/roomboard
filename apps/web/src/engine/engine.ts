@@ -13,10 +13,11 @@ import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import type { ArrangeHow } from "../core/arrange";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { arrangeKey, cellKey, nudgeKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
+import { arrangeKey, rotateKey, cellKey, nudgeKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isBoxShape, isSegment } from "../core/shapes";
+import { labelPlacement } from "../core/shape-label";
 import { createLineEditor, type LineEditor } from "./tools/line-edit";
 import { linkedCopy } from "./tools/line-points";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -417,6 +418,7 @@ function inertText(): TextTool {
     composing: () => false,
     compositionStart() {},
     compositionEnd() {},
+    openLabel: () => false,
     requestCommit() {},
     format() {},
     formatState: () => null,
@@ -588,6 +590,14 @@ export function createEngine(deps: EngineDeps): Engine {
     if (ids.length === 0) return false;
     const version = doc.version();
     run({ type: "Arrange", ids, how });
+    return doc.version() !== version;
+  }
+  /** OG33 (lot 2b, choix 6) : tourne la sélection de `deg` degrés (sens horaire à l'écran) ; une `Rotate`, une étape. */
+  function rotateSelection(deg: number): boolean {
+    const ids = selectedBlock();
+    if (ids.length === 0) return false;
+    const version = doc.version();
+    run({ type: "Rotate", ids, angle: deg });
     return doc.version() !== version;
   }
   /** OG23 : déplace la sélection de (dx, dy) unités de scène, quel que soit le zoom ; une `Transform`, une étape. */
@@ -909,6 +919,13 @@ export function createEngine(deps: EngineDeps): Engine {
     bindingEnabled: () => item.arrowBinding,
     pointerType: () => lastPointer,
     editPoints: (id) => void enterLineEdit(id),
+    editText: (id) => void editShapeText(id),
+    labelDone: (id) => {
+      engine.setTool("select");
+      selectTool.setSelection([id]);
+      requestScene();
+      emit();
+    },
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   /** Style de texte de l'outil Tableau et de l'import : couleur du stylo, taille par défaut ; l'outil Texte a `textToolStyle`. */
@@ -917,6 +934,15 @@ export function createEngine(deps: EngineDeps): Engine {
   const textToolStyle = (): TextStyle => ({ ...textStyle(), size: item.fontSize, ...(item.font !== "default" ? { font: item.font } : {}) });
   const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
   const textTool: TextTool = deps.tools.text?.(ctx, textToolStyle) ?? inertText();
+  /** OG33 (choix 9) : texte d'un rectangle, d'un losange ou d'une ellipse de la page montrée, par l'outil Texte. */
+  function editShapeText(id: string): boolean {
+    const v = doc.element(id);
+    if (v?.kind !== "shape" || !isBoxShape(v.shape.shape) || !doc.elementIds(pageId).includes(id)) return false;
+    // C5 : forme trop étroite (en monde) pour un texte : rien ne change, l'outil reste et la touche passe.
+    if (labelPlacement(v.shape, v.transform) === null) return false;
+    if (tool !== "text") engine.setTool("text");
+    return textTool.openLabel(id);
+  }
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => item) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => item),
@@ -1372,6 +1398,12 @@ export function createEngine(deps: EngineDeps): Engine {
           arrange(how);
           return true;
         }
+        // OG33 (lot 2b) : Alt+T / Alt+Maj+T, 15° ; pas pendant « Modifier les points ».
+        const turn = lineEditor === null ? rotateKey(e) : null;
+        if (turn !== null) {
+          rotateSelection(turn);
+          return true;
+        }
         // Lot 2a (L8) : pendant « Modifier les points », les flèches ne déplacent pas la sélection entière.
         const step = lineEditor === null ? nudgeKey(e) : null;
         if (step !== null) {
@@ -1413,6 +1445,11 @@ export function createEngine(deps: EngineDeps): Engine {
       if (lineEditor !== null && edit === "escape") {
         exitLineEdit();
         return true;
+      }
+      // OG33 (choix 9) : Entrée sur une forme seule choisie ouvre son texte.
+      if (enterAction(e) && lineEditor === null && tool === "select" && (imageEdit === null || imageEdit.mode() === "idle")) {
+        const sel = selectTool.selection();
+        if (sel.length === 1 && editShapeText(sel[0]!)) return true;
       }
       const dir = linkedKey(e);
       if (dir !== null) return engine.addLinked(dir);

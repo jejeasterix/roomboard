@@ -140,9 +140,9 @@ async function s2(browser, base) {
     check(f === 0, `infobulle : 0 frange colorée, raccourci compris (${f})`);
     await page.mouse.move(BIG.width / 2, BIG.height / 2);
     await tip.waitFor({ state: "detached", timeout: 5000 });
-    await page.hover(item("pen"));
+    await page.hover(item("table"));
     await tip.waitFor({ state: "visible", timeout: 5000 });
-    check((await tip.getAttribute("data-keys")) === null, "Stylo, sans raccourci dans la table : aucun data-keys");
+    check((await tip.getAttribute("data-keys")) === null, "Tableau, sans raccourci dans la table : aucun data-keys");
     await page.mouse.move(BIG.width / 2, BIG.height / 2);
     await tip.waitFor({ state: "detached", timeout: 5000 });
     await page.keyboard.press("Control+Shift+F");

@@ -556,6 +556,12 @@ async function s8(browser, base, tmp) {
   await doubleTouch(page, cdp, [A[0] + 60, 300]);
   await page.waitForTimeout(400);
   check((await attr(page, "data-line-edit")) === "" && closedLines((await saved(page, tmp, "s8-double.roomboard")).elements).length === 0, "S8 : double toucher sur un rectangle : aucune conversion");
+  // OG33 lot 2b : ce double toucher ouvre le texte de la forme ; Échap le ferme vide, puis la forme est reprise.
+  await page.keyboard.press("Escape");
+  await tool(page, "select");
+  await page.waitForTimeout(600);
+  await tapStage(page, A[0] + 60, 300);
+  await waitAttr(page, "data-selection", "1");
   await press(page, "doigt", `${OPT} [data-section="points"] [data-option-value="line-edit"]`);
   await waitNonEmpty(page, "data-line-edit");
   s = await saved(page, tmp, "s8-ligne.roomboard");

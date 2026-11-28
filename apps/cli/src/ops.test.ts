@@ -41,9 +41,9 @@ describe("lecture d'une opération (D6)", () => {
     expect(codeOf(() => parseOp({ type: "CommitStroke", page: "p", points: [1, "a"], style }, ctx()))).toBe("usage");
     expect(codeOf(() => parseOp({ type: "Erase", page: "p", path: "0,0", radius: 4, mode: "object" }, ctx()))).toBe("usage");
   });
-  it("COMMAND_TYPES couvre les 46 commandes de Command, sans doublon (Arrange d'OG23, les quatre du Tableau d'OG26, ShapeToPolygon du lot 2a et les deux du Tableau d'OG32 comprises)", () => {
+  it("COMMAND_TYPES couvre les 48 commandes de Command, sans doublon (Arrange d'OG23, les quatre du Tableau d'OG26, ShapeToPolygon du lot 2a, les deux du Tableau d'OG32, Rotate et SetShapeLabel d'OG33 comprises)", () => {
     expect(ALL_COMMANDS).toBe(true);
-    expect(new Set(COMMAND_TYPES).size).toBe(46);
+    expect(new Set(COMMAND_TYPES).size).toBe(48);
   });
   it("COMMAND_TYPES : chaque type une seule fois, la Restack d'OG4 comprise", () => {
     expect(COMMAND_TYPES).toHaveLength(new Set(COMMAND_TYPES).size);
@@ -134,5 +134,39 @@ describe("Arrange (OG23)", () => {
   it("how absent : usage", () => {
     expect(usage(() => parseOp({ type: "Arrange", ids: ["a"] }, ctx()))).toBe(`how : une de ${ARRANGE_HOWS.join(", ")}`);
     expect(usage(() => parseOp({ type: "Arrange", ids: ["a"], how: 3 }, ctx()))).toBe(`how : une de ${ARRANGE_HOWS.join(", ")}`);
+  });
+});
+
+// OG33 (lot 2b, D15) : `Rotate` suit le cœur ; `angle` contrôlé avant le cœur (code 2), comme `how` d'`Arrange`.
+describe("Rotate (OG33)", () => {
+  const usage = (run: () => unknown): string => {
+    try {
+      run();
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe("usage");
+      return (e as Error).message;
+    }
+    return "aucune erreur";
+  };
+  it("Rotate admis, références résolues", () => {
+    expect(COMMAND_TYPES.filter((t) => t === "Rotate")).toEqual(["Rotate"]);
+    const op = parseOp({ type: "Rotate", ids: ["$1", "a"], angle: 30 }, ctx());
+    expect(op.kind === "command" ? op.cmd : null).toEqual({ type: "Rotate", ids: ["e1", "a"], angle: 30 });
+  });
+  it("angle absent, chaîne ou non fini : usage", () => {
+    const msg = "angle : nombre fini attendu (degrés)";
+    expect(usage(() => parseOp({ type: "Rotate", ids: ["a"] }, ctx()))).toBe(msg);
+    expect(usage(() => parseOp({ type: "Rotate", ids: ["a"], angle: "30" }, ctx()))).toBe(msg);
+    expect(usage(() => parseOp('{"type":"Rotate","ids":["a"],"angle":1e999}', ctx()))).toBe(msg);
+  });
+});
+
+// OG33 (lot 2b, choix 8, D15) : `SetShapeLabel` suit le cœur ; refus du genre et de la longueur laissés au cœur (code 1).
+describe("SetShapeLabel (OG33)", () => {
+  it("SetShapeLabel admis, référence résolue, texte gardé tel quel", () => {
+    expect(COMMAND_TYPES.filter((t) => t === "SetShapeLabel")).toEqual(["SetShapeLabel"]);
+    const op = parseOp({ type: "SetShapeLabel", id: "$1", label: "Bonjour" }, ctx());
+    expect(op.kind === "command" ? op.cmd : null).toEqual({ type: "SetShapeLabel", id: "e1", label: "Bonjour" });
   });
 });

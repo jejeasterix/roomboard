@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARRANGE_HOWS } from "../../core/arrange";
-import { appShortcut, arrangeKey, cellKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
+import { appShortcut, arrangeKey, cellKey, enterAction, rotateKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -323,6 +323,14 @@ describe("arrangeKey (OG23, déc. 24)", () => {
     expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: { tagName: "CANVAS" } }))).toBe("align-left");
     expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: null }))).toBe("align-left");
   });
+  it("enterAction : Entrée sur un contrôle (bouton, radio, case de grille) : faux ; sur la scène : vrai (OG33)", () => {
+    const role = (r: string) => ({ tagName: "DIV", getAttribute: (n: string) => (n === "role" ? r : null) });
+    for (const target of [{ tagName: "BUTTON" }, { tagName: "INPUT", type: "radio" }, role("radio"), role("gridcell")]) {
+      expect(enterAction(k("Enter", { target })), JSON.stringify(target)).toBe(false);
+    }
+    expect(enterAction(k("Enter", { target: { tagName: "CANVAS" } }))).toBe(true);
+    expect(enterAction(k("Enter"))).toBe(true);
+  });
   it("nudgeKey : une flèche seule sur un bouton ou un contrôle ne pousse rien (inchangé)", () => {
     expect(nudgeKey(k("ArrowLeft", { target: { tagName: "BUTTON" } }))).toBeNull();
     expect(nudgeKey(k("ArrowLeft", { target: { tagName: "DIV", getAttribute: (n: string) => (n === "role" ? "radio" : null) } }))).toBeNull();
@@ -464,5 +472,18 @@ describe("lettres des outils", () => {
     expect(toolKey(k("r", { shiftKey: true }))).toBeNull();
     expect(toolKey(k("r", { isComposing: true }))).toBeNull();
     expect(toolKey(k("r", { target: { tagName: "INPUT", type: "text" } }))).toBeNull();
+  });
+});
+
+describe("rotateKey (OG33 lot 2b, choix 6)", () => {
+  it("rotateKey : Alt+T 15°, Alt+Maj+T −15°, lettre lue par code (Option+T = « † »)", () => {
+    expect(rotateKey(k("†", { code: "KeyT", altKey: true }))).toBe(15);
+    expect(rotateKey(k("ˇ", { code: "KeyT", altKey: true, shiftKey: true }))).toBe(-15);
+  });
+  it("rotateKey : Ctrl, sans Alt, autre lettre ou cible éditable : null", () => {
+    expect(rotateKey(k("t", { code: "KeyT", altKey: true, ctrlKey: true }))).toBeNull();
+    expect(rotateKey(k("t", { code: "KeyT" }))).toBeNull();
+    expect(rotateKey(k("r", { code: "KeyR", altKey: true }))).toBeNull();
+    expect(rotateKey(k("†", { code: "KeyT", altKey: true, target: { tagName: "INPUT" } }))).toBeNull();
   });
 });

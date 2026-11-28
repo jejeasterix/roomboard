@@ -770,6 +770,35 @@ try {
     verifie("OG12 lot 2a : SetLinePoints < 3 sommets refusé", deux.code === 1 && deux.brut.includes("points invalides"), deux.brut);
     console.log("OG12 lot 2a : losange, ShapeToPolygon, undo");
   }
+  // OG33 (lot 2b) : Rotate 30° en une étape annulable ; angle non numérique refusé avant le cœur (code 2).
+  {
+    const f = join(dir, "rotation.roomboard");
+    const rc = { type: "AddShape", page: "$page:0", shape: "rect", x0: 0, y0: 0, x1: 100, y1: 50, style: { color: "#000000", width: 4 }, fill: null };
+    const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], lignesOps(rc, { op: "state" }));
+    const id = neuf.lignes[1]?.state?.pages?.[0]?.elements?.[0]?.id;
+    const tour = cli(["run", f, "--save", "--ops", "-"], lignesOps({ type: "Rotate", ids: [id], angle: 30 }, { op: "state" }, { op: "undo" }, { op: "state" }));
+    const tr = (k) => tour.lignes[k]?.state?.pages?.[0]?.elements?.[0]?.transform;
+    verifie("OG33 : Rotate 30°, matrice tournée", neuf.code === 0 && tour.code === 0 && Math.abs((tr(1)?.[1] ?? 0) - 0.5) < 1e-9, tour.brut);
+    verifie("OG33 : undo en une étape", JSON.stringify(tr(3)) === JSON.stringify([1, 0, 0, 1, 0, 0]), tour.brut);
+    const mauvais = cli(["run", f, "--ops", "-"], lignesOps({ type: "Rotate", ids: [id], angle: "30" }));
+    verifie("OG33 : angle non numérique : code 2", mauvais.code === 2, mauvais.brut);
+    console.log("OG33 : Rotate");
+  }
+  // OG33 (lot 2b, choix 8) : texte de forme en une étape annulable ; sur une ligne : code 1 « forme invalide ».
+  {
+    const f = join(dir, "etiquette.roomboard");
+    const rc = { type: "AddShape", page: "$page:0", shape: "rect", x0: 0, y0: 0, x1: 100, y1: 50, style: { color: "#000000", width: 4 }, fill: null };
+    const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], lignesOps(rc, { ...rc, shape: "line" }, { op: "state" }));
+    const els = neuf.lignes[2]?.state?.pages?.[0]?.elements ?? [];
+    const [id, ligne] = [els[0]?.id, els[1]?.id];
+    const lab = cli(["run", f, "--save", "--ops", "-"], lignesOps({ type: "SetShapeLabel", id, label: "Bonjour" }, { op: "state" }, { op: "undo" }, { op: "state" }));
+    const sh = (k) => lab.lignes[k]?.state?.pages?.[0]?.elements?.[0]?.shape;
+    verifie("OG33 : SetShapeLabel « Bonjour » sur le rectangle", neuf.code === 0 && lab.code === 0 && sh(1)?.label === "Bonjour", lab.brut);
+    verifie("OG33 : undo en une étape, clé absente", sh(3) !== undefined && !Object.hasOwn(sh(3), "label"), lab.brut);
+    const mauvais = cli(["run", f, "--ops", "-"], lignesOps({ type: "SetShapeLabel", id: ligne, label: "x" }));
+    verifie("OG33 : SetShapeLabel sur une ligne : code 1", mauvais.code === 1 && mauvais.brut.includes("forme invalide"), mauvais.brut);
+    console.log("OG33 : SetShapeLabel");
+  }
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);

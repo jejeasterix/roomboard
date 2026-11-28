@@ -1434,6 +1434,10 @@ function fakeTextTool(ctx: ToolContext, log: string[]) {
     },
     formatState: () => fmt,
     formatChanged: () => ctx.stateChanged?.(),
+    openLabel: (id) => {
+      log.push(`text.openLabel ${id}`);
+      return true;
+    },
   };
   return {
     tool,
@@ -3073,12 +3077,25 @@ describe("OG23 T8 : pipette de scène", () => {
 });
 
 describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt tardif, survol", () => {
+  it("Alt+T tourne la sélection de 15°, une étape ; sans sélection : la touche passe", () => {
+    const { engine, rect, doc } = og12();
+    const id = rect(100, 100, 200, 200);
+    expect(engine.key(key("†", { altKey: true, code: "KeyT" }))).toBe(false);
+    engine.select([id]);
+    expect(engine.key(key("†", { altKey: true, code: "KeyT" }))).toBe(true);
+    expect(doc.element(id)!.transform[1]).toBeCloseTo(Math.sin(Math.PI / 12), 9);
+    doc.undo();
+    expect([...doc.element(id)!.transform.slice(0, 4)]).toEqual([1, 0, 0, 1]);
+    expect(engine.key(key("ˇ", { altKey: true, shiftKey: true, code: "KeyT" }))).toBe(true);
+    expect(doc.element(id)!.transform[1]).toBeCloseTo(-Math.sin(Math.PI / 12), 9);
+  });
   function og12() {
     const doc = fakeCore.blank();
     const frames = new Frames();
     const renderer = new FakeRenderer();
     let select: ReturnType<typeof createSelectTool> | null = null;
     let seen: ToolContext | null = null;
+    const textLog: string[] = [];
     const tools: ToolFactories = {
       pen: (ctx) => {
         seen = ctx;
@@ -3090,6 +3107,7 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
         return select;
       },
       shape: (ctx, kind, style) => createShapeTool(ctx, kind, style),
+      text: (ctx) => fakeTextTool(ctx, textLog).tool,
     };
     const engine = createEngine({ doc, renderer, frames, tools });
     const page = engine.state().page;
@@ -3117,7 +3135,7 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
       engine.sink.begin(pointerId, "select", [{ ...sample, x, y, t }]);
       engine.sink.close(pointerId, "end");
     };
-    return { doc, frames, renderer, engine, page, rect, line, ctx, sel, pointsOf, tap };
+    return { doc, frames, renderer, engine, page, rect, line, ctx, sel, pointsOf, tap, textLog };
   }
 
   it("Ctrl+Entrée : Modifier les points sur la flèche seule sélectionnée ; l'outil reste Sélection, la sélection est gardée", () => {
@@ -3128,6 +3146,43 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(engine.state()).toMatchObject({ lineEditing: id, tool: "select", selection: [id], linePointsSelected: 0 });
     expect(engine.key(key("Escape"))).toBe(true);
     expect(engine.state()).toMatchObject({ lineEditing: null, tool: "select", selection: [id] });
+  });
+
+  it("Entrée sur une forme : son texte (OG33, choix 9)", () => {
+    const { engine, rect, textLog } = og12();
+    const id = rect(300, 300, 400, 350);
+    engine.select([id]);
+    expect(engine.key(key("Enter"))).toBe(true);
+    expect(textLog).toEqual([`text.openLabel ${id}`]);
+    expect(engine.state().tool).toBe("text");
+  });
+
+  it("Entrée sur un losange de 60 px, trop étroit pour un texte : rien ne change, la touche passe (C5, constat 1)", () => {
+    const { engine, doc, page, textLog } = og12();
+    const id = doc.apply({ type: "AddShape", page, shape: "diamond", x0: 300, y0: 300, x1: 360, y1: 360, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    engine.select([id]);
+    expect(engine.key(key("Enter"))).toBe(false);
+    expect(textLog).toEqual([]);
+    expect(engine.state().tool).toBe("select");
+  });
+
+  it("Entrée sur ce losange agrandi ×4 : la boîte se prend en monde, son texte s'ouvre (C5, constat 4)", () => {
+    const { engine, doc, page, textLog } = og12();
+    const id = doc.apply({ type: "AddShape", page, shape: "diamond", x0: 0, y0: 0, x1: 60, y1: 60, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "Transform", ids: [id], matrix: [4, 0, 0, 4, 0, 0] });
+    engine.select([id]);
+    expect(engine.key(key("Enter"))).toBe(true);
+    expect(textLog).toEqual([`text.openLabel ${id}`]);
+    expect(engine.state().tool).toBe("text");
+  });
+
+  it("Entrée sur une ligne : la touche passe ; Entrée sur un bouton qui a le focus : le bouton agit, le texte de la forme ne s'ouvre pas", () => {
+    const { engine, rect, line, textLog } = og12();
+    engine.select([line()]);
+    expect(engine.key(key("Enter"))).toBe(false);
+    engine.select([rect(300, 300, 400, 350)]);
+    expect(engine.key(key("Enter", { target: { tagName: "BUTTON" } }))).toBe(false);
+    expect(textLog).toEqual([]);
   });
 
   it("Ctrl+Entrée : flèche coudée, rien ; sans sélection unique, la touche passe", () => {

@@ -11,6 +11,7 @@
  * personnalisation-3 (DA3) : glisser vers une case par `cell-drop.ts`, 4 points d'appel.
  */
 import type { Bounds, LinkDir, Matrix, ShapeElement, ElementView } from "../../core/api";
+import { planRotate, reachOfKind, rotationOf, type ArrangeMember } from "../../core/arrange";
 import { elbowedOf } from "../../core/look";
 import { IDENTITY_MATRIX, isBoxShape, isClosedShape, isSegment } from "../../core/shapes";
 import { screenToWorld } from "../camera";
@@ -25,8 +26,12 @@ import {
   handlePoint,
   hitHandle,
   hitMoveHandle,
+  hitRotateHandle,
+  isAxisAligned,
   isIdentity,
+  matrixAngle,
   resizeMatrix,
+  rotateAngle,
   transformBounds,
   translateMatrix,
   type HandleId,
@@ -41,7 +46,7 @@ export const DRAG_THRESHOLD_PX = 2;
 /** Toucher qui révèle un ombrage (F10, HB-24) : seuil propre, le glisser de 2 px est trop petit au doigt. */
 export const REVEAL_TAP_PX = 8;
 
-type Mode = "move" | "copy" | "resize" | "band" | "none" | "tap-shade" | "line-end" | "line-mid" | "link";
+type Mode = "move" | "copy" | "resize" | "band" | "none" | "tap-shade" | "line-end" | "line-mid" | "link" | "rotate";
 
 /** Cellule ombrée retenue au `begin` (F10), révélée au `close` si le pointeur n'a pas glissé. */
 interface Reveal {
@@ -69,6 +74,11 @@ interface Drag {
   bound?: boolean;
   target?: string | null;
   readonly touch?: boolean;
+  /** OG33 (lot 2b) : rotation : centre du cadre, angle de départ de l'objet seul (pas de 15° absolu), membres lus au
+   *  `begin` (`angle0`, pas `base` : `base` est le cadre du redimensionnement). */
+  readonly pivot?: readonly [number, number];
+  readonly angle0?: number;
+  readonly members?: readonly ArrangeMember[];
   readonly t: number;
   readonly sx: number;
   readonly sy: number;
@@ -123,6 +133,8 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
   let drag: Drag | null = null;
   let lastTap: (Tap & { id: string }) | null = null;
   let first: InputSample | null = null;
+  // Sélection au début de l'appui (avant qu'il ne la change) : un double toucher exige que l'objet y fût déjà.
+  let selBefore: readonly string[] = [];
   const one = (): ElementView | null => (selection.length === 1 ? ctx.doc.element(selection[0]!) : null);
   // personnalisation-3 (D28) : pendant un glisser, la vue de l'élément seul (OG12 : ligne, nœud) est lue une fois, au
   // premier aperçu ; aucun element() par image. Le glisser est muté en place : la clé tient jusqu'à sa fin.
@@ -142,6 +154,40 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
   const nodeLinks = (frame: Bounds, zoom: number) =>
     hasDragCopy(selection) ? linkHandles(frame, zoom).filter((h) => h.dir !== "up") : linkHandles(frame, zoom);
   const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= (d.bound ? BOUND_DRAG_PX : DRAG_THRESHOLD_PX);
+
+  /** OG33 : poignée de rotation et poignées de taille, lues une fois par version du document et par sélection (D28). */
+  let turnMemo: { readonly key: string; readonly rotate: boolean; readonly turned: boolean } | null = null;
+  const turnState = (): { readonly rotate: boolean; readonly turned: boolean } => {
+    const key = `${ctx.doc.version()}|${selection.join(",")}`;
+    if (turnMemo?.key !== key) {
+      const views = selection.map((id) => ctx.doc.element(id));
+      turnMemo = {
+        key,
+        rotate: views.some((v) => v !== null && reachOfKind(v.kind) === "matrix"),
+        turned: views.some((v) => v !== null && !isAxisAligned(v.transform)),
+      };
+    }
+    return turnMemo;
+  };
+  /** Membres de l'aperçu, lus au `begin` : portée de `reachOfKind` et boîte d'accroche du cœur (`snap_box`, query.rs :
+   *  forme = boîte (0, 0)-(w, h) placée par sa transformation, sans le trait ; autre genre : `bounds`). La boîte avec le
+   *  trait décalerait le pivot de sa demi-épaisseur : l'aperçu ne serait plus l'écrit. */
+  const rotateMembers = (): ArrangeMember[] =>
+    selection.flatMap((id) => {
+      const v = ctx.doc.element(id);
+      const reach = v === null ? null : reachOfKind(v.kind);
+      if (v === null || reach === null) return [];
+      const b = v.kind === "shape" ? transformBounds(v.transform, { x0: 0, y0: 0, x1: v.shape.w, y1: v.shape.h }) : ctx.doc.bounds([id]);
+      return b === null ? [] : [{ id, reach, bounds: b }];
+    });
+  /** Pivot du cœur (`rotationOf`) : centre des boîtes d'accroche réunies. */
+  const pivotOf = (members: readonly ArrangeMember[]): [number, number] | null => {
+    const box = members.reduce<Bounds | null>((a, m) => (a === null ? m.bounds : { x0: Math.min(a.x0, m.bounds.x0), y0: Math.min(a.y0, m.bounds.y0), x1: Math.max(a.x1, m.bounds.x1), y1: Math.max(a.y1, m.bounds.y1) }), null);
+    return box === null ? null : [(box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2];
+  };
+  /** Angle du glisser de rotation ; Maj (ou second doigt tardif, porté par `shift`) : pas de 15° absolu (choix 5). */
+  const turnOf = (d: Drag): number =>
+    d.pivot === undefined ? 0 : rotateAngle(d.pivot[0], d.pivot[1], d.x0, d.y0, d.x, d.y, ctx.shift?.() === true, d.angle0 ?? 0);
 
   /** Vues de la page montrée (C3, Z2), lues au geste, jamais gardées. */
   const pageViews = (): GroupedView[] => viewsOf(ctx.doc, ctx.doc.elementIds(ctx.page()));
@@ -168,7 +214,7 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
     return IDENTITY_MATRIX;
   };
 
-  const startDrag = (pointerId: number, mode: Mode, x: number, y: number, extra: { handle?: HandleId; base?: Bounds; reveal?: Reveal; hit?: PointHit; link?: LinkDir; bound?: boolean; target?: string | null; touch?: boolean } = {}): void => {
+  const startDrag = (pointerId: number, mode: Mode, x: number, y: number, extra: { handle?: HandleId; base?: Bounds; reveal?: Reveal; hit?: PointHit; link?: LinkDir; bound?: boolean; target?: string | null; touch?: boolean; pivot?: readonly [number, number]; angle0?: number; members?: readonly ArrangeMember[] } = {}): void => {
     drag = {
       pointerId,
       mode,
@@ -186,6 +232,9 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       bound: extra.bound === true,
       target: extra.target ?? null,
       touch: extra.touch === true,
+      ...(extra.pivot ? { pivot: extra.pivot } : {}),
+      ...(extra.angle0 !== undefined ? { angle0: extra.angle0 } : {}),
+      ...(extra.members ? { members: extra.members } : {}),
       t: first?.t ?? 0,
       sx: first?.x ?? 0,
       sy: first?.y ?? 0,
@@ -215,6 +264,7 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       const s = samples[0];
       if (drag !== null || !s) return;
       first = s;
+      selBefore = selection;
       const [x, y] = world(s);
       const zoom = ctx.camera().zoom;
       const shift = ctx.shift?.() === true;
@@ -239,9 +289,20 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       // OG23 (T11) : la poignée « Déplacer » déplace l'original d'un objet `dragCopy`, comme avant la propriété.
       // T18 : la poignée de taille prime dans sa portée ; la zone « Déplacer » du doigt (22 px) la recouvre sinon.
       // n° 39 : une ligne seule n'a pas de cadre à 8 poignées.
-      const h = frame && !isLine(v) ? grabbedHandle(frame, x, y, zoom) : null;
+      // OG33 (choix 7) : un objet tourné hors des quarts de tour n'a plus de poignée de taille.
+      const h = frame && !isLine(v) && !turnState().turned ? grabbedHandle(frame, x, y, zoom) : null;
       if (frame && h) {
         startDrag(pointerId, "resize", x, y, { handle: h, base: frame });
+        return;
+      }
+      // OG33 (lot 2b) : poignée de rotation (choix 4) ; Maj ou doigt tardif : pas de 15° (choix 5).
+      if (frame && !isLine(v) && turnState().rotate && hitRotateHandle(frame, x, y, zoom, pointerTypeOf(s))) {
+        const members = rotateMembers();
+        startDrag(pointerId, "rotate", x, y, {
+          pivot: pivotOf(members) ?? [(frame.x0 + frame.x1) / 2, (frame.y0 + frame.y1) / 2],
+          angle0: v === null ? 0 : matrixAngle(v.transform),
+          members,
+        });
         return;
       }
       if (frame && hasDragCopy(selection) && hitMoveHandle(frame, x, y, zoom, pointerTypeOf(s))) {
@@ -302,9 +363,16 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
         const id = d.mode === "move" || d.mode === "copy" ? d.target ?? null : d.mode === "line-end" || d.mode === "line-mid" ? selection[0] ?? null : null;
         const cur: Tap = { t: d.t, x: d.sx, y: d.sy };
         const view = id === null ? null : ctx.doc.element(id);
-        if (id !== null && lastTap?.id === id && isDoubleTap(lastTap, cur) && editsPointsOnTap(view)) {
+        const already = id !== null && selBefore.includes(id);
+        if (id !== null && already && lastTap?.id === id && isDoubleTap(lastTap, cur) && editsPointsOnTap(view)) {
           lastTap = null;
           ctx.editPoints?.(id);
+          return;
+        }
+        // OG33 (choix 9, décision du lot 2a) : double toucher ou double-clic sur une forme = son texte, jamais la conversion.
+        if (id !== null && already && lastTap?.id === id && isDoubleTap(lastTap, cur) && isNode(view)) {
+          lastTap = null;
+          ctx.editText?.(id);
           return;
         }
         lastTap = id === null ? null : { ...cur, id };
@@ -332,6 +400,11 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       if (d.mode === "band") {
         const ids = keepWholeGroups(ctx.doc.idsInRect(ctx.page(), norm(d.x0, d.y0, d.x, d.y)), pageViews());
         selection = d.shift ? union(selection, ids) : ids;
+        return;
+      }
+      if (d.mode === "rotate") {
+        const angle = moved(d) ? turnOf(d) : 0;
+        if (Math.abs(angle) > 1e-9) ctx.run({ type: "Rotate", ids: [...selection], angle });
         return;
       }
       if (d.mode === "none" || selection.length === 0) return;
@@ -383,6 +456,22 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
         };
         return { strokes: [], erasers: [], hidden: dragging && d?.mode !== "copy" ? new Set(selection) : NONE, overlay };
       }
+      // OG33 : un fantôme par membre, selon le plan du cœur (`planRotate`) : un texte glisse sans tourner, comme écrit.
+      if (d && d.mode === "rotate" && d.pivot && d.members) {
+        const angle = moved(d) ? turnOf(d) : 0;
+        const units = [{ members: d.members }];
+        const ghosts = planRotate(units, angle).map(([id, matrix]) => ({ id, matrix }));
+        const full = rotationOf(units, angle);
+        const turning = ghosts.length > 0;
+        const overlay: EditOverlay = {
+          ...EMPTY_OVERLAY,
+          ghosts,
+          frame: bounds === null ? null : turning && full !== null ? transformBounds(full, bounds) : bounds,
+          handles: !turning,
+          ...(turning ? {} : { rotate: true }),
+        };
+        return { strokes: [], erasers: [], hidden: turning ? new Set(ghosts.map((g) => g.id)) : NONE, overlay };
+      }
       const m = d && (d.mode === "move" || d.mode === "copy" || d.mode === "resize") ? matrixOf(d) : IDENTITY_MATRIX;
       const dragging = !isIdentity(m);
       const copying = dragging && d?.mode === "copy";
@@ -394,6 +483,8 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
         move: !dragging && hasDragCopy(selection),
         target: dragging && d?.mode === "move" ? (cellDrop?.target(selection, d.x, d.y) ?? null) : null,
         ...(isNode(v) && !dragging && bounds ? { links: nodeLinks(bounds, zoom) } : {}),
+        ...(d === null && turnState().rotate ? { rotate: true } : {}),
+        ...(turnState().turned ? { noResize: true } : {}),
       };
       // Copie : l'original reste peint (rien de masqué), seul le fantôme suit le doigt.
       return { strokes: [], erasers: [], hidden: dragging && !copying ? new Set(selection) : NONE, overlay };

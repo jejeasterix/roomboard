@@ -1528,6 +1528,11 @@ impl Document {
         change_js(self.shape_to_polygon_inner(id))
     }
 
+    /// OG33 (lot 2b, choix 8) : texte d'un rectangle, d'un losange ou d'une ellipse ; vide : retiré ; une étape.
+    pub fn set_shape_label(&mut self, id: &str, label: &str) -> Result<JsValue, JsError> {
+        change_js(self.set_shape_label_inner(id, label))
+    }
+
     /// OG12 (n° 27) : copie et flèche coudée liée ; direction inconnue : `BadShape`.
     pub fn add_linked(&mut self, id: &str, dir: &str) -> Result<JsValue, JsError> {
         change_js(self.add_linked_inner(id, dir))
@@ -1647,6 +1652,11 @@ impl Document {
     pub fn arrange(&mut self, ids: Vec<String>, how: &str) -> Result<JsValue, JsError> {
         let how = arrange_how(how).map_err(|m| JsError::new(&m))?;
         change_js(self.arrange_inner(ids, how))
+    }
+
+    /// OG33 (lot 2b) : tourne `ids` de `angle` degrés (sens horaire à l'écran) en une étape ; angle non fini : BadMatrix.
+    pub fn rotate(&mut self, ids: Vec<String>, angle: f64) -> Result<JsValue, JsError> {
+        change_js(self.rotate_inner(ids, angle))
     }
 
     /// `matrix` : six nombres `a, b, c, d, e, f`, composés à gauche de la matrice de chaque élément.
@@ -2540,6 +2550,10 @@ impl Document {
         self.run(Command::Arrange { ids, how })
     }
 
+    pub fn rotate_inner(&mut self, ids: Vec<String>, angle: f64) -> Result<Change, CommandError> {
+        self.run(Command::Rotate { ids, angle })
+    }
+
     pub fn restack_inner(&mut self, ids: Vec<String>, to: u32) -> Result<Change, CommandError> {
         self.run(Command::Restack { ids, to })
     }
@@ -2639,6 +2653,13 @@ impl Document {
 
     pub fn shape_to_polygon_inner(&mut self, id: &str) -> Result<Change, CommandError> {
         self.run(Command::ShapeToPolygon { id: id.to_string() })
+    }
+
+    pub fn set_shape_label_inner(&mut self, id: &str, label: &str) -> Result<Change, CommandError> {
+        self.run(Command::SetShapeLabel {
+            id: id.to_string(),
+            label: label.to_string(),
+        })
     }
 
     pub fn add_linked_inner(&mut self, id: &str, dir: &str) -> Result<Change, CommandError> {

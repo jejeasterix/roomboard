@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, arrangeKey, cellKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, arrangeKey, cellKey, rotateKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
-import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
+import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText, toolShortcut } from "./shortcuts";
 
 /** Valeur attendue de chaque raccourci, par reconnaisseur : une ligne ajoutée à SHORTCUTS sans ligne ici fait échouer le test. */
 const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
@@ -12,6 +12,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   copy: ["native", "c"], cut: ["native", "x"], paste: ["native", "v"], pan: ["pan", " "], bold: ["rich", "b"],
   "stroke-picker": ["object", "stroke-picker"], "fill-picker": ["object", "fill-picker"], link: ["object", "link"],
   "flip-h": ["arrange", "flip-h"], "flip-v": ["arrange", "flip-v"], "rotate-cw": ["arrange", "rotate-cw"], "rotate-ccw": ["arrange", "rotate-ccw"],
+  "rotate-15-cw": ["rotate", "15"], "rotate-15-ccw": ["rotate", "-15"], "rotate-handle": ["shiftDrag", "Maj + glisser"],
   "align-left": ["arrange", "align-left"], "align-right": ["arrange", "align-right"], "align-top": ["arrange", "align-top"], "align-bottom": ["arrange", "align-bottom"],
   "align-center": ["arrange", "align-center"], "align-middle": ["arrange", "align-middle"], "distribute-h": ["arrange", "distribute-h"], "distribute-v": ["arrange", "distribute-v"],
   nudge: ["nudge", "-1,0"], pipette: ["picker", "i"],
@@ -54,6 +55,8 @@ describe("shortcuts", () => {
       else if (by === "edit") expect(editAction(e), s.id).toBe(value);
       else if (by === "help") expect(isHelpKey({ ...press("?"), key: "?" }), s.id).toBe(true);
       else if (by === "arrange") expect(arrangeKey(e), s.id).toBe(value);
+      else if (by === "rotate") expect(String(rotateKey(e)), s.id).toBe(value);
+      else if (by === "shiftDrag") expect(s.keys, s.id).toBe(value);
       else if (by === "nudge") { const n = nudgeKey(e); expect(`${n?.dx},${n?.dy}`, s.id).toBe(value); }
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
@@ -154,3 +157,25 @@ describe("lettres des outils", () => {
   });
 });
 
+
+describe("toolShortcut (OG33 lot 2b)", () => {
+  it("toolShortcut : lettre puis chiffre, aria à deux raccourcis ; Main : la lettre ; sans lettre : null", () => {
+    expect(toolShortcut("rect")).toEqual({ text: "R ou 2", aria: "R 2" });
+    expect(toolShortcut("pen")).toEqual({ text: "P ou 7", aria: "P 7" });
+    expect(toolShortcut("hand")).toEqual({ text: "H", aria: "H" });
+    expect(toolShortcut("table")).toBeNull();
+    expect(toolShortcut(undefined)).toBeNull();
+  });
+});
+
+describe("OG33 lot 2b : rotation au clavier", () => {
+  it("trois lignes au groupe Transformer ; Alt+T annoncé", () => {
+    const rows = SHORTCUTS.filter((s) => s.id.startsWith("rotate-15") || s.id === "rotate-handle");
+    expect(rows.map((s) => [s.id, s.label, s.keys])).toEqual([
+      ["rotate-15-cw", "Tourner de 15° à droite", "Alt+T"],
+      ["rotate-15-ccw", "Tourner de 15° à gauche", "Alt+Maj+T"],
+      ["rotate-handle", "Tourner (poignée ; Maj : pas de 15°)", "Maj + glisser"],
+    ]);
+    expect(ariaShortcut("rotate-15-cw", false)).toBe("Alt+T");
+  });
+});

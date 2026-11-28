@@ -171,27 +171,74 @@ pub(crate) fn plan(units: &[Unit], how: ArrangeHow) -> Vec<(String, Transform)> 
                 RotateCw => [0.0, 1.0, -1.0, 0.0, cx + cy, cy - cx],
                 _ => [0.0, -1.0, 1.0, 0.0, cx - cy, cy + cx],
             };
-            for m in units.iter().flat_map(|u| &u.members) {
-                match m.reach {
-                    Reach::Matrix => out.push((m.id.clone(), full)),
-                    Reach::Place => {
-                        let (px, py) = (
-                            (m.bounds.x0 + m.bounds.x1) / 2.0,
-                            (m.bounds.y0 + m.bounds.y1) / 2.0,
-                        );
-                        let (nx, ny) = (
-                            full[0] * px + full[2] * py + full[4],
-                            full[1] * px + full[3] * py + full[5],
-                        );
-                        if nx != px || ny != py {
-                            out.push((m.id.clone(), shift(nx - px, ny - py)));
-                        }
-                    }
+            apply_full(units, full, &mut out);
+        }
+    }
+    out
+}
+
+/// Matrice `full` aux membres de portée `Matrix`, translation de leur centre aux membres `Place` (H5).
+fn apply_full(units: &[Unit], full: Transform, out: &mut Vec<(String, Transform)>) {
+    for m in units.iter().flat_map(|u| &u.members) {
+        match m.reach {
+            Reach::Matrix => out.push((m.id.clone(), full)),
+            Reach::Place => {
+                let (px, py) = (
+                    (m.bounds.x0 + m.bounds.x1) / 2.0,
+                    (m.bounds.y0 + m.bounds.y1) / 2.0,
+                );
+                let (nx, ny) = (
+                    full[0] * px + full[2] * py + full[4],
+                    full[1] * px + full[3] * py + full[5],
+                );
+                // C5 : résidu d'arrondi (rotation sur son centre) de moins de 1e-9 omis, comme `applyFull`.
+                if (nx - px).abs() >= 1e-9 || (ny - py).abs() >= 1e-9 {
+                    out.push((m.id.clone(), shift(nx - px, ny - py)));
                 }
             }
         }
     }
-    out
+}
+
+/// OG33 (lot 2b) : rotation de `deg` degrés, sens horaire à l'écran (y vers le bas), autour de (cx, cy) ; le centre,
+/// comme `rotateSingleElement` d'Excalidraw (packages/element/src/resizeElements.ts, Copyright (c) 2020 Excalidraw,
+/// licence MIT). Cosinus et sinus ramenés à 0 ou ±1 à 1e-12 près : un quart de tour donne la matrice exacte de
+/// `RotateCw`.
+pub(crate) fn rotation(cx: f64, cy: f64, deg: f64) -> Transform {
+    let snap = |v: f64| {
+        if v.abs() < 1e-12 {
+            0.0
+        } else if (v.abs() - 1.0).abs() < 1e-12 {
+            v.signum()
+        } else {
+            v
+        }
+    };
+    let (s, c) = deg.to_radians().sin_cos();
+    let (s, c) = (snap(s), snap(c));
+    [c, s, -s, c, cx - c * cx + s * cy, cy - s * cx - c * cy]
+}
+
+/// Plan d'une disposition : matrices à composer, et matrice pleine passée à `linear::follow` (suivi des flèches liées).
+pub(crate) type Planned = (Vec<(String, Transform)>, Option<Transform>);
+
+/// OG33 : plan d'une rotation autour du centre des boîtes réunies ; angle nul modulo 360 ou matrice arrondie à
+/// l'identité : rien (D38). La matrice pleine
+/// est rendue aussi : `Rotate` suit les flèches liées comme `cmd_transform` (n° 7).
+pub(crate) fn plan_rotate(units: &[Unit], deg: f64) -> Planned {
+    let boxes: Vec<Bounds> = units.iter().filter_map(box_of).collect();
+    if boxes.len() != units.len() || boxes.is_empty() || deg.rem_euclid(360.0) == 0.0 {
+        return (Vec::new(), None);
+    }
+    let sel = boxes.iter().skip(1).fold(boxes[0], |a, b| a.union(*b));
+    let full = rotation((sel.x0 + sel.x1) / 2.0, (sel.y0 + sel.y1) / 2.0, deg);
+    // C5 : matrice arrondie à l'identité (angle quasi nul) : rien à faire (D38), comme `rotationOf`.
+    if full == [1.0, 0.0, 0.0, 1.0, 0.0, 0.0] {
+        return (Vec::new(), None);
+    }
+    let mut out = Vec::new();
+    apply_full(units, full, &mut out);
+    (out, Some(full))
 }
 
 /// Genre lu : trait, forme, image → matrice entière ; texte, tableau, média, objet 3D → place seule ; tout autre genre
@@ -216,11 +263,31 @@ struct Picked {
 }
 
 impl Document {
+    pub fn cmd_arrange(&mut self, ids: &[String], how: ArrangeHow) -> Result<Change, CommandError> {
+        self.arrange_with(ids, &|units| (plan(units, how), None))
+    }
+
+    /// OG33 (lot 2b) : `Rotate` ; angle non fini : `BadMatrix` avant toute lecture ; sinon les règles de `cmd_arrange`,
+    /// plus le suivi des flèches liées dans la même transaction (une étape).
+    pub fn cmd_rotate(&mut self, ids: &[String], deg: f64) -> Result<Change, CommandError> {
+        if !deg.is_finite() {
+            return Err(CommandError::BadMatrix);
+        }
+        self.arrange_with(ids, &|units| plan_rotate(units, deg))
+    }
+
     /// OG23 (DA-2, déc. 21-22) : une disposition sur les `ids` (une même page), groupes extérieurs touchés en partie
     /// étendus à tous leurs membres de la page (règle de `cmd_group`), en une transaction : une étape. Ids dédoublonnés ;
     /// premier id inconnu : `UnknownElement` ; aucun id : aucune étape ; pages mêlées : `MixedPages` ; composée
     /// invalide : `BadMatrix` avant toute écriture (règle de `cmd_transform`). `Change.ids` : les ids bougés, triés.
-    pub fn cmd_arrange(&mut self, ids: &[String], how: ArrangeHow) -> Result<Change, CommandError> {
+    /// OG33 : `planner` rend aussi la matrice pleine ; donnée (`Rotate`), les flèches liées suivent dans la même
+    /// transaction et leurs ids s'ajoutent après, comme dans `cmd_transform` ; `None` (`Arrange`) : aucun suivi.
+    /// `&dyn Fn` : le corps n'est compilé qu'une fois (marge Wasm).
+    fn arrange_with(
+        &mut self,
+        ids: &[String],
+        planner: &dyn Fn(&[Unit]) -> Planned,
+    ) -> Result<Change, CommandError> {
         // 1-2. Lecture, fermée avant toute écriture.
         let (page, picked) = {
             let txn = self.read();
@@ -299,7 +366,7 @@ impl Document {
         }
         let units: Vec<Unit> = units.into_iter().map(|(_, u)| u).collect();
         // 4. Plan, composées contrôlées avant toute écriture.
-        let moves = plan(&units, how);
+        let (moves, follow) = planner(&units);
         if moves.is_empty() {
             return Ok(self.unchanged());
         }
@@ -314,16 +381,25 @@ impl Document {
             }
             writes.push((p, c));
         }
-        // 5. Une seule transaction : une étape.
-        {
+        // 5. Une seule transaction : une étape ; OG33 : suivi des flèches liées dedans, jamais après (n° 7, S1).
+        let mut moved: Vec<String> = writes.iter().map(|(p, _)| p.id.clone()).collect();
+        let followed = {
             let mut txn = self.transact_local();
             for (p, c) in &writes {
                 p.element.insert(&mut txn, "transform", transform_to_any(c));
             }
-        }
-        let mut moved: Vec<String> = writes.iter().map(|(p, _)| p.id.clone()).collect();
+            match follow {
+                Some(m) => crate::linear::follow(self, &mut txn, &moved, Some(&m)),
+                None => Vec::new(),
+            }
+        };
         crate::order::sort_stable_by(&mut moved, String::cmp);
         moved.dedup();
+        for f in followed {
+            if !moved.contains(&f) {
+                moved.push(f);
+            }
+        }
         Ok(self.done(Change {
             pages: vec![page],
             ids: moved,

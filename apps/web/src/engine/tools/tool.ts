@@ -32,6 +32,10 @@ export interface ToolContext {
   pointerType?(): string;
   /** OG12 : entre dans Modifier les points pour la ligne ou la flèche `id` (n° 21). */
   editPoints?(id: string): void;
+  /** OG33 : ouvre le texte de la forme `id` (double toucher). */
+  editText?(id: string): void;
+  /** OG33 : séance de texte de forme fermée. */
+  labelDone?(id: string): void;
 }
 
 /** Aperçu d'un outil : couche vive, éléments masqués de la scène, calque d'édition (CL4-1). */

@@ -56,6 +56,7 @@ awk '/essais\/.*-navigateur\.mjs/ && !in_e2e {print "hors bloc e2e : " $0; bad=1
 # CLI : essai de bout en bout joué par verifier.sh, hors du bloc --e2e (aucun navigateur, D14).
 grep -q "scripts/essais/cli-essai.mjs" scripts/verifier.sh || ko "cli-essai absent de verifier.sh"
 grep -q "pnpm --filter @roomboard/cli build" scripts/verifier.sh || ko "build de la CLI absent de verifier.sh"
+grep -q "scripts/essais/outils-excalidraw-2b-navigateur.mjs" scripts/verifier.sh || ko "outils-excalidraw-2b-navigateur absent de verifier.sh"
 # L'essai CLI ne doit pas être dans le bloc --e2e (aucun navigateur, D14). VERIFIER : fichier à contrôler (essai de la garde).
 awk '/essais\/cli-essai\.mjs/ && in_e2e {print "dans le bloc e2e : " $0; bad=1} /if \[ "\$E2E" = 1 \]/ {in_e2e=1} /^fi/ {in_e2e=0} END {exit bad}' "${VERIFIER:-scripts/verifier.sh}" >&2 || ko "cli-essai est lancé dans le bloc --e2e"
 # cli-partage (D10) : 3 workers vitest par processus sauf valeur donnée ; « :- » traite aussi la chaîne vide.

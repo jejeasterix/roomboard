@@ -759,6 +759,8 @@ impl Document {
             copy.remove("group");
             // C1 : une copie reliée n'hérite ni du lien de sa source ni de sa graine (tracé neuf, comme un groupe neuf).
             copy.remove("link");
+            // OG33 (choix 8) : la copie reliée part sans texte.
+            copy.remove("label");
             if copy.contains_key("seed") {
                 copy.insert(
                     "seed".into(),

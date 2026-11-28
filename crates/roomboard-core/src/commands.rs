@@ -106,6 +106,13 @@ pub enum Command {
         ids: Vec<String>,
         how: crate::arrange::ArrangeHow,
     },
+    /// OG33 (lot 2b, choix 3) : tourne les `ids` d'`angle` degrés (sens horaire à l'écran) autour du centre de leurs
+    /// boîtes d'accroche, en une étape ; portée et groupes comme `Arrange` ; flèches liées suivies dans la même étape ;
+    /// angle nul modulo 360 : aucune étape ; angle non fini : `BadMatrix`.
+    Rotate {
+        ids: Vec<String>,
+        angle: f64,
+    },
     SetText {
         page: String,
         id: Option<String>,
@@ -333,6 +340,12 @@ pub enum Command {
     ShapeToPolygon {
         id: String,
     },
+    /// OG33 (lot 2b, choix 8) : texte d'un rectangle, d'un losange ou d'une ellipse, en une étape ; vide : clé retirée ;
+    /// même texte : aucune étape ; plus de 10 000 caractères : `BadText` ; autre genre : `BadShape`.
+    SetShapeLabel {
+        id: String,
+        label: String,
+    },
     /// Média (C14, M5) : élément, métadonnée du média (avec `linked` s'il est lié) et du poster ; une transaction, une
     /// étape.
     AddMedia {
@@ -493,7 +506,7 @@ impl std::fmt::Display for CommandError {
             ),
             CommandError::BadFill => write!(
                 f,
-                "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)"
+                "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle, d'un losange, d'une ellipse ou d'une ligne fermée attendus)"
             ),
             CommandError::BadMedia => write!(
                 f,
@@ -912,8 +925,10 @@ impl Document {
             } => self.cmd_set_line_points(&id, &points, start.as_ref(), end.as_ref()),
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
             Command::Arrange { ids, how } => self.cmd_arrange(&ids, how),
+            Command::Rotate { ids, angle } => self.cmd_rotate(&ids, angle),
             Command::AddLinked { id, dir } => self.cmd_add_linked(&id, dir),
             Command::ShapeToPolygon { id } => self.cmd_shape_to_polygon(&id),
+            Command::SetShapeLabel { id, label } => self.cmd_set_shape_label(&id, &label),
             Command::SetText {
                 page,
                 id,
@@ -1433,6 +1448,8 @@ impl Document {
             plan.push(("polygon", Some(In::Any(Any::Bool(true)))));
             // H5 : `roundness` retiré comme `cmd_set_style` pour un neutre, dans la même transaction.
             plan.push(("roundness", None));
+            // H5 : le texte de la forme part avec elle, l'annulation le rend.
+            plan.push(("label", None));
             (found.element, found.page_id, plan)
         };
         {
@@ -3307,6 +3324,7 @@ pub(crate) mod tests {
                 polygon: None,
                 start: None,
                 end: None,
+                label: None,
             })
         );
         assert!(d.undo());
@@ -3440,6 +3458,7 @@ pub(crate) mod tests {
                 polygon: None,
                 start: None,
                 end: None,
+                label: None,
             })
         );
         let id = d

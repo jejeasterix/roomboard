@@ -8,10 +8,12 @@ import { PDF_PAGE_KIND } from "../../core/api";
 import { endArrowheadOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, type Arrowhead, type Look, type TextAlign } from "../../core/look";
 import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, Model3dData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
-import { arrowWings, catmullRom, flattenPath, isFillable, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
+import { arrowWings, catmullRom, composeMatrix, flattenPath, isFillable, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
 import { worldToScreen, type Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, pageFrame, visibleGridRect, visiblePageRect, type PageRect } from "../page";
 import { faceOf, layoutRich, lineShift, measureWith, richBoxHeight, textFont, type RichLine } from "../text-layout";
+import { LABEL_SIZE, labelMatrix, labelPlacement } from "../../core/shape-label";
+import { plainSpans } from "../../core/rich-text";
 import { cellOf, cellTextFrame } from "../table-geom";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import type { ImageSource } from "./image-cache";
@@ -20,8 +22,8 @@ import type { ModelFrames } from "./model-frames";
 import { GridLinesCache } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
-import { copyBadgeBox, linkBadgeBox, paintCopyBadge, paintLinkBadge, paintMoveHandle } from "./link-badge";
-import { moveHandlePoint } from "../tools/handles";
+import { copyBadgeBox, linkBadgeBox, paintCopyBadge, paintLinkBadge, paintMoveHandle, paintRotateHandle } from "./link-badge";
+import { moveHandlePoint, rotateHandlePoint } from "../tools/handles";
 import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { setLiveOpacity } from "./renderer";
 import { cornerRadius, dashOf, hatched, headWings, seedOf, sketchShape, strokeWith, wingDashOf, type SketchMemo, type SketchPlan } from "./sketch";
@@ -433,6 +435,8 @@ export class Canvas2DRenderer implements Renderer {
   /** Tracés roughjs par id (clé : forme, taille, remplissage, couleur, épaisseur, aspect, graine), invalidés comme `paths`. */
   private readonly sketches = new Map<string, SketchPlan>();
   /** Lignes des textes par id (clé : taille, largeur de boîte, segments), invalidées par `Change` comme `paths`. */
+  /** OG33 : lignes du texte de forme, par forme. */
+  private readonly labelLines = new Map<string, { readonly key: string; readonly lines: readonly RichLine[] }>();
   private readonly textLines = new Map<string, { readonly key: string; readonly lines: readonly RichLine[] }>();
   /** Lignes du texte des cellules, par tableau (B1) : même cache et même invalidation que `textLines`. */
   private readonly cellLines = new Map<string, { readonly key: string; readonly lines: readonly (readonly RichLine[])[] }>();
@@ -559,6 +563,7 @@ export class Canvas2DRenderer implements Renderer {
     this.paintLinkBadges(ctx, linked, camera);
     this.paintCopyBadges(ctx, copyable, camera);
     this.paintMoveHandle(ctx, overlay, camera);
+    this.paintRotateHandle(ctx, overlay, camera);
     this.images?.endScene?.();
   }
 
@@ -596,6 +601,17 @@ export class Canvas2DRenderer implements Renderer {
     ctx.save();
     ctx.setTransform(this.sx, 0, 0, this.sy, 0, 0);
     paintMoveHandle(ctx, sx, sy, SELECTION_COLOR);
+    ctx.restore();
+  }
+
+  /** OG33 (lot 2b, choix 4) : poignée de rotation, 26 px écran sous le coin bas droit du cadre ; jamais à l'export. */
+  private paintRotateHandle(ctx: CanvasRenderingContext2D, o: EditOverlay, camera: Camera): void {
+    if (this.forExport || o.rotate !== true || !o.frame || !o.handles) return;
+    const [wx, wy] = rotateHandlePoint(o.frame, camera.zoom);
+    const [sx, sy] = worldToScreen(camera, wx, wy);
+    ctx.save();
+    ctx.setTransform(this.sx, 0, 0, this.sy, 0, 0);
+    paintRotateHandle(ctx, sx, sy, SELECTION_COLOR);
     ctx.restore();
   }
 
@@ -658,7 +674,7 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   /** Un élément dans son repère ; `pre` : matrice provisoire posée avant la sienne (fantôme, D38). */
-  private paintElement(ctx: CanvasRenderingContext2D, el: ElementView, pre: Matrix | null): void {
+  private paintElement(ctx: CanvasRenderingContext2D, el: ElementView, pre: Matrix | null, opts?: { readonly noLabel?: boolean }): void {
     const path = el.kind === "stroke" || el.kind === "fill" ? this.pathOf(el.id, el.kind) : null;
     if ((el.kind === "stroke" || el.kind === "fill") && !path) return;
     ctx.save();
@@ -696,6 +712,21 @@ export class Canvas2DRenderer implements Renderer {
       paintPlaceholder(ctx, el.unknown.w, el.unknown.h, UNKNOWN_LABEL);
     }
     ctx.restore();
+    // OG33 (choix 8) : texte de la forme, centré dans sa boîte ; C5 : hors du repère de la forme, posé sans son échelle
+    // (`labelPlacement`, même calcul que la zone d'édition et l'export) ; fantôme : placé sur sa matrice provisoire
+    // composée, comme il le sera une fois l'étape posée (un redimensionnement en cours n'étire pas les lettres).
+    if (el.kind === "shape" && el.shape.label !== undefined && opts?.noLabel !== true) {
+      const place = labelPlacement(el.shape, pre ? composeMatrix(pre, el.transform) : el.transform);
+      if (place !== null) {
+        const lines = this.labelLinesOf(ctx, el.id, el.shape.label, place.box.w);
+        const [a, b, c, d, e, f] = labelMatrix(place, richBoxHeight(lines));
+        ctx.save();
+        ctx.transform(a, b, c, d, e, f);
+        applyOpacity(ctx, el.look);
+        paintText(ctx, lines, el.style.color, place.box.w, "center");
+        ctx.restore();
+      }
+    }
   }
 
   /** L'image en aperçu (C5) : réglages et matrice de l'aperçu à la place de ceux du document. */
@@ -757,7 +788,7 @@ export class Canvas2DRenderer implements Renderer {
   private paintOverlayContent(ctx: CanvasRenderingContext2D, o: EditOverlay): void {
     for (const g of o.ghosts) {
       const el = this.source.element(g.id);
-      if (el) this.paintElement(ctx, this.withImagePreview(el), g.matrix);
+      if (el) this.paintElement(ctx, this.withImagePreview(el), g.matrix, g.noLabel ? { noLabel: true } : undefined);
     }
     for (const s of o.shapes) {
       const n = normalizeShape(s.shape, s.x0, s.y0, s.x1, s.y1);
@@ -805,7 +836,8 @@ export class Canvas2DRenderer implements Renderer {
       ctx.setLineDash([6 * px, 4 * px]);
       box(o.frame);
       ctx.stroke();
-      if (o.handles) {
+      // OG33 (choix 7) : objet tourné hors des quarts de tour : le cadre reste, sans ses huit poignées de taille.
+      if (o.handles && o.noResize !== true) {
         ctx.setLineDash([]);
         paintHandles(ctx, o.frame, px);
       }
@@ -935,6 +967,7 @@ export class Canvas2DRenderer implements Renderer {
       this.paths.clear();
       this.sketches.clear();
       this.textLines.clear();
+      this.labelLines.clear();
       this.cellLines.clear();
       return;
     }
@@ -942,6 +975,7 @@ export class Canvas2DRenderer implements Renderer {
       this.paths.delete(id);
       this.sketches.delete(id);
       this.textLines.delete(id);
+      this.labelLines.delete(id);
       this.cellLines.delete(id);
     }
   }
@@ -970,6 +1004,16 @@ export class Canvas2DRenderer implements Renderer {
     if (cached && cached.key === key) return cached.lines;
     const lines = layoutRich(t.spans, { size: t.size }, t.boxWidth, measureWith(ctx));
     this.textLines.set(id, { key, lines });
+    return lines;
+  }
+
+  /** OG33 : lignes du texte d'une forme, mises en cache par forme (clé : largeur et texte). */
+  private labelLinesOf(ctx: CanvasRenderingContext2D, id: string, label: string, w: number): readonly RichLine[] {
+    const key = `${w}|${label}`;
+    const cached = this.labelLines.get(id);
+    if (cached && cached.key === key) return cached.lines;
+    const lines = layoutRich(plainSpans(label), { size: LABEL_SIZE }, w, measureWith(ctx));
+    this.labelLines.set(id, { key, lines });
     return lines;
   }
 

@@ -79,7 +79,7 @@ appliqué à la création, non appliqué au suivi d'une cible déplacée (le cœ
 | poignées de 28 px au doigt | `renderer/interactiveScene.ts` | adapté : 44 px | `outils-excalidraw-navigateur.mjs` cibles |
 | Maj au redimensionnement : proportions | `resizeElements.ts` | copié ; au doigt, second doigt tardif | `outils-excalidraw-navigateur.mjs` S2 ; `router.test.ts` « doigt tardif » |
 | Alt : depuis le centre | `resizeElements.ts` | lot 2 (lot 2b) | — |
-| rotation, Maj 15° | `resizeElements.ts` | lot 2 (lot 2b) | — |
+| rotation, Maj 15° | `resizeElements.ts:rotateSingleElement`, `SHIFT_LOCKING_ANGLE` (π/12) | adapté au tactile : poignée sous le coin bas droit du cadre (choix 4), second doigt tardif = Maj, Alt+T / Alt+Maj+T tournent de 15°, pas de poignée de taille sur un objet tourné (choix 7, écart) ; un texte glisse sans tourner | `outils-excalidraw-2b-navigateur.mjs` M2 (`Lire : M2.angle=30`, `M2.pas=0`, `M2.souris=45`, `M2.clavier=15`, `M2.undo=0`, `M2.cible=44`, `M2.coin=none`) ; `select.test.ts` « poignée de rotation » ; `tests/arrange.rs::rotate_30_keeps_center_one_step` |
 | flèches du clavier (1 px, Maj 5 px) | `App.tsx` | lot 2 (lot 2b) | — |
 | Ctrl+D : copie décalée | `actionDuplicateSelection.tsx` | copié | `outils-excalidraw-navigateur.mjs` S4 |
 | verrou | `actionToggleElementLock` | lot 2 (lot 2b) | — |
@@ -95,9 +95,9 @@ appliqué à la création, non appliqué au suivi d'une cible déplacée (le cœ
 | comportement | source Excalidraw (fichier:fonction) | état | essai |
 |---|---|---|---|
 | glisser, Maj : carré ou cercle | `App.tsx` | copié | `outils-excalidraw-navigateur.mjs` S1 (pose des rectangles) |
-| double toucher = texte lié, Entrée | `App.tsx` | lot 2 (lot 2b) | — |
+| double toucher = texte lié, Entrée | `App.tsx:handleCanvasDoubleClick`, `textWysiwyg`, `BOUND_TEXT_PADDING` | adapté : clé `label` de la forme elle-même, pas d'élément texte lié (choix 8) ; écarts : texte simple, taille 24, pas d'agrandissement de la forme ; à l'export, la hauteur de la boîte vient de la mesure de repli (pas de mesure écran), la page qui relit le fichier replie de nouveau ; double toucher au doigt ou double-clic, Entrée sur une forme choisie ; le texte suit la forme déplacée et tournée ; Ctrl+Z l'enlève en une étape | `outils-excalidraw-2b-navigateur.mjs` M3 (`Lire : M3.label=Bonjour`, `M3.shape=rect`, `M3.encre=706`, `M3.suit=1`, `M3.enter=Losange`, `M3.undo=absent`) ; captures `avant-texte-forme.png`, `apres-texte-forme.png`, `apres-texte-forme-tournee.png`, `apres-texte-losange.png` ; `tests/etiquettes.rs` |
 | « Modifier les points » vers une forme libre | `linearElementEditor.ts`, `actionTogglePolygon` (`polygon`) | adapté : conversion en ligne fermée (même id, fond gardé), fermeture implicite du dernier sommet vers le départ (écart, DA-1), ellipse en 16 sommets droits ; Ctrl+Entrée, bouton du panneau (pas de double toucher sur la forme) | `outils-excalidraw-navigateur.mjs` S8 (`Lire : S8.polygon=1`, `S8.after=5`, `S8.ellipse=16`), S9 ; `tests/formes.rs::shape_to_polygon_rect_in_one_step_undo_restores` |
-| losange | `element/src/shape.ts` (`diamond`), `Tools.tsx` | copié (`ShapeKind::Diamond`) ; au doigt : toucher dans un coin de la boîte, hors du losange, ne sélectionne rien | `outils-excalidraw-navigateur.mjs` S7 (`Lire : S7.diamond=1`, `S7.corner=none`) ; `tests/formes.rs::diamond_hits_inside_not_box_corners` |
+| losange | `element/src/shape.ts` (`diamond`), `Tools.tsx` | copié (`ShapeKind::Diamond`) ; atteint par la rangée Formes (choix 1 du plan 2b), hors de la barre ; au doigt : toucher dans un coin de la boîte, hors du losange, ne sélectionne rien | `outils-excalidraw-navigateur.mjs` S7 (`Lire : S7.diamond=1`, `S7.corner=none`) ; `tests/formes.rs::diamond_hits_inside_not_box_corners` ; `outils-excalidraw-2b-navigateur.mjs` m1 (`Lire : M1.tool=diamond`) |
 
 ## Crayon
 
@@ -136,4 +136,4 @@ appliqué à la création, non appliqué au suivi d'une cible déplacée (le cœ
 
 | comportement | source Excalidraw (fichier:fonction) | état | essai |
 |---|---|---|---|
-| lettres et chiffres | `keys.ts` | lot 2 (S et G déjà pris par les pipettes d'OG14, à arbitrer) (lot 2b) | — |
+| lettres et chiffres | `keys.ts` | copié : les lettres et chiffres existent ; l'infobulle de chaque outil les montre (« R ou 2 », `aria-keyshortcuts` « R 2 ») ; S et G restent aux pipettes d'OG14 | `outils-excalidraw-2b-navigateur.mjs` m1 (`Lire : M1.tip=R ou 2`) ; `shortcuts.test.ts` (`toolShortcut`) |

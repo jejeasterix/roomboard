@@ -2716,7 +2716,7 @@ describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
 
 // C6a (pot de peinture) : Fill (contour, intérieur, fond de page) et edgeHit ; T5 joue ce bloc sur le vrai module.
 const c6aFactories = factories;
-const BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)";
+const BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle, d'un losange, d'une ellipse ou d'une ligne fermée attendus)";
 const shapeAt = (d: CoreDocument, page: string, shape: ShapeKind = "rect", c: readonly [number, number, number, number] = [100, 100, 300, 200]): string => {
   const id = d.apply({ type: "AddShape", page, shape, x0: c[0], y0: c[1], x1: c[2], y1: c[3], style: { color: "#000000", width: 4 }, fill: null }).ids[0];
   if (id === undefined) throw new Error("aucune forme");
@@ -4825,7 +4825,7 @@ const P1B_GRID: GridInput = {
   above: false,
   levels: [{ kind: "seyes", spacingX: 30.24, spacingY: 30.24, originX: 0, originY: 0, color: "#8f9ad6", line: "solid", lineWidth: 1, snap: true, visible: true }],
 };
-const P1B_BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)";
+const P1B_BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle, d'un losange, d'une ellipse ou d'une ligne fermée attendus)";
 const P1B_BAD_ASSET = "asset invalide (empreinte SHA-256 en hexadécimal minuscule, type MIME non vide, taille entière ≥ 0 attendus)";
 const P1B_BAD_IMAGE = "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)";
 const P1B_BAD_GRID = "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)";
@@ -5138,6 +5138,95 @@ describe.each(factories)("contrat Arrange : $name", ({ f }) => {
     const back = f.load(d.save(now, "0.1.0"));
     expect(viewOf(back, s).look?.variability).toBe("constant");
     back.free();
+    d.free();
+  });
+});
+
+// OG33 (lot 2b, choix 3) : `Rotate` sur les deux cœurs ; portée d'`Arrange` (texte : place seule). Discrimine le patron
+// écarté (`Arrange` sans suivi) : la flèche liée suit dans la même étape, citée par la `Change`.
+describe.each(factories)("contrat OG33 Rotate : $name", ({ f }) => {
+  const rect = (d: CoreDocument, p: string, x: number, y = 100): string => {
+    const id = d.apply({ type: "AddShape", page: p, shape: "rect", x0: x, y0: y, x1: x + 50, y1: y + 50, style, fill: null }).ids[0];
+    if (id === undefined) throw new Error("aucun id");
+    return id;
+  };
+  const worldOf = (d: CoreDocument, id: string): [number, number][] => {
+    const v = d.element(id);
+    if (v?.kind !== "shape") throw new Error("forme attendue");
+    return linePath(v.shape.w, v.shape.h, v.shape.points ?? []).map(([x, y]) => applyMatrix(v.transform, x, y));
+  };
+  it("Rotate 30° : rotation autour du centre, une étape, undo", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p, 100);
+    d.apply({ type: "Rotate", ids: [r], angle: 30 });
+    const t = viewOf(d, r).transform!;
+    expect(t[0]).toBeCloseTo(Math.cos(Math.PI / 6), 9);
+    expect(t[1]).toBeCloseTo(Math.sin(Math.PI / 6), 9);
+    expect(t[0] * 25 + t[2] * 25 + t[4]).toBeCloseTo(125, 6);
+    expect(t[1] * 25 + t[3] * 25 + t[5]).toBeCloseTo(125, 6);
+    d.undo();
+    expect(viewOf(d, r).transform).toEqual([1, 0, 0, 1, 100, 100]);
+    d.free();
+  });
+  it("Rotate 90 = Arrange rotate-cw, à l'exact", () => {
+    const [a, b] = [f.blank(), f.blank()];
+    const [ra, rb] = [rect(a, first(a), 0), rect(b, first(b), 0)];
+    a.apply({ type: "Rotate", ids: [ra], angle: 90 });
+    b.apply({ type: "Arrange", ids: [rb], how: "rotate-cw" });
+    expect(viewOf(a, ra).transform).toEqual(viewOf(b, rb).transform);
+    a.free();
+    b.free();
+  });
+  it("Rotate texte + rectangle : le texte reste droit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p, 0, 0);
+    const t = d.apply({ type: "SetText", page: p, id: null, x: 200, y: 0, content: "abc", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 }).ids[0]!;
+    d.apply({ type: "Rotate", ids: [t, r], angle: 45 });
+    expect(viewOf(d, t).transform?.slice(0, 4)).toEqual([1, 0, 0, 1]);
+    d.free();
+  });
+  it("Rotate 0 : aucune étape ; id inconnu : élément inconnu, rien d'écrit", () => {
+    const d = f.blank();
+    const r = rect(d, first(d), 0);
+    const v = d.version();
+    d.apply({ type: "Rotate", ids: [r], angle: 0 });
+    expect(() => d.apply({ type: "Rotate", ids: [r, "nope"], angle: 15 })).toThrow("élément inconnu : nope");
+    expect(() => d.apply({ type: "Rotate", ids: [r], angle: Number.NaN })).toThrow();
+    expect(d.version()).toBe(v);
+    d.free();
+  });
+  it("Rotate quasi nul (1e-14, -1e-20) et texte seul tourné sur son centre : aucune étape, sur les deux cœurs (C5)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p, 0);
+    const t = d.apply({ type: "SetText", page: p, id: null, x: 200, y: 0, content: "abc", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 }).ids[0]!;
+    const v = d.version();
+    for (const angle of [1e-14, -1e-20]) expect(d.apply({ type: "Rotate", ids: [r], angle }).ids).toEqual([]);
+    const moved = Array.from({ length: 359 }, (_, i) => i + 1).filter((angle) => d.apply({ type: "Rotate", ids: [t], angle }).ids.length > 0);
+    expect(moved).toEqual([]);
+    expect(d.version()).toBe(v);
+    d.free();
+  });
+  it("Rotate : la flèche liée suit, une étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 0, y0: 0, x1: 100, y1: 50, style, fill: null }).ids[0]!;
+    const b = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 400, y0: 0, x1: 500, y1: 50, style, fill: null }).ids[0]!;
+    const arrow = d.apply({ type: "AddShape", page: p, shape: "arrow", x0: 100, y0: 25, x1: 400, y1: 25, style, fill: null, start: { id: a, fx: 1, fy: 0.5 }, end: { id: b, fx: 0, fy: 0.5 } }).ids[0]!;
+    const [fBefore, bBefore] = [d.element(arrow), d.element(b)];
+    const ch = d.apply({ type: "Rotate", ids: [b], angle: 90 });
+    expect(ch.ids).toContain(arrow);
+    const end = worldOf(d, arrow).at(-1)!;
+    const rb = boxOf(d, b); // 425..475 × −25..75
+    expect(end[0]).toBeGreaterThan(rb.x0 - 10);
+    expect(end[0]).toBeLessThan(rb.x1 + 10);
+    expect(end[1]).toBeGreaterThan(rb.y0 - 10);
+    expect(end[1]).toBeLessThan(rb.y1 + 10);
+    d.undo();
+    expect(d.element(arrow)).toEqual(fBefore);
+    expect(d.element(b)).toEqual(bBefore);
     d.free();
   });
 });
@@ -5681,5 +5770,60 @@ describe.each(factories)("composition OG12 × personnalisation-3 : $name", ({ f:
     d.undo();
     near(d.element(s.o)?.transform ?? [], objBefore);
     near(world(d, arrow).flat(), arrowBefore.flat());
+  });
+});
+
+// OG33 (lot 2b, choix 8) : texte de forme, clé `label` de la forme même (jamais un élément `text` lié par `containerId`) ;
+// le vide retire la clé (jamais `""` ni `null`, GC8) ; même ordre de refus sur les deux cœurs.
+describe.each(factories)("contrat OG33 SetShapeLabel : $name", ({ f }) => {
+  const PEN = { color: "#000000", width: 4 };
+  const add = (d: CoreDocument, shape: ShapeKind): string =>
+    d.apply({ type: "AddShape", page: d.pageIds()[0]!, shape, x0: 0, y0: 0, x1: 100, y1: 60, style: PEN, fill: null }).ids[0]!;
+  const shapeOf = (d: CoreDocument, id: string): ShapeElement["shape"] => (d.element(id) as ShapeElement).shape;
+
+  it("SetShapeLabel : une étape sur la forme même, undo ; même texte : aucune étape", () => {
+    const d = f.blank();
+    for (const kind of ["rect", "diamond", "ellipse"] as const) {
+      const id = add(d, kind);
+      expect(Object.hasOwn(shapeOf(d, id), "label")).toBe(false);
+      const v = d.version();
+      const ch = d.apply({ type: "SetShapeLabel", id, label: "Bonjour" });
+      expect(ch.ids).toEqual([id]);
+      expect(shapeOf(d, id).label).toBe("Bonjour");
+      expect(d.version()).toBe(v + 1);
+      d.apply({ type: "SetShapeLabel", id, label: "Bonjour" });
+      expect(d.version()).toBe(v + 1);
+      d.undo();
+      expect(Object.hasOwn(shapeOf(d, id), "label")).toBe(false);
+    }
+    d.free();
+  });
+  it("SetShapeLabel vide : clé retirée ; ligne refusée, id inconnu, texte trop long", () => {
+    const d = f.blank();
+    const r = add(d, "rect");
+    d.apply({ type: "SetShapeLabel", id: r, label: "Bonjour" });
+    d.apply({ type: "SetShapeLabel", id: r, label: "" });
+    expect(Object.hasOwn(shapeOf(d, r), "label")).toBe(false);
+    const line = add(d, "line");
+    const v = d.version();
+    expect(() => d.apply({ type: "SetShapeLabel", id: line, label: "x" })).toThrow(/forme invalide/);
+    expect(() => d.apply({ type: "SetShapeLabel", id: "absent", label: "x" })).toThrow("élément inconnu : absent");
+    expect(() => d.apply({ type: "SetShapeLabel", id: r, label: "é".repeat(10_001) })).toThrow(/texte invalide/);
+    d.apply({ type: "SetShapeLabel", id: r, label: "é".repeat(10_000) });
+    expect(d.version()).toBe(v + 1);
+    d.free();
+  });
+  it("ShapeToPolygon retire le texte, undo le rend ; la copie d'AddLinked part sans texte", () => {
+    const d = f.blank();
+    const r = add(d, "rect");
+    d.apply({ type: "SetShapeLabel", id: r, label: "Bonjour" });
+    const copy = d.apply({ type: "AddLinked", id: r, dir: "right" }).ids[0]!;
+    expect(Object.hasOwn(shapeOf(d, copy), "label")).toBe(false);
+    expect(shapeOf(d, r).label).toBe("Bonjour");
+    d.apply({ type: "ShapeToPolygon", id: r });
+    expect(Object.hasOwn(shapeOf(d, r), "label")).toBe(false);
+    d.undo();
+    expect(shapeOf(d, r).label).toBe("Bonjour");
+    d.free();
   });
 });
