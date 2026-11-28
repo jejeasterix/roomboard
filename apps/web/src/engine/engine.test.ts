@@ -978,6 +978,21 @@ describe("createEngine", () => {
     engine.endGridPreview();
     expect(renderer.previews).toHaveLength(2);
   });
+
+  it("OG41 (DA2) selectionKeepOut : vide sans sélection ; rectangle seul : 8 poignées et 4 « + », px de la scène", () => {
+    const doc = fakeCore.blank();
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx), select: (ctx) => createSelectTool(ctx) } });
+    engine.resize(1280, 720, 1);
+    expect(engine.selectionKeepOut()).toEqual([]);
+    const page = engine.state().page;
+    const id = engine.run({ type: "AddShape", page, shape: "rect", x0: 100, y0: 100, x1: 300, y1: 200, style: PEN, fill: null })?.ids[0] ?? "";
+    engine.select([id]);
+    const b = engine.state().selectionBounds!;
+    const [sx, sy] = worldToScreen(engine.camera(), b.x0, b.y0);
+    const keep = engine.selectionKeepOut();
+    expect(keep).toHaveLength(12);
+    expect(keep).toContainEqual({ x: sx - 12, y: sy - 12, w: 24, h: 24 });
+  });
 });
 
 describe("createEngine — Alt (C9)", () => {
