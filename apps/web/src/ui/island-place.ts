@@ -187,6 +187,47 @@ export function placeLinkAvoiding(box: Rect, obstacles: readonly Rect[], maxX: n
   return Math.round(Math.max(8, Math.min(x, maxX)));
 }
 
+/** OG41 (D20) : écart entre la barre d'objet et ce qui entoure le cadre, et marge aux bords de la vue. */
+export const OBJECT_BAR_GAP = 8;
+export interface ObjectBarPlace { readonly left: number; readonly top: number; readonly side: "above" | "below" | "inside" }
+
+const crosses = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** OG41 (D20, DA3) : place de la barre d'objet `bar` dans `area`, centrée sur le cadre `frame` de la sélection, à 8 px
+ *  au-dessus de tout ce qui l'entoure (`keepOut` : poignées, « + », « Déplacer », badges, cibles comprises), sinon 8 px en
+ *  dessous, sinon dans la vue, 8 px sous les zones gardées du haut du cadre. Chaque place évite les `obstacles` (îlots, panneau d'options, barre
+ *  latérale) par `placeLinkAvoiding` ; une place qui en croise encore un est abandonnée pour la suivante (la dernière
+ *  essayée est gardée). Bornée à 8 px des bords (`placeWithin`) ; px entiers. */
+export function placeObjectBar(frame: Rect, bar: Box, area: Box, keepOut: readonly Rect[], obstacles: readonly Rect[]): ObjectBarPlace {
+  const m = OBJECT_BAR_GAP;
+  const around = [frame, ...keepOut];
+  const top = Math.min(...around.map((r) => r.y));
+  const bottom = Math.max(...around.map((r) => r.y + r.h));
+  // Dedans : sous les zones gardées du haut du cadre (poignées, « Déplacer », badges), pas sur elles.
+  const topZone = Math.max(frame.y, ...keepOut.filter((r) => r.y < frame.y + m).map((r) => r.y + r.h));
+  const maxX = Math.max(m, area.w - m - bar.w);
+  const inner = { w: Math.max(0, area.w - 2 * m), h: Math.max(0, area.h - 2 * m) };
+  const within = (x: number, y: number): Point => {
+    const p = placeWithin({ x: x - m, y: y - m }, bar, inner);
+    return { x: Math.round(p.x + m), y: Math.round(p.y + m) };
+  };
+  const x0 = within(frame.x + frame.w / 2 - bar.w / 2, frame.y).x;
+  const tries: readonly (readonly [ObjectBarPlace["side"], number, boolean])[] = [
+    ["above", top - m - bar.h, top - m - bar.h >= m],
+    ["below", bottom + m, bottom + m + bar.h <= area.h - m],
+    ["inside", Math.max(topZone, 0) + m, true],
+  ];
+  let last: ObjectBarPlace | null = null;
+  for (const [side, y, fits] of tries) {
+    if (!fits) continue;
+    const at = within(x0, y);
+    const left = placeLinkAvoiding({ x: at.x, y: at.y, w: bar.w, h: bar.h }, obstacles, maxX);
+    last = { left, top: at.y, side };
+    if (!obstacles.some((o) => crosses({ x: left, y: at.y, w: bar.w, h: bar.h }, o))) return last;
+  }
+  return last ?? { left: x0, top: m, side: "inside" };
+}
+
 /** OG11 : bas de la rangée du haut (îlots posés à `EDGE`, hauts de `btn` + 8) pour la taille de bouton `btn` du profil. */
 export function topRowBottom(btn: number): number {
   return EDGE + btn + 8;
