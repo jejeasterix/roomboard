@@ -139,16 +139,10 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
     </label>
   );
   // OG34 : raccourcis du panneau (focus dedans) ; Échap reste celui du moteur (rognage, pipette).
-  const onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.repeat) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (mode() === "crop") props.edit.finishCrop(true);
-      else apply();
-      return;
-    }
-    panelKeyDown({ i: () => (mode() === "pick" ? disarm() : pipette()) })(e);
-  };
+  const onKeyDown = panelKeyDown({
+    i: () => (mode() === "pick" ? disarm() : pipette()),
+    "mod+enter": () => (mode() === "crop" ? void props.edit.finishCrop(true) : apply()),
+  });
   const geo = (action: string, label: string, icon: string, next: (p: ImageParams) => ImageParams): JSX.Element => (
     <IconButton icon={icon} label={label} attrs={{ "data-image-action": action, class: "rb-opt-btn" }} onPress={() => geometry(next)} />
   );
@@ -186,7 +180,7 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
       <section class="rb-imgedit-sec" aria-label="Couleur transparente">
         <h3 class="rb-imgedit-h">Couleur transparente</h3>
         <div class="rb-imgedit-pick">
-          <LabelButton icon="pipette" label="Pipette" look="toggle" keys="I" hint="I" pressed={mode() === "pick"} attrs={{ "data-image-action": "pick" }} onPress={pipette} />
+          <LabelButton icon="pipette" label="Pipette" look="toggle" keys="I" pressed={mode() === "pick"} attrs={{ "data-image-action": "pick" }} onPress={pipette} />
           <span
             class="rb-imgedit-swatch"
             data-image-color={draft().color ?? ""}

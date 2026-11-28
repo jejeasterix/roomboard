@@ -10,7 +10,8 @@
 //   d'avant a les barres flottantes), mesures sautées.
 import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { DIST, Echec, ROOT, VIEWPORT, coqueCsp, dropFile, frames, item, loadPlaywright, rgbPng, serve, stageBox } from "./commun.mjs";
+import { DIST, Echec, ROOT, coqueCsp, dropFile, frames, item, loadPlaywright, rgbPng, serve, stageBox } from "./commun.mjs";
+import { attr, newPage, press, tapStage } from "./gestes.mjs";
 import { fringes, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "restes-og23";
@@ -103,22 +104,6 @@ async function makeWebm(ctx, seconds) {
   }
 }
 
-async function newPage(browser, base) {
-  const ctx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, hasTouch: true });
-  const page = await ctx.newPage();
-  const errors = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  page.on("console", (m) => {
-    if (m.type() === "error" && !m.text().includes("WebGL")) errors.push(m.text());
-  });
-  page.on("dialog", (d) => void d.accept());
-  const cdp = await ctx.newCDPSession(page);
-  await page.goto(`${base}/?fichiers=repli`);
-  await page.waitForSelector('#stage[data-ready="1"]', { timeout: 30000 });
-  await frames(page);
-  return { ctx, page, cdp, errors };
-}
-const attr = (page, name) => page.getAttribute("#stage", name);
 async function until(fn, msg, ms = 15000) {
   const end = Date.now() + ms;
   for (;;) {
@@ -127,24 +112,8 @@ async function until(fn, msg, ms = 15000) {
     await new Promise((r) => setTimeout(r, 50));
   }
 }
-/** Doigt : tap au centre d'un élément de la page. */
-async function tap(page, sel) {
-  const el = page.locator(sel).first();
-  await el.scrollIntoViewIfNeeded();
-  const b = await el.boundingBox();
-  if (b === null) throw new Echec(`${sel} : absent ou caché`);
-  await page.touchscreen.tap(Math.round(b.x + b.width / 2), Math.round(b.y + b.height / 2));
-  await frames(page);
-}
-/** Doigt : tap sur la scène (px de la scène), par le protocole (pointerType « touch »). */
-async function tapStage(page, cdp, [x, y]) {
-  const box = await stageBox(page);
-  const p = { x: Math.round(box.x + x), y: Math.round(box.y + y) };
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [p] });
-  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await page.waitForTimeout(400); // un tap qui suit tout de suite un contact du protocole est perdu
-  await frames(page);
-}
+/** Doigt : tap au centre d'un bouton (`press` de gestes.mjs). */
+const tap = (page, sel) => press(page, "doigt", sel);
 /** Cibles d'au moins 44 px et une icône par bouton, dans `root`. */
 async function targets(page, root, what) {
   const r = await page.$$eval(`${root} button, ${root} select, ${root} input[type="range"]`, (els) => els.map((e) => {
@@ -185,20 +154,20 @@ async function capture(page, sel, name) {
   await el.screenshot({ path: join(OUT, `${NOM}-${name}.png`), animations: "disabled", caret: "hide", scale: "device" });
   console.log(`capture : docs/design/captures/restes-og23/${NOM}-${name}.png`);
 }
-async function select(page, cdp, at, attrName) {
+async function select(page, at, attrName) {
   await tap(page, item("select"));
-  await tapStage(page, cdp, at);
+  await tapStage(page, at[0], at[1]);
   await until(async () => ((await attr(page, attrName)) ?? "") !== "", `${attrName} : objet sélectionné au doigt`);
 }
 
 // ------------------------------------------------------------------------------------------------------ S1 : image
 async function s1image(browser, base) {
-  const { ctx, page, cdp, errors } = await newPage(browser, base);
+  const { ctx, page, errors } = await newPage(browser, base, { scale: 2 });
   const png = rgbPng(200, 150, (x, y) => (Math.hypot(x - 100, y - 75) < 50 ? [220, 38, 38] : [255, 255, 255]));
   // À droite du panneau d'options : un tap à sa place toucherait le panneau qui apparaît sous le doigt (clic fantôme).
   await dropFile(page, "#stage", "anneau.png", png, "image/png", [700, 300]);
   await until(async () => (await attr(page, "data-elements")) === "1", "S1 : image déposée");
-  await select(page, cdp, [700, 300], "data-image");
+  await select(page, [700, 300], "data-image");
   check((await page.locator("#image-retouche").count()) === 0, "S1 : image sélectionnée au doigt, panneau de retouche encore fermé");
   await tap(page, '[data-image-action="panel-retouch"]');
   await page.locator("#image-retouche").waitFor({ state: "visible", timeout: 15000 });
@@ -242,11 +211,11 @@ async function s1image(browser, base) {
 
 // ------------------------------------------------------------------------------------------------------ S2 : média
 async function s2media(browser, base) {
-  const { ctx, page, cdp, errors } = await newPage(browser, base);
+  const { ctx, page, errors } = await newPage(browser, base, { scale: 2 });
   const webm = await makeWebm(ctx, 2.4);
   await dropFile(page, "#stage", "essai.webm", webm, "video/webm", [600, 250]);
   await until(async () => (await attr(page, "data-elements")) === "1", "S2 : vidéo déposée");
-  await select(page, cdp, [660, 290], "data-media");
+  await select(page, [660, 290], "data-media");
   await page.locator("[data-media-bar]").waitFor({ state: "visible", timeout: 15000 });
   if (AVANT) await capture(page, ".rb-media-bar", "media");
   else {
@@ -279,10 +248,10 @@ async function s2media(browser, base) {
 
 // ------------------------------------------------------------------------------------------------------ S3 : objet 3D
 async function s3model(browser, base) {
-  const { ctx, page, cdp, errors } = await newPage(browser, base);
+  const { ctx, page, errors } = await newPage(browser, base, { scale: 2 });
   await dropFile(page, "#stage", "cube.glb", cubeGlb(), "model/gltf-binary", [700, 300]);
   await until(async () => (await attr(page, "data-elements")) === "1", "S3 : GLB déposé", 30000);
-  await select(page, cdp, [700, 300], "data-model3d");
+  await select(page, [700, 300], "data-model3d");
   await page.locator("[data-model3d-bar]").waitFor({ state: "visible", timeout: 15000 });
   if (AVANT) await capture(page, ".rb-media-bar", "3d");
   else {

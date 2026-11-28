@@ -125,7 +125,7 @@ export function MediaBar(props: MediaBarProps): JSX.Element {
         <LabelButton icon="arrow-left-to-line" label="Fin ici" keys="F" attrs={{ "data-media": "end" }} onPress={end} />
         <LabelButton icon="move-horizontal" label="Tout garder" keys="G" attrs={{ "data-media": "keep" }} onPress={keep} />
       </div>
-      <LabelButton icon="repeat" label="Boucle" look="toggle" keys="B" hint="B" pressed={settings().loop} attrs={{ "data-media": "loop" }} onPress={loop} />
+      <LabelButton icon="repeat" label="Boucle" look="toggle" keys="B" pressed={settings().loop} attrs={{ "data-media": "loop" }} onPress={loop} />
       <label class="rb-opacity" data-media-volume>
         <Icon name="volume-2" />
         <input

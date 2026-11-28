@@ -374,7 +374,7 @@ describe("rb.css (T33)", () => {
   it("OG34 : panneau de retouche d'image et commandes du média au design des îlots, cibles de 44 px", () => {
     expect(rule(".rb-imgedit")).toMatch(/inline-size: 320px;.*--rb-btn-size: 44px;/);
     expect(rule(".rb-imgedit .rb-opt-btn")).toMatch(/inline-size: 44px; block-size: 44px;.*border: 0;.*border-radius: var\(--rf-radius-lg\);/);
-    expect(rule(".rb-imgedit .rb-opt-wide, .rb-imgedit .rb-opt-toggle, .rb-imgedit .rb-opt-primary")).toContain("min-block-size: 44px;");
+    expect(rule(".rb-options .rb-opt-wide, .rb-options .rb-opt-toggle, .rb-imgedit .rb-opt-wide, .rb-imgedit .rb-opt-toggle, .rb-imgedit .rb-opt-primary")).toContain("min-block-size: max(44px, var(--rb-btn-size));");
     expect(rule(".rb-imgedit .rb-opt-primary")).toMatch(/background: var\(--rf-violet-600\); color: var\(--rf-white\);/);
     expect(rule(".rb-imgedit-select select")).toMatch(/block-size: 44px;.*border: 1px solid var\(--rf-gray-300\);.*appearance: none;/);
     expect(rule('.rb-imgedit-range input[type="range"]')).toContain("block-size: 44px;");
@@ -382,5 +382,6 @@ describe("rb.css (T33)", () => {
     expect(rule(".rb-mbar-pos")).toMatch(/block-size: 44px;.*var\(--rb-trim-start\)/);
     expect(rule(".rb-options .rb-mbar-trim .rb-opt-wide")).toContain("min-block-size: 64px;");
     expect(rule(".rb-opt-wide[data-keys]::after, .rb-opt-toggle[data-keys]::after")).toMatch(/content: attr\(data-keys\);.*color: var\(--rf-text-muted-aa\);/);
+    expect(rule(".rb-mbar-trim .rb-opt-wide[data-keys]::after")).toContain("content: none;");
   });
 });
