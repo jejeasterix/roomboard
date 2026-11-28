@@ -27,6 +27,7 @@ use roomboard_core::shape::ShapeKind;
 use roomboard_core::style::StylePatch;
 use roomboard_core::table::TableAxis;
 use roomboard_core::table_links::LineSize;
+use roomboard_core::table_look::CellLook;
 use wasm_bindgen::prelude::*;
 
 /// Version du cœur, pour vérifier que le module Wasm est chargé.
@@ -1221,6 +1222,42 @@ impl Document {
         change_js(self.set_cell_image_inner(id, row, col, from))
     }
 
+    /// personnalisation-3 (suite OG32, DS1) : `key` = `ha` | `va` (`text` : valeur, absente = défaut), `border` (`text` :
+    /// couleur, absente = retirer ; `width` ; `labels[0]` : style), `open` (`width` ≠ 0 : ouvert), `accept` (`labels`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_table_look(
+        &mut self,
+        id: &str,
+        from_row: &str,
+        from_col: &str,
+        to_row: &str,
+        to_col: &str,
+        key: &str,
+        text: Option<String>,
+        width: f64,
+        labels: Vec<String>,
+    ) -> Result<JsValue, JsError> {
+        change_js(self.set_table_look_inner(
+            id,
+            [from_row, from_col],
+            [to_row, to_col],
+            key,
+            text,
+            width,
+            labels,
+        ))
+    }
+
+    /// personnalisation-3 (D18) : `row` vrai = lignes, faux = colonnes ; `order` = tous les ids de l'axe.
+    pub fn reorder_table_lines(
+        &mut self,
+        id: &str,
+        row: bool,
+        order: Vec<String>,
+    ) -> Result<JsValue, JsError> {
+        change_js(self.reorder_table_lines_inner(id, row, &order))
+    }
+
     /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
     #[allow(clippy::too_many_arguments)]
     pub fn import_table(
@@ -2321,6 +2358,49 @@ impl Document {
             row: row.to_string(),
             col: col.to_string(),
             from,
+        })
+    }
+
+    /// Clé inconnue : `BadTable` (comme le faux cœur).
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_table_look_inner(
+        &mut self,
+        id: &str,
+        from: [&str; 2],
+        to: [&str; 2],
+        key: &str,
+        text: Option<String>,
+        width: f64,
+        labels: Vec<String>,
+    ) -> Result<Change, CommandError> {
+        let look = match key {
+            "ha" => CellLook::Ha(text),
+            "va" => CellLook::Va(text),
+            "border" => CellLook::Border(
+                text.map(|c| (c, width, labels.into_iter().next().unwrap_or_default())),
+            ),
+            "open" => CellLook::Open(width != 0.0),
+            "accept" => CellLook::Accept(labels),
+            _ => return Err(CommandError::BadTable),
+        };
+        self.run(Command::SetTableLook {
+            id: id.to_string(),
+            from: (from[0].to_string(), from[1].to_string()),
+            to: (to[0].to_string(), to[1].to_string()),
+            look,
+        })
+    }
+
+    pub fn reorder_table_lines_inner(
+        &mut self,
+        id: &str,
+        row: bool,
+        order: &[String],
+    ) -> Result<Change, CommandError> {
+        self.run(Command::ReorderTableLines {
+            id: id.to_string(),
+            axis: table_axis(row),
+            order: order.to_vec(),
         })
     }
 
@@ -4127,6 +4207,75 @@ mod tests {
         d.remove_table_line_inner(&id, true, r[0], Some(r[1].to_string()))
             .expect("deux lignes");
         assert_eq!(table_of(&d, &id).rows.len(), 1);
+    }
+
+    #[test]
+    fn set_table_look_inner_centers_borders_and_refuses_unknown_key() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [2, 2], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = table_of(&d, &id);
+        let (r, c) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        d.set_table_look_inner(
+            &id,
+            [&r, &c],
+            [&r, &c],
+            "ha",
+            Some("center".into()),
+            0.0,
+            vec![],
+        )
+        .expect("ha");
+        assert_eq!(table_of(&d, &id).cells[0].ha.as_deref(), Some("center"));
+        d.set_table_look_inner(
+            &id,
+            [&r, &c],
+            [&r, &c],
+            "border",
+            Some("#dc2626".into()),
+            8.0,
+            vec!["dashed".into()],
+        )
+        .expect("border");
+        assert_eq!(
+            table_of(&d, &id).cells[0].border,
+            Some(("#dc2626".to_string(), 8.0, "dashed".to_string()))
+        );
+        assert_eq!(
+            d.set_table_look_inner(&id, [&r, &c], [&r, &c], "zz", None, 0.0, vec![]),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    // personnalisation-3 (D18) : `ReorderTableLines` par `reorder_table_lines_inner` (`row` vrai = lignes).
+    #[test]
+    fn reorder_table_lines_inner_swaps_rows() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [2, 2], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let r: Vec<String> = table_of(&d, &id)
+            .rows
+            .iter()
+            .map(|x| x.id.clone())
+            .collect();
+        d.reorder_table_lines_inner(&id, true, &[r[1].clone(), r[0].clone()])
+            .expect("ordre");
+        assert_eq!(
+            table_of(&d, &id)
+                .rows
+                .iter()
+                .map(|x| x.id.clone())
+                .collect::<Vec<_>>(),
+            vec![r[1].clone(), r[0].clone()]
+        );
     }
 
     // personnalisation-3 (D3, D4) : `PlaceInCell` et `SetTableLineSizes` par les `*_inner`.

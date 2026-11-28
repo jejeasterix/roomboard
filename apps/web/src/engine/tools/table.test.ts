@@ -4,7 +4,7 @@ import { fakeCore } from "../../core/fake-core";
 import { editSpans, plainSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
 import type { InputSample } from "../input/sampler";
-import { cellHeight, TABLE_SHADE_COLOR } from "../table-geom";
+import { cellHeight, FIT_MAX_WIDTH, TABLE_SHADE_COLOR } from "../table-geom";
 import type { Measure } from "../text-layout";
 import type { CellMenu, CellMenuItem } from "../../ui/cell-menu";
 import { createCellDrop } from "./cell-drop";
@@ -13,6 +13,7 @@ import type { TextEditorHost, TextEditSession } from "./text";
 import type { TableTool, ToolContext } from "./tool";
 
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
+const atT = (x: number, y: number, t: number): InputSample => ({ ...at(x, y), t });
 /** 10 unités par caractère à toute taille. */
 const narrow: Measure = (s) => s.length * 10;
 type AddTable = Extract<Command, { type: "AddTable" }>;
@@ -75,7 +76,7 @@ class FakePicker implements TablePicker {
   }
 }
 
-function setup() {
+function setup(measure: Measure = narrow) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
@@ -108,7 +109,7 @@ function setup() {
   const notices: string[] = [];
   const menuOpens: { x: number; y: number; items: readonly CellMenuItem[] }[] = [];
   const menu: CellMenu = { open: (x, y, items) => void menuOpens.push({ x, y, items }), close: () => undefined };
-  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow, menu, createCellDrop(ctx, narrow), (text) => void notices.push(text));
+  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), measure, menu, createCellDrop(ctx, measure), (text) => void notices.push(text));
   holder.tool = tool;
   const click = (x: number, y: number): void => {
     tool.begin(1, [at(x, y)]);
@@ -985,7 +986,8 @@ describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
   });
   it("TB1 live : la case active publie ses deux poignées dans l'aperçu", () => {
     const { s } = ready();
-    expect(s.tool.live().overlay?.grips).toEqual([{ x: 580, y: 296, kind: "col" }, { x: 460, y: 328, kind: "row" }]);
+    // Les poignées de déplacement (D18) s'ajoutent à celles de taille : ce test lit les deux de taille.
+    expect(s.tool.live().overlay?.grips?.filter((g) => g.kind === "col" || g.kind === "row")).toEqual([{ x: 580, y: 296, kind: "col" }, { x: 460, y: 328, kind: "row" }]);
   });
   it("TB1 : le minimum est lu une fois à l'armement, aucun parcours du document par mouvement", () => {
     const { s } = ready();
@@ -1014,7 +1016,7 @@ describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
     expect(s.table(id).rows[0]?.height).toBe(20);
     s.click(150, 210);
     s.tool.requestCommit();
-    expect(s.tool.live().overlay?.grips?.map((g) => g.kind)).toEqual(["row"]);
+    expect(s.tool.live().overlay?.grips?.map((g) => g.kind).filter((k) => k === "col" || k === "row")).toEqual(["row"]);
   });
   const narrowCols = () => {
     const s = setup();
@@ -1057,6 +1059,67 @@ describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
 });
 
 describe("outil Tableau — TB2 en-tête et D35", () => {
+  it("PR 74 : une étape par geste : header-toggle, un seul undo rend la ligne normale", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const n = s.runs.length;
+    s.tool.act("header-toggle");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.table(id).header).toBe(true);
+    s.doc.undo();
+    expect(s.table(id).header).toBeUndefined();
+  });
+  it("PR 74 : tableau à en-tête : le menu de case propose « Retirer l'en-tête »", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      const id = s.create(100, 200, 3, 3);
+      s.tool.requestCommit();
+      s.doc.apply({ type: "SetTableOptions", id, header: true });
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      expect(s.menuOpens[0]?.items.find((i) => i.id === "header")?.label).toBe("Retirer l'en-tête");
+      s.tool.close(1, "end");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("PR 74 : D35 sur une plage : un objet dans une case non active de la plage refuse Ombrer", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const o = s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: 1000, y0: 1000, x1: 1100, y1: 1050, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    const t = s.table(id);
+    s.doc.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: [id, t.rows[0]?.id ?? "", t.cols[1]?.id ?? ""], sizes: [] });
+    s.click(120, 220);
+    s.tool.requestCommit();
+    s.setShift(true);
+    s.click(100 + 240 + 120, 220);
+    s.setShift(false);
+    expect(s.tool.cellState()?.range).toEqual({ r0: 0, c0: 0, r1: 0, c1: 1 });
+    const n = s.runs.length;
+    s.tool.act("shade");
+    expect(s.runs.length).toBe(n);
+    expect(s.notices).toEqual(["Retirez d'abord les objets de la case."]);
+  });
+  it("C3 : saisie dans l'en-tête : rowHeight mesuré en gras (la ligne 0 grandit, le peintre pose le gras)", () => {
+    // 10 par caractère, 14 en gras : « aaaaaaaaa bbbbbbbbb » tient sur une ligne (190 <= 224), pas en gras (266 > 224).
+    const bm: Measure = (s, _size, face) => s.length * (face?.bold === true ? 14 : 10);
+    const text = "aaaaaaaaa bbbbbbbbb";
+    const s = setup(bm);
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    s.tool.act("header-toggle");
+    s.click(220, 232);
+    s.type(text);
+    s.tool.requestCommit();
+    const bold: TextSpan[] = [{ text, attrs: { bold: true } }];
+    const want = cellHeight(bold, 36, 240, bm);
+    expect(want).toBeGreaterThan(cellHeight(plainSpans(text), 36, 240, bm));
+    expect(s.last()).toMatchObject({ type: "SetTableCell", content: text, rowHeight: want, spans: [{ text, attrs: {} }] });
+    expect(s.table(id).rows[0]?.height).toBe(want);
+  });
   it("TB2 : header-toggle écrit header vrai puis faux, une étape chacun ; cellState.header suit", () => {
     const s = setup();
     const id = s.create(100, 200, 2, 2);
@@ -1102,5 +1165,222 @@ describe("outil Tableau — TB2 en-tête et D35", () => {
     s.tool.requestCommit();
     s.tool.act("shade");
     expect(s.last()?.type).toBe("SetTableShade");
+  });
+});
+
+describe("outil Tableau — S7 ajuster au contenu (D14, DS7)", () => {
+  /** 3 × 3 en (100, 200), « Photosynthèse » en (0, 0), case (0, 0) active, saisie fermée. */
+  const ready = () => {
+    const s = setup();
+    const id = s.create(100, 200, 3, 3);
+    s.type("Photosynthèse");
+    s.tool.requestCommit();
+    s.click(100 + 120, 200 + 32);
+    s.tool.requestCommit();
+    return { s, id };
+  };
+  it("S7 : double appui sur la poignée droite : colonne 0 = 13 × 10 + 16, une commande", () => {
+    const { s, id } = ready();
+    const n = s.runs.length;
+    s.tool.begin(3, [atT(340, 232, 1000)]);
+    s.tool.close(3, "end");
+    s.tool.begin(4, [atT(342, 232, 1200)]);
+    s.tool.close(4, "end");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.last()?.type).toBe("SetTableLineSizes");
+    expect(s.table(id).cols.map((c) => c.width)).toEqual([146, 240, 240]);
+  });
+  it("S7 : deux appuis à 400 ms, puis à 20 px : aucun ajustement", () => {
+    const { s, id } = ready();
+    s.tool.begin(3, [atT(340, 232, 1000)]);
+    s.tool.close(3, "end");
+    s.tool.begin(4, [atT(340, 232, 1400)]);
+    s.tool.close(4, "end");
+    s.tool.begin(5, [atT(340, 252, 1500)]);
+    s.tool.close(5, "end");
+    expect(s.table(id).cols.map((c) => c.width)).toEqual([240, 240, 240]);
+  });
+  it("S7 : double appui sur la bordure intérieure de la ligne 0 (saisie ouverte au premier) : validée sans écrire, ligne ajustée", () => {
+    const { s, id } = ready();
+    s.doc.apply({ type: "SetTableLineSizes", id, cols: [], rows: [[s.table(id).rows[0]?.id ?? "", 150]] });
+    const n = s.runs.length;
+    s.tool.begin(3, [atT(450, 350, 1000)]);
+    s.tool.close(3, "end");
+    s.tool.begin(4, [atT(451, 350, 1150)]);
+    s.tool.close(4, "end");
+    expect(s.runs.slice(n).map((c) => c.type)).toEqual(["SetTableLineSizes"]);
+    expect(s.table(id).rows[0]?.height).toBe(64);
+  });
+  it("S7 : Alt+A (fit-content) : colonne et ligne de la case active en une SetTableLineSizes", () => {
+    const { s, id } = ready();
+    const n = s.runs.length;
+    s.tool.act("fit-content");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.last()?.type).toBe("SetTableLineSizes");
+    expect(s.table(id).cols[0]?.width).toBe(146);
+    expect(s.table(id).rows[0]?.height).toBe(64);
+  });
+  it("C2 : Alt+A sur la plage (0,0)-(1,1), case active (0,0) : colonne 0 et ligne 0, pas le coin bas-droit (DS7)", () => {
+    const { s, id } = ready();
+    s.setShift(true);
+    s.click(100 + 240 + 120, 200 + 64 + 32);
+    s.setShift(false);
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, range: { r0: 0, c0: 0, r1: 1, c1: 1 } });
+    s.tool.act("fit-content");
+    expect(s.table(id).cols.map((c) => c.width)).toEqual([146, 240, 240]);
+    expect(s.table(id).rows.map((r) => r.height)).toEqual([64, 64, 64]);
+  });
+});
+
+describe("outil Tableau — C2 largeur ajustée jamais sous les objets logés (cadrage § 9, DS7)", () => {
+  it("C2 : objet logé de 1000 de large en (0, 0) : Alt+A donne sa largeur + 2 × marge, au-delà de FIT_MAX_WIDTH, comme le glisser", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.type("Photosynthèse");
+    s.tool.requestCommit();
+    const o = s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: 108, y0: 208, x1: 108 + 1000, y1: 248, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    const t = s.table(id);
+    s.doc.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: [id, t.rows[0]?.id ?? "", t.cols[0]?.id ?? ""], sizes: [] });
+    s.tool.act("fit-content");
+    const w = (s.doc.bounds([o])?.x1 ?? 0) - (s.doc.bounds([o])?.x0 ?? 0) + 16;
+    expect(w).toBeGreaterThan(FIT_MAX_WIDTH);
+    expect(s.table(id).cols[0]?.width).toBe(w);
+  });
+});
+
+describe("outil Tableau — C2 saisie d'un en-tête cadrée sur le texte en gras", () => {
+  /** 10 unités par caractère, 14 en gras. */
+  const bm: Measure = (s, _size, face) => s.length * (face?.bold === true ? 14 : 10);
+  it("C2 : en-tête, va milieu, « aaaa bbbb » dans 120 de large : cadre d'après deux lignes en gras", () => {
+    const s = setup(bm);
+    const id = s.create(100, 200, 2, 2);
+    s.type("aaaa bbbb");
+    s.tool.requestCommit();
+    s.tool.look({ key: "va", value: "middle" });
+    const t = s.table(id);
+    s.doc.apply({ type: "SetTableOptions", id, header: true });
+    s.doc.apply({ type: "SetTableLineSizes", id, cols: [[t.cols[0]?.id ?? "", 120]], rows: [[t.rows[0]?.id ?? "", 200]] });
+    s.click(100 + 60, 200 + 150);
+    // Boîte intérieure 184 de haut ; deux lignes de 45 en gras : descente (184 − 90) / 2 = 47 (une ligne : 69,5).
+    expect(s.host.last().matrix[5]).toBe(200 + 8 + 47);
+  });
+});
+
+describe("outil Tableau — D15 alignement (S8)", () => {
+  it("D15 : look ha sur une plage : une SetTableLook ; ha-next tourne gauche → centre → droite → gauche", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    s.setShift(true);
+    s.click(100 + 240 + 120, 232);
+    s.setShift(false);
+    const before = s.runs.length;
+    s.tool.look({ key: "ha", value: "center" });
+    const t = s.table(id);
+    expect(s.runs.length).toBe(before + 1);
+    expect(s.last()).toEqual({ type: "SetTableLook", id, from: { row: t.rows[0]?.id, col: t.cols[0]?.id }, to: { row: t.rows[0]?.id, col: t.cols[1]?.id }, look: { key: "ha", value: "center" } });
+    s.tool.act("ha-next");
+    expect(s.tool.cellState()?.ha).toBe("right");
+    s.tool.act("ha-next");
+    expect(s.tool.cellState()?.ha).toBe("left");
+    s.tool.act("va-next");
+    expect(s.tool.cellState()?.va).toBe("middle");
+  });
+  it("D15 : saisie ouverte au cadre aligné : case milieu-centre → boîte descendue, align center", () => {
+    const s = setup();
+    const id = s.create(100, 200, 1, 1);
+    s.type("ab");
+    s.tool.requestCommit();
+    const t = s.table(id);
+    s.doc.apply({ type: "SetTableLineSizes", id, cols: [], rows: [[t.rows[0]?.id ?? "", 164]] });
+    const c = { row: t.rows[0]?.id ?? "", col: t.cols[0]?.id ?? "" };
+    s.doc.apply({ type: "SetTableLook", id, from: c, to: c, look: { key: "ha", value: "center" } });
+    s.doc.apply({ type: "SetTableLook", id, from: c, to: c, look: { key: "va", value: "middle" } });
+    s.click(220, 280);
+    const o = s.host.last();
+    expect(o.align).toBe("center");
+    expect(o.matrix).toEqual([1, 0, 0, 1, 108, 208 + 51.5]);
+    expect(o.boxWidth).toBe(224);
+  });
+});
+
+describe("outil Tableau — S9 bordures (DS4)", () => {
+  it("S9 : Alt+B pose [couleur du style, 4, solid] sur la plage ; Alt+Maj+B pose none ; cellState.border suit", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    s.tool.act("border-set");
+    expect(s.last()).toMatchObject({ type: "SetTableLook", id, look: { key: "border", value: ["#000000", 4, "solid"] } });
+    expect(s.tool.cellState()?.border).toEqual(["#000000", 4, "solid"]);
+    s.tool.act("border-none");
+    expect(s.tool.cellState()?.border).toEqual(["#000000", 4, "none"]);
+  });
+});
+
+describe("outil Tableau — S11 déplacer une ligne (D18, DS8)", () => {
+  const ready = () => {
+    const s = setup();
+    const id = s.create(100, 200, 3, 3);
+    s.type("a");
+    s.tool.navigate("down");
+    s.type("b");
+    s.tool.navigate("down");
+    s.type("c");
+    s.tool.requestCommit();
+    return { s, id };
+  };
+  it("S11 : poignée de la ligne 2 (22 px à gauche du tableau) tirée sur la ligne 0 : une ReorderTableLines au relâché, c, a, b", () => {
+    const { s } = ready();
+    const n = s.runs.length;
+    s.tool.begin(3, [at(100 - 22, 200 + 160)]);
+    s.tool.extend(3, [at(100 - 22, 200 + 100)], []);
+    s.tool.extend(3, [at(100 - 22, 200 + 32)], []);
+    expect(s.runs.length).toBe(n);
+    s.tool.close(3, "end");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.last()?.type).toBe("ReorderTableLines");
+    expect(s.tool.cellState()?.column).toEqual(["c", "a", "b"]);
+    s.doc.undo();
+    expect(s.tool.cellState()?.column).toEqual(["a", "b", "c"]);
+  });
+  it("S11 : pendant le glisser, la ligne d'arrivée est cadrée (target)", () => {
+    const { s } = ready();
+    s.tool.begin(3, [at(100 - 22, 200 + 160)]);
+    s.tool.extend(3, [at(100 - 22, 200 + 32)], []);
+    expect(s.tool.live().overlay?.target).toEqual({ x0: 100, y0: 200, x1: 820, y1: 264 });
+    s.tool.close(3, "cancel");
+  });
+  it("S11 : geste annulé, ou relâché sur sa propre ligne : aucune commande", () => {
+    const { s } = ready();
+    const n = s.runs.length;
+    s.tool.begin(3, [at(100 - 22, 200 + 160)]);
+    s.tool.extend(3, [at(100 - 22, 200 + 32)], []);
+    s.tool.close(3, "cancel");
+    s.tool.begin(4, [at(100 - 22, 200 + 160)]);
+    s.tool.close(4, "end");
+    expect(s.runs.length).toBe(n);
+  });
+  it("S11 : zone coupée : message, aucune commande", () => {
+    const { s, id } = ready();
+    const t = s.table(id);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: t.rows[0]?.id ?? "", col: t.cols[1]?.id ?? "" }, to: { row: t.rows[1]?.id ?? "", col: t.cols[1]?.id ?? "" } });
+    const n = s.runs.length;
+    s.tool.begin(3, [at(100 - 22, 200 + 160)]);
+    s.tool.extend(3, [at(100 - 22, 200 + 96)], []);
+    s.tool.close(3, "end");
+    expect(s.runs.length).toBe(n);
+    expect(s.notices).toContain("Une cellule fusionnée empêche ce déplacement.");
+  });
+  it("S11 : Ctrl+Maj+↑ (row-up) : la ligne 2 monte d'un rang : a, c, b ; col-right : la colonne 0 passe en 1", () => {
+    const { s, id } = ready();
+    s.tool.act("row-up");
+    expect(s.tool.cellState()?.column).toEqual(["a", "c", "b"]);
+    const c0 = s.table(id).cols[0]?.id;
+    s.tool.act("col-right");
+    expect(s.table(id).cols[1]?.id).toBe(c0);
+  });
+  it("S11 : poignées de déplacement dessinées avec celles de taille (row-move, col-move)", () => {
+    const { s } = ready();
+    expect((s.tool.live().overlay?.grips ?? []).map((g) => g.kind).sort()).toEqual(["col", "col-move", "row", "row-move"]);
   });
 });

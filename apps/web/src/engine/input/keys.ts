@@ -106,13 +106,30 @@ export function cellKey(e: KeyLike): CellKey | null {
   return null;
 }
 
-export type TableKey = "header-toggle" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
+export type TableKey = "header-toggle" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none" | "row-up" | "row-down" | "col-left" | "col-right";
 /** personnalisation-3 (H12) : touches de l'outil Tableau : Alt+→ ← largeur ± 8, Alt+↓ ↑ hauteur ± 8 (Ctrl+Alt+flèche est pris par le système : bureau, rotation d'écran ; Ctrl+flèche = ordre, Alt+Maj+flèche = objet relié, OG12) ; hors champ,
- *  hors IME, sans Ctrl, Cmd ni Maj. Le moteur la prend avec l'outil Tableau et une case active, et la page appelle preventDefault (Alt+← = page précédente). */
+ *  hors IME, sans Ctrl, Cmd ni Maj (sauf Alt+Maj+C, Alt+Maj+M : alignements, D15). Le moteur la prend avec l'outil Tableau et une case active, et la page appelle preventDefault (Alt+← = page précédente). */
 export function tableKey(e: KeyLike): TableKey | null {
-  if (e.isComposing || e.metaKey || inEditable(e.target)) return null;
-  if (!e.altKey || e.ctrlKey || e.shiftKey) return null;
+  if (e.isComposing || inEditable(e.target)) return null;
+  // D18 : Ctrl+Maj+flèches déplacent la ligne ou la colonne ; l'ordre des objets ne les prend qu'hors outil Tableau.
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+    if (e.key === "ArrowUp") return "row-up";
+    if (e.key === "ArrowDown") return "row-down";
+    if (e.key === "ArrowLeft") return "col-left";
+    if (e.key === "ArrowRight") return "col-right";
+    return null;
+  }
+  if (!e.altKey || e.ctrlKey || e.metaKey) return null;
+  // D15 : Alt+Maj+C / Alt+Maj+M font tourner l'alignement horizontal / vertical (lus par `code` : Alt+Maj change `key`).
+  if (e.shiftKey) {
+    if (e.code === "KeyC") return "ha-next";
+    if (e.code === "KeyM") return "va-next";
+    if (e.code === "KeyB") return "border-none";
+    return null;
+  }
   if (e.code === "KeyE") return "header-toggle";
+  if (e.code === "KeyA") return "fit-content";
+  if (e.code === "KeyB") return "border-set";
   if (e.key === "ArrowRight") return "col-wider";
   if (e.key === "ArrowLeft") return "col-narrower";
   if (e.key === "ArrowDown") return "row-taller";

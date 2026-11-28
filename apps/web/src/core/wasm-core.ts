@@ -30,8 +30,8 @@ import type {
   TextAttrs,
   TextSpan,
 } from "./api";
-import type { BindHit, LineBinding } from "./api";
-import { MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, UNKNOWN_BOX } from "./api";
+import type { BindHit, BorderStyle, LineBinding } from "./api";
+import { isCellLookShape, MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, TABLE_MESSAGE, UNKNOWN_BOX } from "./api";
 import { toLook, type Look } from "./look";
 import { isAssetId } from "./asset-store";
 import { cleanPatch } from "./rich-text";
@@ -149,9 +149,11 @@ export function toTable(v: unknown): TableData {
     size,
     cols: cols.map((c: unknown) => {
       if (!isRecord(c)) throw new Error(ELEMENT);
-      const { id, width } = c;
+      const { id, width, accept } = c;
       if (typeof id !== "string" || !finitePositive(width)) throw new Error(ELEMENT);
-      return { id, width };
+      // personnalisation-3 (DS5) : `accept` lu par le cœur (`read_accept`), null sans ; tout autre : absent.
+      const list = Array.isArray(accept) && accept.every((x) => typeof x === "string") ? { accept: [...accept] as string[] } : {};
+      return { id, width, ...list };
     }),
     rows: rows.map((r: unknown) => {
       if (!isRecord(r)) throw new Error(ELEMENT);
@@ -161,10 +163,19 @@ export function toTable(v: unknown): TableData {
     }),
     cells: cells.map((c: unknown) => {
       if (!isRecord(c)) throw new Error(ELEMENT);
-      const { row, col, text, fill, shade, spans, bg } = c;
+      const { row, col, text, fill, shade, spans, bg, ha, va, border, open } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
       const asset = optString(bg);
-      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text), ...(asset === null ? {} : { bg: asset }) };
+      // personnalisation-3 (suite OG32, DS1) : valeurs écrites seulement ; défaut, null ou `open: false` : clé absente.
+      const look = {
+        ...(ha === "center" || ha === "right" ? { ha: ha as "center" | "right" } : {}),
+        ...(va === "middle" || va === "bottom" ? { va: va as "middle" | "bottom" } : {}),
+        ...(Array.isArray(border) && border.length === 3 && typeof border[0] === "string" && typeof border[1] === "number" && typeof border[2] === "string"
+          ? { border: [border[0], border[1], border[2] as BorderStyle] as const }
+          : {}),
+        ...(open === true ? { open: true as const } : {}),
+      };
+      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text), ...(asset === null ? {} : { bg: asset }), ...look };
     }),
     merges: merges.map((m: unknown) => {
       if (!isRecord(m)) throw new Error(ELEMENT);
@@ -759,6 +770,19 @@ class WasmCoreDocument implements CoreDocument {
         return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header));
       case "SetCellImage":
         return toChange(this.d.set_cell_image(cmd.id, cmd.row, cmd.col, cmd.from ?? undefined));
+      case "SetTableLook": {
+        // DS1 : types primitifs (`set_table_look_inner`). C1 : la forme (clé connue, valeur du type de sa clé) est contrôlée
+        // ici, par le contrôle partagé avec la fausse liaison (`isCellLookShape`) : hors type, le cœur lisait une valeur absente
+        // (retrait, case ouverte) ou Wasm levait une erreur brute ; les domaines restent au cœur (`check`, BadTable).
+        const l: unknown = cmd.look;
+        if (!isCellLookShape(l)) throw new Error(TABLE_MESSAGE);
+        const text = l.key === "ha" || l.key === "va" ? l.value : l.key === "border" ? l.value?.[0] : undefined;
+        const width = l.key === "border" ? (l.value?.[1] ?? 0) : l.key === "open" ? (l.value ? 1 : 0) : 0;
+        const labels = l.key === "border" ? (l.value === null ? [] : [l.value[2]]) : l.key === "accept" ? [...l.value] : [];
+        return toChange(this.d.set_table_look(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col, l.key, text, width, labels));
+      }
+      case "ReorderTableLines":
+        return toChange(this.d.reorder_table_lines(cmd.id, cmd.axis === "row", [...cmd.order]));
       case "ImportTable":
         return toChange(
           this.d.import_table(

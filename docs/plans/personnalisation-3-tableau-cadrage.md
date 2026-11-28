@@ -331,3 +331,155 @@ Joués par `scripts/essais/personnalisation-3-navigateur.mjs` (`verifier.sh --e2
 ## 8. Portes immédiates
 
 Aucune.
+
+## 9. Suite OG32 (2026-11-28) — décisions des points restants
+
+Mode autonome (brief OG32) : aucune question ne parvient à Jérôme ; chaque décision ci-dessous est un **choix tranché
+seul**, avec sa source et sa raison. D1 à D36 restent valables ; les décisions DS complètent celles qui restaient ouvertes
+et changent la forme d'écriture de trois d'entre elles (D15, D19, D21), là où c'est écrit. Périmètre : mineurs de la
+PR 74, points 7, 8, 9, 11 (lot B) et 12, 13, 14 (lot C) ; le point 15 (collage tabulé) est traité à part.
+Base lue : `origin/main` @ 161cf734. Plan : `docs/plans/personnalisation-3-tableau-PLAN-suite.md`.
+
+### Ce que `main` fait désormais (lu sur le code)
+
+- Module Wasm principal : 1 456 551 o après `wasm-opt -Oz` (`scripts/verifier.sh:49-51`, `docs/essais/taille-wasm.md`
+  § OG23), plafond 1 572 864 o : marge 116 313 o. Module `formats` : 2 795 907 o pour 3 145 728 o.
+- L'accordéon d'OG23 existe (PR #73, `ui/OptionsPanel.tsx:192-199`, `OPTION_ORDER` de `ui/tool-options.ts:10`,
+  `sectionOpen`) ; le panneau ne s'ouvre pas avec l'outil Tableau (`showsPanel`, `tool-options.ts:117` ; test
+  `tool-options.test.ts:73`). La prémisse « OG23 n'a pas livré d'accordéon » de l'état est périmée.
+- `paintText` aligne déjà chaque ligne (`render/canvas2d.ts:381-387`, OG11) ; `offsetAt` ne connaît aucun alignement
+  (`text-layout.ts:271`) ; la saisie DOM n'a pas de `text-align` (`app/text-editor.ts:314-321`).
+- `runAll` existe (`engine.ts:825`) ; il n'est pas utilisé ici : D23 tient (un geste = une commande du cœur).
+- Les touches du Tableau sont disjointes de celles d'OG23 par un test (`input/keys.test.ts:377`, « fusion OG23 × OG26 »).
+- TB3 à TB6 du plan du lot B n'ont jamais été relus ni exécutés : repris et corrigés dans le plan de la suite.
+
+### Décisions
+
+| # | point | décision | source | raison |
+|---|---|---|---|---|
+| DS1 | Wasm (8, 9, 12, 14) | **une seule commande Rust de réglage**, `SetTableLook { id, from, to, look }`, une clé par commande : `ha`, `va`, `border`, `open` posés sur les ancres et cellules simples de la plage, `accept` posé sur ses colonnes. Valeur contrôlée avant la recherche du tableau (`BadTable`) ; rien ne change : aucune étape. Export à types primitifs `set_table_look(id, from_row, from_col, to_row, to_col, key, text, width, labels)` (aucun `Deserialize` neuf). Remplace la forme `SetTableLook { ha?, va?, border? }` de D15, la commande `SetTableShadeOpen` de D19 et le « réglage » de D21 ; les clés du fichier (`ha`, `va`, `border`, `open`, `accept`) sont celles de H1. Choix tranché seul | brief OG32 (« une seule commande Rust minimale ») ; DA4 ; `docs/essais/taille-wasm.md` § OG23 | un export et une colle JS pour quatre points ; le tri (13) et l'ajustement (7) n'ont besoin d'aucune commande neuve |
+| DS2 | Wasm (11, 13) | seconde et dernière commande Rust : `ReorderTableLines { id, axis, order }` (D18, inchangée). Estimation après `-Oz` : `SetTableLook` +10 à +18 Ko, `ReorderTableLines` +4 à +7 Ko, soit +14 à +25 Ko (marge restante ≥ 90 Ko). Toute tâche Rust mesure les deux modules ; **arrêt si la marge du principal passe sous 40 Ko** (module > 1 532 864 o) ou celle de `formats` sous 40 Ko (> 3 104 768 o). Aucun seuil ne bouge, `opt-level = "z"` refusé. Choix tranché seul | brief OG32 ; `taille-wasm.md` (T7 : +4 130 o, T9 : +4 983 o par commande du lot A, avant `-Oz`) | mesure du coût réel d'une commande de tableau au lot A |
+| DS3 | 12 — cache | clé de case `open = true`, écrite seulement sur une case ombrée (`SetTableLook` `open`) ; Ombrer et Désombrer (`SetTableShade`) retirent `open` dans la même transaction ; un toucher à la Sélection bascule ouvert / fermé (F10 écrit `open` au lieu d'effacer `shade`) ; Alt+O en outil Tableau bascule la plage. Une case cachée, **ouverte ou fermée**, refuse tout objet (D35 étendu : `cell-drop` et `PlaceInCell` refusent déjà une case ombrée ; un tracé y reste libre), donc refermer ne cache jamais un objet logé. Dessin ouvert : fond, image de fond et texte visibles, liseré hachuré de 4 unités au bord intérieur (H19). Pot sur un cache ouvert : mot du texte, comme une case normale. Choix tranché seul | D19, D35, H9, H19 | aucun cas où un objet logé serait caché ou révélé par erreur ; un ancien lecteur montre la case fermée (H9, accepté) |
+| DS4 | 9 — bordures | valeur D16 gardée : `border = [couleur, épaisseur, style]`, épaisseur ]0, 32], style `solid`, `dashed`, `dotted`, `none` ; `null` retire le réglage (trait d'aujourd'hui). Dessin : bord commun = réglage de la case du bas ou de droite, sinon celle du haut ou de gauche ; zone : réglage de son ancre ; tirets par `dashOf` (`render/sketch.ts:18`), embout rond pour les pointillés. Tableau sans aucune bordure réglée : **le chemin de dessin d'aujourd'hui, inchangé à l'appel près**. Gestes : panneau (couleur parmi les pastilles du style, épaisseur Fin 2 / Moyen 4 / Épais 8 de `WIDTHS`, style dont « Aucune », « Par défaut ») ; Alt+B pose `[couleur du style courant, 4, solid]`, Alt+Maj+B pose `none` en gardant couleur et épaisseur. Choix tranché seul | D16 ; S9 ; `tool-options.ts:78` (`WIDTHS`) | réutilise les choix du panneau des formes ; aucun risque sur les tableaux existants |
+| DS5 | 14 — tableau de tri | `accept` posé sur les colonnes de la plage (`SetTableLook` `accept`, liste vide = retiré, 64 libellés au plus, chacun non vide et ≤ 200 caractères). Règle dans la page seulement (`cell-drop.ts`) : une colonne qui a `accept` n'accepte qu'**un seul texte** dont le contenu, sans blancs de bord et sans casse (`fr`), est dans la liste ; sa case d'en-tête (ligne 0 d'un tableau à en-tête) refuse tout. Refus au relâché : aucune commande, l'aperçu est annulé, l'objet reste à sa place, aucune étape (`drop` rend `"refused"`, la Sélection n'écrit rien) ; Alt+Entrée refusé de même ; aucun cadre de case visée sur une case qui refuserait. La CLI pose `PlaceInCell` sans contrôle d'étiquette (outil d'auteur). Champ « Accepte » du panneau : libellés séparés par virgule, point-virgule ou retour, doublons retirés. Choix tranché seul | D21, H11, S14 | la règle est un geste de l'élève, pas une contrainte du fichier ; aucun Rust |
+| DS6 | 8 — alignement | **un seul calcul** : `cellTextFrame(t, cell, textHeight)` (`table-geom.ts`) donne le cadre du texte (boîte intérieure de la zone, décalée de `va` d'après la hauteur des lignes) et `ha` ; le décalage par ligne est `lineShift(line, boxWidth, align)` (`text-layout.ts`), lu par `paintText` et par `offsetAt` (paramètre `align`, défaut `left`). Lecteurs : dessin des cases (`paintCellTexts`, `canvas2d.ts`), pot (`fill-target.ts`), saisie (`openActive` : boîte au cadre, `align` passé à la zone DOM, `text-align`). Le texte libre (outil Texte) garde son comportement d'aujourd'hui (le pot n'y passe pas `align`). Un objet logé n'est pas déplacé (D8). Gestes : panneau (2 rangées de 3) ; **Alt+Maj+C** fait tourner l'alignement horizontal (gauche → centre → droite → gauche), **Alt+Maj+M** le vertical (haut → milieu → bas → haut). Choix tranché seul | D15 ; `keys.test.ts:377` (Alt+Maj+H et Alt+Maj+R sont à OG23) ; choix 2 du plan du lot B abandonné | H12 donnait Alt+Maj+H et Alt+Maj+R, déjà pris par Aligner et Tourner (OG23) ; deux touches qui tournent gardent S8 (« Alt+Maj+C puis Alt+Maj+M ») |
+| DS7 | 7 — ajuster | double appui (≤ 300 ms et ≤ 8 px écran entre les deux appuis) sur une poignée de taille ou une bordure (± 6 px, intérieure comprise : une saisie ouverte par le premier appui est validée sans écriture) : colonne = largeur naturelle bornée à 960 (`naturalWidth`, lignes de texte sans retour des ancres d'une seule colonne + 2 marges, mesurées sur les segments affichés `shownSpans`, gras d'en-tête compris), **jamais sous la taille exigée par les objets logés** : `max(objets, min(960, naturelle))` (C2, 2026-11-28 : un objet logé ne déborde jamais, comme au glisser `minSize`) ; ligne = hauteur exigée ; les autres lignes qui exigent plus regrandissent ; **une** `SetTableLineSizes`. Alt+A : la colonne et la ligne de la case active (jamais le coin de la plage), une commande. Bouton « Ajuster au contenu » dans la section Objets du panneau. Choix tranché seul | D14, H15, H16 ; TB3 corrigé | TB3 ne voyait pas qu'un appui sur une bordure intérieure ouvre la saisie (F14) et que le second appui n'était alors qu'une validation |
+| DS8 | 11 — déplacer | deux poignées de déplacement de 44 px, **hors du tableau** : à gauche de la ligne (ou du bloc) active, au-dessus de la colonne active (point Lucide `grip-vertical` / `grip-horizontal` dessiné dans un disque de 24 px) ; glisser au pointeur du moteur, la case d'arrivée est cadrée (cadre de case visée) ; relâché : `movedOrder` puis une `ReorderTableLines`. Bloc déplacé = la plage, sinon la zone, le long de l'axe. Refus si une zone serait coupée (même règle que le cœur, `keepsMerges`) : aucune commande, message « Une cellule fusionnée empêche ce déplacement. ». Clavier : Ctrl+Maj+↑ / ↓ (ligne), Ctrl+Maj+← / → (colonne), d'un rang, pris par l'outil Tableau avec une case active **avant** l'ordre des objets (`orderKey`). Choix tranché seul | D18, HB5 ; D-DS3 (44 px) | les poignées dehors ne recouvrent ni la case ni les poignées de taille |
+| DS9 | 13 — trier | ordre calculé par la page (`sortedRows`) : `Intl.Collator("fr", { numeric: true, sensitivity: "base" })`, cases vides en dernier dans les deux sens, tri stable ; colonne de la case active, texte de l'ancre si la case est couverte ; ligne d'en-tête gardée en tête ; refus si une zone couvre plusieurs lignes, message « Le tri ne passe pas sur une cellule fusionnée sur plusieurs lignes. » ; ordre inchangé : aucune commande ; puis une `ReorderTableLines` (les objets logés suivent, D5). Gestes : Alt+T (croissant), Alt+Maj+T (décroissant), section Lignes du panneau (deux boutons), menu de case « Trier ». Choix tranché seul | D20, H10, S13 | aucun Rust ; la comparaison numérique vit déjà dans `Intl` |
+| DS10 | panneau | sections de l'accordéon pour l'outil Tableau, montrées avec une case active : `tableObjects` « Objets » (Agrandir / Rétrécir, Ajuster au contenu), `tableAlign` « Alignement » (ouverte par défaut), `tableBorder` « Bordures » (ouverte par défaut), `tableRows` « Lignes » (En-tête ; Trier au lot C), `tableAccept` « Tableau de tri » (lot C). Corps dans `ui/TableOptions.tsx` (`TableSection`), hôte réduit à `{ act(a: TableAction), look(l: CellLook) }` sur `Engine.tableAction` et `Engine.tableLook` (neuve). `showsPanel` accepte `table`. Le choix 1 du plan du lot B (menu de case au lieu du panneau) est abandonné. Un essai existant que l'îlot recouvrirait le replie d'une ligne (`[data-options-toggle]`), patron du lot A. Choix tranché seul | D26, DA5 ; `OptionsPanel.tsx:192` ; brief OG32 | l'accordéon existe ; l'hôte de DA5 (cinq méthodes) se ramène aux deux entrées que le moteur a déjà ou presque |
+| DS11 | raccourcis | outil Tableau, case active, saisie fermée : Alt+A ajuster ; Alt+Maj+C / Alt+Maj+M alignements ; Alt+B / Alt+Maj+B bordures ; Ctrl+Maj+flèches déplacer ; Alt+O cache ; Alt+T / Alt+Maj+T trier ; existants : Alt+E, Alt+flèches, Alt+F, Alt+I ; Sélection : Alt+Entrée (soumis à DS5). Le champ « Accepte » n'a pas de raccourci propre (champ texte, atteint par Tab). Toutes lues par `code`, ajoutées à `SHORTCUTS` avec leur ligne `EXPECT`, et au test « touches disjointes » d'OG23. Choix tranché seul | H12 ; `keys.test.ts:377` ; `shortcuts.test.ts` | aucune ne recoupe Aligner, Tourner, Répartir, l'objet relié ni le pas des flèches |
+| DS12 | mineurs PR 74 | bouton « En-tête » enfoncé (`ItemState.pressed` = en-tête posé, `aria-pressed` passé par `TableActionRow`) ; une zone ancrée en ligne 0 prend le fond d'en-tête sur toute sa hauteur ; `scaleOf` exporté de `table-geom.ts` et lu par l'outil Tableau ; tests : une étape par geste d'en-tête, libellé « Retirer l'en-tête », D35 sur une plage, Alt+E et Alt+flèches sans effet hors de l'outil Tableau ; titre « neuf actions » → « dix actions ». Choix tranché seul | relecture de la PR 74 (mineurs reportés, état) | défauts relevés à la relecture, aucun ne change le fichier |
+| DS13 | CLI (D15 du profil) | `SetTableLook` et `ReorderTableLines` dans `COMMAND_TYPES` (43 → 45), `ops.test.ts`, passages `cli-essai.mjs` T-S8, T-S9, T-S12, T-S14 (SetTableLook) et T-S11 (ReorderTableLines) ; la ligne `.roomboard` de `FORMAT_LOTS` gagne la note des clés de tableau (aucun format neuf). Choix tranché seul | D25 ; profil § CLI | chaque point est pilotable sans moteur |
+| DS14 | oracles | `#stage` gagne `data-table-align` (`<ha>,<va>`), `data-table-border` (`<couleur>,<épaisseur>,<style>` ou vide), `data-table-column` (textes de la colonne active, séparés par une barre verticale), `data-table-opens` (caches ouverts de la page, compté dans la boucle `tableCounts` existante). Essai neuf `scripts/essais/personnalisation-3-suite-navigateur.mjs` (page propre, tableaux à droite de l'îlot d'options), joué par `verifier.sh --e2e`. Choix tranché seul | D28 (aucune boucle neuve par image) ; essai du lot A | l'essai du lot A est un seul long scénario dont l'état s'accumule |
+| DS15 | découpage | un plan, 14 tâches : lot B = T1 à T10 (une PR, fusionnable seule), lot C = T11 à T14 (une PR). Les clés `open` et `accept` du cœur arrivent au lot B avec `SetTableLook` (une seule mesure de taille), leurs gestes au lot C. Choix tranché seul | brief OG32 (≤ 20 tâches, lot B vert avant C) | une commande Rust n'est pas coupée en deux |
+| DS16 | empreinte S6 | non touchée attendue ; la tâche qui touche `fill-target.ts` rejoue `zone-s6-banc.test.ts` en témoin et compare la ligne `S6 empreinte :` avant et après ; si elle change, nouveau hash relevé et documenté dans `docs/essais/c8-porte-s6.md` comme la PR 53, sans toucher un seuil. Choix tranché seul | D30 ; brief | le pot sur zone n'appelle ni `tableAt` ni le code d'alignement |
+
+### Scénarios d'acceptation (suite, complétés)
+
+Joués par `scripts/essais/personnalisation-3-suite-navigateur.mjs` (lectures `#stage[data-…]` d'abord, captures 2x
+avec `--captures` dans `docs/design/captures/personnalisation-3-tableau/`), sinon par le test unitaire nommé.
+
+- **S7 (7)** Tableau 3 × 3 (720 × 192), « Photosynthèse » en (0, 0). Double appui à la souris sur la poignée droite de la
+  case : le tableau fait 720 − 240 + (largeur du mot + 16), entre 496 et 720 ; Ctrl+Z : 720 en une étape ; Alt+A : même
+  largeur qu'au double appui. Deux appuis à 400 ms, ou à 20 px : rien (test `table.test.ts` « S7 »). Captures
+  `ajuste-avant.png`, `ajuste-apres.png`. Écart de l'essai (C1) : `personnalisation-3-suite-navigateur.mjs` écrit « Eau »
+  au lieu de « Photosynthèse » : à la taille 36 du tableau, « Photosynthèse » + 16 dépasse 240, le tableau passerait
+  au-delà de 720 et sortirait de la plage 496-720 ; l'essai compare à 720 − 240 + (largeur du mot mesurée + 16), à 1 px.
+- **S8 (8)** Plage (0, 0)-(0, 1) (« Lundi », « Mardi ») : panneau « Centré » puis « Au milieu » : `data-table-align` =
+  `center,middle`, deux étapes ; Ctrl+Z deux fois : `left,top` ; Alt+Maj+C puis Alt+Maj+M : `center,middle`. Le pot sur
+  le mot centré colore ce mot (`fill-target.test.ts` « D15 ») ; le PDF prend le même peintre (`paintCellTexts`).
+  Captures `alignement-avant.png`, `alignement-apres.png`.
+- **S9 (9)** Plage 2 × 2 (0, 0)-(1, 1) d'un 3 × 3 : panneau, 2ᵉ pastille, « Épais », « Tirets » : `data-table-border` =
+  `<couleur>,8,dashed` ; les douze segments qui bordent la plage (huit extérieurs, quatre intérieurs) sont à cette couleur
+  en tirets, les autres au trait du tableau (`table-paint.test.ts` « S9 ») ; Alt+Maj+B sur (1, 1) : ses bords qui ne
+  touchent pas une case réglée du bas ou de droite disparaissent (`…,none`) ; enregistrer et relire : identique
+  (`look_reload_keeps_bytes`, `cli-essai` T-S9) ; la couleur atteint le PDF vectoriel (`pdf-overlay-vector.test.ts`
+  « S9 »). Captures `bordures-avant.png`, `bordures-apres.png`.
+- **S10-mineurs** Bouton « En-tête » : `aria-pressed="false"`, puis `true` après l'appui, `false` après Ctrl+Z ; le menu
+  de case d'un tableau à en-tête propose « Retirer l'en-tête » ; une zone (0, 0)-(1, 0) d'un tableau à en-tête est grise
+  sur ses deux lignes ; Ombrer une plage dont une case non active porte un objet : refusé, message ; Alt+E et Alt+→ avec
+  l'outil Stylo : aucune action.
+- **S11 (11)** 3 × 3, « a », « b », « c » dans la colonne 0 : poignée de déplacement de la ligne 2 tirée au doigt sur la
+  ligne 0 : `data-table-column` = `c|a|b`, une étape ; Ctrl+Z : `a|b|c` ; Ctrl+Maj+↑ sur la ligne 2 : `a|c|b` ; un objet
+  logé suit sa ligne (`reorder_moves_linked_objects`) ; zone (0, 1)-(1, 1) puis ligne 2 tirée sur la ligne 1 : refus,
+  message « Une cellule fusionnée empêche ce déplacement. », ordre inchangé. Captures `ligne-avant.png`, `ligne-apres.png`.
+- **S12 (12)** 2 × 2, « secret » en (0, 0), Ombrer ; Sélection, toucher la case : `data-table-opens` = 1, le texte est
+  visible avec un liseré hachuré ; toucher encore : 0 ; outil Tableau, Alt+O : 1 ; Désombrer : 0 et case normale ; un
+  objet glissé sur le cache ouvert n'y loge pas. Captures `cache-ferme.png`, `cache-ouvert.png`.
+- **S13 (13)** 2 × 4 à en-tête, colonne 0 : « Nombre », 10, 9, 100 ; Alt+T : `data-table-column` = `Nombre|9|10|100` ;
+  Ctrl+Z : `Nombre|10|9|100` ; « Trier décroissant » du panneau : `Nombre|100|10|9` ; un tableau dont une zone couvre deux
+  lignes refuse avec le message. Captures `tri-avant.png`, `tri-apres.png`.
+- **S14 (14)** 2 × 3 à en-tête « Mammifères », colonne 0 acceptant « chat, chien » (panneau, champ « Accepte ») : le texte
+  « chat » glissé au doigt sur (1, 0) y loge (`data-table-linked` = 1) ; « truite » glissé sur (2, 0) revient à sa place,
+  `data-version` inchangé (aucune étape) ; « Chat » (casse) loge aussi (`cell-drop.test.ts` « S14 »). Captures
+  `tableau-tri-avant.png`, `tableau-tri-apres.png`.
+- **S16 (CLI, suite)** `cli-essai.mjs` : T-S8 (`ha` relu sur deux cases), T-S9 (`border` relu, rouvert), T-S12 (`open`
+  sur une case ombrée, retiré par `SetTableShade` null), T-S14 (`accept` relu sur la colonne), T-S11 (lignes inversées,
+  `undo` d'une étape).
+- **S17 (U3, suite)** `look_reload_keeps_bytes` (les cinq clés, enregistrer, relire, réenregistrer : mêmes octets),
+  `old_reader_ignores_look_keys` (document relu sans les cinq clés : mêmes éléments, mêmes cases, mêmes tailles),
+  `reorder_reload_keeps_bytes`.
+
+### Hypothèses à revoir (suite)
+
+- HS1 (niveau 1) Une case cachée ouverte refuse aussi les objets (DS3) ; autre choix : l'accepter et refuser de la refermer.
+- HS7 (niveau 1, à côté de H9, **hypothèse acceptée**, choix tranché seul) Une version d'avant ne connaît pas `open` : si
+  elle désombre puis réombre une case, la clé `open` reste écrite, et de retour dans la version neuve le cache réapparaît
+  ouvert. Raison : cas rare (aller-retour entre deux versions sur la même case), l'enseignant le referme d'un toucher,
+  aucune donnée n'est perdue.
+- HS8 (niveau 2, choix tranché seul) Alt tenue au relâché ne contourne pas la règle d'étiquettes (DS5) : une étiquette
+  refusée revient à sa place ; une étiquette admise se déplace librement. Raison : la règle ne se contourne pas par un
+  modificateur.
+- HS2 (niveau 1) Alt+Maj+C et Alt+Maj+M tournent au lieu de six touches fixes (DS6).
+- HS3 (niveau 1) La règle d'étiquettes ne vit que dans la page ; la CLI peut loger n'importe quoi (DS5).
+- HS4 (niveau 2) Alt+B pose une bordure d'épaisseur 4 à la couleur du style (DS4).
+- HS5 (niveau 2) Poignées de déplacement hors du tableau ; un tableau collé au bord gauche de la page a sa poignée de
+  ligne hors de la page, prise quand même (DS8).
+- HS6 (niveau 2) Le panneau s'ouvre avec l'outil Tableau dès qu'une case est active ; il peut recouvrir la colonne 0 d'un
+  tableau posé à gauche (même recouvrement que pour le stylo, déjà signalé).
+- HS9 (niveau 2, **hypothèse acceptée**) Le texte de la saisie d'une case d'en-tête s'affiche sans gras (affichage de la
+  saisie seulement ; le dessin final est en gras) : la saisie garde les segments enregistrés. La hauteur de ligne écrite à
+  la validation, elle, est mesurée en gras (`headerSpans`). Même cause non corrigée : `header-toggle` n'agrandit pas la
+  ligne 0 quand le gras demande plus de hauteur ; il faudrait une seule commande (`SetTableOptions` portant des
+  hauteurs de lignes : contrat Rust, wasm et fake-core), sinon deux étapes d'annulation ; reporté.
+
+### Carte d'impact (suite)
+
+Touchés (V = vérifié dans le code) : `crates/roomboard-core/src/{table.rs, table_look.rs (nouveau), table_links.rs,
+commands.rs, lib.rs}`, `crates/roomboard-wasm/src/lib.rs` ; `apps/web/src/core/{api.ts, wasm-core.ts, fake-core.ts,
+wasm-core.contract.test.ts}` ; `apps/web/src/engine/{table-geom.ts, text-layout.ts, fill-target.ts, engine.ts}`,
+`engine/tools/{table.ts, select.ts, cell-drop.ts, text.ts}`, `engine/render/{table-paint.ts, canvas2d.ts, overlay.ts}`,
+`engine/input/keys.ts` ; `apps/web/src/ui/{TableOptions.tsx (nouveau), OptionsPanel.tsx, tool-options.ts, item-state.ts,
+Toolbar.tsx, icons.ts, cell-menu.ts, shortcuts.ts, rb.css}`, `apps/web/src/app/{text-editor.ts, stage-tags.ts,
+board-session.ts}`, `apps/web/src/toolbar.test.ts` ; `apps/cli/src/{ops.ts, ops.test.ts, formats.ts, formats.test.ts}`,
+`scripts/essais/{cli-essai.mjs, personnalisation-3-suite-navigateur.mjs (nouveau)}`, `scripts/verifier.sh`,
+`scripts/tests/verifier-e2e.test.sh`, `THIRD_PARTY_NOTICES.md`, `docs/design/captures/personnalisation-3-tableau/`.
+
+Effets de bord nouveaux, chacun avec son test : le toucher F10 écrit `SetTableLook open` (`select.test.ts` « F10 ») ;
+Ombrer et Désombrer retirent `open` (`set_table_shade_clears_open`, contrat « open ») ; le panneau s'ouvre avec l'outil
+Tableau (`tool-options.test.ts` « showsPanel(table) », dont le cas `table` du test existant change) ; Ctrl+Maj+↑ / ↓ en
+outil Tableau déplace une ligne au lieu de l'ordre des objets (`engine.test.ts` « Ctrl+Maj+↑ ») ; `offsetAt` sans `align`
+garde son résultat (`text-layout.test.ts`) ; un tableau sans bordure réglée se dessine par les mêmes appels
+(`table-paint.test.ts` existants inchangés) ; `paintText` passe par `lineShift` (tests du texte libre inchangés).
+
+Tests à garder verts sans réécriture de fond : `c10a-tableau-navigateur.mjs`, `c10b-tableau-navigateur.mjs`,
+`c13-tableaux-navigateur.mjs`, `personnalisation-3-tableau-navigateur.mjs` (au plus une ligne qui replie l'îlot
+d'options, DS10), essais à `data-item`, `table.rs` tests C10a et C10b, `table.test.ts`, `table-geom.test.ts`,
+`paste.test.ts`, `zone-s6-banc.test.ts` (témoin, DS16).
+
+Modules à réutiliser ou à étendre (suite) :
+
+| besoin | module existant | interface | décision |
+|---|---|---|---|
+| clé posée sur les ancres d'une plage | `table.rs` `set_on_targets`, `targets`, `cells_map`, `insert_cell`, `RawTable::rect`, `RawTable::key` | `targets(&rect, &merges) -> Vec<(usize, usize)>` ; `insert_cell(txn, &cells, key, "", vec![])` | réutiliser (`pub(crate)`) |
+| parité du faux cœur | `fake-core.ts` `setOnTargets`, `rectOf`, `targets`, `writeTable` | `writeTable(found, id, next)` | étendre |
+| recopie d'une entrée de ligne | `yrs::types::AsPrelim` (déjà dans `table_links.rs`) | `map.as_prelim(&txn)` | réutiliser |
+| suivi des objets liés | `table_links.rs` `offsets`, `follow_in`, `table_done_with` | `follow_in(&mut txn, &page, &e, id, &before, &HashSet::new())` | réutiliser |
+| décalage d'alignement | `canvas2d.ts:381` `paintText` (calcul en ligne) | `lineShift(line, boxWidth, align)` extrait dans `text-layout.ts` | étendre |
+| cadre du texte d'une case | `table-geom.ts` `cellInnerBox` | `cellTextFrame(t, cell, textHeight)` | étendre |
+| tirets | `render/sketch.ts:18` `dashOf` | `dashOf(kind, w)` | réutiliser |
+| tailles ligne par ligne | `SetTableLineSizes` (lot A), `requiredSizes`, `linkedBoxes` | `ctx.run({ type: "SetTableLineSizes", id, cols, rows })` | réutiliser |
+| choix à segments du panneau | `ui/RadioChoices.tsx`, `WIDTHS`, `strokePicks` | `RadioChoices({ name, label, look: "segment", options, valueAttr, value, choose, keepFocus })` | réutiliser |
+| poignées de l'outil | `overlay.ts` `OverlayGrip`, `canvas2d.ts:799` | `kind` gagne `row-move`, `col-move` | étendre |
+| refus au relâché | `select.ts:324-327` (toucher d'ombrage : retour sans `Transform`) | `drop(...) === "refused"` → retour | étendre |
+| options du tableau | aucun (sections de l'accordéon) | `ui/TableOptions.tsx` `TableSection` | nouveau module |

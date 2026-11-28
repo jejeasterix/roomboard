@@ -107,6 +107,9 @@ async function scenario(page, url, { captures, tmp }) {
   await page.keyboard.press("Escape");
   await fr();
   check(await page.$eval("#texte-edition", (a) => a.hidden), "S1 : « Lundi », Échap : saisie fermée (F14)");
+  // L'îlot d'options (ouvert avec l'outil Tableau, DS10) recouvre les cases : on le replie, comme le ferait la main.
+  await page.click("[data-options-toggle]");
+  await fr();
   await drag(cell1(c1, 0, 0), cell1(c1, 0, 1));
   await waitAttr("data-table", "4x3@0,0-0,1");
   check(true, 'S1 : glisser de la première à la deuxième cellule : data-table="4x3@0,0-0,1"');

@@ -621,6 +621,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
 - Lue dans Lucide au même commit (design L2, correctif T12) : `file-plus` (Lucide `file-plus`), pour « Insérer des pages… ».
 - Reprises de la maquette `docs/design/maquettes/02-annotation-bureau.html` (design L4, tracés Lucide au même commit),
   noms RoomBoard : `check` (Lucide `check`), `drop` (Lucide `file-down`).
+- Lues dans Lucide (personnalisation-3 suite, T8) : `grip-vertical` et `grip-horizontal` (six points recopiés dans
+  `apps/web/src/engine/render/canvas2d.ts`, poignées de déplacement du tableau).
 - Lue dans Lucide (personnalisation 2, T18) : `link` (Lucide `link`), pour le bouton Lien, l'éditeur de lien et le
   badge des éléments liés (mêmes tracés dans `apps/web/src/engine/render/link-badge.ts`).
 - Lue dans Lucide au même commit (personnalisation 2, T39) : `external-link` (Lucide `external-link`), pour « Ouvrir le lien »
@@ -647,6 +649,10 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   noms RoomBoard identiques aux noms Lucide : `play`, `pause`, `repeat`, `volume-2`, `arrow-right-to-line`,
   `arrow-left-to-line`, `move-horizontal`, `rotate-3d`, `scan`, `sun`, `contrast`, `rotate-ccw`.
 
+- Panneau d'options du tableau (personnalisation-3 suite, DS10), lus au même commit `7981a0798a` par `gh api`, recopiés tels quels, noms RoomBoard
+  identiques aux noms Lucide : `move-horizontal` (Ajuster au contenu, la même que celle d'OG34), `ban` (Aucune bordure).
+- Bouton Aimant de la ligne de contexte des formes (OG69, G5), lu au même commit `7981a0798a` par `gh api`, recopié tel quel,
+  nom RoomBoard identique au nom Lucide : `magnet`.
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :
 

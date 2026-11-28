@@ -339,6 +339,7 @@ function TableActionRow(props: { view: Accessor<ToolbarView>; host: ToolbarHost 
               icon={iconFor(item, st().icon)}
               label={st().label}
               disabled={st().disabled}
+              pressed={st().pressed}
               attrs={{ "data-table-action": id }}
               onPress={() => props.host.runAction(id)}
             />
