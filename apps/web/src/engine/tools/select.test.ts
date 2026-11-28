@@ -796,6 +796,7 @@ describe("OG33 lot 2b : poignée de rotation", () => {
     const t = doc.apply({ type: "SetText", page, id: null, x: 0, y: 0, content: "a", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 }).ids[0]!;
     const a = rect(100, 100, 200, 200);
     tool.setSelection([t, a]);
+    const before = new Map([t, a].map((id) => [id, doc.element(id)!.transform] as const));
     const f = doc.bounds([t, a])!;
     const h = rotateHandlePoint(f, 1);
     const c = centre(f);
@@ -811,14 +812,21 @@ describe("OG33 lot 2b : poignée de rotation", () => {
     // Texte : partie linéaire identité, centre déplacé (translation non nulle).
     expect([mt[0], mt[1], mt[2], mt[3]]).toEqual([1, 0, 0, 1]);
     expect(Math.hypot(mt[4], mt[5])).toBeGreaterThan(1);
-    // Forme : quart de tour horaire.
-    expect(ma[1]).toBeCloseTo(1, 9);
+    // Forme : environ un quart de tour horaire (doigt tourné autour du centre du cadre, pivot du cœur sans le trait).
+    expect(ma[1]).toBeGreaterThan(0.99);
     tool.close(1, "end");
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ type: "Rotate", ids: [t, a] });
-    for (const [id, m] of [[t, mt], [a, ma]] as const) {
+    // Écrit = fantôme ∘ transformation d'avant (le fantôme se pose sur l'élément peint).
+    for (const [id, g] of [[t, mt], [a, ma]] as const) {
+      const o = before.get(id)!;
+      const want = [
+        g[0] * o[0] + g[2] * o[1], g[1] * o[0] + g[3] * o[1],
+        g[0] * o[2] + g[2] * o[3], g[1] * o[2] + g[3] * o[3],
+        g[0] * o[4] + g[2] * o[5] + g[4], g[1] * o[4] + g[3] * o[5] + g[5],
+      ];
       const w = doc.element(id)!.transform;
-      for (let i = 0; i < 6; i += 1) expect(w[i]).toBeCloseTo(m[i]!, 6);
+      for (let i = 0; i < 6; i += 1) expect(w[i]).toBeCloseTo(want[i]!, 6);
     }
   });
   // Second patron interdit (D28) : aucune lecture `element()` par image pendant le glisser ; membres lus au `begin`.
