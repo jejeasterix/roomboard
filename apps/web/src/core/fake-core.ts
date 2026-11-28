@@ -218,6 +218,9 @@ interface FakePage {
 /** `assets` : valeurs brutes (K3) ; lues avec défauts champ par champ (K4). */
 interface State { readonly pages: FakePage[]; readonly assets: Map<string, unknown> }
 
+/** OG33 : plafond du texte d'une forme, en caractères (`MAX_LABEL_CHARS`, label.rs). */
+const MAX_LABEL_CHARS = 10_000;
+
 const MESSAGES = {
   badShape: "forme invalide (rect, ellipse, line ou arrow, coins finis attendus)",
   badMatrix: "matrice invalide (six nombres finis, inversible)",
@@ -1403,7 +1406,9 @@ class FakeDocument implements CoreDocument {
               return [w / 2 + (w / 2) * Math.cos(a), h / 2 + (h / 2) * Math.sin(a)];
             });
         const world = local.map(([x, y]) => applyMatrix(e.transform, x, y));
-        const next = withLine({ ...e, shape: { ...s, shape: "line", polygon: true } }, world, null, null);
+        // H5 : le texte de la forme part avec elle, l'annulation le rend.
+        const { label: _t, ...s0 } = s;
+        const next = withLine({ ...e, shape: { ...s0, shape: "line", polygon: true } }, world, null, null);
         if (next === "badMatrix") throw new Error(MESSAGES.badMatrix);
         if (next === "badPoints") throw new Error("points invalides");
         const { look: before, ...bare } = next;
@@ -1414,6 +1419,25 @@ class FakeDocument implements CoreDocument {
           const p = st.pages.find((q) => q.id === pageId);
           const i = p ? p.elements.findIndex((x) => x.id === cmd.id) : -1;
           if (p && i >= 0) p.elements[i] = placed;
+          return { pages: [pageId], ids: [cmd.id], removed: [] };
+        });
+      }
+      case "SetShapeLabel": {
+        // OG33 (lot 2b, choix 8) : `cmd_set_shape_label` (label.rs), même ordre de refus ; vide : clé retirée (GC8).
+        if ([...cmd.label].length > MAX_LABEL_CHARS) throw new Error(MESSAGES.badText);
+        const found = this.find(cmd.id);
+        if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
+        const e = found.element;
+        const s = e.shape;
+        if (!s || isSegment(s.shape)) throw new Error(MESSAGES.badShape);
+        if ((s.label ?? "") === cmd.label) return this.unchanged();
+        const { label: _t, ...rest } = s;
+        const next: FakeElement = { ...e, shape: cmd.label === "" ? rest : { ...rest, label: cmd.label } };
+        const pageId = found.page.id;
+        return this.step((st) => {
+          const p = st.pages.find((q) => q.id === pageId);
+          const i = p ? p.elements.findIndex((x) => x.id === cmd.id) : -1;
+          if (p && i >= 0) p.elements[i] = next;
           return { pages: [pageId], ids: [cmd.id], removed: [] };
         });
       }
@@ -1438,7 +1462,10 @@ class FakeDocument implements CoreDocument {
           if (ux !== 0) dy += sh + LINK_GAP;
           else dx += sw + LINK_GAP;
         }
-        const { group: _g, look: copied, ...bareCopy } = copyElements([e], new Map(), dx, dy)[0]!;
+        const { group: _g, look: copied, ...linked } = copyElements([e], new Map(), dx, dy)[0]!;
+        // OG33 (choix 8) : la copie reliée part sans texte.
+        const { label: _t, ...unlabeled } = linked.shape!;
+        const bareCopy = { ...linked, shape: unlabeled };
         // C1 : ni le lien ni la graine de la source (graine neuve, comme un groupe neuf).
         const { link: _l, ...kept } = copied ?? {};
         const look: Look | undefined = kept.seed === undefined ? kept : { ...kept, seed: newSeed() };

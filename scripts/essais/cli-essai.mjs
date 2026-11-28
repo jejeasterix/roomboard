@@ -736,6 +736,21 @@ try {
     verifie("OG33 : angle non numérique : code 2", mauvais.code === 2, mauvais.brut);
     console.log("OG33 : Rotate");
   }
+  // OG33 (lot 2b, choix 8) : texte de forme en une étape annulable ; sur une ligne : code 1 « forme invalide ».
+  {
+    const f = join(dir, "etiquette.roomboard");
+    const rc = { type: "AddShape", page: "$page:0", shape: "rect", x0: 0, y0: 0, x1: 100, y1: 50, style: { color: "#000000", width: 4 }, fill: null };
+    const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], lignesOps(rc, { ...rc, shape: "line" }, { op: "state" }));
+    const els = neuf.lignes[2]?.state?.pages?.[0]?.elements ?? [];
+    const [id, ligne] = [els[0]?.id, els[1]?.id];
+    const lab = cli(["run", f, "--save", "--ops", "-"], lignesOps({ type: "SetShapeLabel", id, label: "Bonjour" }, { op: "state" }, { op: "undo" }, { op: "state" }));
+    const sh = (k) => lab.lignes[k]?.state?.pages?.[0]?.elements?.[0]?.shape;
+    verifie("OG33 : SetShapeLabel « Bonjour » sur le rectangle", neuf.code === 0 && lab.code === 0 && sh(1)?.label === "Bonjour", lab.brut);
+    verifie("OG33 : undo en une étape, clé absente", sh(3) !== undefined && !Object.hasOwn(sh(3), "label"), lab.brut);
+    const mauvais = cli(["run", f, "--ops", "-"], lignesOps({ type: "SetShapeLabel", id: ligne, label: "x" }));
+    verifie("OG33 : SetShapeLabel sur une ligne : code 1", mauvais.code === 1 && mauvais.brut.includes("forme invalide"), mauvais.brut);
+    console.log("OG33 : SetShapeLabel");
+  }
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);
