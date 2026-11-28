@@ -351,7 +351,7 @@ export function edgeAt(t: TableData, lx: number, ly: number, tol: number): EdgeH
 }
 
 /** Échelle d'une matrice (longueur de l'image du vecteur x) ; 1 si nulle. */
-const scaleOf = (m: Matrix): number => Math.hypot(m[0], m[1]) || 1;
+export const scaleOf = (m: Matrix): number => Math.hypot(m[0], m[1]) || 1;
 
 /** Bordure du tableau le plus haut à ± `tolPx` px écran de (x, y) monde (D13), au zoom `zoom`. */
 export function tableEdgeAt(

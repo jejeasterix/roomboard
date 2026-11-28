@@ -99,7 +99,11 @@ function paintCellImage(ctx: CanvasRenderingContext2D, b: Bounds, asset: string,
 export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData, images: ImageSource | null = null): void {
   const zones = mergeRanges(t);
   // personnalisation-3 (D17) : fond d'en-tête sous les remplissages de case (un remplissage passe au-dessus).
-  if (t.header === true && t.rows.length > 0 && t.cols.length > 0) fillBox(ctx, rangeRect(t, { r0: 0, c0: 0, r1: 0, c1: t.cols.length - 1 }), TABLE_HEADER_FILL);
+  // PR 74 : une zone ancrée en ligne 0 appartient entière à l'en-tête (sinon sa partie basse sort blanche).
+  if (t.header === true && t.rows.length > 0 && t.cols.length > 0) {
+    fillBox(ctx, rangeRect(t, { r0: 0, c0: 0, r1: 0, c1: t.cols.length - 1 }), TABLE_HEADER_FILL);
+    for (const z of zones) if (z.r0 === 0 && z.r1 > 0) fillBox(ctx, rangeRect(t, z), TABLE_HEADER_FILL);
+  }
   for (const cell of t.cells) {
     if (cell.fill === null) continue;
     const at = visibleCell(t, zones, cell);

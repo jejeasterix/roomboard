@@ -37,6 +37,7 @@ import {
   requiredSizes,
   SIZE_STEP,
   step,
+  scaleOf,
   tableAt,
   tableEdgeAt,
   TABLE_COL_WIDTH,
@@ -213,7 +214,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
    *  de 44 px recouvrirait les cases voisines ; la bordure reste prise à ± 6 px). */
   const gripsOf = (at: Located): Grip[] => {
     const r = cellRect(at.table, at.cell);
-    const zoom = ctx.camera().zoom * Math.hypot(at.transform[0], at.transform[1]);
+    const zoom = ctx.camera().zoom * scaleOf(at.transform);
     return cellGrips(at.table, at.cell).filter((g) => (g.kind === "col" ? r.y1 - r.y0 : r.x1 - r.x0) * zoom >= GRIP_MIN_PX);
   };
 
@@ -228,7 +229,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         // dense elle ne recouvre ni le centre de la case ni celui de sa voisine (appui long, saisie).
         const size = (i: number): number => (g.kind === "col" ? at.table.cols[i]?.width : at.table.rows[i]?.height) ?? Infinity;
         // Tailles locales : l'échelle du tableau (transform) compte autant que le zoom pour les passer en px écran.
-        const room = 0.25 * Math.min(size(g.index), size(g.index + 1)) * ctx.camera().zoom * Math.hypot(at.transform[0], at.transform[1]);
+        const room = 0.25 * Math.min(size(g.index), size(g.index + 1)) * ctx.camera().zoom * scaleOf(at.transform);
         const inward = Math.min(GRIP_PX / 2, room);
         const dx = g.kind === "col" ? gx - sx : Math.abs(gx - sx);
         const dy = g.kind === "row" ? gy - sy : Math.abs(gy - sy);
