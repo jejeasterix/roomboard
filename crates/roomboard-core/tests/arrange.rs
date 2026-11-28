@@ -4,7 +4,7 @@ use roomboard_core::arrange::ArrangeHow;
 use roomboard_core::commands::{Change, Command, CommandError};
 use roomboard_core::document::Document;
 use roomboard_core::element::{Look, StrokeStyle, Transform};
-use roomboard_core::linear::LineInit;
+use roomboard_core::linear::{BindInput, LineInit};
 use roomboard_core::query::Bounds;
 use roomboard_core::shape::ShapeKind;
 use yrs::updates::decoder::Decode;
@@ -550,4 +550,175 @@ fn flip_v_mirrors_around_selection_center() {
     assert!(close(sbox(&d, &r).y0, 2.0 * cy - rb.y1));
     assert!(close(sbox(&d, &t).y0, 2.0 * cy - tb.y1));
     assert!(close(sbox(&d, &t).x0, tb.x0), "x inchangé");
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// OG33 (lot 2b, choix 3) : `Command::Rotate` — angle libre, portée et groupes d'`Arrange`, flèches liées suivies.
+
+fn rotate(d: &mut Document, ids: &[&String], angle: f64) -> Result<Change, CommandError> {
+    d.apply(Command::Rotate {
+        ids: ids.iter().map(|s| s.to_string()).collect(),
+        angle,
+    })
+}
+
+#[test]
+fn rotate_30_keeps_center_one_step() {
+    let mut d = blank();
+    let r = add_rect(&mut d, 100.0, 100.0, 150.0, 150.0);
+    let b0 = sbox(&d, &r);
+    let v = d.version();
+    rotate(&mut d, &[&r], 30.0).expect("tourner");
+    let m = matrix(&d, &r);
+    assert!(close(m[0], 30f64.to_radians().cos()) && close(m[1], 30f64.to_radians().sin()));
+    let b = sbox(&d, &r);
+    assert!(
+        close(mid_x(&b), mid_x(&b0)) && close(mid_y(&b), mid_y(&b0)),
+        "centre gardé"
+    );
+    assert_ne!(d.version(), v);
+    assert!(d.undo());
+    assert_eq!(matrix(&d, &r), [1.0, 0.0, 0.0, 1.0, 100.0, 100.0]);
+}
+
+#[test]
+fn rotate_90_equals_arrange_rotate_cw() {
+    let (mut a, mut b) = (blank(), blank());
+    let ra = add_rect(&mut a, 0.0, 0.0, 200.0, 50.0);
+    let rb = add_rect(&mut b, 0.0, 0.0, 200.0, 50.0);
+    rotate(&mut a, &[&ra], 90.0).expect("Rotate");
+    arrange(&mut b, &[&rb], ArrangeHow::RotateCw).expect("Arrange");
+    assert_eq!(matrix(&a, &ra), matrix(&b, &rb)); // quart de tour exact
+}
+
+/// Discrimine le patron écarté n° 1 (une `Transform` unique de la matrice de rotation, `cmd_transform`) : sous lui, le
+/// texte serait tourné ; ici sa matrice reste droite et seule sa place suit (H5 d'OG23).
+#[test]
+fn rotate_text_keeps_matrix_moves_place() {
+    let mut d = blank();
+    let r = add_rect(&mut d, 0.0, 0.0, 100.0, 100.0);
+    let t = add_text(&mut d, 300.0, 0.0);
+    rotate(&mut d, &[&r, &t], 45.0).expect("tourner");
+    let mt = matrix(&d, &t);
+    assert_eq!(&mt[..4], &[1.0, 0.0, 0.0, 1.0]);
+    assert!(
+        !close(mt[4], 300.0) || !close(mt[5], 0.0),
+        "la place du texte a tourné"
+    );
+}
+
+#[test]
+fn rotate_zero_and_nan() {
+    let mut d = blank();
+    let r = add_rect(&mut d, 0.0, 0.0, 50.0, 50.0);
+    let v = d.version();
+    assert!(rotate(&mut d, &[&r], 0.0).expect("nul").ids.is_empty());
+    assert!(rotate(&mut d, &[&r], 360.0).expect("tour").ids.is_empty());
+    assert_eq!(rotate(&mut d, &[&r], f64::NAN), Err(CommandError::BadMatrix));
+    assert_eq!(d.version(), v);
+}
+
+#[test]
+fn rotate_unknown_id_refused() {
+    let mut d = blank();
+    let a = add_rect(&mut d, 0.0, 0.0, 50.0, 20.0);
+    let nope = "inconnu".to_string();
+    let v = d.version();
+    assert_eq!(
+        rotate(&mut d, &[&a, &nope], 15.0),
+        Err(CommandError::UnknownElement(nope.clone()))
+    );
+    assert_eq!(d.version(), v);
+}
+
+/// Flèche de (100, 25) à (400, 25), départ lié au bord droit de `a`, fin au bord gauche de `b` (patron de
+/// `linked_arrow` de tests/fleches.rs).
+fn add_bound_arrow(d: &mut Document, a: &str, b: &str) -> String {
+    let page = first_page(d);
+    d.apply(Command::AddShape {
+        page,
+        shape: ShapeKind::Arrow,
+        x0: 100.0,
+        y0: 25.0,
+        x1: 400.0,
+        y1: 25.0,
+        style: pen(),
+        fill: None,
+        look: Look::default(),
+        line: LineInit {
+            points: vec![],
+            start: Some(BindInput {
+                id: a.into(),
+                fx: 1.0,
+                fy: 0.5,
+            }),
+            end: Some(BindInput {
+                id: b.into(),
+                fx: 0.0,
+                fy: 0.5,
+            }),
+        },
+    })
+    .expect("flèche")
+    .ids[0]
+        .clone()
+}
+
+fn json(d: &Document, id: &str) -> serde_json::Value {
+    serde_json::to_value(d.element(id).expect("élément")).expect("json")
+}
+
+/// Points monde d'une ligne (copie de `world` de tests/fleches.rs) : départ, points intérieurs, fin.
+fn line_world(d: &Document, id: &str) -> Vec<(f64, f64)> {
+    let v = json(d, id);
+    let t: Vec<f64> = v["transform"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_f64().unwrap())
+        .collect();
+    let s = &v["shape"];
+    let mut local = vec![(0.0, 0.0)];
+    if let Some(p) = s["points"].as_array() {
+        let p: Vec<f64> = p.iter().map(|x| x.as_f64().unwrap()).collect();
+        local.extend(p.chunks(2).map(|c| (c[0], c[1])));
+    }
+    local.push((s["w"].as_f64().unwrap(), s["h"].as_f64().unwrap()));
+    local
+        .iter()
+        .map(|(x, y)| (t[0] * x + t[2] * y + t[4], t[1] * x + t[3] * y + t[5]))
+        .collect()
+}
+
+fn near(a: (f64, f64), b: (f64, f64)) -> bool {
+    (a.0 - b.0).abs() < 1e-6 && (a.1 - b.1).abs() < 1e-6
+}
+
+/// Discrimine le patron écarté n° 2 (`cmd_arrange` tel quel, sans `linear::follow`) : sous lui, la `Change` ne cite que
+/// B et la fin de la flèche reste à (393, 25), hors du rectangle tourné (x ≥ 425) ; ici elle suit son contour dans la
+/// même transaction, et une seule annulation rend B et la flèche.
+#[test]
+fn rotate_bound_arrow_follows() {
+    let mut d = blank();
+    let a = add_rect(&mut d, 0.0, 0.0, 100.0, 50.0);
+    let b = add_rect(&mut d, 400.0, 0.0, 500.0, 50.0);
+    let f = add_bound_arrow(&mut d, &a, &b);
+    let w0 = line_world(&d, &f);
+    assert!(near(w0[w0.len() - 1], (393.0, 25.0)), "fin liée : {w0:?}");
+    let (f_before, b_before) = (json(&d, &f), json(&d, &b));
+    let v = d.version();
+    let ch = rotate(&mut d, &[&b], 90.0).expect("tourner");
+    assert!(ch.ids.contains(&f), "flèche suivie dans la Change : {:?}", ch.ids);
+    assert_ne!(d.version(), v);
+    let w = line_world(&d, &f);
+    let end = w[w.len() - 1];
+    let rb = sbox(&d, &b); // 425..475 × −25..75 après le quart de tour
+    assert!(
+        end.0 > rb.x0 - 10.0 && end.0 < rb.x1 + 10.0 && end.1 > rb.y0 - 10.0 && end.1 < rb.y1 + 10.0,
+        "fin sur le contour tourné : {end:?}, boîte {rb:?}"
+    );
+    assert!(near(w[0], w0[0]), "départ inchangé : {:?}", w[0]);
+    assert!(d.undo());
+    assert_eq!(json(&d, &f), f_before, "une seule annulation rend la flèche");
+    assert_eq!(json(&d, &b), b_before, "et le rectangle");
 }
