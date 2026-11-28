@@ -139,7 +139,7 @@ describe("tool-options OG23 (T2) : accordéon, pression, disposition", () => {
     expect(sectionOpen("strokeStyle", { strokeStyle: true })).toBe(true);
     expect(sectionOpen("background", { background: false })).toBe(false);
     expect(sectionOpen("strokeStyle", { strokeStyle: "oui" } as never)).toBe(false);
-    expect([...OPEN_BY_DEFAULT].sort()).toEqual(["background", "image", "strokeColor", "strokeWidth"]);
+    expect([...OPEN_BY_DEFAULT].sort()).toEqual(["background", "image", "strokeColor", "strokeWidth", "tableAlign", "tableBorder"]);
   });
   it("pressure : stylo et trait seulement", () => {
     expect(sectionsFor("pen", [], false)).toEqual(["strokeColor", "strokeWidth", "pressure", "opacity"]);

@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { fireEvent, render } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
 import type { TableCellState } from "../engine/table-geom";
@@ -55,8 +56,8 @@ describe("TableOptions (DS10)", () => {
     expect(o.container.querySelector('[data-option-value="shrink"]')?.getAttribute("aria-keyshortcuts")).toBe("Alt+F");
     o.unmount();
     const a = mount("tableAlign", cell());
-    expect(a.container.querySelector('[data-option-value="center"]')?.getAttribute("aria-keyshortcuts")).toBe("Alt+Shift+C");
-    expect(a.container.querySelector('[data-option-value="middle"]')?.getAttribute("aria-keyshortcuts")).toBe("Alt+Shift+M");
+    expect(a.container.querySelector('[data-edit="tableHa"]')?.getAttribute("aria-keyshortcuts")).toBe("Alt+Shift+C");
+    expect(a.container.querySelector('[data-edit="tableVa"]')?.getAttribute("aria-keyshortcuts")).toBe("Alt+Shift+M");
     a.unmount();
     const b = mount("tableBorder", cell({ border: ["#000000", 2, "solid"] }));
     expect(b.container.querySelector('[data-option-value="none"]')?.getAttribute("aria-keyshortcuts")).toBe("Alt+Shift+B");

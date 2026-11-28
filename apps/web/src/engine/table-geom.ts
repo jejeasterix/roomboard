@@ -48,6 +48,8 @@ export interface TableCellState {
   readonly shaded?: boolean;
   /** personnalisation-3 (D17) : la ligne 0 est un en-tête, `#stage[data-table-header]`. */
   readonly header?: boolean;
+  /** DS10 : les objets logés rétrécissent au lieu d'agrandir la case (`fit`), lu par le panneau. */
+  readonly fit?: "shrink";
   /** D15 : alignements de la cellule active (absents : gauche, haut), `#stage[data-table-align]`. */
   readonly border?: TableBorder | null;
   readonly ha?: HAlign;

@@ -6,16 +6,20 @@ import { presetsOf, TABLE_FILLS, type Profile } from "../toolbar";
 
 export type OptionKey =
   | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "pressure" | "strokeStyle" | "roughness" | "roundness"
-  | "font" | "fontSize" | "textAlign" | "arrowType" | "arrowheads" | "opacity" | "image" | "layers" | "align" | "transform" | "actions";
+  | "font" | "fontSize" | "textAlign" | "arrowType" | "arrowheads" | "opacity" | "image" | "layers" | "align" | "transform" | "actions"
+  | "tableObjects" | "tableAlign" | "tableBorder" | "tableRows";
 export const OPTION_ORDER: readonly OptionKey[] = [
   "strokeColor", "background", "fillStyle", "strokeWidth", "pressure", "strokeStyle", "roughness", "roundness",
   // OG12 : la place réservée `editPoints` est devenue sa vraie section, « Type de flèche » (`arrowType`), à l'ordre
   // décidé par OG12 (avant les pointes, comme Excalidraw) ; « Modifier les points » est un bouton d'`actions`.
   "font", "fontSize", "textAlign", "arrowType", "arrowheads", "opacity", "image",
   "layers", "align", "transform", "actions",
+  "tableObjects", "tableAlign", "tableBorder", "tableRows",
 ];
 /** OG23 : sections ouvertes au premier affichage (`image` : la section de l'image seule). */
-export const OPEN_BY_DEFAULT: ReadonlySet<OptionKey> = new Set<OptionKey>(["strokeColor", "background", "strokeWidth", "image"]);
+export const OPEN_BY_DEFAULT: ReadonlySet<OptionKey> = new Set<OptionKey>(["strokeColor", "background", "strokeWidth", "image", "tableAlign", "tableBorder"]);
+/** DS10 : sections de l'outil Tableau, montrées avec une case active. */
+export const TABLE_SECTIONS: readonly OptionKey[] = ["tableObjects", "tableAlign", "tableBorder", "tableRows"];
 /** Section ouverte : l'état gardé sur l'appareil s'il est booléen, sinon le défaut. */
 export function sectionOpen(key: OptionKey, saved: Readonly<Partial<Record<string, boolean>>>): boolean {
   const v = Object.hasOwn(saved, key) ? saved[key] : undefined;
@@ -56,9 +60,10 @@ export function appliesTo(key: OptionKey, e: ElementView): boolean {
   return byElement(e).includes(key);
 }
 /** `background` : fond du style courant, lu quand aucune cible n'est choisie (le remplissage n'a de sens qu'avec un fond). */
-export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _editing: boolean, background: string | null = null, units = 0): readonly OptionKey[] {
+export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _editing: boolean, background: string | null = null, units = 0, tableCell = false): readonly OptionKey[] {
   const on = new Set<OptionKey>(BY_TOOL[tool] ?? []);
   for (const t of targets) for (const k of byElement(t)) on.add(k);
+  if (tool === "table" && tableCell) for (const k of TABLE_SECTIONS) on.add(k);
   if (targets.length > 0) { on.add("layers"); on.add("transform"); on.add("actions"); }
   if (targets.length === 1 && targets[0]!.kind === "image") on.add("image");
   if (units >= ALIGN_MIN_UNITS) on.add("align");
@@ -114,7 +119,7 @@ export function backgroundPicks(): readonly Pick[] {
     }),
   ];
 }
-const DRAW = new Set(["pen", "rect", "ellipse", "line", "arrow", "text"]);
+const DRAW = new Set(["pen", "rect", "ellipse", "line", "arrow", "text", "table"]);
 export function showsPanel(tool: ToolChoice, selection: number, annotating: boolean): boolean {
   if (annotating) return false;
   return DRAW.has(tool) || selection > 0;

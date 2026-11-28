@@ -646,6 +646,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   reprennent `bring-to-front` et `send-to-back` d'OG4), `align-left`, `align-center`, `align-right`. Dessinées pour RoomBoard (grille de 24, trait 1,5) :
   `fill-solid`, `fill-hachure`, `fill-cross`, `head-none`, `head-arrow`, `head-triangle`, `head-triangle-outline`.
 
+- Panneau d'options du tableau (personnalisation-3 suite, DS10), lus au même commit `7981a0798a` par `gh api`, recopiés tels quels, noms RoomBoard
+  identiques aux noms Lucide : `move-horizontal` (Ajuster au contenu), `ban` (Aucune bordure).
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :
 
