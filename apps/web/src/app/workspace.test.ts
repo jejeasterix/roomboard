@@ -897,6 +897,7 @@ describe("espace de travail : tableau collé et classeur (C10b)", () => {
     spy.mockClear();
     expect(await ws.pasteText(`a\tb\n${"x".repeat(PASTE_MAX_CHARS)}`)).toBe(true);
     expect(spy).not.toHaveBeenCalled();
+    expect(shell.notify).toHaveBeenCalledWith(PASTE_TOO_BIG);
     expect(await ws.pasteText("a\tb\nc\td")).toBe(true);
     expect(spy).toHaveBeenCalledTimes(1);
   });

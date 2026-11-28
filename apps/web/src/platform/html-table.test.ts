@@ -84,6 +84,7 @@ describe("texte tabulé collé (point 15, D22)", () => {
     expect(tsvGrid("")).toBeNull();
     expect(tsvGrid("\t")).toBeNull();
     expect(tsvGrid("a\t\n")).not.toBeNull();
+    expect(tsvGrid('"a\tb"\n')).toBeNull();
   });
   it("une seule ligne : la fin de ligne d'Excel est exigée", () => {
     expect(tsvGrid("Bonjour\tmonde")).toBeNull();
@@ -94,6 +95,17 @@ describe("texte tabulé collé (point 15, D22)", () => {
   it("guillemet ouvrant sans fermeture : champ gardé tel quel, le reste n'est pas avalé", () => {
     const g = tsvGrid('"abc\tdef\n');
     expect(g?.cells).toEqual(['"abc', "def"]);
+  });
+  it("guillemet fermant suivi d'autre chose : champ gardé tel quel", () => {
+    expect(tsvGrid('"Hi" there\tx\n')?.cells).toEqual(['"Hi" there', "x"]);
+  });
+  it("champ cité : \\r\\n et \\r ramenés à \\n", () => {
+    expect(tsvGrid('"a\r\nb\rc"\tx\n')?.cells).toEqual(["a\nb\nc", "x"]);
+  });
+  it("1000 lignes : 64 gardées, source comptée sans tout garder", () => {
+    const line = Array.from({ length: 100 }, () => "v").join("\t");
+    const g = tsvGrid(`${Array.from({ length: 1000 }, () => line).join("\n")}\n\n\t\t\n`);
+    expect([g?.rows, g?.cols, g?.sourceRows, g?.sourceCols, g?.cells.length]).toEqual([64, 64, 1000, 100, 4096]);
   });
   it("guillemets au milieu d'un champ non cité : gardés", () => {
     const g = tsvGrid('a "b" c\tx\n');

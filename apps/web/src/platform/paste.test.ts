@@ -41,6 +41,7 @@ const withText = (text: string, ...f: File[]) => ({ files: f, getData: (t: strin
 const sinkOf = () => ({
   pasteItems: vi.fn(async (_i: Uint8Array | "newer" | "too-big") => true),
   pasteTable: vi.fn(async (_html: string) => true),
+  pasteText: vi.fn(async (_t: string) => true),
   importFiles: vi.fn(async () => undefined),
 });
 
@@ -176,12 +177,24 @@ describe("collage d'un texte tabulé (point 15)", () => {
     target: document.body,
     clipboardData: { files: f, getData: (t: string) => (t === "text/plain" ? text : t === "text/html" ? html : "") },
   });
-  const sink = () => ({ ...sinkOf(), pasteText: vi.fn(async (_t: string) => true) });
+  const sink = sinkOf;
   it("texte à tabulations sans HTML : pasteText", async () => {
     const s = sink();
     await handlePaste(mk(tsv), s);
     expect(s.pasteText).toHaveBeenCalledWith(tsv);
     expect(s.pasteTable).not.toHaveBeenCalled();
+  });
+  it("texte tabulé + image jointe : grille posée, image ignorée", async () => {
+    const s = sink();
+    await handlePaste(mk(tsv, "", [png]), s);
+    expect(s.pasteText).toHaveBeenCalledWith(tsv);
+    expect(s.importFiles).not.toHaveBeenCalled();
+  });
+  it("pasteText rend false : repli sur les images jointes", async () => {
+    const s = sink();
+    s.pasteText.mockResolvedValueOnce(false);
+    await handlePaste(mk(tsv, "", [png]), s);
+    expect(s.importFiles).toHaveBeenCalledTimes(1);
   });
   it("HTML prioritaire : pasteTable, pas pasteText", async () => {
     const s = sink();
