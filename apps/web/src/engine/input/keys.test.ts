@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARRANGE_HOWS } from "../../core/arrange";
-import { appShortcut, arrangeKey, cellKey, rotateKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
+import { appShortcut, arrangeKey, cellKey, enterAction, rotateKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -321,6 +321,14 @@ describe("arrangeKey (OG23, déc. 24)", () => {
     expect(arrangeKey(k("H", { shiftKey: true, defaultPrevented: true }))).toBeNull();
     expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: { tagName: "CANVAS" } }))).toBe("align-left");
     expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: null }))).toBe("align-left");
+  });
+  it("enterAction : Entrée sur un contrôle (bouton, radio, case de grille) : faux ; sur la scène : vrai (OG33)", () => {
+    const role = (r: string) => ({ tagName: "DIV", getAttribute: (n: string) => (n === "role" ? r : null) });
+    for (const target of [{ tagName: "BUTTON" }, { tagName: "INPUT", type: "radio" }, role("radio"), role("gridcell")]) {
+      expect(enterAction(k("Enter", { target })), JSON.stringify(target)).toBe(false);
+    }
+    expect(enterAction(k("Enter", { target: { tagName: "CANVAS" } }))).toBe(true);
+    expect(enterAction(k("Enter"))).toBe(true);
   });
   it("nudgeKey : une flèche seule sur un bouton ou un contrôle ne pousse rien (inchangé)", () => {
     expect(nudgeKey(k("ArrowLeft", { target: { tagName: "BUTTON" } }))).toBeNull();
