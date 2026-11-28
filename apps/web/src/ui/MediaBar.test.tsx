@@ -128,3 +128,43 @@ describe("MediaBar (C14, M22)", () => {
     expect(clock(Infinity)).toBe("0:00");
   });
 });
+
+describe("MediaBar (OG34) : design des îlots et raccourcis", () => {
+  const icon = (el: Element): string | null => el.querySelector("svg[data-icon]")?.getAttribute("data-icon") ?? null;
+  it("icônes Lucide : lecture puis pause, début, fin, tout garder, boucle, volume", () => {
+    const a = setup(media(), { status: "poster" });
+    expect(["toggle", "start", "end", "keep", "loop"].map((k) => icon(a.q(k)))).toEqual(["play", "arrow-right-to-line", "arrow-left-to-line", "move-horizontal", "repeat"]);
+    expect(a.container.querySelector('[data-media-volume] svg[data-icon="volume-2"]')).not.toBeNull();
+    cleanup();
+    const b = setup(media(), { status: "lecture" });
+    expect(icon(b.q("toggle"))).toBe("pause");
+  });
+  it("volume : valeur lue en pour cent à côté du curseur", () => {
+    const { container } = setup(media({ volume: 0.4 }));
+    expect(container.querySelector("[data-media-volume] output")!.textContent).toBe("40 %");
+  });
+  it("raccourcis dans la barre : K lecture, D début, F fin, G tout garder, B boucle ; arrêtés à la barre", () => {
+    const { container, toggle, set } = setup(media(), { time: 2 });
+    const root = container.querySelector<HTMLElement>("[data-media-bar]")!;
+    const outside = vi.fn();
+    window.addEventListener("keydown", outside);
+    for (const key of ["k", "d", "f", "g", "b"]) fireEvent.keyDown(root, { key });
+    window.removeEventListener("keydown", outside);
+    expect(toggle).toHaveBeenCalledTimes(1);
+    expect(set.mock.calls.map(([s]) => s)).toEqual([
+      { trimStart: 2, trimEnd: null, loop: false, volume: 1 },
+      { trimStart: 2, trimEnd: 2, loop: false, volume: 1 },
+      { trimStart: 0, trimEnd: null, loop: false, volume: 1 },
+      { trimStart: 0, trimEnd: null, loop: true, volume: 1 },
+    ]);
+    expect(outside).not.toHaveBeenCalled();
+  });
+  it("raccourcis : avec Ctrl, ou une autre lettre, rien n'est pris", () => {
+    const { container, toggle, set } = setup();
+    const root = container.querySelector<HTMLElement>("[data-media-bar]")!;
+    fireEvent.keyDown(root, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(root, { key: "z" });
+    expect(toggle).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+  });
+});
