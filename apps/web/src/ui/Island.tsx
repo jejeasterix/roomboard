@@ -391,8 +391,9 @@ export interface IslandLayerProps {
   readonly sheetOpen: Accessor<boolean>;
   readonly watch?: Accessor<unknown>;
   /** T22 : îlot posé dans la zone du calque (panneau d'options) : mêmes bornes que les îlots. OG11 × OG4 : reçoit le
-   *  rectangle de l'îlot latéral de début (`side-start`, barre latérale ou outils, déplié ou replié) pour se poser à sa droite. */
-  readonly extra?: (sideStart: Accessor<Rect | null>, above: Accessor<readonly Rect[]>) => JSX.Element;
+   *  rectangle de l'îlot latéral de début (`side-start`, barre latérale ou outils, déplié ou replié) pour se poser à sa droite.
+   *  OG41 (D20) : `islands()`, rectangles fenêtre de tous les îlots visibles du calque (lus à l'appel), obstacles de la barre d'objet. */
+  readonly extra?: (sideStart: Accessor<Rect | null>, above: Accessor<readonly Rect[]>, islands: () => readonly Rect[]) => JSX.Element;
   /** T16 (design-l4) : haut libre des panneaux passagers, px de la case : 16 px sous la rangée des coins et sous l'îlot
    *  d'outils qu'elle place (sur la rangée ou descendu sur la voie suivante ; déplacé : non compté). */
   onTopFree?(y: number): void;
@@ -432,6 +433,17 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     const t = tools();
     return t === null || t.moved ? [] : withContextRow({ x: t.x, y: t.y, w: t.w, h: t.h }, t.ctx ?? null);
   });
+  /** OG41 (D20) : rectangles posés, px de la fenêtre, de chaque îlot visible du calque (barres, onglets, panneau d'options,
+   *  éditeur de lien, rangée contextuelle) ; lus à l'appel (la barre d'objet se replace à chaque état et caméra). */
+  const islandRects = (): readonly Rect[] => {
+    if (layer === undefined) return [];
+    const out: Rect[] = [];
+    for (const el of layer.querySelectorAll(".rb-island, [data-island-context]")) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+    }
+    return out;
+  };
   const placeSide = (id: string, p: Placed | null): void => {
     setSidePlaced((m) => {
       const { [id]: _old, ...rest } = m;
@@ -548,7 +560,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   };
   return (
     <div ref={layer} class="rb-islands">
-      {props.extra?.(sideStart, toolsAbove)}
+      {props.extra?.(sideStart, toolsAbove, islandRects)}
       <div ref={topStart} class="rb-corner" data-corner="top-start">
         <div ref={menu} class="rb-corner-menu">
           {islands(starts)}
