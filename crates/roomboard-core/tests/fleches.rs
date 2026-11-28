@@ -365,7 +365,13 @@ fn style_roundness_elbowed_and_new_heads() {
 #[test]
 fn diamond_heads_round_trip() {
     let mut d = Document::blank();
-    let a = shape(&mut d, ShapeKind::Arrow, [0.0, 0.0, 200.0, 0.0], LineInit::default()).expect("flèche");
+    let a = shape(
+        &mut d,
+        ShapeKind::Arrow,
+        [0.0, 0.0, 200.0, 0.0],
+        LineInit::default(),
+    )
+    .expect("flèche");
     for head in ["diamond", "diamond_outline"] {
         d.apply(Command::SetStyle {
             ids: vec![a.clone()],
