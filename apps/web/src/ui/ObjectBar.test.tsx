@@ -24,11 +24,14 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-function setup(v: ObjectBarView = BASE, obs: { x: number; y: number; w: number; h: number }[] = []) {
+const frame = (): Promise<void> => new Promise((r) => requestAnimationFrame(() => r()));
+type R4 = { x: number; y: number; w: number; h: number };
+function setup(v: ObjectBarView = BASE, obs: R4[] | (() => R4[]) = []) {
   const [view, setView] = createSignal<ObjectBarView>(v);
   let cam: Camera = { zoom: 1, tx: 0, ty: 0 };
+  const places = { n: 0 };
   const cbs = new Set<(c: Camera) => void>();
-  const engine = { camera: () => cam, onCamera: (cb: (c: Camera) => void) => (cbs.add(cb), () => void cbs.delete(cb)), selectionKeepOut: () => [] };
+  const engine = { camera: () => cam, onCamera: (cb: (c: Camera) => void) => (cbs.add(cb), () => void cbs.delete(cb)), selectionKeepOut: () => (places.n++, []) };
   const host = { selection: vi.fn(), runAction: vi.fn(), imagePanel: vi.fn() } as unknown as ToolbarHost;
   const mount = document.createElement("main");
   Object.defineProperty(mount, "clientWidth", { value: 1280 });
@@ -37,14 +40,14 @@ function setup(v: ObjectBarView = BASE, obs: { x: number; y: number; w: number; 
   stage.tabIndex = -1;
   mount.append(stage);
   document.body.append(mount);
-  render(() => <ObjectBar view={view} host={host} engine={() => engine} stage={() => stage} mount={mount} obstacles={() => obs} />);
+  render(() => <ObjectBar view={view} host={host} engine={() => engine} stage={() => stage} mount={mount} obstacles={() => (typeof obs === "function" ? obs() : obs)} />);
   const bar = (): HTMLElement => mount.querySelector<HTMLElement>("[data-object-bar]")!;
   const ids = (): string[] => [...bar().querySelectorAll("[data-object-button]")].map((b) => b.getAttribute("data-selection-action") ?? "more");
   const moveCamera = (c: Camera): void => {
     cam = c;
     for (const cb of cbs) cb(c);
   };
-  return { view, setView, host, mount, stage, bar, ids, moveCamera };
+  return { places, view, setView, host, mount, stage, bar, ids, moveCamera };
 }
 
 /** Texte visible d'un bouton : tout sauf le libellé réservé aux lecteurs d'écran (`.rb-sr`) et l'infobulle. */
@@ -95,10 +98,11 @@ describe("ObjectBar (OG41, D18-D27)", () => {
     t.setView({ ...BASE, selectionImage: null, selection: ["a", "b"], selectionUnits: 1, selectionGrouped: true });
     expect(t.ids()).toEqual(["duplicate", "copy", "ungroup", "delete", "more"]);
   });
-  it("S5 : posée 8 px au-dessus du cadre, centrée, px entiers ; suit la caméra, même taille", () => {
+  it("S5 : posée 8 px au-dessus du cadre, centrée, px entiers ; suit la caméra, même taille", async () => {
     const t = setup();
     expect([t.bar().style.left, t.bar().style.top]).toEqual(["210px", "248px"]);
     t.moveCamera({ zoom: 2, tx: 0, ty: -300 });
+    await frame();
     expect([t.bar().style.left, t.bar().style.top]).toEqual(["510px", "248px"]);
   });
   it("D25 : appui long (doigt) : infobulle sans action ; toucher court : action", () => {
@@ -234,7 +238,7 @@ describe("ObjectBar (OG41, D18-D27)", () => {
     expect(t.bar().querySelector("[data-object-menu]")).toBeNull();
     expect(t.bar().hidden).toBe(true);
   });
-  it("revue 1 : liste « … » fermée quand une action de la barre est jouée, quand la barre suit la caméra, quand le focus sort", () => {
+  it("revue 1 : liste « … » fermée quand une action de la barre est jouée, quand la barre suit la caméra, quand le focus sort", async () => {
     const t = setup();
     const menu = (): Element | null => t.bar().querySelector("[data-object-menu]");
     const openList = (): void => {
@@ -247,6 +251,7 @@ describe("ObjectBar (OG41, D18-D27)", () => {
     expect(menu()).toBeNull();
     openList();
     t.moveCamera({ zoom: 2, tx: 0, ty: -300 });
+    await frame();
     expect(menu()).toBeNull();
     openList();
     const outside = document.createElement("button");
@@ -301,5 +306,50 @@ describe("ObjectBar (OG41, D18-D27)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+  it("T12-1 : focus parti vers le corps de la page (clic dans la scène) : un changement d'état ne le ramène pas dans la barre", () => {
+    const t = setup();
+    const dup = t.bar().querySelector<HTMLButtonElement>('[data-selection-action="duplicate"]')!;
+    dup.focus();
+    expect(document.activeElement).toBe(dup);
+    dup.blur();
+    expect(document.activeElement).toBe(document.body);
+    t.setView({ ...BASE, selection: ["i", "j"], selectionUnits: 2, selectionImage: null });
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(document.body);
+  });
+  it("T12-2 : N événements de caméra dans une image : un seul placement, aucune nouvelle lecture des obstacles", async () => {
+    const obs = vi.fn((): R4[] => []);
+    const t = setup(BASE, obs);
+    await frame();
+    const reads = obs.mock.calls.length;
+    const before = t.places.n;
+    for (let k = 1; k <= 20; k++) t.moveCamera({ zoom: 1 + k / 10, tx: 0, ty: -k });
+    expect(t.places.n).toBe(before);
+    await frame();
+    expect(t.places.n).toBe(before + 1);
+    expect(obs.mock.calls.length).toBe(reads);
+    expect(t.bar().style.left).not.toBe("210px");
+  });
+  it("T12-6 : Maj+F10 ou Menu avec le focus dans un panneau passager ou une boîte de dialogue : la barre ne le prend pas", () => {
+    const t = setup();
+    const pop = document.createElement("div");
+    pop.className = "rb-popover";
+    const inner = document.createElement("button");
+    pop.append(inner);
+    document.body.append(pop);
+    inner.focus();
+    fireEvent.keyDown(inner, { key: "F10", shiftKey: true });
+    expect(document.activeElement).toBe(inner);
+    const dlg = document.createElement("div");
+    dlg.setAttribute("role", "dialog");
+    const ok = document.createElement("button");
+    dlg.append(ok);
+    document.body.append(dlg);
+    ok.focus();
+    fireEvent.keyDown(ok, { key: "ContextMenu" });
+    expect(document.activeElement).toBe(ok);
+    expect(t.bar().contains(document.activeElement)).toBe(false);
   });
 });

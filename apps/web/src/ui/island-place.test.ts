@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Toolbar as Bar } from "../toolbar";
 import {
   BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, compactOf, isCentered, laneOf, nudge, placeIsland, placeOptions, beyondObstacles, sheetLane, sideCorners, tabsWidth, withContextRow,
-  optionsWidth, placeLinkAvoiding, placeObjectBar, topRowBottom, type Anchor, type Corners,
+  optionsWidth, placeLinkAvoiding, placeObjectBar, topRowBottom, visibleRects, POPOVER_OBSTACLES, type Anchor, type Corners,
 } from "./island-place";
 
 const MID = { w: 1280, h: 900 };
@@ -364,5 +364,13 @@ describe("placeObjectBar (OG41, D20)", () => {
     expect(p.left).toBe(8);
     expect(Number.isInteger(p.top)).toBe(true);
     expect(p.side).toBe("above");
+  });
+});
+
+describe("visibleRects et obstacles passagers (T12)", () => {
+  it("lit les éléments non vides du sélecteur ; .rb-popover et .rb-media-bar sont des obstacles de la barre d'objet", () => {
+    const box = (w: number) => ({ getBoundingClientRect: () => ({ left: 10, top: 20, width: w, height: w ? 40 : 0 }) });
+    const root = { querySelectorAll: (sel: string) => (sel === POPOVER_OBSTACLES ? [box(100), box(50), box(0)] : []) } as unknown as ParentNode;
+    expect(visibleRects(root, POPOVER_OBSTACLES)).toEqual([{ x: 10, y: 20, w: 100, h: 40 }, { x: 10, y: 20, w: 50, h: 40 }]);
   });
 });

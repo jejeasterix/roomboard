@@ -226,6 +226,9 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
         // (« Replier les options ») cacherait les commandes 3D. Sa boîte est relue à chaque point.
         const o = await page.$eval("[data-options]", (e) => e.getBoundingClientRect().toJSON()).catch(() => null);
         if (o !== null && bs.x + x >= o.x && bs.x + x <= o.x + o.width && bs.y + y >= o.y && bs.y + y <= o.y + o.height) continue;
+        // La barre d'objet colle à la sélection : sa boîte est relue à chaque point, comme celle du panneau d'options.
+        const ob = await page.$eval("[data-object-bar]", (e) => (e.hidden ? null : e.getBoundingClientRect().toJSON())).catch(() => null);
+        if (ob !== null && bs.x + x >= ob.x && bs.x + x <= ob.x + ob.width && bs.y + y >= ob.y && bs.y + y <= ob.y + ob.height) continue;
         await mouse.click(x, y);
         await fr();
         found = (await tag()).startsWith("glb;");

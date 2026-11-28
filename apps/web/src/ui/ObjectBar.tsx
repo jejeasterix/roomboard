@@ -20,7 +20,7 @@ import { worldToScreen, type Camera } from "../engine/camera";
 import { objectMenuKey } from "../engine/input/keys";
 import { keyOf } from "../key-of";
 import { Icon, IconButton } from "./IconButton";
-import { placeObjectBar, type ObjectBarPlace, type Rect } from "./island-place";
+import { placeObjectBar, type Box, type ObjectBarPlace, type Rect } from "./island-place";
 import type { ToolbarView } from "./item-state";
 import { MENU_STEP, placeMenu } from "./MenuBar";
 import { OBJECT_ACTIONS, objectActionShown, playObjectAction, type ObjectAction } from "./object-bar";
@@ -72,7 +72,6 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
   /** Pointeurs enfoncés dans la scène (pincement : plusieurs doigts) ; la barre revient au dernier levé. */
   const [down, setDown] = createSignal<ReadonlySet<number>>(new Set());
   const [open, setOpen] = createSignal(false);
-  const [camTick, setCamTick] = createSignal(0);
   const [at, setAt] = createSignal<ObjectBarPlace | null>(null);
   const [listAt, setListAt] = createSignal<{ left: number; top: number } | null>(null);
   let current = 0;
@@ -84,6 +83,13 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
   let byPointer = false;
   /** Le focus est dans la barre (ou y était quand son bouton a disparu). */
   let inside = false;
+  /** Dernier bouton de la barre qui a eu le focus : seul sa disparition (retiré, barre cachée) autorise à rendre le focus. */
+  let focused: HTMLElement | null = null;
+  /** Mesures relues à chaque état, au ResizeObserver et une image après : le tick caméra n'en relit aucune. */
+  let size: Box = { w: 0, h: 0 };
+  let offset = { x: 0, y: 0 };
+  let obstacleCache: readonly Rect[] = [];
+  let camFrame = 0;
 
   const visible = createMemo(() => {
     const v = props.view();
@@ -96,20 +102,25 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
   const moreButton = (): HTMLButtonElement | null => root?.querySelector<HTMLButtonElement>("[data-object-more]") ?? null;
   const syncTabs = (all: readonly HTMLButtonElement[]): void => all.forEach((b, k) => (b.tabIndex = k === current ? 0 : -1));
 
+  const measure = (): void => {
+    if (root === undefined) return;
+    const host = props.mount.getBoundingClientRect();
+    const st = props.stage().getBoundingClientRect();
+    size = { w: root.offsetWidth, h: root.offsetHeight };
+    offset = { x: st.left - host.left, y: st.top - host.top };
+    obstacleCache = props.obstacles().map((r) => shift(r, -host.left, -host.top));
+  };
+  /** Ne relit que la caméra et `keepOut` ; tout le reste vient du cache de `measure`. */
   const place = (): void => {
     const b = props.view().selectionBounds ?? null;
     if (root === undefined || b === null) return;
     const c = props.engine().camera();
     const [x0, y0] = worldToScreen(c, b.x0, b.y0);
     const [x1, y1] = worldToScreen(c, b.x1, b.y1);
-    const host = props.mount.getBoundingClientRect();
-    const st = props.stage().getBoundingClientRect();
-    const ox = st.left - host.left;
-    const oy = st.top - host.top;
+    const { x: ox, y: oy } = offset;
     const frame: Rect = { x: Math.min(x0, x1) + ox, y: Math.min(y0, y1) + oy, w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
     const keep = props.engine().selectionKeepOut().map((r) => shift(r, ox, oy));
-    const obstacles = props.obstacles().map((r) => shift(r, -host.left, -host.top));
-    const next = placeObjectBar(frame, { w: root.offsetWidth, h: root.offsetHeight }, { w: props.mount.clientWidth, h: props.mount.clientHeight }, keep, obstacles);
+    const next = placeObjectBar(frame, size, { w: props.mount.clientWidth, h: props.mount.clientHeight }, keep, obstacleCache);
     // La liste est posée sous « … » en px de la fenêtre : la barre qui bouge la laisserait détachée.
     const prev = untrack(at);
     if (prev !== null && (prev.left !== next.left || prev.top !== next.top) && untrack(open)) setOpen(false);
@@ -121,13 +132,27 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
   let settle = 0;
   const placeNow = (): void => {
     if (!shown()) return;
+    measure();
     place();
     win.cancelAnimationFrame(settle);
     settle = win.requestAnimationFrame(() => {
+      if (!shown()) return;
+      measure();
+      place();
+    });
+  };
+  /** Événements de caméra : un seul placement par image, sans nouvelle lecture du DOM. */
+  const placeOnCamera = (): void => {
+    if (camFrame !== 0) return;
+    camFrame = win.requestAnimationFrame(() => {
+      camFrame = 0;
       if (shown()) place();
     });
   };
-  onCleanup(() => win.cancelAnimationFrame(settle));
+  onCleanup(() => {
+    win.cancelAnimationFrame(settle);
+    win.cancelAnimationFrame(camFrame);
+  });
 
   const focusAt = (i: number): void => {
     const all = buttons();
@@ -146,10 +171,11 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
   /** Le bouton qui avait le focus a disparu (retiré, ou barre cachée) : focus au bouton de même rang, sinon à la scène. */
   const rescueFocus = (): void => {
     if (!inside || root === undefined) return;
-    const a = doc.activeElement;
-    const lost = a === null || a === doc.body || !a.isConnected || (root.contains(a) && !visible());
+    // Seule la disparition du bouton qui avait le focus (retiré, ou barre cachée) le fait rendre : un focus parti vers
+    // le corps de la page (clic dans la scène) n'est jamais repris.
+    const lost = focused === null || !focused.isConnected || !visible();
     if (!lost) {
-      if (!root.contains(a)) inside = false;
+      if (!root.contains(doc.activeElement)) inside = false;
       return;
     }
     if (visible() && buttons().length > 0) focusAt(current);
@@ -246,6 +272,7 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
       onContextMenu={(e) => e.preventDefault()}
       onFocusIn={(e) => {
         inside = true;
+        focused = e.target as HTMLElement;
         const i = buttons().indexOf(e.target as HTMLButtonElement);
         if (i < 0) return;
         current = i;
@@ -254,7 +281,10 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
       onFocusOut={(e) => {
         // Comme `MenuBar` : le focus parti ailleurs ferme la liste ; un bouton retiré (relatedTarget nul) ne compte pas.
         const to = e.relatedTarget as Node | null;
-        if (to === null || root === undefined || root.contains(to)) return;
+        const from = e.target as Element;
+        if (root === undefined || (to !== null && root.contains(to))) return;
+        // relatedTarget nul : bouton retiré ou barre cachée (le focus se rend), sinon focus parti vers le corps de la page.
+        if (to === null && (!from.isConnected || !visible())) return;
         inside = false;
         if (open()) setOpen(false);
       }}
@@ -317,7 +347,7 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
     void props.view();
     void main().length;
     void more().length;
-    void camTick();
+    void props.stage();
     placeNow();
   });
   onMount(() => {
@@ -327,7 +357,7 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
     onCleanup(() => ro.disconnect());
   });
   createEffect(() => {
-    const off = props.engine().onCamera(() => setCamTick((n) => n + 1));
+    const off = props.engine().onCamera(() => placeOnCamera());
     onCleanup(off);
   });
   createEffect(() => {
@@ -364,6 +394,9 @@ export function ObjectBar(props: ObjectBarProps): JSX.Element {
     };
     const key = (e: KeyboardEvent): void => {
       if (!shown() || !objectMenuKey(keyOf(e))) return;
+      // Un panneau passager ou une boîte de dialogue qui a le focus garde ses touches.
+      const away = (n: unknown): boolean => n instanceof Element && n.closest(".rb-popover, dialog, [role=dialog], [role=alertdialog]") !== null;
+      if (away(doc.activeElement) || away(e.target)) return;
       e.preventDefault();
       focusAt(0);
     };

@@ -5,7 +5,7 @@ import type { ButtonSize, Toolbar as Bar } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import {
   BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, compactOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, sideCorners, tabsWidth,
-  beyondObstacles, withContextRow, type Anchor, type Box, type Corners, type Lane, type Point, type Rect,
+  beyondObstacles, withContextRow, visibleRects, type Anchor, type Box, type Corners, type Lane, type Point, type Rect,
 } from "./island-place";
 import { startPointerGesture } from "./pointer-gesture";
 import { createTip, placeTip } from "./tooltip";
@@ -435,15 +435,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   });
   /** OG41 (D20) : rectangles posés, px de la fenêtre, de chaque îlot visible du calque (barres, onglets, panneau d'options,
    *  éditeur de lien, rangée contextuelle) ; lus à l'appel (la barre d'objet se replace à chaque état et caméra). */
-  const islandRects = (): readonly Rect[] => {
-    if (layer === undefined) return [];
-    const out: Rect[] = [];
-    for (const el of layer.querySelectorAll(".rb-island, [data-island-context]")) {
-      const r = el.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
-    }
-    return out;
-  };
+  const islandRects = (): readonly Rect[] => (layer === undefined ? [] : visibleRects(layer, ".rb-island, [data-island-context]"));
   const placeSide = (id: string, p: Placed | null): void => {
     setSidePlaced((m) => {
       const { [id]: _old, ...rest } = m;
