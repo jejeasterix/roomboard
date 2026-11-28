@@ -8,11 +8,11 @@ import { PDF_PAGE_KIND } from "../../core/api";
 import { endArrowheadOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, type Arrowhead, type Look, type TextAlign } from "../../core/look";
 import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, Model3dData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
-import { arrowWings, catmullRom, flattenPath, isFillable, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
+import { arrowWings, catmullRom, composeMatrix, flattenPath, isFillable, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
 import { worldToScreen, type Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, pageFrame, visibleGridRect, visiblePageRect, type PageRect } from "../page";
 import { faceOf, layoutRich, measureWith, richBoxHeight, textFont, type RichLine } from "../text-layout";
-import { LABEL_SIZE, labelBox, labelTop } from "../../core/shape-label";
+import { LABEL_SIZE, labelMatrix, labelPlacement } from "../../core/shape-label";
 import { plainSpans } from "../../core/rich-text";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import type { ImageSource } from "./image-cache";
@@ -675,15 +675,6 @@ export class Canvas2DRenderer implements Renderer {
       ctx.fill(path, "evenodd");
     } else if (el.kind === "shape") {
       paintShape(ctx, el.shape, el.style, el.look, el.look === undefined ? undefined : (el.look.seed ?? seedOf(el.id)), { id: el.id, cache: this.sketches });
-      // OG33 (choix 8) : texte de la forme, centré dans sa boîte, dans le repère de la forme.
-      const box = el.shape.label !== undefined && opts?.noLabel !== true ? labelBox(el.shape) : null;
-      if (box !== null && el.shape.label !== undefined) {
-        const lines = this.labelLinesOf(ctx, el.id, el.shape.label, box.w);
-        ctx.save();
-        ctx.transform(1, 0, 0, 1, box.x, labelTop(box, richBoxHeight(lines)));
-        paintText(ctx, lines, el.style.color, box.w, "center");
-        ctx.restore();
-      }
     } else if (el.kind === "text") {
       paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color, el.text.boxWidth, textAlignOf(el.look));
     } else if (el.kind === "image") {
@@ -713,6 +704,21 @@ export class Canvas2DRenderer implements Renderer {
       paintPlaceholder(ctx, el.unknown.w, el.unknown.h, UNKNOWN_LABEL);
     }
     ctx.restore();
+    // OG33 (choix 8) : texte de la forme, centré dans sa boîte ; C5 : hors du repère de la forme, posé sans son échelle
+    // (`labelPlacement`, même calcul que la zone d'édition et l'export) ; fantôme : placé sur sa matrice provisoire
+    // composée, comme il le sera une fois l'étape posée (un redimensionnement en cours n'étire pas les lettres).
+    if (el.kind === "shape" && el.shape.label !== undefined && opts?.noLabel !== true) {
+      const place = labelPlacement(el.shape, pre ? composeMatrix(pre, el.transform) : el.transform);
+      if (place !== null) {
+        const lines = this.labelLinesOf(ctx, el.id, el.shape.label, place.box.w);
+        const [a, b, c, d, e, f] = labelMatrix(place, richBoxHeight(lines));
+        ctx.save();
+        ctx.transform(a, b, c, d, e, f);
+        applyOpacity(ctx, el.look);
+        paintText(ctx, lines, el.style.color, place.box.w, "center");
+        ctx.restore();
+      }
+    }
   }
 
   /** L'image en aperçu (C5) : réglages et matrice de l'aperçu à la place de ceux du document. */

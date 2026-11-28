@@ -7,8 +7,8 @@
 import type { Matrix, TextSpan } from "../../core/api";
 import { lookFrom, type Look } from "../../core/look";
 import { plainSpans, sameSpans } from "../../core/rich-text";
-import { LABEL_SIZE, labelBox, labelTop } from "../../core/shape-label";
-import { composeMatrix, IDENTITY_MATRIX } from "../../core/shapes";
+import { LABEL_SIZE, labelMatrix, labelPlacement } from "../../core/shape-label";
+import { IDENTITY_MATRIX } from "../../core/shapes";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { screenToWorld, type Camera } from "../camera";
 import { DEFAULT_TEXT_BOX_WIDTH, TEXT_LINE_HEIGHT, layoutRich, richBoxHeight, type Measure } from "../text-layout";
@@ -151,13 +151,15 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
   const openLabel = (id: string): boolean => {
     const el = ctx.doc.element(id);
     if (el?.kind !== "shape") return false;
-    const box = labelBox(el.shape);
-    if (box === null) return false;
+    // C5 : boîte et repère en monde, sans l'échelle de la forme (même calcul que l'écran et l'export).
+    const place = labelPlacement(el.shape, el.transform);
+    if (place === null) return false;
+    const box = place.box;
     if (session) gate.request();
     const label = el.shape.label ?? "";
     const spans = plainSpans(label);
     const height = Math.max(richBoxHeight(layoutRich(spans, { size: LABEL_SIZE }, box.w, measure)), LABEL_SIZE * TEXT_LINE_HEIGHT);
-    session = { page: ctx.page(), id: null, shape: id, matrix: composeMatrix(el.transform, [1, 0, 0, 1, box.x, labelTop(box, height)]), boxWidth: box.w, color: el.style.color, size: LABEL_SIZE, initial: label, spans };
+    session = { page: ctx.page(), id: null, shape: id, matrix: labelMatrix(place, height), boxWidth: box.w, color: el.style.color, size: LABEL_SIZE, initial: label, spans };
     live = { ...NO_LIVE, hidden: new Set([id]), overlay: { ...EMPTY_OVERLAY, ghosts: [{ id, matrix: IDENTITY_MATRIX, noLabel: true }] } };
     gate.reset();
     host.open(session, ctx.camera());

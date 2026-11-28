@@ -17,6 +17,7 @@ import { arrangeKey, rotateKey, cellKey, nudgeKey, toolKey, editAction, enterAct
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isBoxShape, isSegment } from "../core/shapes";
+import { labelPlacement } from "../core/shape-label";
 import { createLineEditor, type LineEditor } from "./tools/line-edit";
 import { linkedCopy } from "./tools/line-points";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -934,6 +935,8 @@ export function createEngine(deps: EngineDeps): Engine {
   function editShapeText(id: string): boolean {
     const v = doc.element(id);
     if (v?.kind !== "shape" || !isBoxShape(v.shape.shape) || !doc.elementIds(pageId).includes(id)) return false;
+    // C5 : forme trop étroite (en monde) pour un texte : rien ne change, l'outil reste et la touche passe.
+    if (labelPlacement(v.shape, v.transform) === null) return false;
     if (tool !== "text") engine.setTool("text");
     return textTool.openLabel(id);
   }
