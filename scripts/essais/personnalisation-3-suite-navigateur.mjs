@@ -228,7 +228,129 @@ async function scenario(page, url, { captures }) {
   await page.waitForSelector('.rb-toast:has-text("Une cellule fusionnée empêche ce déplacement.")', { timeout: 5000 });
   check((await attr("data-table-column")) === "a|c|b", `S11 : zone coupée : refus, message, ordre inchangé a|c|b (lu ${await attr("data-table-column")})`);
 
-  // Lot C (T14) : S12, S13, S14 ici.
+  const RX2 = 760;
+  const tap = async (p) => {
+    const box = await stageBox(page);
+    const pt = { x: box.x + p[0], y: box.y + p[1], id: 1, radiusX: 4, radiusY: 4, force: 0.5 };
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [pt] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await fr();
+  };
+
+  // S12 (D19, DS3) : 2 × 2, « secret » en (0, 0), Ombrer ; Sélection : toucher ouvre, toucher referme ; Alt+O ; Désombrer.
+  const c12 = await newTable(RX2, 0, 2, 2);
+  await typeIn(c12(0, 0), "secret");
+  await page.click('[data-table-action="table-shade"]');
+  await fr();
+  await capture("cache-ferme");
+  await page.click(item("select"));
+  await fr();
+  // Réponse invisible quand le cache est fermé : même zone d'écran, même image à chaque fermeture, autre image ouverte.
+  const zone12 = async () => {
+    const box = await stageBox(page);
+    const p = c12(0, 0);
+    return page.screenshot({ clip: { x: box.x + p[0] - 100, y: box.y + p[1] - 30, width: 200, height: 60 } });
+  };
+  const ferme1 = await zone12();
+  await tap(c12(0, 0));
+  check((await attr("data-table-opens")) === "1", "S12 : toucher le cache l'ouvre (data-table-opens=1)");
+  await capture("cache-ouvert");
+  check(!(await zone12()).equals(ferme1), "S12 : cache ouvert : la zone de la case change (la réponse apparaît)");
+  await page.keyboard.press("Control+z");
+  await fr();
+  check((await attr("data-table-opens")) === "0" && (await zone12()).equals(ferme1), "S12 : Ctrl+Z annule l'ouverture en une étape (data-table-opens=0, réponse de nouveau invisible)");
+  await tap(c12(0, 0));
+  await tap(c12(0, 0));
+  check((await attr("data-table-opens")) === "0", "S12 : toucher encore le referme (data-table-opens=0)");
+  await page.keyboard.press("Control+z");
+  await fr();
+  check((await attr("data-table-opens")) === "1", "S12 : Ctrl+Z annule la fermeture en une étape (data-table-opens=1)");
+  await page.keyboard.press("Control+z");
+  await fr();
+  check((await attr("data-table-opens")) === "0", "S12 : un second Ctrl+Z annule l'ouverture (data-table-opens=0)");
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...c12(0, 0));
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Alt+KeyO");
+  await fr();
+  check((await attr("data-table-opens")) === "1", "S12 : Alt+O en outil Tableau l'ouvre");
+  await page.keyboard.press("Control+z");
+  await fr();
+  check((await attr("data-table-opens")) === "0", "S12 : Ctrl+Z annule Alt+O en une étape");
+  await page.keyboard.press("Alt+KeyO");
+  await fr();
+  await page.click('[data-table-action="table-unshade"]');
+  await fr();
+  check((await attr("data-table-opens")) === "0", "S12 : Désombrer retire le cache");
+
+  // S13 (D20, DS9) : 2 × 4 à en-tête, colonne 0 : Nombre, 10, 9, 100 ; Alt+T ; Ctrl+Z ; « Trier décroissant ».
+  const c13 = await newTable(RX2, 260, 2, 4);
+  await typeIn(c13(0, 0), "Nombre");
+  await typeIn(c13(1, 0), "10");
+  await typeIn(c13(2, 0), "9");
+  await typeIn(c13(3, 0), "100");
+  await page.keyboard.press("Alt+KeyE");
+  await mouse.click(...c13(1, 0));
+  await page.keyboard.press("Escape");
+  await fr();
+  await capture("tri-avant");
+  await page.keyboard.press("Alt+KeyT");
+  await fr();
+  check((await attr("data-table-column")) === "Nombre|9|10|100", `S13 : Alt+T : Nombre|9|10|100 (lu ${await attr("data-table-column")})`);
+  await capture("tri-apres");
+  await page.keyboard.press("Control+z");
+  await fr();
+  check((await attr("data-table-column")) === "Nombre|10|9|100", "S13 : Ctrl+Z, une étape");
+  await page.keyboard.press("Alt+KeyT");
+  await page.keyboard.press("Alt+Shift+KeyT");
+  await fr();
+  check((await attr("data-table-column")) === "Nombre|100|10|9", `S13 : Alt+T puis Alt+Maj+T : Nombre|100|10|9, en-tête en tête (lu ${await attr("data-table-column")})`);
+  await page.keyboard.press("Control+z");
+  await fr();
+  check((await attr("data-table-column")) === "Nombre|9|10|100", "S13 : Ctrl+Z annule Alt+Maj+T en une étape");
+
+  // S14 (D21, DS5) : 2 × 3 à en-tête « Mammifères », colonne 0 acceptant « chat, chien » ; « chat » loge, « truite » revient.
+  const c14 = await newTable(RX2, 560, 2, 3);
+  await typeIn(c14(0, 0), "Mammifères");
+  await page.keyboard.press("Alt+KeyE");
+  await mouse.click(...c14(1, 0));
+  await page.keyboard.press("Escape");
+  if ((await page.getAttribute('[data-option-head="tableAccept"]', "aria-expanded")) !== "true") await page.click('[data-option-head="tableAccept"]');
+  await page.fill('[data-option="tableAccept"] [data-table-option="accept"]', "chat, chien");
+  await page.press('[data-option="tableAccept"] [data-table-option="accept"]', "Enter");
+  await fr();
+  const label = async (text, wx, wy) => {
+    await page.click(item("text"));
+    await fr();
+    await mouse.click(...screen(c, wx, wy));
+    await page.keyboard.type(text);
+    await page.keyboard.press("Escape");
+    await fr();
+  };
+  const free = [origin[0] + RX2, origin[1] + 780];
+  await label("chat", free[0], free[1]);
+  await label("truite", free[0], free[1] + 60);
+  await page.click(item("select"));
+  await fr();
+  await capture("tableau-tri-avant");
+  const chat = screen(c, free[0] + 20, free[1] + 20);
+  await touchDrag(chat, c14(1, 0));
+  await page.click(item("table"));
+  await mouse.click(...c14(1, 0));
+  await page.keyboard.press("Escape");
+  await fr();
+  check((await attr("data-table-linked")) === "1", "S14 : « chat » loge dans la colonne (data-table-linked=1)");
+  await page.click(item("select"));
+  await fr();
+  const truite = screen(c, free[0] + 20, free[1] + 80);
+  await mouse.click(...truite);
+  await fr();
+  const before = await attr("data-bounds");
+  const v0 = await attr("data-version");
+  await touchDrag(truite, c14(2, 0));
+  check((await attr("data-version")) === v0 && (await attr("data-bounds")) === before, "S14 : « truite » refusée : revenue à sa place, aucune étape");
+  await capture("tableau-tri-apres");
 
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
 }
