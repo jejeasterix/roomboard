@@ -135,6 +135,15 @@ export function paintCopyBadge(ctx: CanvasRenderingContext2D, b: LinkBadge, colo
   paintRoundIcon(ctx, b, copyIcon, color);
 }
 
+/** Lucide `rotate-cw` (ISC, lucide-icons/lucide@7981a0798a) : poignée de rotation (viewBox 24 × 24). */
+export const ROTATE_ICON_PATHS: readonly string[] = ["M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8", "M21 3v5h-5"];
+let rotateIcon: Path2D[] | null = null;
+/** OG33 (lot 2b) : poignée de rotation (rond de 24 px CSS) centrée sur (cx, cy) px CSS. */
+export function paintRotateHandle(ctx: CanvasRenderingContext2D, cx: number, cy: number, color: string): void {
+  if (rotateIcon === null) rotateIcon = pathsOf(ROTATE_ICON_PATHS);
+  paintRoundIcon(ctx, { x: cx - 12, y: cy - 12, size: 24 }, rotateIcon, color);
+}
+
 let moveIcon: Path2D[] | null = null;
 /** Poignée « Déplacer » (rond de 24 px CSS) centrée sur (cx, cy) px CSS. */
 export function paintMoveHandle(ctx: CanvasRenderingContext2D, cx: number, cy: number, color: string): void {
