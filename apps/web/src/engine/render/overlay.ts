@@ -5,6 +5,8 @@ import type { Bounds, LinkDir, Look, Matrix, ShapeKind, StrokeStyle } from "../.
 export interface GhostView {
   readonly id: string;
   readonly matrix: Matrix;
+  /** OG33 : forme repeinte sans son texte (séance de texte de forme ouverte). */
+  readonly noLabel?: true;
 }
 
 /** Forme en cours, par ses deux coins monde (normalisée au rendu comme par le cœur). */

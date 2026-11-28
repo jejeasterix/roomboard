@@ -7,9 +7,12 @@
 import type { Matrix, TextSpan } from "../../core/api";
 import { lookFrom, type Look } from "../../core/look";
 import { plainSpans, sameSpans } from "../../core/rich-text";
+import { LABEL_SIZE, labelBox, labelTop } from "../../core/shape-label";
+import { composeMatrix, IDENTITY_MATRIX } from "../../core/shapes";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { screenToWorld, type Camera } from "../camera";
-import { DEFAULT_TEXT_BOX_WIDTH, layoutRich, richBoxHeight, type Measure } from "../text-layout";
+import { DEFAULT_TEXT_BOX_WIDTH, TEXT_LINE_HEIGHT, layoutRich, richBoxHeight, type Measure } from "../text-layout";
+import { EMPTY_OVERLAY } from "../render/overlay";
 import { createCommitGate } from "./commit-gate";
 import { NO_LIVE, type GestureTool, type LivePart, type ToolContext } from "./tool";
 
@@ -30,6 +33,8 @@ export interface TextEditSession {
   readonly page: string;
   /** null : nouvelle boîte. */
   readonly id: string | null;
+  /** OG33 : forme dont on écrit le texte ; `id` reste null. */
+  readonly shape?: string;
   /** Matrice monde de la boîte (translation pour une boîte neuve). */
   readonly matrix: Matrix;
   readonly boxWidth: number;
@@ -69,6 +74,8 @@ export interface TextTool extends GestureTool {
   formatState(): FormatState | null;
   /** La zone a changé sélection ou format : l'état du moteur est republié (R15). */
   formatChanged(): void;
+  /** OG33 (choix 8, 9) : séance sur le texte de la forme `id` ; faux si ce n'est pas une forme à texte. */
+  openLabel(id: string): boolean;
 }
 
 export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: () => TextStyle, measure: Measure): TextTool {
@@ -99,6 +106,11 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     // La boucle est arrêtée (outil inactif) : sans image, l'id masqué resterait invisible jusqu'au geste suivant.
     if (hadHidden) ctx.requestFrame?.();
     ctx.stateChanged?.();
+    if (s.shape !== undefined) {
+      if (content !== s.initial) ctx.run({ type: "SetShapeLabel", id: s.shape, label: content });
+      ctx.labelDone?.(s.shape);
+      return;
+    }
     if (s.id === null && content === "") return;
     // R6 : texte et segments inchangés : aucune commande ; mise en forme seule (S6) : la commande part.
     if (s.id !== null && content === s.initial && sameSpans(spans, s.spans)) return;
@@ -134,7 +146,27 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     ctx.stateChanged?.();
   };
 
+  /** OG33 (choix 8, 9) : séance sur le texte de la forme `id`, zone centrée dans sa boîte ; la forme est masquée et
+   *  repeinte sans son texte (fantôme `noLabel`). */
+  const openLabel = (id: string): boolean => {
+    const el = ctx.doc.element(id);
+    if (el?.kind !== "shape") return false;
+    const box = labelBox(el.shape);
+    if (box === null) return false;
+    if (session) gate.request();
+    const label = el.shape.label ?? "";
+    const spans = plainSpans(label);
+    const height = Math.max(richBoxHeight(layoutRich(spans, { size: LABEL_SIZE }, box.w, measure)), LABEL_SIZE * TEXT_LINE_HEIGHT);
+    session = { page: ctx.page(), id: null, shape: id, matrix: composeMatrix(el.transform, [1, 0, 0, 1, box.x, labelTop(box, height)]), boxWidth: box.w, color: el.style.color, size: LABEL_SIZE, initial: label, spans };
+    live = { ...NO_LIVE, hidden: new Set([id]), overlay: { ...EMPTY_OVERLAY, ghosts: [{ id, matrix: IDENTITY_MATRIX, noLabel: true }] } };
+    gate.reset();
+    host.open(session, ctx.camera());
+    ctx.stateChanged?.();
+    return true;
+  };
+
   return {
+    openLabel,
     begin(_pointerId, samples) {
       const s = samples[0];
       if (!s) return;
