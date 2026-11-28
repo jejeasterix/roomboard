@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -295,5 +295,22 @@ describe("naturalWidth (D14, DS7)", () => {
   });
   it("naturalWidth : zone de deux colonnes ignorée ; colonne vide : 2 × marge", () => {
     expect(naturalWidth(t({ "r0:a": "abcdefghij" }, [{ row: "r0", col: "a", rows: 1, cols: 2 }]), 0, m)).toBe(16);
+  });
+});
+
+describe("cellTextFrame (D15, DS6)", () => {
+  const base = (cell: Partial<TableData["cells"][number]>): TableData => ({
+    color: "#000", size: 36, merges: [],
+    cols: [{ id: "a", width: 240 }], rows: [{ id: "r", height: 164 }],
+    cells: [{ row: "r", col: "a", text: "x", fill: null, shade: null, spans: [{ text: "x", attrs: {} }], ...cell }],
+  });
+  it("cellTextFrame : sans alignement : la boîte intérieure, ha left", () => {
+    expect(cellTextFrame(base({}), { row: 0, col: 0 }, 45)).toEqual({ x: 8, y: 8, w: 224, h: 148, ha: "left" });
+  });
+  it("cellTextFrame : va middle descend de (148 − 45) / 2, bottom de 148 − 45 ; ha porté", () => {
+    expect(cellTextFrame(base({ va: "middle", ha: "center" }), { row: 0, col: 0 }, 45)).toEqual({ x: 8, y: 8 + 51.5, w: 224, h: 148 - 51.5, ha: "center" });
+    expect(cellTextFrame(base({ va: "bottom" }), { row: 0, col: 0 }, 45)).toMatchObject({ y: 8 + 103 });
+    // Texte plus haut que la case : aucune descente (jamais au-dessus du coin intérieur).
+    expect(cellTextFrame(base({ va: "bottom" }), { row: 0, col: 0 }, 400)).toMatchObject({ y: 8 });
   });
 });

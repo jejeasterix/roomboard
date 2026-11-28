@@ -264,3 +264,24 @@ describe("cible du pot (C6a)", () => {
     expect(fillCommand(doc, "p", 5, 5, 1, RED, ten)).toEqual({ type: "Fill", page: "p", target: { kind: "background" }, color: RED });
   });
 });
+
+describe("pot dans une case alignée (D15, DS6)", () => {
+  it("D15 : pot sur un mot centré au milieu : le mot dessiné (« matin »), pas celui du coin", () => {
+    const m10 = (x: string) => x.length * 10;
+    const { doc, page, table, r, c } = setup();
+    const cell = { row: r[0] ?? "", col: c[0] ?? "" };
+    const colored = (x: number, y: number): string | undefined => {
+      const cmd = fillCommand(doc, page, x, y, 1, "#dc2626", m10);
+      expect(cmd).toMatchObject({ type: "SetTableCell" });
+      return ((cmd as Extract<Command, { type: "SetTableCell" }>).spans ?? []).find((s) => s.attrs.color === "#dc2626")?.text;
+    };
+    // Centré seul : « Lundi matin » (110) décalé de (224 − 110) / 2 = 57 ; le point local 80 est sur « Lundi » (57..107),
+    // alors que la ligne posée au coin y mettrait « matin » (60..110).
+    doc.apply({ type: "SetTableLook", id: table, from: cell, to: cell, look: { key: "ha", value: "center" } });
+    expect(colored(100 + 8 + 80, 400 + 8 + 20)).toBe("Lundi");
+    doc.apply({ type: "SetTableLineSizes", id: table, cols: [], rows: [[r[0] ?? "", 164]] });
+    doc.apply({ type: "SetTableLook", id: table, from: cell, to: cell, look: { key: "va", value: "middle" } });
+    // Boîte 224 × 148 ; ligne de 110 × 45 décalée de 57 en x, de 51,5 en y ; « matin » en x 100 + 8 + 57 + 60 = 225..275.
+    expect(colored(250, 400 + 8 + 51.5 + 20)).toBe("matin");
+  });
+});
