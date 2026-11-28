@@ -713,6 +713,18 @@ describe("OG12 lot 2a : double toucher sur une forme", () => {
       expect(runs.some((r) => r.type === "ShapeToPolygon"), shape).toBe(false);
     }
   });
+  it("double toucher : un appui après Échap n'ouvre pas le texte", () => {
+    const { tool, texts, add } = setupLines();
+    const id = add("rect", 0, 0, 200, 100);
+    tool.setSelection([id]);
+    tool.begin(1, [atT(100, 50, 0)]);
+    tool.close(1, "end");
+    tool.setSelection([]); // Échap
+    tool.begin(2, [atT(105, 50, 200)]);
+    tool.close(2, "end");
+    expect(texts).toEqual([]);
+    expect(tool.selection()).toEqual([id]);
+  });
   it("double toucher sur une ligne fermée déjà convertie : editPoints (C4b)", () => {
     const { doc, tool, edits, add } = setupLines();
     const id = add("rect", 0, 0, 200, 100);
