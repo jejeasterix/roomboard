@@ -1369,7 +1369,8 @@ export function createEngine(deps: EngineDeps): Engine {
           arrange(how);
           return true;
         }
-        const step = nudgeKey(e);
+        // Lot 2a (L8) : pendant « Modifier les points », les flèches ne déplacent pas la sélection entière.
+        const step = lineEditor === null ? nudgeKey(e) : null;
         if (step !== null) {
           nudge(step.dx, step.dy);
           return true;
