@@ -237,7 +237,8 @@ describe("design-l2 : profils fournis en îlots (L2-2 à L2-4)", () => {
   });
   it("design-l2 L2-4 : menu, historique, panneaux et pages de defaut", () => {
     expect(flat("defaut", "menu")).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "sep-5", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "edit-original", "sep-6", "help", "page-clear", "grid", "settings", "menu-profiles"]);
-    expect(flat("defaut", "historique")).toEqual(["undo", "redo", "fit-page"]);
+    // OG69 (G4) : « Afficher la grille » à côté d'« Ajuster la page ».
+    expect(flat("defaut", "historique")).toEqual(["undo", "redo", "fit-page", "grid-toggle"]);
     expect(flat("defaut", "panneaux")).toEqual(["library", "profiles"]);
     expect(flat("defaut", "pages")).toEqual(["page-add", "page-duplicate", "page-remove"]);
   });

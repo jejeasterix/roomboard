@@ -79,6 +79,8 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "save": [["path", { d: "M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" }], ["path", { d: "M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" }], ["path", { d: "M7 3v4a1 1 0 0 0 1 1h7" }]],
   "settings": [["path", { d: "M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" }], ["circle", { cx: "12", cy: "12", r: "3" }]],
   "profile": [["path", { d: "M10 15H6a4 4 0 0 0-4 4v2" }], ["path", { d: "m14.305 16.53.923-.382" }], ["path", { d: "m15.228 13.852-.923-.383" }], ["path", { d: "m16.852 12.228-.383-.923" }], ["path", { d: "m16.852 17.772-.383.924" }], ["path", { d: "m19.148 12.228.383-.923" }], ["path", { d: "m19.53 18.696-.382-.924" }], ["path", { d: "m20.772 13.852.924-.383" }], ["path", { d: "m20.772 16.148.924.383" }], ["circle", { cx: "18", cy: "15", r: "3" }], ["circle", { cx: "9", cy: "7", r: "4" }]],
+  // Lucide magnet (ISC) @7981a0798a, lu par gh api : bouton Aimant de la ligne de contexte des formes (OG69, G5).
+  "magnet": [["path", { d: "m12 15 4 4" }], ["path", { d: "M2.352 10.648a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.029-6.029a1 1 0 1 1 3 3l-6.029 6.029a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l6.365-6.367A1 1 0 0 0 8.716 4.282z" }], ["path", { d: "m5 8 4 4" }]],
   "grid": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M3 9h18" }], ["path", { d: "M3 15h18" }], ["path", { d: "M9 3v18" }], ["path", { d: "M15 3v18" }]],
   "library": [["rect", { width: "8", height: "18", x: "3", y: "3", rx: "1" }], ["path", { d: "M7 3v18" }], ["path", { d: "M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z" }]],
   "annotate": [["rect", { width: "20", height: "14", x: "2", y: "3", rx: "2" }], ["path", { d: "M8 21h8" }], ["path", { d: "M12 17v4" }], ["path", { d: "M6 12c1.5-2.5 3-2.5 4 0s2.5 2.5 4 0 2.5-2.5 4 0" }]],
@@ -246,6 +248,7 @@ export const ACTION_ICONS: Readonly<Record<ActionId, string>> = Object.freeze({
   "page-clear": "eraser",
   profiles: "profile",
   grid: "grid",
+  "grid-toggle": "grid",
   library: "library",
   backgrounds: "wallpaper",
   "desktop-annotation": "annotate",

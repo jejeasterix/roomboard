@@ -67,14 +67,14 @@ async function scenario(page, url, { captures, tmp }) {
 
   // Séance 1 : aperçu direct, puis « Fermer sans appliquer ».
   await openPanel();
-  check((await page.inputValue(field("kind"))) === "none", "« Grille » : #grille visible, type « Aucune »");
-  await page.selectOption(field("kind"), "squares");
+  check((await page.getAttribute(`${field("kind")} [aria-checked="true"]`, "data-choice")) === "none", "« Grille » : #grille visible, type « Aucune »");
+  await page.click(`${field("kind")} [data-choice="squares"]`);
   await settle();
   const n1 = await painted();
   check(n1 > 0, `Carreaux : la grille apparaît avant « Appliquer » (${n1} pixels)`);
   check((await version()) === v0, `Carreaux en aperçu : data-version inchangé (${v0})`);
   await page.fill(field("spacing"), "80");
-  await page.selectOption(field("lineWidth"), "3");
+  await page.click(`${field("lineWidth")} [data-choice="3"]`);
   await settle();
   const n2 = await painted();
   check(n2 > 0 && n2 !== n1, `pas 80, épaisseur 3 : la page change (${n1} → ${n2} pixels)`);
@@ -85,7 +85,7 @@ async function scenario(page, url, { captures, tmp }) {
 
   // CR3 : aperçu, autre onglet, retour : aucune grille.
   await openPanel();
-  await page.selectOption(field("kind"), "squares");
+  await page.click(`${field("kind")} [data-choice="squares"]`);
   await settle();
   check((await painted()) > 0, "CR3 : aperçu posé sur le premier onglet");
   const t0 = await tabs();
@@ -100,10 +100,10 @@ async function scenario(page, url, { captures, tmp }) {
 
   // Séance 2 : « Appliquer », une seule étape.
   await openPanel();
-  await page.selectOption(field("kind"), "squares");
+  await page.click(`${field("kind")} [data-choice="squares"]`);
   await page.fill(field("spacing"), "80");
-  await page.selectOption(field("lineWidth"), "3");
-  await page.check(field("snap"));
+  await page.click(`${field("lineWidth")} [data-choice="3"]`);
+  if ((await page.getAttribute(field("snap"), "aria-checked")) !== "true") await page.click(field("snap")); // OG69 : interrupteur
   await page.click(field("apply"));
   await settle();
   check(!(await panelOpen()), "« Appliquer » : panneau fermé");
@@ -128,15 +128,15 @@ async function scenario(page, url, { captures, tmp }) {
   await waitTabs(before + 1);
   check((await painted()) > 0, "rouvert dans un nouvel onglet : grille visible");
   await openPanel();
-  check((await page.inputValue(field("kind"))) === "squares", "rouvert, « Grille » : Carreaux");
+  check((await page.getAttribute(`${field("kind")} [aria-checked="true"]`, "data-choice")) === "squares", "rouvert, « Grille » : Carreaux");
   check(Number(await page.inputValue(field("spacing"))) === 80, "rouvert : pas 80");
-  check((await page.inputValue(field("lineWidth"))) === "3", "rouvert : épaisseur 3 px");
-  check(await page.isChecked(field("snap")), "rouvert : magnétisme coché");
+  check((await page.getAttribute(`${field("lineWidth")} [aria-checked="true"]`, "data-choice")) === "3", "rouvert : épaisseur 3 px");
+  check((await page.getAttribute(field("snap"), "aria-checked")) === "true", "rouvert : magnétisme coché");
   const vR = await version();
   if (captures) {
-    await page.selectOption(field("kind"), "seyes");
+    await page.click(`${field("kind")} [data-choice="seyes"]`);
     // Épaisseur 1 : à 3, au zoom « ajuster la page », la règle CR2 saute les lignes fines du Seyès (ressemble à Carreaux).
-    await page.selectOption(field("lineWidth"), "1");
+    await page.click(`${field("lineWidth")} [data-choice="1"]`);
     await settle();
     const path = join(ROOT, "docs", "essais", "c9-editeur-grille.png");
     await page.screenshot({ path });

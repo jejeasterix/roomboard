@@ -107,7 +107,7 @@ async function start(browser, base, viewport, dsf = 1) {
 async function toPortrait(page, cdp) {
   await clickItem(page, "grid");
   await page.waitForSelector("#grille", { state: "visible", timeout: 15000 });
-  await page.selectOption('#grille [data-grille="kind"]', "squares");
+  await page.click('#grille [data-grille="kind"] [data-choice="squares"]');
   await page.click('#grille [data-grille="apply"]');
   await settle(page);
   if ((await page.getAttribute(SIDE, "data-collapsed")) === "1") {

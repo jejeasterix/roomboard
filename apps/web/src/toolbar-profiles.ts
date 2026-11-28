@@ -75,7 +75,9 @@ const historyBar = () => ({
   id: "historique",
   role: HISTORY_ROLE,
   dock: "floating",
-  groups: [{ id: "historique", items: [action("undo", "Annuler"), action("redo", "Rétablir"), action("fit-page", "Ajuster la page")] }],
+  // OG69 (G4) : « Afficher la grille » (toucher : bascule ; appui long : le Créateur) à côté d'« Ajuster la page ». Posé à
+  // côté du compteur « 1 / 1 », il faisait passer l'îlot d'outils sur une seconde ligne à 1 280 px (essai C4).
+  groups: [{ id: "historique", items: [action("undo", "Annuler"), action("redo", "Rétablir"), action("fit-page", "Ajuster la page"), action("grid-toggle", "Afficher la grille")] }],
 });
 
 /** design-l2 (L2-4) : îlot « Bibliothèque et profil », en haut à droite ; porte l'accès au menu Profil (L2-20). */

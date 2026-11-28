@@ -1014,6 +1014,26 @@ describe("createEngine", () => {
     expect(renderer.scenes.length).toBe(n + 2);
   });
 
+  it("OG69 (G3, G5) : gridTooFine suit le zoom ; toggleMagnet bascule grid.snap en une étape ; state().magnet absent sans grille", () => {
+    const { doc, engine } = setup();
+    engine.resize(800, 600, 1);
+    const page = engine.state().page;
+    const level = { kind: "squares", spacingX: 4, spacingY: 4, originX: 0, originY: 0, color: "#000000", line: "solid", lineWidth: 1, snap: true, visible: true };
+    const fine = { visible: true, snap: true, above: false, levels: [level] };
+    // Pas de 4 : sous les 4 px de l'écran au zoom d'ajustement (< 1), vu à 4 px au zoom 1.
+    expect(engine.camera().zoom).toBeLessThan(1);
+    expect(engine.gridTooFine(fine)).toBe(true);
+    expect(engine.gridTooFine({ ...fine, levels: [{ ...level, spacingX: 80, spacingY: 80 }] })).toBe(false);
+    expect(engine.gridTooFine(null)).toBe(false);
+    expect(engine.state().magnet).toBeUndefined();
+    expect(engine.toggleMagnet()).toBe(false);
+    engine.run({ type: "SetGrid", page, grid: { ...fine, levels: [{ ...level, spacingX: 40, spacingY: 40 }] } });
+    expect(engine.state().magnet).toBe(true);
+    const v = doc.version();
+    expect(engine.toggleMagnet()).toBe(true);
+    expect([engine.state().magnet, doc.version()]).toEqual([false, v + 1]);
+  });
+
   it("switchTo coupe l'aperçu (E8) : page changée → setGridPreview(null), une seule fois", () => {
     const { engine, renderer } = setup();
     const p = engine.state().page;

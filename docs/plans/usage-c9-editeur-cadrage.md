@@ -209,7 +209,12 @@ sur `ui/*.tsx` ; `grep -n "rb-popover\|rb-editor"` sur `rb.css` ; `grep -n "e2e\
   de la grille (HG4).
 
 **Niveau 2.**
-- **HE5** Bouton « Grille » dans `defaut` et `annotation`, pas dans `simple` ; aucun raccourci clavier.
+- **HE5** Bouton « Grille » dans `defaut` et `annotation`, pas dans `simple` ; ~~aucun raccourci clavier~~.
+  **Levée le 28/11 (OG69, G4)** par la décision de Jérôme sur l'état des lieux OG65, mot pour mot : « Très belle analyse
+  pour la grille. Je suis tes recommandations et ajoute les améliorations et outils connexes ». Désormais : Ctrl+'
+  (Cmd+' sous macOS) bascule la dernière grille utilisée, Ctrl+Maj+' ouvre le Créateur (`gridKey`, `keys.ts`), et le
+  bouton « Afficher la grille » suit « Ajuster la page », dans l'îlot « Annuler et vue », dans `defaut` et `annotation` (toucher : bascule ; appui long
+  ou clic droit : le Créateur). `simple` reste sans grille.
 - **HE6** Marge du cache bornée par le plafond des points (au plus une demi-hauteur de vue) ; zoom comparé à
   l'égalité stricte (un pincement recalcule à chaque image, comme aujourd'hui).
 - **HE7** La séance se ferme et se perd sur changement de page, d'onglet ou de version ; aucun « Appliquer » implicite à

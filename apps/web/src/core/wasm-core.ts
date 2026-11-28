@@ -442,10 +442,12 @@ const LINES = "GridLines invalide";
 export function toGridLines(v: unknown): GridLines | null {
   if (v === null || v === undefined) return null;
   if (!isRecord(v)) throw new Error(LINES);
-  const { above, levels } = v;
+  const { above, levels, skipped } = v;
   if (typeof above !== "boolean" || !Array.isArray(levels)) throw new Error(LINES);
+  if (skipped !== undefined && !isNumbers(skipped)) throw new Error(LINES);
   return {
     above,
+    ...(skipped === undefined ? {} : { skipped }),
     levels: levels.map((l: unknown) => {
       if (!isRecord(l)) throw new Error(LINES);
       const { color, line, alpha, lineWidth, segments, dots } = l;
@@ -842,6 +844,7 @@ class WasmCoreDocument implements CoreDocument {
   hitTestPath(page: string, path: Float32Array, radius: number): string[] { return this.d.hit_test_path(page, path, radius); }
   idsInRect(page: string, r: Bounds): string[] { return this.d.ids_in_rect(page, r.x0, r.y0, r.x1, r.y1); }
   bounds(ids: readonly string[]): Bounds | null { return toBounds(this.d.bounds([...ids])); }
+  snapBox(ids: readonly string[]): Bounds | null { return toBounds(this.d.snap_box([...ids])); }
   undo(): Change { return toChange(this.d.undo()); }
   redo(): Change { return toChange(this.d.redo()); }
   canUndo(): boolean { return this.d.can_undo(); }

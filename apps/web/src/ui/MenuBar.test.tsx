@@ -223,13 +223,16 @@ describe("MenuBar (design-l2 L2-6)", () => {
   it("raccourci affiché à droite de la ligne", () => {
     const { row } = setup();
     expect(row("file-new").querySelector("[data-shortcut]")?.textContent).toBe("Ctrl+N");
-    expect(row("grid").querySelector("[data-shortcut]")).toBeNull();
+    // OG69 (G4, HE5 levée) : « Grille » a désormais son raccourci ; la ligne d'outil Rectangle n'en montre pas.
+    expect(row("grid").querySelector("[data-shortcut]")?.textContent).toBe("Ctrl+Maj+'");
+    expect(row("rect").querySelector("[data-shortcut]")).toBeNull();
   });
 
   it("raccourci annoncé : aria-keyshortcuts sur la ligne (Control+N), absent sans raccourci", () => {
     const { row } = setup();
     expect(row("file-new").getAttribute("aria-keyshortcuts")).toBe("Control+N");
-    expect(row("grid").hasAttribute("aria-keyshortcuts")).toBe(false);
+    expect(row("grid").getAttribute("aria-keyshortcuts")).toBe("Control+Shift+'");
+    expect(row("rect").hasAttribute("aria-keyshortcuts")).toBe(false);
   });
 
   it("OG27 : même annonce que la barre (ariaShortcut) ; sous macOS, ⌘N affiché et Meta+N annoncé", () => {

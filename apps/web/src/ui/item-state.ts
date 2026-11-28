@@ -48,6 +48,8 @@ export interface ToolbarView {
   readonly fillTolerance?: number;
   /** C11a (P6, P8, P15) : absent (tests, coque sans annotation) : tableau. */
   readonly annotation?: AnnotationView;
+  /** OG69 (G4, G5) : aimant de la grille de la page montrée ; absent : page sans grille. */
+  readonly magnet?: boolean;
 }
 /** Compteur « 2 / 5 » de la barre d'outils (action `page-number`). */
 export const pagesLabel = (v: { readonly pageIndex: number; readonly pageCount: number }): string => `${v.pageIndex + 1} / ${v.pageCount}`;
@@ -92,6 +94,7 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   "page-next": (v) => ({ disabled: false, ...(v.pageIndex >= v.pageCount - 1 ? { label: "Nouvelle page" } : {}) }),
   "page-duplicate": () => ({ disabled: false }),
   "page-number": (v) => ({ pressed: v.sidebarOpen === true }),
+  "grid-toggle": (v) => ({ pressed: v.magnet !== undefined }),
   "page-remove": (v) => ({ disabled: v.pageCount <= 1 }),
   "page-clear": (v) => ({ disabled: v.elementCount === 0 }),
   "table-row-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.rows >= TABLE_MAX_LINES }),

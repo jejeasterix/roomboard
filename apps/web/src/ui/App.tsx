@@ -9,8 +9,8 @@ import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
 import { PDF_PAGE_KIND, type GridView, type ImageData, type PageLayout } from "../core/api";
 import { stampOf } from "../app/my-backgrounds";
-import { appShortcut } from "../engine/input/keys";
-import { GRID_KIND_LABELS } from "../grid-edit";
+import { appShortcut, gridKey } from "../engine/input/keys";
+import { draftOf, GRID_KIND_LABELS, toGrid, withKind } from "../grid-edit";
 import { BackgroundsWindow, GRID_SAVED_MESSAGE, type BackgroundsUi } from "./BackgroundsWindow";
 import { createDeviceSettings, type DeviceSettings } from "../device-settings";
 import { createProfileActions } from "../app/profile-actions";
@@ -200,12 +200,17 @@ export function App(props: AppProps): JSX.Element {
   });
   // T39 : l'élément qui a ouvert l'Aide (le bouton ☰ pour une ligne du menu ; rien pour « ? ») la retrouve à la fermeture ;
   // sans lui, la scène : le focus ne tombe jamais sur le corps de la page. `createComputed` : avant que le panneau ne prenne le focus.
+  // OG69 (G1) : même règle pour le panneau de la grille (bouton Grille, ☰, ou la scène après Ctrl+Maj+').
+  const RETURNS_FOCUS: ReadonlySet<Panel> = new Set<Panel>(["help", "grid"]);
   let helpOpener: HTMLElement | null = null;
+  /** OG69 (relecture) : panneau fermé par un changement d'onglet, de page ou de version (E8) : le focus reste où il est
+   *  (sur la scène qui vient d'écrire), il ne saute pas au bouton ouvreur. */
+  let closedBySession = false;
   createComputed(
     on(
       panel,
       (p, prev) => {
-        if (p !== "help" || prev === "help") return;
+        if (p === null || !RETURNS_FOCUS.has(p) || prev === p) return;
         const a = helpDoc.activeElement;
         const menu = a instanceof HTMLElement ? a.closest('[data-toolbar="menu"]') : null;
         helpOpener = menu !== null ? menu.querySelector<HTMLElement>("[data-menu-toggle]") : a instanceof HTMLElement && a !== helpDoc.body ? a : null;
@@ -217,7 +222,12 @@ export function App(props: AppProps): JSX.Element {
     on(
       panel,
       (p, prev) => {
-        if (prev !== "help" || p !== null) return;
+        if (prev === null || prev === undefined || !RETURNS_FOCUS.has(prev) || p !== null) return;
+        if (closedBySession) {
+          closedBySession = false;
+          helpOpener = null;
+          return;
+        }
         const back = helpOpener !== null && helpOpener.isConnected ? helpOpener : props.stages;
         helpOpener = null;
         if (!back.hasAttribute("tabindex") && back === props.stages) back.tabIndex = -1;
@@ -321,6 +331,16 @@ export function App(props: AppProps): JSX.Element {
     }
   };
 
+  /** OG69 (G4) : dernière grille utilisée (appliquée, ou retirée par le bouton Grille), rendue par un toucher ; au départ,
+   *  la grille neuve du Créateur (carreaux de 40, aimantés). Mémoire de la fenêtre, commune aux onglets. */
+  let lastGrid = toGrid(withKind(draftOf(null), "squares")) as GridView;
+  const toggleGrid = (): void => {
+    const b = ws.active().board;
+    const page = b.engine.state().page;
+    const cur = b.doc.page(page)?.grid ?? null;
+    if (cur !== null) lastGrid = cur;
+    b.engine.run({ type: "SetGrid", page, grid: cur === null ? lastGrid : null });
+  };
   /** Séance de la grille (E8, CR3) : moteur `b` figé à l'ouverture (jamais `ws.active()` au rappel : chaque onglet a son
    *  moteur) ; le démontage de `GridPanel` coupe l'aperçu sur ce moteur-là. */
   const gridPanelFor = (b: BoardSession): JSX.Element => (
@@ -329,13 +349,18 @@ export function App(props: AppProps): JSX.Element {
       preview={(g) => b.engine.previewGrid(g)}
       endPreview={() => b.engine.endGridPreview()}
       apply={(grid) => {
+        const page = b.engine.state().page;
+        const before = b.doc.page(page)?.grid ?? null;
         // Refus du cœur : message dans #etat et rendu au panneau, resté ouvert, aperçu gardé (PC1, CR6).
-        if (b.engine.run({ type: "SetGrid", page: b.engine.state().page, grid }) === null) {
+        if (b.engine.run({ type: "SetGrid", page, grid }) === null) {
           return b.engine.state().error ?? "grille refusée";
         }
+        lastGrid = grid ?? before ?? lastGrid;
         setPanel(null);
         return null;
       }}
+      tooFine={(g) => b.engine.gridTooFine(g)}
+      onView={(cb) => b.engine.onCamera((c) => cb(c.zoom))}
       cancel={() => setPanel(null)}
       saveAsBackground={props.backgrounds === undefined ? undefined : (grid) => void saveGridAsBackground(b, grid)}
     />
@@ -346,7 +371,9 @@ export function App(props: AppProps): JSX.Element {
     on(
       sessionKey,
       () => {
-        if (panel() === "grid") setPanel(null);
+        if (panel() !== "grid") return;
+        closedBySession = true;
+        setPanel(null);
       },
       { defer: true },
     ),
@@ -443,6 +470,7 @@ export function App(props: AppProps): JSX.Element {
       editOriginal: () => void ws.editOriginal(),
       selection: (a) => ws.selection(a),
       toggle: (p) => leaveEditor(() => setPanel((cur) => (cur === p ? null : p))),
+      toggleGrid,
       toggleSidebar,
       ...(ann === undefined ? {} : { annotation: ann.control }),
     },
@@ -486,7 +514,16 @@ export function App(props: AppProps): JSX.Element {
   // avis. Écoutés ici, jamais par le moteur.
   onMount(() => {
     const onShortcut = (e: KeyboardEvent): void => {
-      const key = { key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: e.isComposing, target: e.target instanceof HTMLElement ? e.target : null };
+      const key = { key: e.key, code: e.code, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: e.isComposing, target: e.target instanceof HTMLElement ? e.target : null };
+      // OG69 (G4, G5 ; HE5 levée) : Ctrl+' bascule la grille, Ctrl+Maj+' ouvre le Créateur, Alt+G bascule l'aimant.
+      const grid = annotating() ? null : gridKey(key);
+      // Créateur ouvert : la grille du document ne change pas sous le brouillon (Ctrl+', Alt+G sans effet ; Ctrl+Maj+' le ferme).
+      if (grid !== null) {
+        e.preventDefault();
+        // Les actions de la barre (`ACTIONS`) ; Créateur ouvert, seul Ctrl+Maj+' agit (il le ferme).
+        if (!e.repeat && (panel() !== "grid" || grid === "grid")) host.runAction(grid);
+        return;
+      }
       const action = annotating() ? null : appShortcut(key);
       if (action === "palm-eraser") {
         e.preventDefault();

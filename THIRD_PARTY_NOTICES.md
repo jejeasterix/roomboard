@@ -651,6 +651,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
 
 - Panneau d'options du tableau (personnalisation-3 suite, DS10), lus au même commit `7981a0798a` par `gh api`, recopiés tels quels, noms RoomBoard
   identiques aux noms Lucide : `move-horizontal` (Ajuster au contenu, la même que celle d'OG34), `ban` (Aucune bordure).
+- Bouton Aimant de la ligne de contexte des formes (OG69, G5), lu au même commit `7981a0798a` par `gh api`, recopié tel quel,
+  nom RoomBoard identique au nom Lucide : `magnet`.
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :
 

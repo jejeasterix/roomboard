@@ -122,6 +122,8 @@ if [ "$E2E" = 1 ]; then
   node scripts/essais/personnalisation-3-tableau-navigateur.mjs
   node scripts/essais/personnalisation-3-suite-navigateur.mjs
   node scripts/essais/c9-grille-navigateur.mjs
+  node scripts/essais/grille-createur-navigateur.mjs
+  echo "grille Créateur OG69 : OK"
   node scripts/essais/c7b-texte-riche-navigateur.mjs
   node scripts/essais/c3-groupes-navigateur.mjs
   node scripts/essais/c12-pdf-navigateur.mjs

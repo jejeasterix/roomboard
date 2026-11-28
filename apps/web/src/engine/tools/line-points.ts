@@ -6,6 +6,7 @@ import type { BindHint, LinkHandle, PointHandle } from "../render/overlay";
 import { HANDLE_GRAB_PX } from "./handles";
 import { constrainEnd } from "./shape";
 import type { ToolContext } from "./tool";
+import { magnetPoint } from "./magnet";
 
 export const BIND_PX = 15;
 export const BIND_TOUCH_PX = 30;
@@ -119,7 +120,7 @@ export function dragLine(ctx: ToolContext, v: ShapeElement, hit: PointHit, x: nu
   const closed = isClosedShape(v.shape);
   const index = hit.kind === "mid" ? hit.index + 1 : hit.index;
   if (hit.kind === "mid") pts.splice(index, 0, [x, y]); // milieu `n - 1` d'une ligne fermée : après le dernier sommet
-  let [px, py] = ctx.alt?.() === true ? [x, y] : (ctx.doc.snapPoint(ctx.page(), x, y) ?? [x, y]);
+  let [px, py] = magnetPoint(ctx, ctx.page(), x, y);
   const n = index === 0 ? pts[1] : pts[index - 1];
   if (ctx.shift?.() === true && n) [px, py] = constrainEnd("line", n[0], n[1], px, py);
   pts[index] = [px, py];

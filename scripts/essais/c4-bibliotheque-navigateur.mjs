@@ -72,7 +72,7 @@ async function scenario(page, url, { captures, tmp }) {
   const gridKind = async () => {
     await clickItem(page, "grid");
     await page.waitForSelector(gridField("kind"));
-    const v = await page.inputValue(gridField("kind"));
+    const v = await page.getAttribute(`${gridField("kind")} [aria-checked="true"]`, "data-choice");
     await page.click(gridField("cancel"));
     return v;
   };
@@ -146,7 +146,7 @@ async function scenario(page, url, { captures, tmp }) {
   await clickItem(page, "page-add");
   await clickItem(page, "grid");
   await page.waitForSelector(gridField("kind"));
-  await page.selectOption(gridField("kind"), "seyes");
+  await page.click(`${gridField("kind")} [data-choice="seyes"]`);
   await page.click(gridField("apply"));
   check((await gridKind()) === "seyes", "S2 : page 3 en Seyès");
   await openFractions();

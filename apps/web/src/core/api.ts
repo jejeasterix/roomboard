@@ -511,6 +511,8 @@ export interface CoreDocument {
   free(): void;
   /** Point aimanté de la page (G6) ; null sans grille, magnétisme coupé, aucun niveau qui accroche ou page inconnue. */
   snapPoint(page: string, x: number, y: number): readonly [number, number] | null;
+  /** OG69 (G5) : boîte d'accroche (G7) : boîte géométrique d'une forme, sans l'épaisseur du trait ; null sans élément. */
+  snapBox(ids: readonly string[]): Bounds | null;
   /** Déplacement aimanté depuis le déplacement brut (G7) ; brut sans grille, sans magnétisme ou sans élément. */
   snapDelta(page: string, ids: readonly string[], dx: number, dy: number): readonly [number, number];
   /** Lignes visibles de la grille dans `rect` (monde), familles sous `minStep` et points sous `minDotStep` sautés (G9). */
@@ -690,4 +692,7 @@ export interface LevelLines {
 export interface GridLines {
   readonly above: boolean;
   readonly levels: readonly LevelLines[];
+  /** OG69 (G3) : rangs dans `GridView.levels` des niveaux dont une famille est sautée, plus fine que le pas minimal ;
+   *  absent : rien de sauté. */
+  readonly skipped?: readonly number[];
 }

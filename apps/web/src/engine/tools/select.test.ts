@@ -270,6 +270,30 @@ describe("outil Sélection — magnétisme (C9, S3)", () => {
     }
   });
 
+  it("OG69 (G5) : poignée de boîte aimantée : le coin géométrique (sans le trait) tombe sur un croisement ; Alt ou aimant coupé : brut", () => {
+    const snapped = [1.5, 0, 0, 1.5, -40, -40];
+    for (const [alt, snap] of [[false, true], [true, true], [false, false]] as const) {
+      const { doc, tool, runs, rect, setAlt } = setup();
+      const page = doc.pageIds()[0] ?? "";
+      const a = rect(80, 80, 160, 160);
+      doc.apply({ type: "SetGrid", page, grid: squares40(snap) });
+      tool.setSelection([a]);
+      setAlt(alt);
+      // Poignée « se » du cadre (162, 162), tirée de (+31, +37) : la boîte géométrique (80, 80)-(160, 160) vise (191, 197) → (200, 200).
+      tool.begin(1, [at(162, 162)]);
+      tool.extend(1, [at(193, 199)], []);
+      tool.close(1, "end");
+      expect(runs).toHaveLength(1);
+      if (snap && !alt) {
+        expect(runs[0]).toEqual({ type: "Transform", ids: [a], matrix: snapped });
+        expect(doc.snapBox([a])).toEqual({ x0: 80, y0: 80, x1: 200, y1: 200 });
+      } else {
+        expect(runs[0]).toMatchObject({ type: "Transform", ids: [a] });
+        expect(runs[0]).not.toEqual({ type: "Transform", ids: [a], matrix: snapped });
+      }
+    }
+  });
+
   it("sans grille : déplacement brut, comme avant C9", () => {
     const { tool, runs, rect } = setup();
     const a = rect(13, 17, 113, 77);

@@ -29,7 +29,7 @@ import { itemState, pagesLabel, type ToolbarView } from "./item-state";
 import { padToPixel } from "./Island";
 import { PointerSwitch } from "./PointerSwitch";
 import { buttonShortcut } from "./shortcuts";
-import { createTip } from "./tooltip";
+import { createTip, TIP_HOLD_MS } from "./tooltip";
 
 /** Libellé du curseur du pot (C6b, B10). */
 const FILL_TOLERANCE_LABEL = "Tolérance";
@@ -133,11 +133,102 @@ function PageCounter(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
   );
 }
 
+/** OG69 (G4) : action du Créateur, ouverte par l'appui long ou le clic droit sur le bouton Grille. */
+const GRID_PANEL_ACTION = "grid";
+
+/**
+ * OG69 (G4) : bouton Grille de l'îlot de page. Un toucher, un clic, Entrée ou Espace : `grid-toggle` (dernière grille
+ * utilisée). Appui long (500 ms, le délai de l'infobulle) ou clic droit : le Créateur ; le relâcher qui suit ne bascule pas.
+ * Au clavier, Ctrl+Maj+' ouvre le Créateur (`gridKey`).
+ */
+function GridToggle(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
+  const st = createMemo(() => itemState(props.item, props.ctx.view()));
+  const keys = buttonShortcut(props.item.action);
+  const tip = createTip();
+  let button: HTMLButtonElement | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Le Créateur est ouvert par ce geste : le clic du relâcher est ignoré, et un second déclencheur aussi. */
+  let held = false;
+  const stop = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  onCleanup(stop);
+  const openCreator = (): void => {
+    stop();
+    if (held) return;
+    held = true;
+    // G1 : le bouton est l'ouvreur (focus rendu à la fermeture) ; le panneau prend ensuite le focus sur Type.
+    button?.focus({ preventScroll: true });
+    props.ctx.host.runAction(GRID_PANEL_ACTION);
+  };
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        class="rb-ib rb-grid-toggle"
+        data-item={props.item.id}
+        aria-label={st().label}
+        aria-pressed={st().pressed ?? undefined}
+        aria-keyshortcuts={keys?.aria ?? undefined}
+        disabled={st().disabled}
+        {...tipPointerHandlers(tip)}
+        onPointerDown={(e) => {
+          // Au doigt et au stylet, pas d'événements souris de compatibilité : leur mousedown, après un appui long,
+          // reprendrait au panneau le focus posé sur Type. Le clic, lui, a toujours lieu.
+          if (e.pointerType !== "mouse") e.preventDefault();
+          tip.down(e.pointerType);
+          held = false;
+          stop();
+          if (e.button === 0) timer = setTimeout(openCreator, TIP_HOLD_MS);
+        }}
+        onPointerUp={() => {
+          tip.up();
+          stop();
+        }}
+        onPointerCancel={() => {
+          tip.up();
+          stop();
+        }}
+        onPointerLeave={(e) => {
+          if (e.pointerType === "mouse") tip.leave();
+          stop();
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          openCreator();
+        }}
+        onClick={(e) => {
+          // Le relâcher d'un appui long est ignoré ; une activation au clavier (detail 0) bascule toujours.
+          const skip = held && e.detail !== 0;
+          held = false;
+          if (skip) return;
+          props.ctx.host.runAction(props.item.action ?? "");
+        }}
+        onFocus={(e) => {
+          try {
+            if (e.currentTarget.matches(":focus-visible")) tip.focus();
+          } catch {
+            tip.focus();
+          }
+        }}
+        onBlur={() => tip.blur(document.hasFocus())}
+      >
+        <Icon name={iconFor(props.item, st().icon) ?? ""} />
+        <span class="rb-sr">{st().label}</span>
+      </button>
+      <TipBubble tip={tip} label={st().label} anchor={() => button!} keys={keys?.text} />
+    </>
+  );
+}
+
 /** design-l4 (L4-8) : rendu propre à une action (table indexée par l'action, jamais un test sur l'identifiant) ;
  *  absente : bouton. */
 const ACTION_RENDER: Readonly<Record<ActionId, (item: ToolItem, ctx: Ctx) => JSX.Element>> = {
   "annotation-pointer": (item, ctx) => <PointerSwitch item={item} view={ctx.view} host={ctx.host} />,
   "page-number": (item, ctx) => <PageCounter item={item} ctx={ctx} />,
+  "grid-toggle": (item, ctx) => <GridToggle item={item} ctx={ctx} />,
 };
 
 /** Rendu par sorte d'élément (table, jamais un branchement sur l'identifiant). */
@@ -214,6 +305,28 @@ function PresetRow(props: { presets: Accessor<PresetTable>; view: Accessor<Toolb
   );
 }
 
+/** OG69 (G5) : outils de forme, qui portent le bouton Aimant dans leur ligne de contexte. */
+const SHAPE_TOOLS: ReadonlySet<string> = new Set(["rect", "diamond", "ellipse", "line", "arrow"].map((t) => TOOL_TABLE[t]?.choice ?? t));
+export const MAGNET_LABEL = "Aimant";
+
+/** OG69 (G5) : bouton Aimant (enfoncé = aimant allumé), seulement pour un outil de forme sur une page qui a une grille ;
+ *  un toucher bascule l'aimant de la grille (une étape). Alt reste la coupure temporaire ; Alt+G bascule au clavier. */
+function MagnetRow(props: { view: Accessor<ToolbarView>; host: ToolbarHost }): JSX.Element {
+  return (
+    <Show when={SHAPE_TOOLS.has(props.view().tool) && props.view().magnet !== undefined}>
+      <span class="rb-sep" role="separator" data-magnet-sep />
+      <IconButton
+        icon="magnet"
+        label={MAGNET_LABEL}
+        pressed={props.view().magnet === true}
+        shortcut={buttonShortcut("magnet")}
+        attrs={{ "data-magnet": "" }}
+        onPress={() => props.host.runAction("magnet")}
+      />
+    </Show>
+  );
+}
+
 /** Action fabriquée pour l'état des boutons du tableau : même table `ACTION_STATE` qu'une action de profil. */
 const tableItem = (id: string): ToolItem => ({ id, kind: "action", action: id, label: ACTION_TABLE[id]?.label ?? id, requires: [], rest: {} });
 
@@ -268,6 +381,7 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
       <Show when={props.presets !== undefined}>
         <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
       </Show>
+      <MagnetRow view={props.view} host={props.host} />
       <TableActionRow view={props.view} host={props.host} />
       <SelectionRow view={props.view} host={props.host} />
       <FormatRow view={props.view} act={(a) => props.host.textFormat(a)} />

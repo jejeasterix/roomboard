@@ -114,7 +114,7 @@ async function toPdfPage(page) {
 async function toPortrait(page, cdp) {
   await clickItem(page, "grid");
   await page.waitForSelector("#grille", { state: "visible", timeout: 15000 });
-  await page.selectOption('#grille [data-grille="kind"]', "squares");
+  await page.click('#grille [data-grille="kind"] [data-choice="squares"]');
   await page.click('#grille [data-grille="apply"]');
   await settle(page);
   await openSide(page, cdp);

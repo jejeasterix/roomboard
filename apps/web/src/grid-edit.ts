@@ -32,6 +32,8 @@ export interface GridDraft {
   readonly spacingSet: boolean;
   /** Le type a été choisi : « Aucune » choisi retire la grille ; « Aucune » d'office (sans niveau lisible) la garde (E2, G5). */
   readonly kindSet: boolean;
+  /** OG69 (G5) : page ouverte sans grille et magnétisme jamais touché : il suit le type choisi (`SNAP_BY_DEFAULT`). */
+  readonly snapAuto?: boolean;
 }
 
 /** Pas posé par le choix d'un type (E5) : Seyès 8 mm à 3,78 unités par mm, portée 20. */
@@ -60,6 +62,8 @@ export const NEW_GRID_COLOR = "#94a3b8";
 export const GRID_LINE_WIDTHS: readonly number[] = Object.freeze([1, 2, 3, 4]);
 export const MIN_GRID_SPACING = 4;
 export const MAX_GRID_SPACING = 400;
+/** OG69 (G5) : aimant allumé d'office à la création d'une grille, sauf Seyès et portée (lignes d'écriture, pas de nœuds utiles). */
+export const SNAP_BY_DEFAULT = (k: GridKind): boolean => k !== "seyes" && k !== "music";
 
 const isKind = (k: string): k is GridKind => (GRID_KINDS as readonly string[]).includes(k);
 
@@ -67,17 +71,18 @@ export function draftOf(g: GridView | null): GridDraft {
   const head = g?.levels[0];
   const snap = g?.snap ?? false;
   if (head === undefined) {
-    return { base: g, kind: "none", spacing: GRID_DEFAULT_SPACING.squares, color: NEW_GRID_COLOR, lineWidth: DEFAULT_GRID_LINE_WIDTH, snap, spacingSet: false, kindSet: false };
+    return { base: g, kind: "none", spacing: GRID_DEFAULT_SPACING.squares, color: NEW_GRID_COLOR, lineWidth: DEFAULT_GRID_LINE_WIDTH, snap, spacingSet: false, kindSet: false, snapAuto: true };
   }
   return { base: g, kind: isKind(head.kind) ? head.kind : "other", spacing: head.spacingX, color: head.color, lineWidth: head.lineWidth, snap, spacingSet: false, kindSet: false };
 }
 
-/** Choisir un type pose son pas par défaut (E5) ; couleur, épaisseur et magnétisme gardés. */
+/** Choisir un type pose son pas par défaut (E5) ; couleur et épaisseur gardées ; magnétisme gardé, sauf sur une page
+ *  ouverte sans grille où il suit le type tant qu'il n'est pas touché (G5, OG69). */
 export function withKind(d: GridDraft, k: GridKind | "none"): GridDraft {
   if (k === d.kind) return d;
-  return k === "none"
-    ? { ...d, kind: "none", kindSet: true }
-    : { ...d, kind: k, spacing: GRID_DEFAULT_SPACING[k], spacingSet: true, kindSet: true };
+  if (k === "none") return { ...d, kind: "none", kindSet: true };
+  const snap = d.snapAuto === true ? SNAP_BY_DEFAULT(k) : d.snap;
+  return { ...d, kind: k, spacing: GRID_DEFAULT_SPACING[k], spacingSet: true, kindSet: true, snap };
 }
 
 /** Pas borné à [4, 400] ; non fini : inchangé (HE9). */
@@ -90,6 +95,16 @@ export function withSpacing(d: GridDraft, v: number): GridDraft {
 /** Texte du champ « Pas » → nombre ; vide : NaN (valeur précédente gardée, HE9). */
 export const spacingOf = (raw: string): number => (raw.trim() === "" ? Number.NaN : Number(raw));
 
+/** OG69 (G3) : texte que le champ « Pas » prend dès la saisie, ou null s'il reste tel quel. Hors bornes : la borne ; sauf
+ *  un seul chiffre 1 à 3, début possible d'un pas de 10 à 39, ramené seulement au relâcher du champ (`change`). */
+export function spacingFieldText(raw: string): string | null {
+  const v = spacingOf(raw);
+  if (!Number.isFinite(v) || /^[1-3]$/.test(raw.trim())) return null;
+  if (v < MIN_GRID_SPACING) return String(MIN_GRID_SPACING);
+  if (v > MAX_GRID_SPACING) return String(MAX_GRID_SPACING);
+  return null;
+}
+
 export function withColor(d: GridDraft, c: string): GridDraft {
   return c === "" || c === d.color ? d : { ...d, color: c };
 }
@@ -100,8 +115,9 @@ export function withLineWidth(d: GridDraft, w: number): GridDraft {
   return { ...d, lineWidth: w };
 }
 
+/** Magnétisme touché à la main : il ne suit plus le type (G5, OG69). */
 export function withSnap(d: GridDraft, on: boolean): GridDraft {
-  return on === d.snap ? d : { ...d, snap: on };
+  return on === d.snap && d.snapAuto !== true ? d : { ...d, snap: on, snapAuto: false };
 }
 
 /** Choix « Épaisseur » : 1 à 4 px, plus la valeur du document si elle est ailleurs dans [1, 8]. */

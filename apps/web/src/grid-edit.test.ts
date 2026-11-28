@@ -7,6 +7,7 @@ import {
   GRID_DEFAULT_SPACING,
   lineWidthOptions,
   NEW_GRID_COLOR,
+  spacingFieldText,
   spacingOf,
   toGrid,
   withColor,
@@ -104,5 +105,30 @@ describe("brouillon de la grille (C9 éditeur, E4 à E6)", () => {
     expect(toGrid(draftOf(g))).toEqual(g);
     expect(toGrid(withKind(withKind(draftOf(g), "squares"), "none"))).toBeNull();
   });
-});
 
+  it("OG69 (G5) : grille choisie sur une page sans grille → aimant allumé, sauf Seyès et portée ; touché à la main, il ne suit plus le type", () => {
+    const d = draftOf(null);
+    expect(withKind(d, "squares").snap).toBe(true);
+    expect(withKind(d, "dots").snap).toBe(true);
+    expect(withKind(d, "seyes").snap).toBe(false);
+    expect(withKind(d, "music").snap).toBe(false);
+    expect(withKind(withKind(d, "squares"), "seyes").snap).toBe(false);
+    expect(withKind(withSnap(d, true), "seyes").snap).toBe(true);
+    expect(withKind(withSnap(withKind(d, "squares"), false), "dots").snap).toBe(false);
+    // Grille du document : son aimant est gardé au changement de type.
+    expect(withKind(draftOf(grid([level("seyes", 30)], { snap: false })), "squares").snap).toBe(false);
+  });
+
+  it("OG69 (G3) : texte du champ Pas ramené à la borne dès la saisie ; un chiffre 1 à 3, début possible d'un pas valide, attend", () => {
+    expect(spacingFieldText("2")).toBeNull();
+    expect(spacingFieldText("3")).toBeNull();
+    expect(spacingFieldText("40")).toBeNull();
+    expect(spacingFieldText("")).toBeNull();
+    expect(spacingFieldText("0")).toBe("4");
+    expect(spacingFieldText("0.5")).toBe("4");
+    expect(spacingFieldText("2.5")).toBe("4");
+    expect(spacingFieldText("-3")).toBe("4");
+    expect(spacingFieldText("401")).toBe("400");
+    expect(spacingFieldText("9000")).toBe("400");
+  });
+});
