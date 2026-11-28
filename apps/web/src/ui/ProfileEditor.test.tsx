@@ -188,9 +188,10 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     const { q, save } = setup();
     fireEvent.click(q(grip("select")));
     expect(q<HTMLButtonElement>('[data-edit-item="select"] button[data-edit="up"]').disabled).toBe(true);
-    // personnalisation-1a : le dernier élément de la barre d'outils est « Page suivante » (le groupe pages suit « bureau »)
-    fireEvent.click(q(grip("page-next")));
-    expect(q<HTMLButtonElement>('[data-edit-item="page-next"] button[data-edit="down"]').disabled).toBe(true);
+    // personnalisation-1a : le dernier élément de la barre d'outils clôt le groupe pages (qui suit « bureau ») ; OG69 (G4) :
+    // c'est « Afficher la grille », posé après « Page suivante ».
+    fireEvent.click(q(grip("grid-toggle")));
+    expect(q<HTMLButtonElement>('[data-edit-item="grid-toggle"] button[data-edit="down"]').disabled).toBe(true);
     fireEvent.click(q(grip("hand")));
     fireEvent.click(q('[data-edit-item="hand"] button[data-edit="down"]'));
     fireEvent.click(q('button[data-edit="save"]'));

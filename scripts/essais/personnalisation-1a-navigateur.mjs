@@ -221,7 +221,7 @@ async function s1(browser, base, tmp) {
   // Grille à carreaux par le panneau.
   await clickItem(page, "grid");
   await page.waitForSelector("#grille", { state: "visible", timeout: 15000 });
-  await page.selectOption('#grille [data-grille="kind"]', "squares");
+  await page.click('#grille [data-grille="kind"] [data-choice="squares"]');
   await page.click('#grille [data-grille="apply"]');
   await settle(page);
   // Onglet replié Pages au doigt, puis segment Infini.

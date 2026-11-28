@@ -20,6 +20,7 @@ import { isBoxShape, isSegment } from "../core/shapes";
 import { createLineEditor, type LineEditor } from "./tools/line-edit";
 import { linkedCopy } from "./tools/line-points";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
+import { MIN_DOT_PX, MIN_GRID_PX } from "./render/grid-paint";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
 import { validColor } from "../core/rich-text";
@@ -84,6 +85,8 @@ export interface EngineState {
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
   readonly error: string | null;
+  /** OG69 (G5) : aimant de la grille de la page montrée (`grid.snap`) ; absent : page sans grille. */
+  readonly magnet?: boolean;
 }
 
 /** Molette en px CSS relatifs à la zone de dessin (deltas déjà ramenés en px par la page). */
@@ -281,6 +284,10 @@ export interface Engine {
   previewGrid(grid: GridView | null): void;
   /** Fin de l'aperçu : la grille du document revient ; sans aperçu, rien. Changer de page la coupe aussi (E8). */
   endGridPreview(): void;
+  /** OG69 (G3) : vrai si le cœur saute un niveau de `grid` sur la page montrée, trop dense au zoom courant. */
+  gridTooFine(grid: GridView | null): boolean;
+  /** OG69 (G5) : bascule l'aimant de la grille de la page montrée (un `SetGrid`, une étape) ; faux sans grille. */
+  toggleMagnet(): boolean;
   /** C5 (DAI4) : séance de retouche de l'image `id` de la page montrée (une seule à la fois) ; null si ce n'en est pas une. */
   editImage(id: string): ImageEdit | null;
   /** C15 (X23, PC2) : séance d'orbite de l'élément `id` de la page montrée (une seule séance modale : ferme la retouche
@@ -638,6 +645,7 @@ export function createEngine(deps: EngineDeps): Engine {
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
+      ...(pageView?.grid ? { magnet: pageView.grid.snap } : {}),
     };
   }
 
@@ -1573,6 +1581,16 @@ export function createEngine(deps: EngineDeps): Engine {
       if (!previewing) return;
       stopPreview();
       requestScene();
+    },
+    gridTooFine(grid) {
+      if (grid === null) return false;
+      // Seuils de l'écran (`grid-cache.ts`) ; le saut ne dépend que du pas : un carré d'une unité suffit.
+      const lines = doc.gridLinesOf(pageId, grid, { x0: 0, y0: 0, x1: 1, y1: 1 }, MIN_GRID_PX / camera.zoom, MIN_DOT_PX / camera.zoom);
+      return (lines?.skipped?.length ?? 0) > 0;
+    },
+    toggleMagnet() {
+      const grid = doc.page(pageId)?.grid ?? null;
+      return grid !== null && run({ type: "SetGrid", page: pageId, grid: { ...grid, snap: !grid.snap } }) !== null;
     },
     editImage(id) {
       if (doc.element(id)?.kind !== "image" || !doc.elementIds(pageId).includes(id)) return null;

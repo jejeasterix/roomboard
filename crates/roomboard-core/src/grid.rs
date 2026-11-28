@@ -80,6 +80,10 @@ pub struct LevelLines {
 pub struct GridLines {
     pub above: bool,
     pub levels: Vec<LevelLines>,
+    /// OG69 (G3) : rangs dans `GridView::levels` des niveaux dont une famille est sautée, plus fine que le pas minimal ;
+    /// absent de la sortie quand rien n'est sauté (contrat d'avant inchangé).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub skipped: Vec<u32>,
 }
 
 pub fn is_known_kind(kind: &str) -> bool {
@@ -483,46 +487,53 @@ fn dot_grid(out: &mut Vec<f64>, l: &GridLevelView, c: &Bounds) {
     }
 }
 
+/// Lignes d'un niveau dans `out` ; vrai si une de ses familles est sautée, plus fine que son seuil (G3).
 fn level_lines(
     l: &GridLevelView,
     c: &Bounds,
     min_step: f64,
     min_dot_step: f64,
     out: &mut Vec<LevelLines>,
-) {
+) -> bool {
     // CR2 : un niveau épais garde le même blanc entre ses traits qu'un niveau fin : seuils × `lineWidth`.
     let (min_step, min_dot_step) = (min_step * l.line_width, min_dot_step * l.line_width);
     let (sx, sy, ox, oy) = (l.spacing_x, l.spacing_y, l.origin_x, l.origin_y);
     let (mut main, mut fine, mut dots) = (Vec::new(), Vec::new(), Vec::new());
+    let mut skipped = false;
+    // Famille gardée si son pas atteint le seuil ; sinon notée sautée (G3).
+    let mut keep = |ok: bool| {
+        skipped |= !ok;
+        ok
+    };
     match l.kind.as_str() {
         "lines" => {
-            if sy >= min_step {
+            if keep(sy >= min_step) {
                 horizontals(&mut main, oy, sy, c, |_| true);
             }
         }
         "dots" => {
-            if sx >= min_dot_step && sy >= min_dot_step {
+            if keep(sx >= min_dot_step && sy >= min_dot_step) {
                 dot_grid(&mut dots, l, c);
             }
         }
         "isometric" => {
-            if sx * 3f64.sqrt() / 2.0 >= min_step {
+            if keep(sx * 3f64.sqrt() / 2.0 >= min_step) {
                 triangles(&mut main, ox, oy, sx, c);
             }
         }
         "music" => {
-            if sy >= min_step {
+            if keep(sy >= min_step) {
                 staves(&mut main, oy, sy, c);
             }
         }
         "squares" | "seyes" => {
-            if sx >= min_step {
+            if keep(sx >= min_step) {
                 verticals(&mut main, ox, sx, c);
             }
-            if sy >= min_step {
+            if keep(sy >= min_step) {
                 horizontals(&mut main, oy, sy, c, |_| true);
             }
-            if l.kind == "seyes" && sy / 4.0 >= min_step {
+            if l.kind == "seyes" && keep(sy / 4.0 >= min_step) {
                 horizontals(&mut fine, oy, sy / 4.0, c, |k| k.rem_euclid(4) != 0);
             }
         }
@@ -548,13 +559,15 @@ fn level_lines(
             dots: Vec::new(),
         });
     }
+    skipped
 }
 
 /// Lignes visibles (G9), en unités de page, limitées à `rect ∩ clip` quand le cadre `clip` existe (Page :
 /// `(0, 0) → (width, max(height, fond))`, `Document::page_clip`), à `rect` seul sinon (Infini, T7). `None` si la grille est
 /// invisible. Niveau invisible ou d'un `kind` inconnu sauté ; famille sautée si son pas est `< min_step·lineWidth` ;
 /// points sautés si un pas est `< min_dot_step·lineWidth` (CR2) ou si leur nombre dépasse `MAX_GRID_DOTS`. Le nombre de lignes dépend de `rect`,
-/// jamais de la distance au haut de page.
+/// jamais de la distance au haut de page. `skipped` nomme les niveaux visibles dont une famille est sautée par ces seuils
+/// (G3, OG69) ; le plafond `MAX_GRID_DOTS` n'y compte pas.
 pub fn lines(
     g: &GridView,
     clip: Option<Bounds>,
@@ -565,7 +578,7 @@ pub fn lines(
     if !g.visible {
         return None;
     }
-    let mut levels = Vec::new();
+    let (mut levels, mut skipped) = (Vec::new(), Vec::new());
     let finite = [rect.x0, rect.y0, rect.x1, rect.y1]
         .into_iter()
         .chain(clip.into_iter().flat_map(|k| [k.x0, k.y0, k.x1, k.y1]))
@@ -580,17 +593,19 @@ pub fn lines(
         None => rect,
     };
     if finite && c.x0 <= c.x1 && c.y0 <= c.y1 {
-        for l in g
-            .levels
-            .iter()
-            .filter(|l| l.visible && is_known_kind(&l.kind))
-        {
-            level_lines(l, &c, min_step, min_dot_step, &mut levels);
+        for (i, l) in g.levels.iter().enumerate() {
+            if l.visible
+                && is_known_kind(&l.kind)
+                && level_lines(l, &c, min_step, min_dot_step, &mut levels)
+            {
+                skipped.push(u32::try_from(i).unwrap_or(u32::MAX));
+            }
         }
     }
     Some(GridLines {
         above: g.above,
         levels,
+        skipped,
     })
 }
 
@@ -1046,6 +1061,32 @@ mod tests {
             );
             assert_eq!(at(&c, z).levels.len(), 1, "z = {z}");
         }
+    }
+
+    /// OG69 (G3) : le cœur nomme les niveaux dont une famille est sautée, trop dense au zoom (rang dans `levels`) ;
+    /// rien de sauté : liste vide. Seyès : ses lignes fines comptent (iPad, capture 18 d'OG65).
+    #[test]
+    fn grid_lines_name_the_levels_skipped_as_too_dense() {
+        let a = grid(vec![
+            colored("squares", 40.0, "#400000"),
+            colored("squares", 20.0, "#200000"),
+        ]);
+        assert_eq!(at(&a, 0.15).skipped, vec![1]);
+        assert!(at(&a, 0.37).skipped.is_empty());
+        let b = grid(vec![colored("seyes", 30.24, "#3a5f0b")]);
+        assert_eq!(at(&b, 0.37).skipped, vec![0]);
+        assert!(at(&b, 1.0).skipped.is_empty());
+        let c = grid(vec![
+            GridLevelView {
+                visible: false,
+                ..colored("squares", 2.0, "#000000")
+            },
+            colored("dots", 40.0, "#00ff00"),
+        ]);
+        assert_eq!(at(&c, 0.15).skipped, vec![1]);
+        let tiny = grid(vec![colored("squares", 2.0, "#000000")]);
+        assert_eq!(at(&tiny, 1.0).skipped, vec![0]);
+        assert!(at(&tiny, 1.0).levels.is_empty());
     }
 
     /// G9, S5 « Pour tous les cas » : au plus 202 verticales et 152 horizontales par famille, 65 536 points par niveau.

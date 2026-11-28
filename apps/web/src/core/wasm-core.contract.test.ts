@@ -1431,6 +1431,28 @@ describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
     d.free();
   });
 
+  it("OG69 (G3) : gridLinesOf nomme les niveaux sautés, plus fins que le pas minimal (skipped) ; rien de sauté : champ absent", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = { x0: 0, y0: 0, x1: 100, y1: 100 };
+    const g = gridOf([gridLevel("squares", 40, "#94a3b8"), gridLevel("squares", 2, "#cccccc")]);
+    expect(d.gridLinesOf(p, g, r, 4, 8)?.skipped).toEqual([1]);
+    expect(d.gridLinesOf(p, g, r, 4, 8)?.levels).toHaveLength(1);
+    const ok = d.gridLinesOf(p, gridOf([gridLevel("squares", 40, "#94a3b8")]), r, 4, 8);
+    expect(ok !== null && "skipped" in ok).toBe(false);
+    d.free();
+  });
+
+  it("OG69 (G5) : snapBox : boîte géométrique d'une forme, sans l'épaisseur du trait ; null sans élément", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 13, y0: 17, x1: 113, y1: 77, style: { color: "#000000", width: 10 }, fill: null }).ids[0] ?? "";
+    expect(d.snapBox([a])).toEqual({ x0: 13, y0: 17, x1: 113, y1: 77 });
+    expect(d.bounds([a])).not.toEqual(d.snapBox([a]));
+    expect(d.snapBox([])).toBeNull();
+    d.free();
+  });
+
   it("gridLinesOf (S3, DAE1) : mêmes lignes que gridLines après SetGrid de la même grille, sans étape ; page inconnue ou grille invisible → null", () => {
     const d = f.blank();
     const p = first(d);

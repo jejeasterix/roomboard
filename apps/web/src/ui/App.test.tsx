@@ -109,6 +109,10 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     releaseKeys: vi.fn(),
     previewGrid: vi.fn(),
     endGridPreview: vi.fn(),
+    // OG69 (G3, G5).
+    gridTooFine: vi.fn(() => false),
+    toggleMagnet: vi.fn(() => true),
+    onCamera: vi.fn(() => () => undefined),
     run: vi.fn(() => ({ pages: ["p"], ids: [], removed: [], full: false, version: 1 })),
   };
   const mediaListeners = new Set<() => void>();
@@ -1149,11 +1153,11 @@ describe("App — profils (C1)", () => {
 describe("App — grille (C9 éditeur, E7, E8)", () => {
   const GRID = 'button[data-item="grid"]';
   const panelOf = (c: HTMLElement): Element | null => c.querySelector("#grille");
+  // OG69 (G2) : Type en pastilles (`role="radio"`, `data-choice`).
   const chooseKind = (c: HTMLElement, kind: string): void => {
-    const el = c.querySelector<HTMLSelectElement>('#grille select[data-grille="kind"]');
+    const el = c.querySelector<HTMLButtonElement>(`#grille [data-grille="kind"] [data-choice="${kind}"]`);
     expect(el).not.toBeNull();
-    el!.value = kind;
-    el!.dispatchEvent(new Event("change", { bubbles: true }));
+    el!.click();
   };
 
   it("E7 : « Grille » ouvre #grille ; Carreaux → aperçu sur l'onglet actif ; second clic : fermé, aperçu coupé, rien d'écrit", () => {
@@ -1505,6 +1509,75 @@ describe("App — panneau d'options sous un panneau passager (T34)", () => {
     click(container.querySelector('button[data-item="settings"]'));
     expect(container.querySelector(".rb-popover")).not.toBeNull();
     expect(container.querySelector("[data-options]")).toBeNull();
+  });
+});
+
+describe("App — grille à un geste et aimant (OG69, G1, G4, G5)", () => {
+  const press = (init: KeyboardEventInit): void => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+  };
+  const setGrids = (tab: FakeTab): unknown[] =>
+    tab.engine.run!.mock.calls.map((c) => c[0] as { type: string; grid?: unknown }).filter((c) => c.type === "SetGrid").map((c) => c.grid);
+
+  it("G4 : « Afficher la grille » (à côté du compteur) pose la grille neuve du Créateur, carreaux de 40 aimantés ; Ctrl+' aussi", () => {
+    const { container, tab } = renderApp();
+    const button = container.querySelector<HTMLButtonElement>('button[data-item="grid-toggle"]');
+    expect(button?.getAttribute("aria-label")).toBe("Afficher la grille");
+    expect(button?.getAttribute("aria-keyshortcuts")).toBe("Control+'");
+    click(button);
+    press({ key: "'", code: "Quote", ctrlKey: true });
+    const grids = setGrids(tab);
+    expect(grids).toHaveLength(2);
+    for (const g of grids) expect(g).toMatchObject({ snap: true, levels: [{ kind: "squares", spacingX: 40, spacingY: 40 }] });
+  });
+
+  it("G4 : appui long sur le bouton Grille ou Ctrl+Maj+' : le Créateur s'ouvre, sans basculer la grille", () => {
+    vi.useFakeTimers();
+    try {
+      const { container, tab } = renderApp();
+      const button = container.querySelector<HTMLButtonElement>('button[data-item="grid-toggle"]')!;
+      button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", button: 0 }));
+      vi.advanceTimersByTime(600);
+      button.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch" }));
+      button.click();
+      expect(container.querySelector("#grille")).not.toBeNull();
+      expect(setGrids(tab)).toEqual([]);
+      press({ key: '"', code: "Quote", ctrlKey: true, shiftKey: true });
+      expect(container.querySelector("#grille")).toBeNull();
+      press({ key: "4", code: "Digit4", ctrlKey: true, shiftKey: true });
+      expect(container.querySelector("#grille")).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("G1 : Échap dans le panneau ferme sans appliquer ; le focus revient au bouton qui l'a ouvert", () => {
+    const { container, tab } = renderApp();
+    const opener = container.querySelector<HTMLButtonElement>('button[data-item="grid"]')!;
+    opener.focus();
+    click(opener);
+    const panel = container.querySelector("#grille")!;
+    expect(panel.contains(document.activeElement)).toBe(true);
+    document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(container.querySelector("#grille")).toBeNull();
+    expect(tab.engine.run).not.toHaveBeenCalled();
+    const back = document.activeElement;
+    expect(back === opener || back?.closest('[data-toolbar="menu"]') !== null).toBe(true);
+  });
+
+  it("G5 : Alt+G bascule l'aimant ; bouton Aimant seulement pour un outil de forme sur une page avec grille", () => {
+    const { container, tab } = renderApp();
+    press({ key: "g", code: "KeyG", altKey: true });
+    expect(tab.engine.toggleMagnet).toHaveBeenCalledTimes(1);
+    tab.emit({ tool: "rect" });
+    expect(container.querySelector("[data-magnet]")).toBeNull();
+    tab.emit({ tool: "rect", magnet: true });
+    const magnet = container.querySelector<HTMLButtonElement>("button[data-magnet]");
+    expect([magnet?.getAttribute("aria-label"), magnet?.getAttribute("aria-pressed")]).toEqual(["Aimant", "true"]);
+    click(magnet);
+    expect(tab.engine.toggleMagnet).toHaveBeenCalledTimes(2);
+    tab.emit({ tool: "pen", magnet: true });
+    expect(container.querySelector("[data-magnet]")).toBeNull();
   });
 });
 

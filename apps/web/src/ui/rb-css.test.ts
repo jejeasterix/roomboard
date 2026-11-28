@@ -385,3 +385,15 @@ describe("rb.css (T33)", () => {
     expect(rule(".rb-mbar-trim .rb-opt-wide[data-keys]::after")).toContain("content: none;");
   });
 });
+
+describe("rb.css — panneau de la grille (OG69, G2)", () => {
+  it("cibles de 48 px : puces de Type, champs, interrupteur Magnétisme, boutons ; Appliquer en violet 600", () => {
+    expect(rule('.rb-grid .rb-radios[data-look="chips"] .rb-radio')).toContain("min-block-size: 48px;");
+    expect(rule(".rb-grid-input input")).toContain("min-block-size: 48px;");
+    expect(rule(".rb-grid-switch")).toContain("min-block-size: 48px;");
+    expect(rule(".rb-grid-actions button")).toContain("min-block-size: 48px;");
+    expect(rule(".rb-grid-actions .rb-grid-primary")).toContain("background: var(--rf-violet-600);");
+    expect(rule(".rb-grid-input input")).toContain("border-radius: var(--rf-radius-lg);");
+  });
+});
+

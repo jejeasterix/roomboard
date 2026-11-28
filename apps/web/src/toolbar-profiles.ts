@@ -155,7 +155,8 @@ const defaultToolbars = () => [
       { id: "edition", items: [sep("sep-2"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
       { id: "page", items: [sep("sep-fonds"), action("backgrounds", "Fonds")] },
       { id: "bureau", items: [sep("sep-3"), annotationEntry()] },
-      { id: "pages", items: [action("page-prev", "Page précédente"), action("page-number", "Numéro de page"), action("page-next", "Page suivante")] },
+      // OG69 (G4) : « Afficher la grille » à côté du compteur, un toucher ; appui long : le Créateur.
+      { id: "pages", items: [action("page-prev", "Page précédente"), action("page-number", "Numéro de page"), action("page-next", "Page suivante"), action("grid-toggle", "Afficher la grille")] },
     ],
   },
   menuBar(),

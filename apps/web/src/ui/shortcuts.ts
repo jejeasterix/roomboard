@@ -51,6 +51,10 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   // OG19 (H1-11) : actions de la barre d'outils ; l'id est celui de l'action, l'infobulle de son bouton le montre.
   // Une ligne se range dans le bloc de son groupe : l'Aide affiche les groupes dans l'ordre de la table.
   s("backgrounds", "Vue", "Fonds", "Ctrl+Maj+F"),
+  // OG69 (G4, G5) : HE5 levée par la décision de Jérôme du 28/11 (raccourci de la grille, comme Excalidraw).
+  s("grid-toggle", "Vue", "Afficher ou masquer la grille", "Ctrl+'"),
+  s("grid", "Vue", "Créateur de grille", "Ctrl+Maj+'"),
+  s("magnet", "Vue", "Aimant de la grille", "Alt+G"),
   s("bold", "Texte", "Gras, italique, souligné", "Ctrl+B, I, U"),
   s("stroke-picker", "Options", "Couleur du trait", "S"),
   s("fill-picker", "Options", "Couleur de l'arrière-plan", "G"),

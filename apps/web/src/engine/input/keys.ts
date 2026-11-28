@@ -195,6 +195,24 @@ export function appShortcut(e: KeyLike): AppShortcut | null {
   return key === "f" ? "backgrounds" : key === "h" ? "palm-eraser" : null;
 }
 
+export type GridShortcut = "grid-toggle" | "grid" | "magnet";
+/**
+ * OG69 (G4, G5 ; HE5 levée) : Ctrl+' (Cmd+' sous macOS) bascule la grille, comme Excalidraw ; Ctrl+Maj+' ouvre le
+ * Créateur ; Alt+G bascule l'aimant. L'apostrophe est lue par `key` ou par `code` (`Quote`) ; avec Maj, elle donne « " »
+ * en QWERTY et « 4 » sur la touche 4 de l'AZERTY. Alt+G est lu par `code` (Option+G donne « © » sous macOS). Hors champ
+ * de saisie, hors composition.
+ */
+export function gridKey(e: KeyLike): GridShortcut | null {
+  if (e.isComposing || inEditable(e.target)) return null;
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && !e.altKey) {
+    const quote = e.key === "'" || e.code === "Quote" || (e.shiftKey && (e.key === '"' || (e.code === "Digit4" && e.key === "4")));
+    return quote ? (e.shiftKey ? "grid" : "grid-toggle") : null;
+  }
+  if (e.altKey && !ctrl && !e.shiftKey && (e.code === "KeyG" || e.key.toLowerCase() === "g")) return "magnet";
+  return null;
+}
+
 /** OG23 (déc. 24) : avec Alt, la lettre est lue par `code` (Option+H donne « ˙ » sous macOS), sinon par `key` ; H, V, R
  *  sont à la même place en AZERTY, QWERTY et QWERTZ. Jamais avec Ctrl ni Cmd, hors champ de saisie (un bouton, un radio ou une case de grille focalisés ne bloquent pas : seules les flèches seules, `nudgeKey`, leur appartiennent), hors composition, ni si déjà traité. */
 export function arrangeKey(e: KeyLike): ArrangeHow | null {

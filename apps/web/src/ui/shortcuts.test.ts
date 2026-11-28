@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, arrangeKey, cellKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, arrangeKey, cellKey, gridKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -18,6 +18,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
   "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
   "palm-eraser": ["app", "palm-eraser"],
+  "grid-toggle": ["grid", "grid-toggle"], grid: ["grid", "grid"], magnet: ["grid", "magnet"],
   ...Object.fromEntries(["select", "rect", "diamond", "ellipse", "arrow", "line", "pen", "text", "eraser", "hand"].flatMap((t) => [[`tool-${t}`, ["tool", t]], ...(t === "hand" ? [] : [[`tool-${t}-num`, ["tool", t]]])])),
   "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
   "table-header": ["table", "header-toggle"], "table-col-wider": ["table", "col-wider"], "table-col-narrower": ["table", "col-narrower"], "table-row-taller": ["table", "row-taller"], "table-row-shorter": ["table", "row-shorter"],
@@ -56,6 +57,7 @@ describe("shortcuts", () => {
       else if (by === "nudge") { const n = nudgeKey(e); expect(`${n?.dx},${n?.dy}`, s.id).toBe(value); }
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
+      else if (by === "grid") expect(gridKey(e), s.id).toBe(value);
       else if (by === "cell") expect(cellKey({ ...press("Enter"), code: s.keys.endsWith("Entrée") ? "Enter" : `Key${s.keys.slice(-1)}`, altKey: true, shiftKey: s.keys.includes("Maj") }), s.id).toBe(value);
       else if (by === "table") expect(tableKey(pressTable(s.keys)), s.id).toBe(value);
       else if (by === "lineEdit") expect(lineEditKey(e), s.id).toBe(true);

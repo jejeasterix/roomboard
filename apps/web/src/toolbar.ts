@@ -139,6 +139,8 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "page-clear": { label: "Effacer la page" },
   profiles: { label: "Profil" },
   grid: { label: "Grille" },
+  // OG69 (G4) : bouton Grille de l'îlot de page ; l'appui long ouvre « Grille » (le Créateur).
+  "grid-toggle": { label: "Afficher la grille" },
   library: { label: "Bibliothèque" },
   backgrounds: { label: "Fonds" },
   "desktop-annotation": { label: "Annotation du bureau" },

@@ -204,7 +204,7 @@ async function s3(page, captures) {
   await closed(page);
   await clickItem(page, "grid");
   await page.waitForSelector("#grille", { state: "visible" });
-  await page.selectOption('#grille [data-grille="kind"]', "dots");
+  await page.click('#grille [data-grille="kind"] [data-choice="dots"]');
   await page.tap('#grille [data-grille="save-background"]');
   await toast(page, "Grille enregistrée dans Mes fonds");
   await page.tap('#grille [data-grille="cancel"]');

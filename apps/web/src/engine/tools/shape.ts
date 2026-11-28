@@ -14,6 +14,7 @@ import type { CloseReason } from "../input/gesture";
 import { EMPTY_OVERLAY, type ShapePreview } from "../render/overlay";
 import { bindEnd, bindingOn, type EndBind } from "./line-points";
 import type { GestureTool, LivePart, ToolContext } from "./tool";
+import { magnetPoint } from "./magnet";
 
 export const MIN_SHAPE_PX = 4;
 export const ANGLE_STEP_DEG = 15;
@@ -64,8 +65,7 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
   const binding = (): boolean => bindingOn(ctx);
   let hovered: EndBind | null = null;
   /** Point aimanté de la page (C9, G8) ; brut si Alt est tenue ou si rien n'accroche. */
-  const snap = (page: string, x: number, y: number): readonly [number, number] =>
-    ctx.alt?.() === true ? [x, y] : (ctx.doc.snapPoint(page, x, y) ?? [x, y]);
+  const snap = (page: string, x: number, y: number): readonly [number, number] => magnetPoint(ctx, page, x, y);
   /** Départ aimanté du geste : un seul `snapPoint` tant qu'Alt ne change pas. */
   const start = (d: Draft): readonly [number, number] => {
     const alt = ctx.alt?.() === true;

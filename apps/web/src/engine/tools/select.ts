@@ -35,6 +35,7 @@ import type { CellDrop } from "./cell-drop";
 import { expandToGroups, keepWholeGroups, viewsOf, type GroupedView } from "../groups";
 import { cellContent, tableAt } from "../table-geom";
 import type { LivePart, SelectionTool, ToolContext } from "./tool";
+import { magnetResize } from "./magnet";
 
 export const SELECT_TOL_PX = 6;
 export const DRAG_THRESHOLD_PX = 2;
@@ -162,8 +163,13 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
     if (!moved(d)) return IDENTITY_MATRIX;
     if (d.mode === "move" || d.mode === "copy") return translateMatrix(...moveDelta(d));
     if (d.mode === "resize" && d.base && d.handle) {
+      const keep = ctx.shift?.() === true;
+      // G5 (OG69) : aimanté sur la boîte d'accroche ; sinon la poignée du cadre suit le pointeur.
+      const box = ctx.doc.snapBox(selection);
+      const snapped = box === null ? null : magnetResize(ctx, box, d.handle, d.x - d.x0, d.y - d.y0, keep);
+      if (snapped !== null) return snapped;
       const [gx, gy] = handlePoint(d.base, d.handle);
-      return resizeMatrix(d.base, d.handle, gx + d.x - d.x0, gy + d.y - d.y0, ctx.shift?.() === true);
+      return resizeMatrix(d.base, d.handle, gx + d.x - d.x0, gy + d.y - d.y0, keep);
     }
     return IDENTITY_MATRIX;
   };

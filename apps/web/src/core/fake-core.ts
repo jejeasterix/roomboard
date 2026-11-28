@@ -2732,7 +2732,7 @@ class FakeDocument implements CoreDocument {
     return p ? gridView(p.grid) : null;
   }
   /** Boîte d'accroche (G7) : forme = boîte (0, 0)-(w, h) sans l'épaisseur du trait ; autre élément : `bounds`. */
-  private snapBox(ids: readonly string[]): Bounds | null {
+  snapBox(ids: readonly string[]): Bounds | null {
     let acc: Bounds | null = null;
     for (const id of ids) {
       const e = this.find(id)?.element;
@@ -3259,12 +3259,14 @@ function gridIndices(o: number, step: number, lo: number, hi: number): readonly 
 function squaresLines(g: GridView, clip: PageRect | null, r: Bounds, minStep: number): GridLines | null {
   if (!g.visible) return null;
   const levels: LevelLines[] = [];
+  const skipped: number[] = [];
   if (![r.x0, r.y0, r.x1, r.y1].every((v) => Number.isFinite(v))) return { above: g.above, levels }; // vue non finie : rien, avant la recoupe
   const c = clip === null ? r : { x0: Math.max(r.x0, clip.x0), y0: Math.max(r.y0, clip.y0), x1: Math.min(r.x1, clip.x1), y1: Math.min(r.y1, clip.y1) };
   const finite = [c.x0, c.y0, c.x1, c.y1].every((v) => Number.isFinite(v));
   if (finite && c.x0 <= c.x1 && c.y0 <= c.y1) {
-    for (const l of g.levels) {
+    for (const [i, l] of g.levels.entries()) {
       if (!l.visible || l.kind !== "squares") continue;
+      if (l.spacingX < minStep * l.lineWidth || l.spacingY < minStep * l.lineWidth) skipped.push(i); // G3 (OG69)
       const segments: number[] = [];
       const ix = l.spacingX >= minStep * l.lineWidth ? gridIndices(l.originX, l.spacingX, c.x0, c.x1) : null;
       if (ix) {
@@ -3283,5 +3285,5 @@ function squaresLines(g: GridView, clip: PageRect | null, r: Bounds, minStep: nu
       if (segments.length > 0) levels.push({ color: l.color, line: l.line, alpha: 1, lineWidth: l.lineWidth, segments, dots: [] });
     }
   }
-  return { above: g.above, levels };
+  return skipped.length === 0 ? { above: g.above, levels } : { above: g.above, levels, skipped };
 }

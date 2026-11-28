@@ -1254,6 +1254,14 @@ impl Document {
     }
 
     /// Déplacement aimanté `[dx, dy]` (G7), brut sans accroche.
+    /// OG69 (G5) : boîte d'accroche des éléments (`snap_box`, sans l'épaisseur du trait) ; null sans élément.
+    pub fn snap_box(&self, ids: Vec<String>) -> Result<JsValue, JsError> {
+        match self.core.snap_box(&ids) {
+            Some(b) => to_js(&b),
+            None => Ok(JsValue::NULL),
+        }
+    }
+
     pub fn snap_delta(&self, page: &str, ids: Vec<String>, dx: f64, dy: f64) -> Vec<f64> {
         let (a, b) = self.core.snap_delta(page, &ids, dx, dy);
         vec![a, b]

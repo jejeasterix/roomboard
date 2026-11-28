@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARRANGE_HOWS } from "../../core/arrange";
-import { appShortcut, arrangeKey, cellKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
+import { appShortcut, arrangeKey, gridKey, cellKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -423,5 +423,25 @@ describe("lettres des outils", () => {
     expect(toolKey(k("r", { shiftKey: true }))).toBeNull();
     expect(toolKey(k("r", { isComposing: true }))).toBeNull();
     expect(toolKey(k("r", { target: { tagName: "INPUT", type: "text" } }))).toBeNull();
+  });
+});
+
+describe("gridKey (OG69, G4 et G5 ; HE5 levée)", () => {
+  it("Ctrl+' bascule la grille, Ctrl+Maj+' ouvre le Créateur, en QWERTY comme en AZERTY ; Cmd sous macOS", () => {
+    expect(gridKey(k("'", { ctrlKey: true, code: "Quote" }))).toBe("grid-toggle");
+    expect(gridKey(k("'", { metaKey: true, code: "Digit4" }))).toBe("grid-toggle");
+    expect(gridKey(k('"', { ctrlKey: true, shiftKey: true, code: "Quote" }))).toBe("grid");
+    expect(gridKey(k("4", { ctrlKey: true, shiftKey: true, code: "Digit4" }))).toBe("grid");
+    expect(gridKey(k("4", { ctrlKey: true, code: "Digit4" }))).toBeNull();
+    expect(gridKey(k("'", {}))).toBeNull();
+  });
+  it("Alt+G bascule l'aimant (lu par code : Option+G donne « © ») ; jamais avec Ctrl ou Maj, ni dans un champ", () => {
+    expect(gridKey(k("g", { altKey: true, code: "KeyG" }))).toBe("magnet");
+    expect(gridKey(k("©", { altKey: true, code: "KeyG" }))).toBe("magnet");
+    expect(gridKey(k("g", { altKey: true, shiftKey: true, code: "KeyG" }))).toBeNull();
+    expect(gridKey(k("g", { altKey: true, ctrlKey: true, code: "KeyG" }))).toBeNull();
+    const field = { tagName: "INPUT", type: "text" } as KeyLike["target"];
+    expect(gridKey(k("g", { altKey: true, code: "KeyG", target: field }))).toBeNull();
+    expect(gridKey(k("'", { ctrlKey: true, code: "Quote", target: field }))).toBeNull();
   });
 });

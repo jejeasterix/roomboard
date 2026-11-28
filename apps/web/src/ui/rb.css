@@ -314,6 +314,40 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-editor button, .rb-editor select, .rb-editor input:not([type="checkbox"]) { min-height: var(--rb-btn-m); }
 .rb-editor input[type="checkbox"] { inline-size: calc(var(--rb-btn-m) / 2); block-size: calc(var(--rb-btn-m) / 2); }
 .rb-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); }
+/* OG69 (G2) : panneau de la grille aux jetons de la charte. Cibles de 48 px au doigt (le lot vise 48, la charte 44),
+   rayon 8, filet gris 300, Appliquer en violet 600 ; Type en puces, Épaisseur en segments, Magnétisme en interrupteur
+   dont le libellé fait partie de la cible. Tailles entières : aucun bord sur une fraction de pixel (§ 10). */
+.rb-grid { inline-size: min(400px, calc(100vw - 64px)); box-sizing: border-box; gap: 12px; padding: var(--rf-space-md); color: var(--rf-gray-800); font-size: 14px; line-height: 20px; }
+.rb-grid .rb-grid-field { display: grid; gap: var(--rf-space-sm); min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.rb-grid .rb-grid-field > legend, .rb-grid-input > span { margin: 0 0 4px; padding: 0; font-size: 13px; line-height: 20px; font-weight: 500; color: var(--rf-navy-500); }
+.rb-grid .rb-radios[data-look="chips"] { display: flex; flex-wrap: wrap; gap: var(--rf-space-sm); }
+.rb-grid .rb-radios[data-look="chips"] .rb-radio { min-block-size: 48px; padding: 0 var(--rf-space-md); border: 1px solid var(--rf-gray-300); border-radius: 24px; background: var(--rf-white); color: var(--rf-navy-500); font: inherit; font-size: 14px; }
+.rb-grid .rb-radios[data-look="chips"] .rb-radio[aria-checked="true"] { border-color: var(--rf-violet-600); background: var(--rf-violet-100); color: var(--rf-violet-700); font-weight: 600; }
+.rb-grid .rb-radio:not([aria-checked="true"]):not(:disabled):hover { background: var(--rf-gray-50); }
+.rb-grid .rb-radio:disabled { color: var(--rf-gray-500); cursor: not-allowed; }
+.rb-grid-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.rb-grid-input { display: grid; min-inline-size: 0; }
+.rb-grid-input input { box-sizing: border-box; inline-size: 100%; min-block-size: 48px; padding: 0 12px; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); color: var(--rf-gray-800); font: inherit; font-size: 15px; }
+.rb-grid-input input[type="color"] { padding: 4px; cursor: pointer; }
+.rb-grid-input input:disabled { background: var(--rf-gray-50); color: var(--rf-gray-500); cursor: not-allowed; }
+.rb-grid-switch { display: flex; align-items: center; justify-content: space-between; gap: var(--rf-space-sm); inline-size: 100%; min-block-size: 48px; padding: 0 var(--rf-space-sm); border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; font-size: 15px; text-align: start; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.rb-grid-switch:hover:not(:disabled) { background: var(--rf-gray-50); }
+.rb-grid-switch:disabled { color: var(--rf-gray-500); cursor: not-allowed; }
+.rb-grid-knob { position: relative; flex: none; inline-size: 40px; block-size: 24px; border-radius: 12px; background: var(--rf-gray-300); }
+.rb-grid-knob::after { content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 20px; block-size: 20px; border-radius: 50%; background: var(--rf-white); box-shadow: var(--rf-shadow-card); }
+.rb-grid-switch[aria-checked="true"] .rb-grid-knob { background: var(--rf-violet-600); }
+.rb-grid-switch[aria-checked="true"] .rb-grid-knob::after { inset-inline-start: 18px; }
+.rb-grid-note { margin: 0; color: var(--rf-text-muted-aa); font-size: 13px; line-height: 20px; }
+.rb-grid-status { margin: 0; min-block-size: 20px; color: var(--rf-danger-text); font-size: 13px; line-height: 20px; }
+.rb-grid-status:empty { min-block-size: 0; }
+.rb-grid-actions button { min-block-size: 48px; padding: 0 var(--rf-space-md); border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); color: var(--rf-navy-500); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
+.rb-grid-actions button:hover:not(:disabled) { background: var(--rf-gray-50); }
+.rb-grid-actions button:disabled { color: var(--rf-gray-500); cursor: not-allowed; }
+.rb-grid-actions .rb-grid-primary { border-color: var(--rf-violet-600); background: var(--rf-violet-600); color: var(--rf-white); }
+.rb-grid-actions .rb-grid-primary:hover { border-color: var(--rf-violet-700); background: var(--rf-violet-700); }
+.rb-grid :is(button, input):focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: 2px; }
+/* OG69 (G4) : l'appui long ouvre le Créateur ; ni menu de l'appareil ni sélection du texte au doigt. */
+.rb-grid-toggle { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
 /* design-l3 (L3-1, L3-24, D-DS10) : panneau des profils, calé à droite dans la case de la scène, toute sa hauteur, sans
    voile ; filet gris 300 et ombre modale de la charte (« panneau des profils »). Classes neuves sous .rb-sheet ;
    .rb-editor ci-dessus reste celle des panneaux Grille et Image. Netteté (exigence de Jérôme) : colonne de 512 px centrée
