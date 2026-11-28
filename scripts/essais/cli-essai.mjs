@@ -707,6 +707,21 @@ try {
     verifie("OG12 : AddLinked à droite : deux éléments de plus, une étape", lie.code === 0 && lie.lignes[0].change.ids.length === 2 && n(lie.lignes[1].state) === 5 && n(lie.lignes[3].state) === 3, lie.brut);
     console.log("OG12 : flèches liées, suivi, AddLinked");
   }
+  // OG12 lot 2a : losange, ShapeToPolygon en une étape annulable, SetLinePoints < 3 sommets refusé sur la ligne fermée.
+  {
+    const f = join(dir, "losange.roomboard");
+    const dm = { type: "AddShape", page: "$page:0", shape: "diamond", x0: 0, y0: 0, x1: 100, y1: 60, style: { color: "#000000", width: 4 }, fill: "#ff0000" };
+    const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], lignesOps(dm, { op: "state" }));
+    const el0 = neuf.lignes[1]?.state?.pages?.[0]?.elements?.[0];
+    verifie("OG12 lot 2a : losange créé", neuf.code === 0 && el0?.shape?.shape === "diamond", neuf.brut);
+    const conv = cli(["run", f, "--save", "--ops", "-"], lignesOps({ type: "ShapeToPolygon", id: el0.id }, { op: "state" }, { op: "undo" }, { op: "state" }, { type: "ShapeToPolygon", id: el0.id }, { op: "state" }));
+    const sh = (k) => conv.lignes[k]?.state?.pages?.[0]?.elements?.[0]?.shape;
+    verifie("OG12 lot 2a : losange converti en ligne fermée", conv.code === 0 && sh(1)?.shape === "line" && sh(1)?.polygon === true && sh(1)?.fill === "#ff0000", conv.brut);
+    verifie("OG12 lot 2a : undo en une étape", sh(3)?.shape === "diamond" && sh(5)?.shape === "line", conv.brut);
+    const deux = cli(["run", f, "--ops", "-"], lignesOps({ type: "SetLinePoints", id: el0.id, points: [0, 0, 1, 1], start: null, end: null }));
+    verifie("OG12 lot 2a : SetLinePoints < 3 sommets refusé", deux.code === 1 && deux.brut.includes("points invalides"), deux.brut);
+    console.log("OG12 lot 2a : losange, ShapeToPolygon, undo");
+  }
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);

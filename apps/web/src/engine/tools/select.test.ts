@@ -579,7 +579,7 @@ function setupLines(pointer: "touch" | "mouse" = "touch") {
     editPoints: (id) => { edits.push(id); },
   };
   const tool = createSelectTool(ctx);
-  const add = (shape: "line" | "arrow" | "rect", x0: number, y0: number, x1: number, y1: number): string =>
+  const add = (shape: "line" | "arrow" | "rect" | "diamond" | "ellipse", x0: number, y0: number, x1: number, y1: number): string =>
     doc.apply({ type: "AddShape", page, shape, x0, y0, x1, y1, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
   return { doc, tool, runs, edits, add, copie: () => copie };
 }
@@ -680,6 +680,45 @@ describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () =>
     tool.begin(4, [atT(70, 0, 2200)]);
     tool.close(4, "end");
     expect(edits).toEqual([id]);
+  });
+});
+
+describe("OG12 lot 2a : double toucher sur une forme", () => {
+  it("double toucher sur un rectangle, un losange, une ellipse : aucune conversion (C4b)", () => {
+    for (const shape of ["rect", "diamond", "ellipse"] as const) {
+      const { tool, edits, runs, add } = setupLines();
+      const id = add(shape, 0, 0, 200, 100);
+      tool.setSelection([id]);
+      tool.begin(1, [atT(100, 50, 0)]);
+      tool.close(1, "end");
+      tool.begin(2, [atT(105, 50, 200)]);
+      tool.close(2, "end");
+      expect(edits, shape).toEqual([]);
+      expect(runs.some((r) => r.type === "ShapeToPolygon"), shape).toBe(false);
+    }
+  });
+  it("double toucher sur une ligne fermée déjà convertie : editPoints (C4b)", () => {
+    const { doc, tool, edits, add } = setupLines();
+    const id = add("rect", 0, 0, 200, 100);
+    doc.apply({ type: "ShapeToPolygon", id });
+    tool.setSelection([id]);
+    tool.begin(1, [atT(50, 0, 0)]);
+    tool.close(1, "end");
+    tool.begin(2, [atT(52, 0, 200)]);
+    tool.close(2, "end");
+    expect(edits).toEqual([id]);
+  });
+  it("ligne fermée sélectionnée seule : cadre ordinaire, aucune poignée de sommet, déplacement (C4b)", () => {
+    const { doc, tool, runs, add } = setupLines();
+    const id = add("rect", 0, 0, 200, 100);
+    doc.apply({ type: "ShapeToPolygon", id });
+    tool.setSelection([id]);
+    expect(tool.live().overlay).toMatchObject({ handles: true });
+    // Appui sur le premier sommet : déplacement de la forme entière (pas une poignée de sommet).
+    tool.begin(1, [atT(0, 0, 0)]);
+    tool.extend(1, [atT(30, 20, 50)], []);
+    tool.close(1, "end");
+    expect(runs.map((r) => r.type)).toEqual(["Transform"]);
   });
 });
 
