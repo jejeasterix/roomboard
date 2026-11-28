@@ -359,11 +359,11 @@ impl Document {
         order: &[String],
     ) -> Result<Change, CommandError> {
         // La valeur seule d'abord, avant la recherche du tableau (comme `cmd_set_table_look`) : vide ou id cité deux
-        // fois. Recherche linéaire (64 lignes au plus, G4 : aucun code de hachage neuf).
-        let repeated = order
-            .iter()
-            .enumerate()
-            .any(|(i, o)| order[..i].contains(o));
+        // fois. `order` n'est pas borné : doublon par tri d'une copie des références puis voisins comparés, en
+        // O(n log n) (G4 : aucun code de hachage neuf).
+        let mut sorted: Vec<&String> = order.iter().collect();
+        sorted.sort_unstable();
+        let repeated = sorted.windows(2).any(|w| w[0] == w[1]);
         if order.is_empty() || repeated {
             return Err(CommandError::BadTable);
         }
@@ -1684,6 +1684,24 @@ mod tests {
             d.apply(reorder("zz", r)),
             Err(CommandError::UnknownElement("zz".into()))
         );
+    }
+
+    // C1 : doublon cherché par tri d'une copie des références puis voisins comparés (`windows(2)`), plus en O(n²) :
+    // 20 000 ids au long préfixe commun, le doublon en dernier (le pire cas de la recherche linéaire), refusé vite.
+    #[test]
+    fn reorder_refuses_long_order_with_duplicate_fast() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let mut o: Vec<String> = (0..20_000)
+            .map(|i| format!("{}{i}", "ligne-".repeat(20)))
+            .collect();
+        o[19_999] = o[0].clone();
+        let v = d.version();
+        let start = std::time::Instant::now();
+        assert_eq!(d.apply(reorder(&t, o)), Err(CommandError::BadTable));
+        assert!(start.elapsed() < std::time::Duration::from_secs(2));
+        assert_eq!(d.version(), v);
     }
 
     // S11 : une zone coupée est refusée sans écriture ; la zone entière déplacée (même ordre interne) passe.

@@ -117,7 +117,14 @@ async function scenario(page, url, { captures }) {
   await fr();
   await capture("ajuste-apres");
   const w7 = await widthOf(0, 0);
-  check(w7 > 496 && w7 < 720, `S7 : double appui : la colonne prend la largeur du mot (tableau ${w7}, entre 496 et 720)`);
+  // DS7 : colonne = largeur naturelle (le mot + 2 marges de 8) ; mot mesuré dans la page à la police du rendu (`textFont`).
+  const mot7 = await page.evaluate(() => {
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.font = '36px "Atkinson Hyperlegible", system-ui, sans-serif';
+    return ctx.measureText("Eau").width;
+  });
+  const attendu7 = 720 - COL + mot7 + 16;
+  check(Math.abs(w7 - attendu7) <= 1, `S7 : double appui : la colonne prend la largeur du mot (tableau ${w7}, attendu ${attendu7.toFixed(1)} = 720 − 240 + ${mot7.toFixed(1)} + 16)`);
   await page.keyboard.press("Control+z");
   await fr();
   const w7u = await widthOf(0, 0);
@@ -219,7 +226,7 @@ async function scenario(page, url, { captures }) {
   await fr();
   await touchDrag(grip11(2), grip11(1));
   await page.waitForSelector('.rb-toast:has-text("Une cellule fusionnée empêche ce déplacement.")', { timeout: 5000 });
-  check(((await attr("data-table-column")) ?? "").startsWith("a|"), "S11 : zone coupée : refus, message, ordre inchangé");
+  check((await attr("data-table-column")) === "a|c|b", `S11 : zone coupée : refus, message, ordre inchangé a|c|b (lu ${await attr("data-table-column")})`);
 
   // Lot C (T14) : S12, S13, S14 ici.
 

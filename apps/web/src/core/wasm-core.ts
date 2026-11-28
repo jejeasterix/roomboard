@@ -31,7 +31,7 @@ import type {
   TextSpan,
 } from "./api";
 import type { BindHit, BorderStyle, LineBinding } from "./api";
-import { MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, UNKNOWN_BOX } from "./api";
+import { isCellLookShape, MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, TABLE_MESSAGE, UNKNOWN_BOX } from "./api";
 import { toLook, type Look } from "./look";
 import { isAssetId } from "./asset-store";
 import { cleanPatch } from "./rich-text";
@@ -767,8 +767,11 @@ class WasmCoreDocument implements CoreDocument {
       case "SetCellImage":
         return toChange(this.d.set_cell_image(cmd.id, cmd.row, cmd.col, cmd.from ?? undefined));
       case "SetTableLook": {
-        // DS1 : types primitifs (`set_table_look_inner`) ; clé inconnue : text, width et labels vides, refusée par le cœur (BadTable).
-        const l = cmd.look;
+        // DS1 : types primitifs (`set_table_look_inner`). C1 : la forme (clé connue, valeur du type de sa clé) est contrôlée
+        // ici, par le contrôle partagé avec la fausse liaison (`isCellLookShape`) : hors type, le cœur lisait une valeur absente
+        // (retrait, case ouverte) ou Wasm levait une erreur brute ; les domaines restent au cœur (`check`, BadTable).
+        const l: unknown = cmd.look;
+        if (!isCellLookShape(l)) throw new Error(TABLE_MESSAGE);
         const text = l.key === "ha" || l.key === "va" ? l.value : l.key === "border" ? l.value?.[0] : undefined;
         const width = l.key === "border" ? (l.value?.[1] ?? 0) : l.key === "open" ? (l.value ? 1 : 0) : 0;
         const labels = l.key === "border" ? (l.value === null ? [] : [l.value[2]]) : l.key === "accept" ? [...l.value] : [];

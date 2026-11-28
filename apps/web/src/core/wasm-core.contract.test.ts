@@ -2410,6 +2410,34 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     d.free();
   });
 
+  // C1 (constat 1) : une valeur hors du type (absente, null, autre type) est refusée avant le cœur, par les deux fabriques :
+  // message tableau, aucune étape, rien d'écrit. Sans ce contrôle, le vrai module retirait `ha` ou la bordure, ouvrait la
+  // case ombrée, ou levait une erreur Wasm (`memory access out of bounds`, `not iterable`, `wrong type`).
+  it("SetTableLook refus de forme : valeur absente, null ou d'un autre type ; message tableau, rien d'écrit", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const v = tableOf(d, s.t);
+    const c00 = { row: v.rows[0]?.id ?? "", col: v.cols[0]?.id ?? "" };
+    p3Look(d, s, [0, 0], [0, 0], { key: "ha", value: "center" });
+    p3Look(d, s, [0, 0], [0, 0], { key: "border", value: ["#dc2626", 8, "dashed"] });
+    d.apply({ type: "SetTableShade", id: s.t, from: c00, to: c00, shade: "#94a3b8" });
+    const before = tableOf(d, s.t);
+    const bad: unknown[] = [
+      { key: "ha", value: null },
+      { key: "ha" },
+      { key: "ha", value: 5 },
+      { key: "border", value: [null, 2, "solid"] },
+      { key: "open", value: "non" },
+      { key: "accept" },
+      { key: "accept", value: [1] },
+    ];
+    for (const look of bad) {
+      unchanged(d, () => expect(messageOf(() => p3Look(d, s, [0, 0], [0, 0], look as CellLook))).toBe(TABLE_MESSAGE));
+    }
+    expect(tableOf(d, s.t)).toEqual(before);
+    d.free();
+  });
+
   it("ReorderTableLines (D18) : 2, 0, 1 ; une étape ; même ordre : aucune ; annuler", () => {
     const d = f.blank();
     const s = p3Placed(d);
@@ -2440,6 +2468,19 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     }
     d.apply({ type: "ReorderTableLines", id: s.t, axis: "row", order: [r[2]!, r[0]!, r[1]!] });
     expect(tableOf(d, s.t).rows.map((x) => x.id)).toEqual([r[2], r[0], r[1]]);
+    d.free();
+  });
+
+  // C1 (constat 2) : doublon cherché par tri d'une copie puis voisins comparés, plus en O(n²) : 20 000 ids au long préfixe
+  // commun, le doublon en dernier (le pire cas de la recherche linéaire), refusé vite (borne large) et sans écriture.
+  it("ReorderTableLines : 20 000 ids dont un doublon, refusé vite ; message tableau, rien d'écrit", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const order = Array.from({ length: 20_000 }, (_, i) => `${"ligne-".repeat(20)}${i}`);
+    order[19_999] = order[0] ?? "";
+    const t0 = performance.now();
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "ReorderTableLines", id: s.t, axis: "row", order }))).toBe(TABLE_MESSAGE));
+    expect(performance.now() - t0).toBeLessThan(2000);
     d.free();
   });
 
