@@ -1254,3 +1254,71 @@ describe("outil Tableau — S9 bordures (DS4)", () => {
     expect(s.tool.cellState()?.border).toEqual(["#000000", 4, "none"]);
   });
 });
+
+describe("outil Tableau — S11 déplacer une ligne (D18, DS8)", () => {
+  const ready = () => {
+    const s = setup();
+    const id = s.create(100, 200, 3, 3);
+    s.type("a");
+    s.tool.navigate("down");
+    s.type("b");
+    s.tool.navigate("down");
+    s.type("c");
+    s.tool.requestCommit();
+    return { s, id };
+  };
+  it("S11 : poignée de la ligne 2 (22 px à gauche du tableau) tirée sur la ligne 0 : une ReorderTableLines au relâché, c, a, b", () => {
+    const { s } = ready();
+    const n = s.runs.length;
+    s.tool.begin(3, [at(100 - 22, 200 + 160)]);
+    s.tool.extend(3, [at(100 - 22, 200 + 100)], []);
+    s.tool.extend(3, [at(100 - 22, 200 + 32)], []);
+    expect(s.runs.length).toBe(n);
+    s.tool.close(3, "end");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.last()?.type).toBe("ReorderTableLines");
+    expect(s.tool.cellState()?.column).toEqual(["c", "a", "b"]);
+    s.doc.undo();
+    expect(s.tool.cellState()?.column).toEqual(["a", "b", "c"]);
+  });
+  it("S11 : pendant le glisser, la ligne d'arrivée est cadrée (target)", () => {
+    const { s } = ready();
+    s.tool.begin(3, [at(100 - 22, 200 + 160)]);
+    s.tool.extend(3, [at(100 - 22, 200 + 32)], []);
+    expect(s.tool.live().overlay?.target).toEqual({ x0: 100, y0: 200, x1: 820, y1: 264 });
+    s.tool.close(3, "cancel");
+  });
+  it("S11 : geste annulé, ou relâché sur sa propre ligne : aucune commande", () => {
+    const { s } = ready();
+    const n = s.runs.length;
+    s.tool.begin(3, [at(100 - 22, 200 + 160)]);
+    s.tool.extend(3, [at(100 - 22, 200 + 32)], []);
+    s.tool.close(3, "cancel");
+    s.tool.begin(4, [at(100 - 22, 200 + 160)]);
+    s.tool.close(4, "end");
+    expect(s.runs.length).toBe(n);
+  });
+  it("S11 : zone coupée : message, aucune commande", () => {
+    const { s, id } = ready();
+    const t = s.table(id);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: t.rows[0]?.id ?? "", col: t.cols[1]?.id ?? "" }, to: { row: t.rows[1]?.id ?? "", col: t.cols[1]?.id ?? "" } });
+    const n = s.runs.length;
+    s.tool.begin(3, [at(100 - 22, 200 + 160)]);
+    s.tool.extend(3, [at(100 - 22, 200 + 96)], []);
+    s.tool.close(3, "end");
+    expect(s.runs.length).toBe(n);
+    expect(s.notices).toContain("Une cellule fusionnée empêche ce déplacement.");
+  });
+  it("S11 : Ctrl+Maj+↑ (row-up) : la ligne 2 monte d'un rang : a, c, b ; col-right : la colonne 0 passe en 1", () => {
+    const { s, id } = ready();
+    s.tool.act("row-up");
+    expect(s.tool.cellState()?.column).toEqual(["a", "c", "b"]);
+    const c0 = s.table(id).cols[0]?.id;
+    s.tool.act("col-right");
+    expect(s.table(id).cols[1]?.id).toBe(c0);
+  });
+  it("S11 : poignées de déplacement dessinées avec celles de taille (row-move, col-move)", () => {
+    const { s } = ready();
+    expect((s.tool.live().overlay?.grips ?? []).map((g) => g.kind).sort()).toEqual(["col", "col-move", "row", "row-move"]);
+  });
+});

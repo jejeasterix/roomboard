@@ -3328,3 +3328,13 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(spy).toHaveBeenCalled();
   });
 });
+
+describe("moteur — outil Tableau S11 (déplacer une ligne)", () => {
+  it("S11 : Ctrl+Maj+↑ avec l'outil Tableau et une case : row-up", () => {
+    const { engine, log, table } = setupTable();
+    table.setCell(CELL);
+    engine.setTool("table");
+    expect(engine.key({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null })).toBe(true);
+    expect(log).toContain("act row-up");
+  });
+});

@@ -20,6 +20,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   "palm-eraser": ["app", "palm-eraser"],
   "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
   "table-fit-content": ["table", "fit-content"], "table-border-set": ["table", "border-set"], "table-border-none": ["table", "border-none"], "table-ha-next": ["table", "ha-next"], "table-va-next": ["table", "va-next"], "table-header": ["table", "header-toggle"], "table-col-wider": ["table", "col-wider"], "table-col-narrower": ["table", "col-narrower"], "table-row-taller": ["table", "row-taller"], "table-row-shorter": ["table", "row-shorter"],
+  "table-row-up": ["table", "row-up"], "table-row-down": ["table", "row-down"], "table-col-left": ["table", "col-left"], "table-col-right": ["table", "col-right"],
 };
 const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight", "Entrée": "Enter" };
 const ARROWS: Readonly<Record<string, string>> = { "→": "ArrowRight", "←": "ArrowLeft", "↑": "ArrowUp", "↓": "ArrowDown" };

@@ -390,6 +390,7 @@ describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointe
     k("M", { code: "KeyM", altKey: true, shiftKey: true }),
     k("b", { code: "KeyB", altKey: true }),
     k("B", { code: "KeyB", altKey: true, shiftKey: true }),
+    ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, ctrlKey: true, shiftKey: true })),
   ];
   const og23: KeyLike[] = [
     ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].flatMap((a) => [k(a, { code: a, altKey: true, shiftKey: true }), k(a, { code: a }), k(a, { code: a, shiftKey: true })]),
@@ -432,5 +433,17 @@ describe("tableKey S9 : bordures", () => {
     expect(tableKey(a("b", "KeyB"))).toBe("border-set");
     expect(tableKey(a("B", "KeyB", { shiftKey: true }))).toBe("border-none");
     expect(tableKey(a("b", "KeyB", { ctrlKey: true }))).toBeNull();
+  });
+});
+
+describe("tableKey S11 : déplacer une ligne ou une colonne", () => {
+  const c = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null, ...o });
+  it("tableKey : Ctrl+Maj+flèches → row-up, row-down, col-left, col-right ; Ctrl+↑ seul : null", () => {
+    expect(tableKey(c("ArrowUp"))).toBe("row-up");
+    expect(tableKey(c("ArrowDown"))).toBe("row-down");
+    expect(tableKey(c("ArrowLeft"))).toBe("col-left");
+    expect(tableKey(c("ArrowRight"))).toBe("col-right");
+    expect(tableKey(c("ArrowUp", { shiftKey: false }))).toBeNull();
+    expect(tableKey(c("ArrowUp", { altKey: true }))).toBeNull();
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -312,5 +312,23 @@ describe("cellTextFrame (D15, DS6)", () => {
     expect(cellTextFrame(base({ va: "bottom" }), { row: 0, col: 0 }, 45)).toMatchObject({ y: 8 + 103 });
     // Texte plus haut que la case : aucune descente (jamais au-dessus du coin intérieur).
     expect(cellTextFrame(base({ va: "bottom" }), { row: 0, col: 0 }, 400)).toMatchObject({ y: 8 });
+  });
+});
+
+describe("movedOrder, keepsMerges (D18, DS8)", () => {
+  it("movedOrder : ligne 2 sur la ligne 0 : 2, 0, 1 ; bloc 0..1 sur la ligne 2 : 2, 0, 1", () => {
+    expect(movedOrder(["a", "b", "c"], 2, 2, destOf(2, 2, 0))).toEqual(["c", "a", "b"]);
+    expect(movedOrder(["a", "b", "c"], 0, 1, destOf(0, 1, 2))).toEqual(["c", "a", "b"]);
+  });
+  it("movedOrder : arrivée dans le bloc : ordre inchangé", () => {
+    expect(movedOrder(["a", "b", "c"], 0, 1, destOf(0, 1, 1))).toEqual(["a", "b", "c"]);
+  });
+  it("keepsMerges : zone r0..r1 entière déplacée : vrai ; coupée : faux", () => {
+    const t: TableData = {
+      color: "#000", size: 36, cells: [], merges: [{ row: "a", col: "x", rows: 2, cols: 1 }],
+      cols: [{ id: "x", width: 100 }], rows: [{ id: "a", height: 64 }, { id: "b", height: 64 }, { id: "c", height: 64 }],
+    };
+    expect(keepsMerges(t, "row", ["c", "a", "b"])).toBe(true);
+    expect(keepsMerges(t, "row", ["a", "c", "b"])).toBe(false);
   });
 });
