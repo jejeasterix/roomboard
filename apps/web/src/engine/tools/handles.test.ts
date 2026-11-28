@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { Bounds } from "../../core/api";
-import { handlePoint, handlesOf, hitHandle, isIdentity, MIN_SCALE, resizeMatrix, transformBounds, translateMatrix } from "./handles";
+import {
+  handlePoint,
+  handlesOf,
+  hitHandle,
+  hitRotateHandle,
+  isAxisAligned,
+  isIdentity,
+  matrixAngle,
+  MIN_SCALE,
+  resizeMatrix,
+  rotateAngle,
+  rotateHandlePoint,
+  transformBounds,
+  translateMatrix,
+} from "./handles";
 
 const b: Bounds = { x0: 100, y0: 100, x1: 300, y1: 200 };
 const apply = (m: readonly number[], x: number, y: number): [number, number] => [
@@ -62,5 +76,27 @@ describe("poignées (D15, CL4-11)", () => {
 
   it("handlePoint : milieu du bord nord", () => {
     expect(handlePoint(b, "n")).toEqual([200, 100]);
+  });
+});
+
+describe("poignée de rotation (OG33 lot 2b)", () => {
+  const b = { x0: 0, y0: 0, x1: 100, y1: 50 };
+  it("rotateHandlePoint : 26 px écran en diagonale sous le coin bas droit", () => {
+    expect(rotateHandlePoint(b, 2)).toEqual([113, 63]);
+  });
+  it("hitRotateHandle : 22 px au doigt, 12 à la souris", () => {
+    expect(hitRotateHandle(b, 126 + 21, 76, 1)).toBe(true);
+    expect(hitRotateHandle(b, 126 + 21, 76, 1, "mouse")).toBe(false);
+  });
+  it("rotateAngle : sens horaire à l'écran ; Maj : angle absolu au pas de 15°", () => {
+    expect(rotateAngle(0, 0, 10, 0, 0, 10, false)).toBeCloseTo(90, 9);
+    expect(rotateAngle(0, 0, 10, 0, Math.cos(0.65), Math.sin(0.65), true)).toBe(30); // 37,2° → 30
+    expect(rotateAngle(0, 0, 10, 0, Math.cos(0.65), Math.sin(0.65), true, 7)).toBeCloseTo(38, 9); // 7 + 37,2 → 45, Δ 38
+  });
+  it("isAxisAligned : identité et quart de tour oui, 30° non ; matrixAngle", () => {
+    expect(isAxisAligned([1, 0, 0, 1, 5, 5])).toBe(true);
+    expect(isAxisAligned([0, 1, -1, 0, 0, 0])).toBe(true);
+    expect(isAxisAligned([0.866, 0.5, -0.5, 0.866, 0, 0])).toBe(false);
+    expect(matrixAngle([0, 1, -1, 0, 0, 0])).toBeCloseTo(90, 9);
   });
 });

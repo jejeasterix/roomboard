@@ -106,6 +106,13 @@ pub enum Command {
         ids: Vec<String>,
         how: crate::arrange::ArrangeHow,
     },
+    /// OG33 (lot 2b, choix 3) : tourne les `ids` d'`angle` degrés (sens horaire à l'écran) autour du centre de leurs
+    /// boîtes d'accroche, en une étape ; portée et groupes comme `Arrange` ; flèches liées suivies dans la même étape ;
+    /// angle nul modulo 360 : aucune étape ; angle non fini : `BadMatrix`.
+    Rotate {
+        ids: Vec<String>,
+        angle: f64,
+    },
     SetText {
         page: String,
         id: Option<String>,
@@ -902,6 +909,7 @@ impl Document {
             } => self.cmd_set_line_points(&id, &points, start.as_ref(), end.as_ref()),
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
             Command::Arrange { ids, how } => self.cmd_arrange(&ids, how),
+            Command::Rotate { ids, angle } => self.cmd_rotate(&ids, angle),
             Command::AddLinked { id, dir } => self.cmd_add_linked(&id, dir),
             Command::ShapeToPolygon { id } => self.cmd_shape_to_polygon(&id),
             Command::SetText {

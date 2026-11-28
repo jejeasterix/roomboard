@@ -115,7 +115,7 @@ import {
 import { pageFrame, type PageRect } from "../engine/page";
 import { isAssetId } from "./asset-store";
 import { elbowedOf, newSeed, STROKE_STYLES, toLook, VARIABILITY_CONSTANT, type Look, type LookPatch } from "./look";
-import { arrangeUnknown, isArrangeHow, planArrange, type ArrangeUnit, type Reach } from "./arrange";
+import { arrangeUnknown, isArrangeHow, planArrange, planRotate, rotationOf, type ArrangeUnit, type Reach } from "./arrange";
 import { ARROWHEADS, END_ARROWHEAD_DEFAULT, FILL_STYLES, START_ARROWHEAD_DEFAULT, TEXT_ALIGNS, validLink as validLookLink } from "./look";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isClosedShape, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
@@ -1200,6 +1200,67 @@ class FakeDocument implements CoreDocument {
     return touched;
   }
 
+  /** `arrange_with` du cœur (arrange.rs), corps d'`Arrange` et de `Rotate` : ids dédoublonnés, premier inconnu refusé ;
+   *  aucun id : aucune étape ; pages mêlées refusées ; groupe extérieur touché = tous ses membres de la page ; `fill`,
+   *  inconnu, mal formé jamais bougés ; composée invalide : matrice invalide, rien d'écrit ; `Change.ids` = ids bougés,
+   *  triés, puis (OG33) les lignes suivies quand `plan` rend une matrice pleine (suivi dans la même étape). */
+  private arrangeWith(asked: readonly string[], plan: (units: ArrangeUnit[]) => readonly [Array<readonly [string, Matrix]>, Matrix | null]): Change {
+    const found: Found[] = [];
+    const seen = new Set<string>();
+    for (const id of asked) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const f = this.find(id);
+      if (!f) throw new Error(`élément inconnu : ${id}`);
+      found.push(f);
+    }
+    const page = found[0]?.page;
+    if (!page) return this.unchanged();
+    if (found.some((f) => f.page !== page)) throw new Error("objets de pages différentes");
+    const outers = new Set(found.map((f) => f.element.group?.[0]).filter((g): g is string => g !== undefined));
+    const reachOf = (e: FakeElement): Reach | null =>
+      e.malformed || e.unknown || e.fill ? null
+      : e.local !== undefined || e.shape || e.image ? "matrix"
+      : e.text || e.table || e.media || e.model3d ? "place"
+      : null;
+    const units = new Map<string, { members: { id: string; reach: Reach; bounds: Bounds }[] }>();
+    const transforms = new Map<string, Matrix>();
+    for (const e of page.elements) {
+      const outer = e.group?.[0];
+      if (!seen.has(e.id) && !(outer !== undefined && outers.has(outer))) continue;
+      const reach = reachOf(e);
+      if (reach === null) continue;
+      const bounds = this.snapBox([e.id]);
+      if (bounds === null) continue;
+      transforms.set(e.id, e.transform);
+      const key = outer ?? e.id;
+      const u = units.get(key) ?? { members: [] };
+      u.members.push({ id: e.id, reach, bounds });
+      units.set(key, u);
+    }
+    const [moves, full] = plan([...units.values()] satisfies ArrangeUnit[]);
+    if (moves.length === 0) return this.unchanged();
+    const composed = new Map<string, Matrix>();
+    for (const [id, m] of moves) {
+      const t = transforms.get(id);
+      if (t === undefined) continue;
+      const c = composeMatrix(m, t);
+      if (!validMatrix(c)) throw new Error(MESSAGES.badMatrix);
+      composed.set(id, c);
+    }
+    const ids = [...composed.keys()].sort();
+    return this.step((s) => {
+      const p = s.pages.find((q) => q.id === page.id);
+      if (p) p.elements.forEach((e, i) => {
+        const t = composed.get(e.id);
+        if (t) p.elements[i] = { ...e, transform: t };
+      });
+      // OG33 : suivi et rupture dans la même étape, jamais après (n° 7, S1) ; `Arrange` n'en fait pas (le cœur non plus).
+      const followed = full === null ? [] : this.follow(s, new Set(ids), full);
+      return { pages: [page.id], ids: [...ids, ...followed.filter((x) => !ids.includes(x))], removed: [] };
+    });
+  }
+
   private follow(s: State, moved: ReadonlySet<string>, m: Matrix | null): string[] {
     // C1 (`bound_target`) : cible cherchée sur la page de la ligne seulement ; d'une autre page, bout libre.
     const boxIn = (p: FakePage, b: LineBinding | null): BindBox | null => {
@@ -1486,62 +1547,17 @@ class FakeDocument implements CoreDocument {
       }
       case "Arrange": {
         // `cmd_arrange` (arrange.rs). Pas le patron de `Transform` (qui ignore les inconnus) : celui de `Restack`. `how`
-        // lu d'abord (le pont, `arrange_how`) ; ids dédoublonnés, premier inconnu refusé ; aucun id : aucune étape ;
-        // pages mêlées refusées ; groupe extérieur touché = tous ses membres de la page ; `fill`, inconnu, mal formé
-        // jamais bougés ; composée invalide : matrice invalide, rien d'écrit ; `Change.ids` = ids bougés, triés.
+        // lu d'abord (le pont, `arrange_how`) ; le reste dans `arrangeWith`, sans suivi (comme le cœur).
         if (!isArrangeHow(cmd.how)) throw new Error(arrangeUnknown(String(cmd.how)));
-        const found: Found[] = [];
-        const seen = new Set<string>();
-        for (const id of cmd.ids) {
-          if (seen.has(id)) continue;
-          seen.add(id);
-          const f = this.find(id);
-          if (!f) throw new Error(`élément inconnu : ${id}`);
-          found.push(f);
-        }
-        const page = found[0]?.page;
-        if (!page) return this.unchanged();
-        if (found.some((f) => f.page !== page)) throw new Error("objets de pages différentes");
-        const outers = new Set(found.map((f) => f.element.group?.[0]).filter((g): g is string => g !== undefined));
-        const reachOf = (e: FakeElement): Reach | null =>
-          e.malformed || e.unknown || e.fill ? null
-          : e.local !== undefined || e.shape || e.image ? "matrix"
-          : e.text || e.table || e.media || e.model3d ? "place"
-          : null;
-        const units = new Map<string, { members: { id: string; reach: Reach; bounds: Bounds }[] }>();
-        const transforms = new Map<string, Matrix>();
-        for (const e of page.elements) {
-          const outer = e.group?.[0];
-          if (!seen.has(e.id) && !(outer !== undefined && outers.has(outer))) continue;
-          const reach = reachOf(e);
-          if (reach === null) continue;
-          const bounds = this.snapBox([e.id]);
-          if (bounds === null) continue;
-          transforms.set(e.id, e.transform);
-          const key = outer ?? e.id;
-          const u = units.get(key) ?? { members: [] };
-          u.members.push({ id: e.id, reach, bounds });
-          units.set(key, u);
-        }
-        const moves = planArrange([...units.values()] satisfies ArrangeUnit[], cmd.how);
-        if (moves.length === 0) return this.unchanged();
-        const composed = new Map<string, Matrix>();
-        for (const [id, m] of moves) {
-          const t = transforms.get(id);
-          if (t === undefined) continue;
-          const c = composeMatrix(m, t);
-          if (!validMatrix(c)) throw new Error(MESSAGES.badMatrix);
-          composed.set(id, c);
-        }
-        const ids = [...composed.keys()].sort();
-        return this.step((s) => {
-          const p = s.pages.find((q) => q.id === page.id);
-          if (p) p.elements.forEach((e, i) => {
-            const t = composed.get(e.id);
-            if (t) p.elements[i] = { ...e, transform: t };
-          });
-          return { pages: [page.id], ids, removed: [] };
-        });
+        const how = cmd.how;
+        return this.arrangeWith(cmd.ids, (u) => [planArrange(u, how), null]);
+      }
+      case "Rotate": {
+        // OG33 (lot 2b) : `cmd_rotate` (arrange.rs) : angle non fini refusé d'abord ; règles d'`Arrange`, plus le suivi des
+        // flèches liées dans la même étape, matrice pleine de la rotation (comme `Transform`).
+        if (!Number.isFinite(cmd.angle)) throw new Error(MESSAGES.badMatrix);
+        const angle = cmd.angle;
+        return this.arrangeWith(cmd.ids, (u) => [planRotate(u, angle), rotationOf(u, angle)]);
       }
       case "CommitStroke": {
         const look = creationLook(cmd.look); // OG11 : contrôlé d'abord, comme le pont

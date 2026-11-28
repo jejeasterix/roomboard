@@ -72,6 +72,10 @@ export type Command =
   /** OG23 (DA-2) : aligner, répartir, retourner, tourner les `ids` (une même page) en une étape ; groupe extérieur
    *  touché = tous ses membres ; ids vides : aucune étape ; `how` inconnu : `arrangeUnknown(how)`. */
   | { readonly type: "Arrange"; readonly ids: readonly string[]; readonly how: ArrangeHow }
+  /** OG33 (lot 2b, choix 3) : tourne les `ids` d'`angle` degrés (sens horaire à l'écran) autour du centre de leurs boîtes
+   *  d'accroche, en une étape ; portée et groupes comme `Arrange` (texte, tableau, média, objet 3D : place seule) ;
+   *  flèches liées suivies dans la même étape ; angle nul modulo 360 : aucune étape ; non fini : « matrice invalide ». */
+  | { readonly type: "Rotate"; readonly ids: readonly string[]; readonly angle: number }
   /** OG11 : `look` écrit dans la même étape, assaini comme le cœur (`Look::sanitized`) ; nombres hors bornes : « style invalide ». */
   | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle; readonly look?: Look; readonly cell?: CellLink }
   | { readonly type: "Erase"; readonly page: string; readonly path: Float32Array; readonly radius: number; readonly mode: EraseMode }

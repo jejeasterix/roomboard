@@ -97,17 +97,55 @@ export function planArrange(units: readonly ArrangeUnit[], how: ArrangeHow): Arr
         // Écran à y vers le bas : (x, y) → (cx − (y − cy), cy + (x − cx)).
         : how === "rotate-cw" ? [0, 1, -1, 0, cx + cy, cy - cx]
         : [0, -1, 1, 0, cx - cy, cy + cx];
-      for (const m of units.flatMap((u) => u.members)) {
-        if (m.reach === "matrix") {
-          out.push([m.id, full]);
-        } else {
-          const [px, py] = [(m.bounds.x0 + m.bounds.x1) / 2, (m.bounds.y0 + m.bounds.y1) / 2];
-          const [nx, ny] = [full[0] * px + full[2] * py + full[4], full[1] * px + full[3] * py + full[5]];
-          if (nx !== px || ny !== py) out.push([m.id, shift(nx - px, ny - py)]);
-        }
-      }
+      applyFull(units, full, out);
       break;
     }
   }
   return out;
+}
+
+/** `apply_full` du cœur : matrice `full` aux membres `matrix`, translation de leur centre aux membres `place` (H5). */
+function applyFull(units: readonly ArrangeUnit[], full: Matrix, out: Array<readonly [string, Matrix]>): void {
+  for (const m of units.flatMap((u) => u.members)) {
+    if (m.reach === "matrix") {
+      out.push([m.id, full]);
+    } else {
+      const [px, py] = [(m.bounds.x0 + m.bounds.x1) / 2, (m.bounds.y0 + m.bounds.y1) / 2];
+      const [nx, ny] = [full[0] * px + full[2] * py + full[4], full[1] * px + full[3] * py + full[5]];
+      if (nx !== px || ny !== py) out.push([m.id, shift(nx - px, ny - py)]);
+    }
+  }
+}
+
+/** OG33 (lot 2b) : ligne à ligne `rotation` du cœur (arrange.rs) ; `deg * (Math.PI / 180)` comme `to_radians`. Sens
+ *  horaire à l'écran (y vers le bas), autour de (cx, cy), comme `rotateSingleElement` d'Excalidraw
+ *  (packages/element/src/resizeElements.ts, MIT) ; un quart de tour donne la matrice exacte de `rotate-cw`. */
+export function rotationMatrix(cx: number, cy: number, deg: number): Matrix {
+  const snap = (v: number): number => (Math.abs(v) < 1e-12 ? 0 : Math.abs(Math.abs(v) - 1) < 1e-12 ? Math.sign(v) : v);
+  const r = deg * (Math.PI / 180);
+  const [c, s] = [snap(Math.cos(r)), snap(Math.sin(r))];
+  return [c, s, -s, c, cx - c * cx + s * cy, cy - s * cx - c * cy];
+}
+
+/** OG33 : matrice pleine d'une rotation autour du centre des boîtes réunies (celle que le suivi des flèches liées reçoit,
+ *  comme `plan_rotate` du cœur la rend) ; null : rien ne tourne (unité sans boîte, aucune unité, angle nul modulo 360). */
+export function rotationOf(units: readonly ArrangeUnit[], deg: number): Matrix | null {
+  const boxes = units.map(boxOf).filter((b): b is Bounds => b !== null);
+  if (boxes.length !== units.length || boxes.length === 0 || ((deg % 360) + 360) % 360 === 0) return null;
+  const sel = boxes.slice(1).reduce((a, b) => union(a, b), boxes[0] as Bounds);
+  return rotationMatrix((sel.x0 + sel.x1) / 2, (sel.y0 + sel.y1) / 2, deg);
+}
+
+/** OG33 : `plan_rotate` du cœur ; identité et translation nulle omises. */
+export function planRotate(units: readonly ArrangeUnit[], deg: number): Array<readonly [string, Matrix]> {
+  const full = rotationOf(units, deg);
+  const out: Array<readonly [string, Matrix]> = [];
+  if (full !== null) applyFull(units, full, out);
+  return out;
+}
+
+/** OG33 : portée d'un genre de la vue (`reach_of` du cœur) ; null : jamais bougé. */
+export function reachOfKind(kind: string): Reach | null {
+  return kind === "stroke" || kind === "shape" || kind === "image" ? "matrix"
+    : kind === "text" || kind === "table" || kind === "media" || kind === "model3d" ? "place" : null;
 }

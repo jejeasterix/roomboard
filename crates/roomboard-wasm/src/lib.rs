@@ -1711,6 +1711,11 @@ impl Document {
         to_js(&self.arrange_inner(ids, how).map_err(cmd_err)?)
     }
 
+    /// OG33 (lot 2b) : tourne `ids` de `angle` degrés (sens horaire à l'écran) en une étape ; angle non fini : BadMatrix.
+    pub fn rotate(&mut self, ids: Vec<String>, angle: f64) -> Result<JsValue, JsError> {
+        to_js(&self.rotate_inner(ids, angle).map_err(cmd_err)?)
+    }
+
     /// `matrix` : six nombres `a, b, c, d, e, f`, composés à gauche de la matrice de chaque élément.
     pub fn transform(&mut self, ids: Vec<String>, matrix: &[f64]) -> Result<JsValue, JsError> {
         to_js(&self.transform_inner(ids, matrix).map_err(cmd_err)?)
@@ -2573,6 +2578,10 @@ impl Document {
         how: ArrangeHow,
     ) -> Result<Change, CommandError> {
         self.run(Command::Arrange { ids, how })
+    }
+
+    pub fn rotate_inner(&mut self, ids: Vec<String>, angle: f64) -> Result<Change, CommandError> {
+        self.run(Command::Rotate { ids, angle })
     }
 
     pub fn restack_inner(&mut self, ids: Vec<String>, to: u32) -> Result<Change, CommandError> {

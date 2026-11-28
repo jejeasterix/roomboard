@@ -15,7 +15,7 @@ export const COMMAND_TYPES = [
   "SetMedia", "AddModel3d", "SetModel3dView", "SetBackdrop", "FormatText", "SetGrid", "ApplyBackground", "AddTable", "SetTableCell",
   "InsertTableLine", "RemoveTableLine", "SetTableSizes", "SetTableFill", "MergeTableCells", "SplitTableCell",
   "SetTableShade", "ImportTable", "PlaceInCell", "SetTableLineSizes", "SetTableOptions", "SetCellImage", "Fill", "SetImageParams", "Group", "Ungroup", "SetStyle",
-  "SetLinePoints", "AddLinked", "ShapeToPolygon",
+  "SetLinePoints", "AddLinked", "ShapeToPolygon", "Rotate",
 ] as const satisfies readonly Command["type"][];
 // Une commande ajoutée à `Command` sans l'être ici casse `tsc` : la CLI suit le cœur (§ 7 du cadrage).
 type Missing = Exclude<Command["type"], (typeof COMMAND_TYPES)[number]>;
@@ -87,6 +87,8 @@ export function parseOp(line: unknown, ctx: RefContext): Op {
     }
     // OG23 : `how` refusé avant le cœur (code 2), comme `to` ; le cœur lèverait « disposition inconnue » (code 1).
     if (type === "Arrange" && !isArrangeHow(cmd["how"])) throw new CliError("usage", `how : une de ${ARRANGE_HOWS.join(", ")}`);
+    // OG33 (lot 2b) : `angle` refusé avant le cœur (code 2), comme `how` d'`Arrange`.
+    if (type === "Rotate" && (typeof cmd["angle"] !== "number" || !Number.isFinite(cmd["angle"]))) throw new CliError("usage", "angle : nombre fini attendu (degrés)");
     return { kind: "command", cmd: cmd as unknown as Command };
   }
   const op = v["op"];

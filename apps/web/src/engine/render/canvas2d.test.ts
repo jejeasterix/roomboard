@@ -1891,3 +1891,27 @@ describe("canvas2d : losange et ligne fermée (OG12 lot 2a)", () => {
     expect(f.log.some((l) => l.startsWith("fill "))).toBe(false);
   });
 });
+
+describe("OG33 lot 2b : poignée de rotation", () => {
+  const edit = {
+    ghosts: [{ id: "a", matrix: [1, 0, 0, 1, 100, 0] as const }],
+    shapes: [{ shape: "rect" as const, x0: 300, y0: 200, x1: 100, y1: 50, style: { color: "#000000", width: 4 }, fill: null }],
+    frame: { x0: 0, y0: 0, x1: 50, y1: 50 },
+    handles: true,
+    band: { x0: 1, y0: 1, x1: 2, y1: 2 },
+  };
+  it("poignée de rotation : noResize : cadre sans ses huit poignées de taille", () => {
+    const { r, scene } = makeViews();
+    r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set(), { ...edit, noResize: true });
+    expect(scene.log.filter((l) => l === "rect")).toHaveLength(1 + 1 + 1);
+  });
+  it("poignée de rotation : peinte avec rotate, jamais sans poignées", () => {
+    const paint = (o: Partial<typeof edit> & { rotate?: boolean }): number => {
+      const { r, scene } = makeViews();
+      r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set(), { ...edit, ...o });
+      return scene.log.length;
+    };
+    expect(paint({ rotate: true })).toBeGreaterThan(paint({}));
+    expect(paint({ rotate: true, handles: false })).toBe(paint({ handles: false }));
+  });
+});
