@@ -614,7 +614,10 @@ fn rotate_zero_and_nan() {
     let v = d.version();
     assert!(rotate(&mut d, &[&r], 0.0).expect("nul").ids.is_empty());
     assert!(rotate(&mut d, &[&r], 360.0).expect("tour").ids.is_empty());
-    assert_eq!(rotate(&mut d, &[&r], f64::NAN), Err(CommandError::BadMatrix));
+    assert_eq!(
+        rotate(&mut d, &[&r], f64::NAN),
+        Err(CommandError::BadMatrix)
+    );
     assert_eq!(d.version(), v);
 }
 
@@ -708,17 +711,28 @@ fn rotate_bound_arrow_follows() {
     let (f_before, b_before) = (json(&d, &f), json(&d, &b));
     let v = d.version();
     let ch = rotate(&mut d, &[&b], 90.0).expect("tourner");
-    assert!(ch.ids.contains(&f), "flèche suivie dans la Change : {:?}", ch.ids);
+    assert!(
+        ch.ids.contains(&f),
+        "flèche suivie dans la Change : {:?}",
+        ch.ids
+    );
     assert_ne!(d.version(), v);
     let w = line_world(&d, &f);
     let end = w[w.len() - 1];
     let rb = sbox(&d, &b); // 425..475 × −25..75 après le quart de tour
     assert!(
-        end.0 > rb.x0 - 10.0 && end.0 < rb.x1 + 10.0 && end.1 > rb.y0 - 10.0 && end.1 < rb.y1 + 10.0,
+        end.0 > rb.x0 - 10.0
+            && end.0 < rb.x1 + 10.0
+            && end.1 > rb.y0 - 10.0
+            && end.1 < rb.y1 + 10.0,
         "fin sur le contour tourné : {end:?}, boîte {rb:?}"
     );
     assert!(near(w[0], w0[0]), "départ inchangé : {:?}", w[0]);
     assert!(d.undo());
-    assert_eq!(json(&d, &f), f_before, "une seule annulation rend la flèche");
+    assert_eq!(
+        json(&d, &f),
+        f_before,
+        "une seule annulation rend la flèche"
+    );
     assert_eq!(json(&d, &b), b_before, "et le rectangle");
 }
