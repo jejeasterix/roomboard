@@ -106,6 +106,17 @@ export function headWings(tipX: number, tipY: number, fromX: number, fromY: numb
   return w ? [w[0] + fromX, w[1] + fromY, w[2] + fromX, w[3] + fromY] : null;
 }
 
+/** Losange (Excalidraw arrowheads.ts, MIT) : L le long du fût, demi-largeur 0,6 L, arrière à 2 L ; pointe, flanc, arrière, flanc. */
+export function diamondHead(tipX: number, tipY: number, fromX: number, fromY: number, width: number): [number, number][] {
+  const l = Math.max(6, 2 * width);
+  const d = Math.hypot(tipX - fromX, tipY - fromY) || 1;
+  const ux = (tipX - fromX) / d;
+  const uy = (tipY - fromY) / d;
+  const nx = -uy * 0.6 * l;
+  const ny = ux * 0.6 * l;
+  return [[tipX, tipY], [tipX - ux * l + nx, tipY - uy * l + ny], [tipX - 2 * l * ux, tipY - 2 * l * uy], [tipX - ux * l - nx, tipY - uy * l - ny]];
+}
+
 /** Un fond non transparent avec hachures passe par roughjs même sans rugosité (Architecte). */
 export function hatched(s: ShapeData, look: Look | undefined): boolean {
   return s.fill !== null && isFillable(s) && fillStyleOf(look) !== "solid";
@@ -192,13 +203,7 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
           return;
         }
         if (k === "diamond" || k === "diamond_outline") {
-          const l = Math.max(6, 2 * w);
-          const d = Math.hypot(tx - fx, ty - fy) || 1;
-          const ux = (tx - fx) / d;
-          const uy = (ty - fy) / d;
-          const nx = -uy * 0.6 * l;
-          const ny = ux * 0.6 * l;
-          const poly: [number, number][] = [[tx, ty], [tx - ux * l + nx, ty - uy * l + ny], [tx - 2 * l * ux, ty - 2 * l * uy], [tx - ux * l - nx, ty - uy * l - ny]];
+          const poly = diamondHead(tx, ty, fx, fy, w);
           add(gen.polygon(poly, k === "diamond" ? { ...wing, fill: style.color, fillStyle: "solid" } : wing).sets, wd);
           return;
         }

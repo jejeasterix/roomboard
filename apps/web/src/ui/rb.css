@@ -588,3 +588,5 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 /* OG34 : raccourci d'un bouton large (lettre du panneau), en gris au bout du bouton ; hors du texte du bouton. */
 .rb-opt-wide[data-keys]::after, .rb-opt-toggle[data-keys]::after { content: attr(data-keys); margin-inline-start: auto; padding-inline-start: 8px; font-size: 12px; line-height: 16px; color: var(--rf-text-muted-aa); }
 .rb-mbar-trim .rb-opt-wide[data-keys]::after { content: none; }
+/* Pointes (9 choix) : cinq colonnes sur deux rangées, chaque cible garde 44 px au moins (charte). */
+.rb-options .rb-radios[data-edit="startArrowhead"][data-look="segment"], .rb-options .rb-radios[data-edit="endArrowhead"][data-look="segment"] { grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); }

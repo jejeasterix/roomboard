@@ -845,6 +845,8 @@ async function nettete(browser, base, tmp) {
     ["head-bar", `${OPT} [data-option-value="bar"]`],
     ["head-circle", `${OPT} [data-option-value="circle"]`],
     ["head-circle-outline", `${OPT} [data-option-value="circle_outline"]`],
+    ["head-diamond", `${OPT} [data-option-value="diamond"]`],
+    ["head-diamond-outline", `${OPT} [data-option-value="diamond_outline"]`],
     ["arrow-binding", `${OPT} [data-option-value="arrow-binding"]`],
     ["edit-points", `${OPT} [data-option-value="line-edit"]`],
   ];

@@ -10,7 +10,7 @@ import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, scrollBounds, scrollTo, zoomAt as zoomCamera, type Camera, type ScrollBounds } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
-import { selectionUnits, viewsOf, type GroupedView } from "./groups";
+import { expandToGroups, selectionUnits, viewsOf, type GroupedView } from "./groups";
 import type { ArrangeHow } from "../core/arrange";
 import { stepTarget, wholeUnits } from "../app/layer-list";
 import { arrangeKey, rotateKey, cellKey, nudgeKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, navKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
@@ -1378,10 +1378,14 @@ export function createEngine(deps: EngineDeps): Engine {
       // le rognage ou la pipette, ni « Modifier les points » ; sans objet relié la touche passe.
       const nav = navKey(e);
       if (nav !== null && tool === "select" && lineEditor === null && textTool.editing() === null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        // C3 : une seule unité (un élément libre ou un groupe entier) ; depuis un groupe, le lien d'un de ses membres.
         const sel = selectTool.selection();
-        const next = sel.length === 1 ? linkedNodeIn(doc, pageId, sel[0]!, nav) : null;
+        const views = selectedViews();
+        const next = sel.length > 0 && selectionUnits(sel, views).units === 1
+          ? sel.map((id) => linkedNodeIn(doc, pageId, id, nav)).find((n) => n !== null && !sel.includes(n)) ?? null
+          : null;
         if (next !== null) {
-          selectTool.setSelection([next]);
+          selectTool.setSelection(expandToGroups([next], viewsOf(doc, doc.elementIds(pageId))));
           requestScene();
           emit();
           return true;

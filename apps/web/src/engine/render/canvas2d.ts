@@ -26,7 +26,7 @@ import { copyBadgeBox, linkBadgeBox, paintCopyBadge, paintLinkBadge, paintMoveHa
 import { moveHandlePoint, rotateHandlePoint } from "../tools/handles";
 import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { setLiveOpacity } from "./renderer";
-import { cornerRadius, dashOf, hatched, headWings, seedOf, sketchShape, strokeWith, wingDashOf, type SketchMemo, type SketchPlan } from "./sketch";
+import { cornerRadius, dashOf, diamondHead, hatched, headWings, seedOf, sketchShape, strokeWith, wingDashOf, type SketchMemo, type SketchPlan } from "./sketch";
 import { cellTextBoxes, paintTableGrid, type CellTextBox } from "./table-paint";
 
 export interface PathSink {
@@ -326,18 +326,12 @@ export function arrowhead(
     return true;
   }
   if (kind === "diamond" || kind === "diamond_outline") {
-    // Losange (Excalidraw arrowheads.ts, MIT) : L le long du fût, demi-largeur 0,6 L, arrière à 2 L.
-    const l = Math.max(6, 2 * width);
-    const d = Math.hypot(tipX - fromX, tipY - fromY) || 1;
-    const ux = (tipX - fromX) / d;
-    const uy = (tipY - fromY) / d;
-    const nx = -uy * 0.6 * l;
-    const ny = ux * 0.6 * l;
+    const [p0, p1, p2, p3] = diamondHead(tipX, tipY, fromX, fromY, width) as [[number, number], [number, number], [number, number], [number, number]];
     ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(tipX - ux * l + nx, tipY - uy * l + ny);
-    ctx.lineTo(tipX - 2 * l * ux, tipY - 2 * l * uy);
-    ctx.lineTo(tipX - ux * l - nx, tipY - uy * l - ny);
+    ctx.moveTo(p0[0], p0[1]);
+    ctx.lineTo(p1[0], p1[1]);
+    ctx.lineTo(p2[0], p2[1]);
+    ctx.lineTo(p3[0], p3[1]);
     ctx.closePath();
     if (kind === "diamond") {
       if (color !== undefined) ctx.fillStyle = color;

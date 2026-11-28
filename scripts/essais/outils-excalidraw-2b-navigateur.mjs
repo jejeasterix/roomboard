@@ -426,7 +426,16 @@ async function m4(browser, base, tmp) {
   await tool(page, "arrow");
   const cible = await page.locator(HEAD).boundingBox();
   lire("M4.cible", `${Math.round(cible?.width ?? 0)}x${Math.round(cible?.height ?? 0)}`);
-  check(cible !== null && cible.height >= 44, "M4 : la cible « Losange creux » a une hauteur d'au moins 44 px (convention des boutons du panneau)");
+  check(cible !== null && cible.width >= 43.5 && cible.height >= 43.5, "M4 : la cible « Losange creux » fait 44 px au moins en largeur et en hauteur (charte)");
+  // Netteté de l'icône (§ 10), même mesure que M1.
+  await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
+  await frames(page);
+  const icoBox = await page.locator(`${HEAD} svg.rb-icon`).first().boundingBox();
+  const icoPx = await pixelsOf(page, icoBox);
+  const { ink: icoInk } = await colorsOf(page, HEAD);
+  const fr = fringes(icoPx, [icoPx.data[0], icoPx.data[1], icoPx.data[2]], rgbOf(icoInk));
+  lire("M4.nettete", fr);
+  check(fr === 0, "M4 : icône « Losange creux » nette (§ 10), 0 frange colorée");
   await press(page, "doigt", HEAD);
   await touchDrag(page, cdp, [400, 560], [760, 640]);
   const els = (await saved(page, tmp, "m4b.roomboard")).elements;
