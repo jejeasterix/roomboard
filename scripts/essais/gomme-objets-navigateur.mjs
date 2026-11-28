@@ -42,7 +42,7 @@ const check = (cond, msg) => {
 const lire = (label, v) => console.log(`lu — ${label}=${v}`);
 
 async function scenario(name, run) {
-  const s = await newPage(browser, base, { scale: 2 });
+  const s = await newPage(browser, base, { scale: 2, fold: true });
   try {
     await run(s);
     check(s.errors.length === 0, `${name} : aucune erreur dans la page${s.errors.length ? ` (${s.errors.join(" | ")})` : ""}`);
@@ -89,6 +89,7 @@ try {
     await t.shot("l1-barre-une-gomme.png", '[data-island="outils"]');
     await clickItem(page, "pen");
     await t.drag([[300, 400], [800, 400]]);
+    lire("data-elements avant la gomme", await t.elements());
     await clickItem(page, "eraser");
     await touchDrag(page, cdp, [550, 330], [550, 470], { steps: 14 });
     lire("data-elements après la gomme", await t.elements());
@@ -122,7 +123,7 @@ try {
     const blue = (px) => px[2] > 150 && px[0] < 80;
     const edge = [200, 235];
     let pic = null;
-    for (const c of [[480, 235], [480, 305], [530, 300], [540, 330]]) if (blue(await pixelAt(page, ...c))) { pic = c; break; }
+    for (const c of [[470, 250], [500, 248], [470, 290], [520, 295], [470, 300], [470, 310], [470, 240]]) if (blue(await pixelAt(page, ...c))) { pic = c; break; }
     lire("témoins", `bord ${dark(await pixelAt(page, ...edge))}, image ${pic}`);
     await clickItem(page, "eraser");
     const end = await touchDrag(page, cdp, [150, 270], [1000, 270], { steps: 40, hold: true });
@@ -217,15 +218,16 @@ try {
     await page.keyboard.press("Escape");
     await clickItem(page, "pen");
     await t.drag([cell(2, 2).map((v, i) => v - (i === 0 ? 40 : 0)), cell(2, 2).map((v, i) => v + (i === 0 ? 40 : 0))]);
+    await t.kinds("s3-avant-gomme");
     await clickItem(page, "eraser");
     await touchDrag(page, cdp, cell(0, 0), cell(2, 2), { steps: 30 });
     const s = await t.kinds("s3-apres-gomme");
+    await t.shot("l1-tableau-contenu-efface.png");
     const table = s.find((e) => e.kind === "table");
     check(table !== undefined, "S3 : le tableau reste");
     check(JSON.stringify(table ?? {}).includes("Lundi"), "S3 : le texte de la case (0, 0) reste");
     check(!s.some((e) => e.kind === "image"), "S3 : l'image logée en (1, 1) est effacée");
     check(s.filter((e) => e.kind === "stroke").length >= 2, "S3 : le trait de la case (2, 2) est coupé");
-    await t.shot("l1-tableau-contenu-efface.png");
     // Les morceaux du trait gardent leur case : ils suivent le tableau déplacé (Maj+→, 5 px).
     await clickItem(page, "select");
     await stageMouse(page).click(...cell(0, 2));
