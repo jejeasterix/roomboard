@@ -36,7 +36,18 @@ pub fn version() -> String {
 }
 
 fn to_js<T: serde::Serialize>(v: &T) -> Result<JsValue, JsError> {
-    serde_wasm_bindgen::to_value(v).map_err(|e| JsError::new(&e.to_string()))
+    serde_wasm_bindgen::to_value(v).map_err(ser_err)
+}
+
+/// Change d'une commande vers JS, erreur comprise (OG35 : une seule copie de ce code, pas une par export).
+#[inline(never)]
+fn change_js(r: Result<Change, CommandError>) -> Result<JsValue, JsError> {
+    to_js(&r.map_err(cmd_err)?)
+}
+
+#[inline(never)]
+fn ser_err(e: serde_wasm_bindgen::Error) -> JsError {
+    JsError::new(&e.to_string())
 }
 
 /// Message de l'Error JS : le `Display` du cœur (celui que `fake-core.ts` reproduit).
@@ -61,6 +72,7 @@ fn binding_arg(
     }
 }
 
+#[inline(never)]
 fn cmd_err(e: CommandError) -> JsError {
     JsError::new(&js_message(&e))
 }
@@ -130,6 +142,7 @@ fn look_of(
     })
 }
 
+#[inline(never)]
 fn fmt_err(e: FormatError) -> JsError {
     JsError::new(&js_message(&e))
 }
@@ -649,12 +662,12 @@ impl Document {
 
     /// Grouper (C3, Z1) : une étape ; `BadGroup` sinon.
     pub fn group(&mut self, ids: Vec<String>) -> Result<JsValue, JsError> {
-        to_js(&self.group_inner(ids).map_err(cmd_err)?)
+        change_js(self.group_inner(ids))
     }
 
     /// Dégrouper le niveau extérieur (C3, Z1) ; aucun élément groupé : aucune étape.
     pub fn ungroup(&mut self, ids: Vec<String>) -> Result<JsValue, JsError> {
-        to_js(&self.ungroup_inner(ids).map_err(cmd_err)?)
+        change_js(self.ungroup_inner(ids))
     }
 
     /// Document neuf d'une page qui porte une recopie des éléments `ids` de `page` (C3, Z5) ; aucune étape.
@@ -670,16 +683,12 @@ impl Document {
         dx: f64,
         dy: f64,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .insert_fragment_inner(src, page, dx, dy)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.insert_fragment_inner(src, page, dx, dy))
     }
 
     /// Pages de `src` à la suite de `after` ; une étape (C3, Z5, Z12).
     pub fn insert_pages(&mut self, src: &Document, after: &str) -> Result<JsValue, JsError> {
-        to_js(&self.insert_pages_inner(src, after).map_err(cmd_err)?)
+        change_js(self.insert_pages_inner(src, after))
     }
 
     /// `.rbitem` sans asset (C3, Z6).
@@ -815,11 +824,7 @@ impl Document {
         h: f64,
         matrix: &[f64],
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .add_image_inner(page, asset_ref(asset, name, mime, size), [w, h], matrix)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.add_image_inner(page, asset_ref(asset, name, mime, size), [w, h], matrix))
     }
 
     /// C14 (M5) : média ; `linked` = chemin lié (M30), `null` pour un média inclus ; `poster` = empreinte du poster,
@@ -844,19 +849,15 @@ impl Document {
         matrix: &[f64],
     ) -> Result<JsValue, JsError> {
         let poster = poster.map(|id| asset_ref(&id, poster_name, poster_mime, poster_size));
-        to_js(
-            &self
-                .add_media_inner(
-                    page,
-                    asset_ref(asset, name, mime, size),
-                    linked,
-                    media_type,
-                    [w, h, duration],
-                    poster,
-                    matrix,
-                )
-                .map_err(cmd_err)?,
-        )
+        change_js(self.add_media_inner(
+            page,
+            asset_ref(asset, name, mime, size),
+            linked,
+            media_type,
+            [w, h, duration],
+            poster,
+            matrix,
+        ))
     }
 
     /// C14 (M6) : réglages voulus d'un média ; `trim_end` `null` = jusqu'à la fin.
@@ -868,11 +869,7 @@ impl Document {
         looped: bool,
         volume: f64,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .set_media_inner(id, trim_start, trim_end, looped, volume)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_media_inner(id, trim_start, trim_end, looped, volume))
     }
 
     /// C15 (X7) : objet 3D ; `file_*` : fichiers liés, listes de même longueur (sinon `BadModel3d`) ; `snapshot` `null` :
@@ -911,19 +908,15 @@ impl Document {
         .map_err(cmd_err)?;
         let snapshot =
             snapshot.map(|id| asset_ref(&id, snapshot_name, snapshot_mime, snapshot_size));
-        to_js(
-            &self
-                .add_model3d_inner(
-                    page,
-                    asset_ref(asset, name, mime, size),
-                    format,
-                    files,
-                    [w, h, yaw, pitch],
-                    snapshot,
-                    matrix,
-                )
-                .map_err(cmd_err)?,
-        )
+        change_js(self.add_model3d_inner(
+            page,
+            asset_ref(asset, name, mime, size),
+            format,
+            files,
+            [w, h, yaw, pitch],
+            snapshot,
+            matrix,
+        ))
     }
 
     /// C15 (X7) : vue voulue d'un objet 3D et son instantané (`null` : retiré).
@@ -939,11 +932,7 @@ impl Document {
         snapshot_size: f64,
     ) -> Result<JsValue, JsError> {
         let snapshot = snapshot.map(|s| asset_ref(&s, snapshot_name, snapshot_mime, snapshot_size));
-        to_js(
-            &self
-                .set_model3d_view_inner(id, yaw, pitch, snapshot)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_model3d_view_inner(id, yaw, pitch, snapshot))
     }
 
     /// Réglages d'une image (C5, I6) : état voulu complet et nouvelle matrice ; voir `image_params_input` pour la forme
@@ -974,11 +963,7 @@ impl Document {
             transparent,
         )
         .map_err(cmd_err)?;
-        to_js(
-            &self
-                .set_image_params_inner(id, params, matrix, restore)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_image_params_inner(id, params, matrix, restore))
     }
 
     /// C14 (M30) : `[{ id, path }]` des assets cités et liés, triés par id.
@@ -1009,15 +994,11 @@ impl Document {
             h,
             fit: fit.to_string(),
         };
-        to_js(
-            &self
-                .set_backdrop_inner(page, Some(input))
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_backdrop_inner(page, Some(input)))
     }
 
     pub fn clear_backdrop(&mut self, page: &str) -> Result<JsValue, JsError> {
-        to_js(&self.set_backdrop_inner(page, None).map_err(cmd_err)?)
+        change_js(self.set_backdrop_inner(page, None))
     }
 
     /// Grille de page (U31, G12) ; voir `grid_input` pour la forme de `nums`.
@@ -1034,11 +1015,11 @@ impl Document {
         nums: &[f64],
     ) -> Result<JsValue, JsError> {
         let grid = grid_input(visible, snap, above, kinds, colors, lines, nums).map_err(cmd_err)?;
-        to_js(&self.set_grid_inner(page, Some(grid)).map_err(cmd_err)?)
+        change_js(self.set_grid_inner(page, Some(grid)))
     }
 
     pub fn clear_grid(&mut self, page: &str) -> Result<JsValue, JsError> {
-        to_js(&self.set_grid_inner(page, None).map_err(cmd_err)?)
+        change_js(self.set_grid_inner(page, None))
     }
 
     /// Aspect complet de N pages (personnalisation-1b, DA1) : `asset` absent = aucun fond image ; `grid` faux = aucune
@@ -1075,11 +1056,7 @@ impl Document {
         } else {
             None
         };
-        to_js(
-            &self
-                .apply_background_inner(pages, color, backdrop, grid)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.apply_background_inner(pages, color, backdrop, grid))
     }
 
     /// Tableau (C10a, T13) : `cols`, `rows` en u32 ; une valeur hors des u32 arrive comme u32::MAX (`toU32` de la page),
@@ -1097,18 +1074,14 @@ impl Document {
         color: &str,
         size: f64,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .add_table_inner(
-                    page,
-                    [x, y],
-                    [cols, rows],
-                    [col_width, row_height],
-                    color,
-                    size,
-                )
-                .map_err(cmd_err)?,
-        )
+        change_js(self.add_table_inner(
+            page,
+            [x, y],
+            [cols, rows],
+            [col_width, row_height],
+            color,
+            size,
+        ))
     }
 
     /// `row`, `col` : ids ; `row_height` : hauteur exigée mesurée par la page (T5) ; `spans` : C7b, état voulu des
@@ -1123,16 +1096,12 @@ impl Document {
         spans: JsValue,
     ) -> Result<JsValue, JsError> {
         let spans = spans_arg(spans).map_err(cmd_err)?;
-        to_js(
-            &self
-                .set_table_cell_inner(id, [row, col], content, row_height, spans)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_table_cell_inner(id, [row, col], content, row_height, spans))
     }
 
     /// `row` : vrai pour une ligne, faux pour une colonne.
     pub fn insert_table_line(&mut self, id: &str, row: bool, at: u32) -> Result<JsValue, JsError> {
-        to_js(&self.insert_table_line_inner(id, row, at).map_err(cmd_err)?)
+        change_js(self.insert_table_line_inner(id, row, at))
     }
 
     /// `to` : dernière ligne de la plage (C10b, F6) ; absent : `line` seule.
@@ -1143,11 +1112,7 @@ impl Document {
         line: &str,
         to: Option<String>,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .remove_table_line_inner(id, row, line, to)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.remove_table_line_inner(id, row, line, to))
     }
 
     pub fn set_table_sizes(
@@ -1156,11 +1121,7 @@ impl Document {
         col_width: f64,
         row_height: f64,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .set_table_sizes_inner(id, col_width, row_height)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_table_sizes_inner(id, col_width, row_height))
     }
 
     /// `fill` absent ou null : retire le remplissage ; `to_row`, `to_col` : autre coin de la plage (C10b, F15).
@@ -1177,11 +1138,7 @@ impl Document {
             (Some(r), Some(c)) => Some([r.as_str(), c.as_str()]),
             _ => None,
         };
-        to_js(
-            &self
-                .set_table_fill_inner(id, [row, col], to, fill)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_table_fill_inner(id, [row, col], to, fill))
     }
 
     /// Fusion (C10b, F3) : rectangle par ids.
@@ -1193,20 +1150,12 @@ impl Document {
         to_row: &str,
         to_col: &str,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .merge_table_cells_inner(id, [from_row, from_col], [to_row, to_col])
-                .map_err(cmd_err)?,
-        )
+        change_js(self.merge_table_cells_inner(id, [from_row, from_col], [to_row, to_col]))
     }
 
     /// Division (C10b, F4) : `row`, `col` = ancre.
     pub fn split_table_cell(&mut self, id: &str, row: &str, col: &str) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .split_table_cell_inner(id, [row, col])
-                .map_err(cmd_err)?,
-        )
+        change_js(self.split_table_cell_inner(id, [row, col]))
     }
 
     /// Ombrage (C10b, F9) : `shade` absent ou null : retire (révéler).
@@ -1219,11 +1168,7 @@ impl Document {
         to_col: &str,
         shade: Option<String>,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .set_table_shade_inner(id, [from_row, from_col], [to_row, to_col], shade)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_table_shade_inner(id, [from_row, from_col], [to_row, to_col], shade))
     }
 
     /// personnalisation-3 (D3) : `table`, `row`, `col` tous présents = case visée, sinon sortie de case ; `size_keys` =
@@ -1240,11 +1185,7 @@ impl Document {
         size_values: &[f64],
     ) -> Result<JsValue, JsError> {
         let cell = cell_of(table, row, col).map_err(cmd_err)?;
-        to_js(
-            &self
-                .place_in_cell_inner(ids, matrix, cell, &size_keys, size_values)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.place_in_cell_inner(ids, matrix, cell, &size_keys, size_values))
     }
 
     /// personnalisation-3 (D4) : ids et tailles de même longueur, sinon `BadTable`.
@@ -1256,11 +1197,7 @@ impl Document {
         row_ids: Vec<String>,
         row_heights: &[f64],
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .set_table_line_sizes_inner(id, &col_ids, col_widths, &row_ids, row_heights)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_table_line_sizes_inner(id, &col_ids, col_widths, &row_ids, row_heights))
     }
 
     /// personnalisation-3 (T7) : `fit` (`"grow"` ou `"shrink"`) et `header`, seulement ce qui est donné.
@@ -1270,11 +1207,7 @@ impl Document {
         fit: Option<String>,
         header: Option<bool>,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .set_table_options_inner(id, fit, header)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_table_options_inner(id, fit, header))
     }
 
     /// personnalisation-3 (T9) : l'image logée `from` devient le fond de la case (`row`, `col`) ; `None` retire le fond.
@@ -1285,11 +1218,7 @@ impl Document {
         col: &str,
         from: Option<String>,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .set_cell_image_inner(id, row, col, from)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_cell_image_inner(id, row, col, from))
     }
 
     /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
@@ -1306,21 +1235,17 @@ impl Document {
         color: &str,
         size: f64,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .import_table_inner(
-                    page,
-                    matrix,
-                    col_width,
-                    row_heights,
-                    cols,
-                    cells,
-                    merges,
-                    color,
-                    size,
-                )
-                .map_err(cmd_err)?,
-        )
+        change_js(self.import_table_inner(
+            page,
+            matrix,
+            col_width,
+            row_heights,
+            cols,
+            cells,
+            merges,
+            color,
+            size,
+        ))
     }
 
     /// Point aimanté `[x, y]` (G6) ; `undefined` sans accroche.
@@ -1409,35 +1334,31 @@ impl Document {
         mode: Option<String>,
     ) -> Result<JsValue, JsError> {
         let layout = layout_arg(mode)?;
-        to_js(
-            &self
-                .add_page_after_mode_inner(after, layout)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.add_page_after_mode_inner(after, layout))
     }
 
     pub fn remove_page(&mut self, page: &str) -> Result<JsValue, JsError> {
-        to_js(&self.remove_page_inner(page).map_err(cmd_err)?)
+        change_js(self.remove_page_inner(page))
     }
 
     /// Disposition d'une page (`landscape`, `portrait`, `infinite`) ; illisible : Error « mode de page inconnu : … ».
     pub fn set_page_mode(&mut self, page: &str, mode: &str) -> Result<JsValue, JsError> {
         let layout = page_layout(mode).map_err(|m| JsError::new(&m))?;
-        to_js(&self.set_page_mode_inner(page, layout).map_err(cmd_err)?)
+        change_js(self.set_page_mode_inner(page, layout))
     }
 
     pub fn move_page(&mut self, page: &str, to: u32) -> Result<JsValue, JsError> {
-        to_js(&self.move_page_inner(page, to).map_err(cmd_err)?)
+        change_js(self.move_page_inner(page, to))
     }
 
     pub fn duplicate_page(&mut self, page: &str) -> Result<JsValue, JsError> {
-        to_js(&self.duplicate_page_inner(page).map_err(cmd_err)?)
+        change_js(self.duplicate_page_inner(page))
     }
 
     /// Ordre des objets (décision 16) : les `ids` en un bloc dont le bas est au rang `to` (0 = arrière-plan), ids
     /// gardés, une étape ; même ordre : aucune ; pages mêlées : Error « objets de pages différentes ».
     pub fn restack(&mut self, ids: Vec<String>, to: u32) -> Result<JsValue, JsError> {
-        to_js(&self.restack_inner(ids, to).map_err(cmd_err)?)
+        change_js(self.restack_inner(ids, to))
     }
 
     /// OG11 : les onze arguments après `width` sont l'aspect (`look_of`, `variability` en dernier, OG23), contrôlé
@@ -1475,11 +1396,7 @@ impl Document {
         let look =
             look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         let cell = cell_of(cell_table, cell_row, cell_col).map_err(cmd_err)?;
-        to_js(
-            &self
-                .commit_stroke_inner(page, points, color, width, look, cell)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.commit_stroke_inner(page, points, color, width, look, cell))
     }
 
     pub fn erase(
@@ -1489,15 +1406,11 @@ impl Document {
         radius: f32,
         object: bool,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .erase_inner(page, path, radius, object)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.erase_inner(page, path, radius, object))
     }
 
     pub fn delete(&mut self, ids: Vec<String>) -> Result<JsValue, JsError> {
-        to_js(&self.delete_inner(ids).map_err(cmd_err)?)
+        change_js(self.delete_inner(ids))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1546,20 +1459,16 @@ impl Document {
             start: binding_arg(start_id, start_fixed).map_err(cmd_err)?,
             end: binding_arg(end_id, end_fixed).map_err(cmd_err)?,
         };
-        to_js(
-            &self
-                .add_shape_inner(
-                    page,
-                    shape,
-                    [x0, y0, x1, y1],
-                    color,
-                    width,
-                    fill,
-                    look,
-                    line,
-                )
-                .map_err(cmd_err)?,
-        )
+        change_js(self.add_shape_inner(
+            page,
+            shape,
+            [x0, y0, x1, y1],
+            color,
+            width,
+            fill,
+            look,
+            line,
+        ))
     }
 
     /// OG12 (n° 12 b) : tous les points en monde (≥ 2) et les liaisons ; une étape.
@@ -1574,21 +1483,17 @@ impl Document {
     ) -> Result<JsValue, JsError> {
         let start = binding_arg(start_id, start_fixed).map_err(cmd_err)?;
         let end = binding_arg(end_id, end_fixed).map_err(cmd_err)?;
-        to_js(
-            &self
-                .set_line_points_inner(id, points, start, end)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_line_points_inner(id, points, start, end))
     }
 
     /// OG12 lot 2a (n° 34) : rectangle, losange ou ellipse devient une ligne fermée ; une étape.
     pub fn shape_to_polygon(&mut self, id: &str) -> Result<JsValue, JsError> {
-        to_js(&self.shape_to_polygon_inner(id).map_err(cmd_err)?)
+        change_js(self.shape_to_polygon_inner(id))
     }
 
     /// OG12 (n° 27) : copie et flèche coudée liée ; direction inconnue : `BadShape`.
     pub fn add_linked(&mut self, id: &str, dir: &str) -> Result<JsValue, JsError> {
-        to_js(&self.add_linked_inner(id, dir).map_err(cmd_err)?)
+        change_js(self.add_linked_inner(id, dir))
     }
 
     /// OG12 (n° 17) : cible de liaison la plus proche ; `null` sans cible.
@@ -1646,7 +1551,7 @@ impl Document {
             drag_copy,
             elbowed: elbowed_set.then_some(elbowed),
         };
-        to_js(&self.set_style_inner(ids, patch).map_err(cmd_err)?)
+        change_js(self.set_style_inner(ids, patch))
     }
 
     /// Avec un `id`, `page`, `x` et `y` ne placent rien (la position passe par `transform`) ; `x` et `y` restent
@@ -1687,33 +1592,29 @@ impl Document {
         let look =
             look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         let spans = spans_arg(spans).map_err(cmd_err)?;
-        to_js(
-            &self
-                .set_text_inner(
-                    page,
-                    id,
-                    [x, y],
-                    content,
-                    color,
-                    size,
-                    [box_width, box_height],
-                    spans,
-                    look,
-                )
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_text_inner(
+            page,
+            id,
+            [x, y],
+            content,
+            color,
+            size,
+            [box_width, box_height],
+            spans,
+            look,
+        ))
     }
 
     /// OG23 (DA-2) : aligner, répartir, retourner, tourner `ids` en une étape (`how` : `align-left` … `rotate-ccw`) ;
     /// `how` inconnu : Error « disposition inconnue : <how> », levée avant la commande (le faux cœur lève la même).
     pub fn arrange(&mut self, ids: Vec<String>, how: &str) -> Result<JsValue, JsError> {
         let how = arrange_how(how).map_err(|m| JsError::new(&m))?;
-        to_js(&self.arrange_inner(ids, how).map_err(cmd_err)?)
+        change_js(self.arrange_inner(ids, how))
     }
 
     /// `matrix` : six nombres `a, b, c, d, e, f`, composés à gauche de la matrice de chaque élément.
     pub fn transform(&mut self, ids: Vec<String>, matrix: &[f64]) -> Result<JsValue, JsError> {
-        to_js(&self.transform_inner(ids, matrix).map_err(cmd_err)?)
+        change_js(self.transform_inner(ids, matrix))
     }
 
     /// C7 : `attrs` = patch `TextAttrsPatch` sans clé `undefined` (retirées par `wasm-core.ts`, T7) ; `null` = retrait ;
@@ -1727,11 +1628,7 @@ impl Document {
         box_height: Option<f64>,
     ) -> Result<JsValue, JsError> {
         let attrs = read_patch(serde_wasm_bindgen::Deserializer::from(attrs)).map_err(cmd_err)?;
-        to_js(
-            &self
-                .format_text_inner(id, start, len, attrs, box_height)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.format_text_inner(id, start, len, attrs, box_height))
     }
 
     pub fn element(&self, id: &str) -> Result<JsValue, JsError> {
@@ -1768,11 +1665,7 @@ impl Document {
         id: Option<String>,
         color: Option<String>,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .fill_inner(page, target, id.as_deref(), color)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.fill_inner(page, target, id.as_deref(), color))
     }
 
     /// Pot sur une image (C6b, B2) : nouvel asset (empreinte, nom, type, taille) et couleur contrôlée (absente ou null :
@@ -1788,11 +1681,7 @@ impl Document {
         size: f64,
         color: Option<String>,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .fill_image_inner(page, id, asset_ref(asset, name, mime, size), color)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.fill_image_inner(page, id, asset_ref(asset, name, mime, size), color))
     }
 
     /// Pot dans une zone fermée (C8, Q10) : `x`, `y`, `tol` en monde ; `color` absent ou null : « Aucune » ; voir
@@ -1805,11 +1694,7 @@ impl Document {
         tol: f64,
         color: Option<String>,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .fill_zone_inner(page, x, y, tol, color)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.fill_zone_inner(page, x, y, tol, color))
     }
 
     /// Cellules du masque d'un clic du pot sur `page` à `tol` (C8, Q18, `data-zone-cells`), lecture seule.
