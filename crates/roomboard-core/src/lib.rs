@@ -13,6 +13,7 @@ pub mod grid;
 pub mod history;
 pub mod image;
 pub mod ink;
+pub mod label;
 pub mod linear;
 pub mod media;
 pub mod model3d;
