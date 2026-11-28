@@ -31,6 +31,10 @@ ce lot (question posée à Jérôme).
     celui du moteur (annule le rognage, désarme la pipette) ;
   - média : K lecture ou pause, D début ici, F fin ici, G tout garder, B boucle ; flèches sur la position (curseur natif) ;
   - objet 3D : T tourner, V vue initiale ; grisés comme leurs boutons.
+  Maj+lettre passe toujours à la fenêtre (Maj+V reste « Retourner verticalement »). La lettre est montrée en gris au bout
+  des boutons larges (Pipette, Boucle, Tourner, Vue initiale) et dans l'infobulle de Lecture ; tous les boutons portent
+  `aria-keyshortcuts`. Ces raccourcis ne vont pas dans la table de l'Aide : elle refuse une touche servant deux actions,
+  et I et Ctrl+Entrée y servent déjà (pipette du sélecteur, « Modifier les points »).
 - **Icônes** : douze tracés Lucide lus au commit `7981a0798a` (`play`, `pause`, `repeat`, `volume-2`,
   `arrow-right-to-line`, `arrow-left-to-line`, `move-horizontal`, `rotate-3d`, `scan`, `sun`, `contrast`,
   `rotate-ccw`) ; aucune icône dessinée.

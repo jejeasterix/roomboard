@@ -1,6 +1,6 @@
 /**
- * OG34 : raccourcis d'un panneau ou d'une barre, actifs quand le focus y est (clavier après le tactile). Une lettre sans
- * Ctrl, Alt ni Méta, lue par `e.key` en minuscule (AZERTY, QWERTY, QWERTZ) ; jamais dans une liste ni une zone de saisie
+ * OG34 : raccourcis d'un panneau ou d'une barre, actifs quand le focus y est (clavier après le tactile). Une lettre seule,
+ * sans Ctrl, Alt, Maj ni Méta (Maj+V reste « Retourner verticalement »), lue par `e.key` en minuscule (AZERTY, QWERTY, QWERTZ) ; jamais dans une liste ni une zone de saisie
  * de texte (un curseur `range` les laisse passer). Une touche prise est arrêtée là : les raccourcis de la fenêtre (outils,
  * panoramique) ne la voient pas. `false` rendu par une action : touche laissée (geste grisé).
  */
@@ -14,7 +14,7 @@ export function typing(t: EventTarget | null): boolean {
 
 export function panelKeyDown(keys: PanelKeys): (e: KeyboardEvent) => void {
   return (e) => {
-    if (e.ctrlKey || e.altKey || e.metaKey || e.isComposing || e.repeat || typing(e.target)) return;
+    if (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey || e.isComposing || e.repeat || typing(e.target)) return;
     const key = e.key.toLowerCase();
     const act = Object.hasOwn(keys, key) ? keys[key]! : null;
     if (act === null || act() === false) return;

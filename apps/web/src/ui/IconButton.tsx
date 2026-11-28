@@ -159,7 +159,10 @@ export function LabelButton(props: {
   readonly look?: "wide" | "toggle" | "primary";
   readonly pressed?: boolean;
   readonly disabled?: boolean;
+  /** Raccourci, au format `aria-keyshortcuts`. */
   readonly keys?: string;
+  /** Raccourci montré en gris au bout du bouton (`data-keys`, posé par la feuille de style : hors du `textContent`). */
+  readonly hint?: string;
   readonly attrs?: Readonly<Record<string, string>>;
   readonly onPress: () => void;
 }): JSX.Element {
@@ -170,6 +173,7 @@ export function LabelButton(props: {
       class={`rb-opt-${props.look ?? "wide"}`}
       aria-pressed={props.pressed ?? undefined}
       aria-keyshortcuts={props.keys}
+      data-keys={props.hint}
       disabled={props.disabled === true}
       onClick={() => props.onPress()}
     >

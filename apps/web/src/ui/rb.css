@@ -448,8 +448,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-options .rb-mbar-trim .rb-opt-wide { flex-direction: column; justify-content: center; gap: 2px; min-block-size: 64px; padding: 4px 2px; text-align: center; }
 .rb-options .rb-opt-wide:disabled { color: var(--rf-gray-500); cursor: default; }
 .rb-options .rb-opt-wide:disabled:hover { background: transparent; }
-.rb-opt-wide:disabled .rb-opt-wide-label, .rb-opt-toggle:disabled .rb-opt-wide-label { color: var(--rf-text-muted-aa); }
-.rb-opt-toggle[aria-pressed="true"] .rb-opt-wide-label { color: var(--rf-violet-700); }
+.rb-mbar .rb-opt-wide:disabled .rb-opt-wide-label, .rb-mbar .rb-opt-toggle:disabled .rb-opt-wide-label { color: var(--rf-text-muted-aa); }
+.rb-mbar .rb-opt-toggle[aria-pressed="true"] .rb-opt-wide-label, .rb-imgedit .rb-opt-toggle[aria-pressed="true"] .rb-opt-wide-label { color: var(--rf-violet-700); }
 /* Hôte des lecteurs : dans la page (la lecture l'exige) mais invisible et hors de la scène. */
 .rb-media-host { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
 /* C16 (O25) : conversion Office en cours : curseur d'attente sur la scène (le moteur pose son curseur en ligne). */
@@ -569,6 +569,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-imgedit { box-sizing: border-box; inline-size: 320px; max-inline-size: 100%; display: grid; gap: 12px; padding: 12px; color: var(--rf-navy-500); font-size: 14px; line-height: 20px; --rb-btn-size: 44px; }
 .rb-imgedit-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-inline-start: 4px; }
 .rb-imgedit-head h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--rf-navy-500); }
+.rb-imgedit .rb-opt-stack { display: grid; gap: 4px; }
 .rb-imgedit-sec, .rb-imgedit-foot { display: grid; gap: 4px; padding-block-start: 12px; border-block-start: 1px solid var(--rf-gray-300); }
 .rb-imgedit-h { margin: 0 0 4px; padding: 0 4px; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--rf-gray-800); }
 .rb-imgedit .rb-opt-btn { display: inline-grid; place-items: center; flex: none; inline-size: 44px; block-size: 44px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
@@ -592,3 +593,5 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-imgedit-select { position: relative; flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; }
 .rb-imgedit-select select { inline-size: 100%; block-size: 44px; box-sizing: border-box; padding: 0 36px 0 12px; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); font: inherit; font-size: 14px; color: var(--rf-navy-500); text-overflow: ellipsis; appearance: none; -webkit-appearance: none; cursor: pointer; }
 .rb-imgedit-select > .rb-icon { position: absolute; inset-inline-end: 8px; pointer-events: none; }
+/* OG34 : raccourci d'un bouton large (lettre du panneau), en gris au bout du bouton ; hors du texte du bouton. */
+.rb-opt-wide[data-keys]::after, .rb-opt-toggle[data-keys]::after { content: attr(data-keys); margin-inline-start: auto; padding-inline-start: 8px; font-size: 12px; line-height: 16px; color: var(--rf-text-muted-aa); }

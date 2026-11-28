@@ -41,8 +41,8 @@ export function Model3dBar(props: Model3dBarProps): JSX.Element {
     <div role="group" aria-label="Commandes de l'objet 3D" data-model3d-bar class="rb-mbar" onKeyDown={onKeyDown}>
       <span data-model3d="name" class="rb-mbar-name">{props.name}</span>
       <div class="rb-opt-stack">
-        <LabelButton icon="rotate-3d" label="Tourner" look="toggle" keys="T" pressed={status() === "orbite"} disabled={noTurn()} attrs={{ "data-model3d": "orbit" }} onPress={() => props.controls.toggle()} />
-        <LabelButton icon="scan" label="Vue initiale" keys="V" disabled={blocked()} attrs={{ "data-model3d": "reset" }} onPress={() => props.controls.reset()} />
+        <LabelButton icon="rotate-3d" label="Tourner" look="toggle" keys="T" hint="T" pressed={status() === "orbite"} disabled={noTurn()} attrs={{ "data-model3d": "orbit" }} onPress={() => props.controls.toggle()} />
+        <LabelButton icon="scan" label="Vue initiale" keys="V" hint="V" disabled={blocked()} attrs={{ "data-model3d": "reset" }} onPress={() => props.controls.reset()} />
       </div>
       <Show when={status() === "chargement"}>
         <span data-model3d="status" class="rb-mbar-note" role="status">

@@ -186,7 +186,7 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
       <section class="rb-imgedit-sec" aria-label="Couleur transparente">
         <h3 class="rb-imgedit-h">Couleur transparente</h3>
         <div class="rb-imgedit-pick">
-          <LabelButton icon="pipette" label="Pipette" look="toggle" keys="I" pressed={mode() === "pick"} attrs={{ "data-image-action": "pick" }} onPress={pipette} />
+          <LabelButton icon="pipette" label="Pipette" look="toggle" keys="I" hint="I" pressed={mode() === "pick"} attrs={{ "data-image-action": "pick" }} onPress={pipette} />
           <span
             class="rb-imgedit-swatch"
             data-image-color={draft().color ?? ""}

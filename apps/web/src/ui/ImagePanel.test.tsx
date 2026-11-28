@@ -273,7 +273,7 @@ describe("panneau de retouche (OG34) : design des îlots", () => {
     expect([icon(q('[data-image-action="pick"]')), q('[data-image-action="pick"]').textContent]).toEqual(["pipette", "Pipette"]);
     expect(q("[data-image-color]").hasAttribute("data-empty")).toBe(true);
   });
-  it("pied : Valider (check), Annuler les réglages (undo), Rétablir l'original (image-reset)", () => {
+  it("pied : Valider (check), Annuler les réglages (undo), Rétablir l'original (rotate-ccw)", () => {
     const { q } = setup();
     expect(["apply", "cancel", "restore"].map((id) => icon(q(`[data-image-action="${id}"]`)))).toEqual(["check", "undo", "rotate-ccw"]);
   });
@@ -290,7 +290,7 @@ describe("panneau de retouche (OG34) : design des îlots", () => {
     fireEvent.keyDown(root, { key: "Enter", ctrlKey: true });
     expect(edit.finishCrop).toHaveBeenCalledWith(true);
   });
-  it("raccourcis : une lettre tapée dans la liste Mode n'arme rien", () => {
+  it("raccourcis : une lettre tapée dans la liste Départ n'arme rien", () => {
     const { q, edit } = setup();
     fireEvent.keyDown(q('[data-image-input="mode"]'), { key: "i" });
     expect(edit.pickPoint).not.toHaveBeenCalled();

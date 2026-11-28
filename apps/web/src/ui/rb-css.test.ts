@@ -58,7 +58,7 @@ describe("rb.css (design-l1, L1-6)", () => {
     expect(rule('.rb-bar button[aria-current="page"]')).toContain(flat);
     expect(rule('.rb-bar button[aria-current="page"]')).not.toContain("border-color");
     expect(rule('.rb-imgedit .rb-opt-toggle[aria-pressed="true"]')).toContain("background: var(--rf-violet-100); color: var(--rf-violet-700);");
-    void on;
+    expect(on).toContain("border-color");
     // #888888 jamais pour du texte (charte.md:28) : gris AA sur les boutons à texte, gris 500 sur les boutons à icône
     expect(rule(".rb-bar button:disabled")).toContain("color: var(--rf-text-muted-aa);");
     expect(rule(".rb-bar button.rb-ib:disabled")).toContain("color: var(--rf-gray-500);");
@@ -370,7 +370,8 @@ describe("rb.css (T33)", () => {
     expect(r).toContain("display: flex");
     expect(r).toContain("gap: 2px");
     expect(rule(".rb-color-transparent")).not.toContain("margin-block-end");
-  });  it("OG34 : panneau de retouche d'image et commandes du média au design des îlots, cibles de 44 px", () => {
+  });
+  it("OG34 : panneau de retouche d'image et commandes du média au design des îlots, cibles de 44 px", () => {
     expect(rule(".rb-imgedit")).toMatch(/inline-size: 320px;.*--rb-btn-size: 44px;/);
     expect(rule(".rb-imgedit .rb-opt-btn")).toMatch(/inline-size: 44px; block-size: 44px;.*border: 0;.*border-radius: var\(--rf-radius-lg\);/);
     expect(rule(".rb-imgedit .rb-opt-wide, .rb-imgedit .rb-opt-toggle, .rb-imgedit .rb-opt-primary")).toContain("min-block-size: 44px;");
@@ -380,5 +381,6 @@ describe("rb.css (T33)", () => {
     expect(rule(".rb-mbar .rb-opt-btn")).toContain("min-block-size: 44px;");
     expect(rule(".rb-mbar-pos")).toMatch(/block-size: 44px;.*var\(--rb-trim-start\)/);
     expect(rule(".rb-options .rb-mbar-trim .rb-opt-wide")).toContain("min-block-size: 64px;");
+    expect(rule(".rb-opt-wide[data-keys]::after, .rb-opt-toggle[data-keys]::after")).toMatch(/content: attr\(data-keys\);.*color: var\(--rf-text-muted-aa\);/);
   });
 });

@@ -183,7 +183,8 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "head-circle-outline": [["path", { d: "M4 12h11" }], ["circle", { cx: "17.5", cy: "12", r: "2.5" }]],
   "edit-points": [["circle", { cx: "19", cy: "5", r: "2" }], ["circle", { cx: "5", cy: "19", r: "2" }], ["path", { d: "M5 17A12 12 0 0 1 17 5" }]],
   "point-remove": [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M8 12h8" }]],
-  "arrow-binding": [["path", { d: "M3 12h9" }], ["rect", { x: "14", y: "6", width: "7", height: "12", rx: "1" }], ["circle", { cx: "12.5", cy: "12", r: "1.5" }]],  // OG34 : panneau de retouche d'image, sections Média et Objet 3D. Lucide @7981a0798a, ISC, lus par `gh api`, recopiés
+  "arrow-binding": [["path", { d: "M3 12h9" }], ["rect", { x: "14", y: "6", width: "7", height: "12", rx: "1" }], ["circle", { cx: "12.5", cy: "12", r: "1.5" }]],
+  // OG34 : panneau de retouche d'image, sections Média et Objet 3D. Lucide @7981a0798a, ISC, lus par `gh api`, recopiés
   // tels quels, noms RoomBoard identiques aux noms Lucide.
   "play": [["path", { d: "M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" }]],
   "pause": [["rect", { x: "14", y: "3", width: "5", height: "18", rx: "1" }], ["rect", { x: "5", y: "3", width: "5", height: "18", rx: "1" }]],
