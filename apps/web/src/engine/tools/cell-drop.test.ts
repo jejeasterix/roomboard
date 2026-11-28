@@ -252,6 +252,27 @@ describe("glisser vers une case — S14 tableau de tri (DS5)", () => {
     s.move([1520, 420], [360, 160]);
     expect(s.runs.at(-1)?.type).toBe("PlaceInCell");
   });
+  it("C4 : étiquette d'un clic (boîte 600) logée : la colonne prend la largeur du texte mis en lignes + marges, pas la boîte", () => {
+    const s = setup();
+    const a = s.doc.apply({ type: "SetText", page: s.page, id: null, x: 1500, y: 200, content: "chat", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
+    s.move([1520, 220], [360, 96]);
+    expect(s.runs.at(-1)?.type).toBe("PlaceInCell");
+    expect(s.doc.element(a)?.cell?.[2]).toBe(s.t().cols[1]?.id);
+    expect(s.t().cols.map((c) => c.width)).toEqual([240, 240, 240]);
+    // 16 caractères × 18 = 288 ; colonne 288 + 2 × 8.
+    s.doc.apply({ type: "SetText", page: s.page, id: null, x: 1500, y: 400, content: "rhinocéros blanc", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 });
+    s.move([1520, 420], [360, 160]);
+    expect(s.t().cols.map((c) => c.width)).toEqual([240, 304, 240]);
+  });
+  it("C4 : l'étiquette large sortie de sa case : la colonne revient à 240 (D11 mesure aussi le texte)", () => {
+    const s = setup();
+    const a = s.doc.apply({ type: "SetText", page: s.page, id: null, x: 1500, y: 200, content: "rhinocéros blanc", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
+    s.move([1520, 220], [360, 96]);
+    expect(s.t().cols[1]?.width).toBe(304);
+    s.move([260, 90], [1500, 1600]);
+    expect(s.doc.element(a)?.cell).toBeUndefined();
+    expect(s.t().cols.map((c) => c.width)).toEqual([240, 240, 240]);
+  });
   it("S14 : truite refusée : aucune commande, aucune étape, l'objet reste à sa place ; aucun cadre de case visée", () => {
     const s = sorting();
     const a = s.text("truite", 1500, 200);

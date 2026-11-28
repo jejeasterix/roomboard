@@ -274,8 +274,17 @@ describe("TB1 bordures", () => {
       element: (id: string) => (id === "o" ? { id, cell: ["t", "r1", "b"] } : id === "p" ? { id, cell: ["x", "r0", "a"] } : { id }) as never,
       bounds: (ids: readonly string[]) => (ids[0] === "o" ? { x0: 1010, y0: 2010, x1: 1110, y1: 2060 } : null),
     };
-    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] })).toEqual([{ row: "r1", col: "b", w: 100, h: 50 }]);
-    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, ["o"])).toEqual([]);
+    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, narrow)).toEqual([{ row: "r1", col: "b", w: 100, h: 50 }]);
+    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, narrow, ["o"])).toEqual([]);
+  });
+  it("C4 linkedBoxes : un texte logé compte la largeur de ses lignes (boîte 600 d'un clic), pas sa boîte", () => {
+    const txt = { id: "o", kind: "text", transform: [1, 0, 0, 1, 1010, 2010], cell: ["t", "r1", "b"], style: { color: "#000000", width: 1 }, text: { content: "chat", size: 36, boxWidth: 600, boxHeight: 45, spans: plainSpans("chat") } };
+    const doc = {
+      elementIds: () => ["t", "o"],
+      element: (id: string) => (id === "o" ? txt : { id }) as never,
+      bounds: (ids: readonly string[]) => (ids[0] === "o" ? { x0: 1010, y0: 2010, x1: 1610, y1: 2055 } : null),
+    };
+    expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, narrow)).toEqual([{ row: "r1", col: "b", w: 40, h: 45 }]);
   });
 });
 
@@ -347,6 +356,17 @@ describe("sortedRows (D20, DS9)", () => {
   it("sortedRows : vides en dernier dans les deux sens ; casse et accents ignorés, stable", () => {
     expect(sortedRows(col(["b", "", "A", "a"]), 0, "asc")).toEqual(["r2", "r3", "r0", "r1"]);
     expect(sortedRows(col(["b", "", "A", "a"]), 0, "desc")).toEqual(["r0", "r2", "r3", "r1"]);
+  });
+  it("C4 DS9 : colonne de nombres français : ordre des valeurs (décimales, négatifs, milliers)", () => {
+    expect(sortedRows(col(["2,5", "2,05", "2,10"]), 0, "asc")).toEqual(["r1", "r2", "r0"]);
+    expect(sortedRows(col(["2,5", "2,05", "2,10"]), 0, "desc")).toEqual(["r0", "r2", "r1"]);
+    expect(sortedRows(col(["-3", "-5", "\u22124"]), 0, "asc")).toEqual(["r1", "r2", "r0"]);
+    expect(sortedRows(col(["1 000", "12\u00a0500", "999", "2\u202f000"]), 0, "asc")).toEqual(["r2", "r0", "r3", "r1"]);
+  });
+  it("C4 DS9 : en-tête et vides hors du test des nombres ; une case non numérique rend la colonne au collateur", () => {
+    expect(sortedRows(col(["Valeur", "2,5", "", "2,05"], true), 0, "asc")).toEqual(["r0", "r3", "r1", "r2"]);
+    expect(sortedRows(col(["2,5", "", "-1"]), 0, "desc")).toEqual(["r0", "r2", "r1"]);
+    expect(sortedRows(col(["10", "b", "9", "a"]), 0, "asc")).toEqual(["r2", "r0", "r3", "r1"]);
   });
   it("sortedRows : zone sur deux lignes : refus (null)", () => {
     expect(sortedRows(col(["x", "y", "z"], false, [{ row: "r0", col: "b", rows: 2, cols: 1 }]), 0, "asc")).toBeNull();
