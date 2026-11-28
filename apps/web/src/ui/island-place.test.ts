@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Toolbar as Bar } from "../toolbar";
 import {
   BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, compactOf, isCentered, laneOf, nudge, placeIsland, placeOptions, beyondObstacles, sheetLane, sideCorners, tabsWidth, withContextRow,
-  optionsWidth, placeLinkAvoiding, topRowBottom, type Anchor, type Corners,
+  optionsWidth, placeLinkAvoiding, placeObjectBar, topRowBottom, type Anchor, type Corners,
 } from "./island-place";
 
 const MID = { w: 1280, h: 900 };
@@ -321,5 +321,48 @@ describe("placeLinkAvoiding (T33)", () => {
   });
   it("deux obstacles côte à côte : à droite du dernier", () => {
     expect(placeLinkAvoiding(box, [{ x: 16, y: 112, w: 232, h: 600 }, { x: 264, y: 150, w: 100, h: 300 }], 1000)).toBe(372);
+  });
+});
+
+describe("placeObjectBar (OG41, D20)", () => {
+  const area = { w: 1280, h: 900 };
+  const bar = { w: 180, h: 44 };
+  const frame = { x: 400, y: 300, w: 200, h: 100 };
+  it("placeObjectBar : au-dessus, centrée, 8 px au-dessus des zones gardées (S5)", () => {
+    const p = placeObjectBar(frame, bar, area, [{ x: 488, y: 250, w: 24, h: 24 }], []);
+    expect(p).toEqual({ left: 410, top: 198, side: "above" });
+  });
+  it("placeObjectBar : pas de place au-dessus : 8 px sous le cadre et sous les « + » (S6)", () => {
+    const top = { x: 400, y: 20, w: 200, h: 100 };
+    const p = placeObjectBar(top, bar, area, [{ x: 478, y: 138, w: 44, h: 44 }], []);
+    expect(p).toEqual({ left: 410, top: 190, side: "below" });
+  });
+  it("placeObjectBar : ni dessus ni dessous : dans la vue, en haut (S6)", () => {
+    const p = placeObjectBar({ x: 0, y: 0, w: 1280, h: 900 }, bar, area, [], []);
+    expect(p).toEqual({ left: 550, top: 8, side: "inside" });
+  });
+  it("placeObjectBar : dedans : 8 px sous les poignées du haut, jamais sur elles", () => {
+    const p = placeObjectBar({ x: 0, y: 0, w: 1280, h: 900 }, bar, area, [{ x: -12, y: -12, w: 24, h: 24 }, { x: 628, y: -12, w: 24, h: 24 }], []);
+    expect(p).toEqual({ left: 550, top: 20, side: "inside" });
+  });
+  it("placeObjectBar : barre d'outils en bas, objet collé en bas : au-dessus, hors de l'îlot (S6)", () => {
+    const low = { x: 400, y: 760, w: 200, h: 100 };
+    const tools = { x: 300, y: 828, w: 680, h: 56 };
+    expect(placeObjectBar(low, bar, area, [], [tools])).toEqual({ left: 410, top: 708, side: "above" });
+  });
+  it("placeObjectBar : obstacle sur la place du dessus : décalée à sa droite (D20, placeLinkAvoiding)", () => {
+    const p = placeObjectBar(frame, bar, area, [], [{ x: 380, y: 230, w: 100, h: 60 }]);
+    expect(p).toEqual({ left: 488, top: 248, side: "above" });
+  });
+  it("placeObjectBar : obstacle impossible à éviter au-dessus (toute la largeur) : la place du dessous", () => {
+    const p = placeObjectBar(frame, bar, area, [], [{ x: 0, y: 200, w: 1280, h: 90 }]);
+    expect(p.side).toBe("below");
+    expect(p.top).toBe(408);
+  });
+  it("placeObjectBar : vue plus étroite que la barre : bornée à 8 px, px entiers (Review Focus 5)", () => {
+    const p = placeObjectBar({ x: 40.3, y: 200.6, w: 50.2, h: 30.1 }, bar, { w: 150, h: 400 }, [], []);
+    expect(p.left).toBe(8);
+    expect(Number.isInteger(p.top)).toBe(true);
+    expect(p.side).toBe("above");
   });
 });
