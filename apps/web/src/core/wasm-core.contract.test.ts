@@ -2547,7 +2547,7 @@ describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
 
 // C6a (pot de peinture) : Fill (contour, intérieur, fond de page) et edgeHit ; T5 joue ce bloc sur le vrai module.
 const c6aFactories = factories;
-const BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)";
+const BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle, d'un losange, d'une ellipse ou d'une ligne fermée attendus)";
 const shapeAt = (d: CoreDocument, page: string, shape: ShapeKind = "rect", c: readonly [number, number, number, number] = [100, 100, 300, 200]): string => {
   const id = d.apply({ type: "AddShape", page, shape, x0: c[0], y0: c[1], x1: c[2], y1: c[3], style: { color: "#000000", width: 4 }, fill: null }).ids[0];
   if (id === undefined) throw new Error("aucune forme");
@@ -4656,7 +4656,7 @@ const P1B_GRID: GridInput = {
   above: false,
   levels: [{ kind: "seyes", spacingX: 30.24, spacingY: 30.24, originX: 0, originY: 0, color: "#8f9ad6", line: "solid", lineWidth: 1, snap: true, visible: true }],
 };
-const P1B_BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)";
+const P1B_BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle, d'un losange, d'une ellipse ou d'une ligne fermée attendus)";
 const P1B_BAD_ASSET = "asset invalide (empreinte SHA-256 en hexadécimal minuscule, type MIME non vide, taille entière ≥ 0 attendus)";
 const P1B_BAD_IMAGE = "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)";
 const P1B_BAD_GRID = "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)";
