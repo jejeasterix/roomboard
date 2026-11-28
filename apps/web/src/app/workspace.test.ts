@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../platform/html-table", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../platform/html-table")>();
+  return { ...mod, tsvGrid: vi.fn(mod.tsvGrid) };
+});
 import type { Command, CoreDocument, CoreFactory } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import type { PdfEngine, PdfFile, TileBitmap } from "../engine/render/pdf-port";
@@ -9,7 +14,7 @@ import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
 import { APP_VERSION, DISCARD_MESSAGE, UNREAD_ASSETS_MESSAGE } from "../platform/controller";
 import type { DropHandler, DroppedFile, FileHost, HostKind, NoticeKind, OpenedFile, SaveTarget } from "../platform/files";
-import { PASTE_MAX_CHARS, PASTE_TOO_BIG, type TableGrid } from "../platform/html-table";
+import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tsvGrid, type TableGrid } from "../platform/html-table";
 import { NOT_OFFICE_PAGE_MESSAGE, OFFICE_VALUES_MESSAGE, OfficeConvertError, originalChangedMessage } from "../platform/office-import";
 import { createImporter, LATER_FORMAT_MESSAGE } from "../platform/import";
 import type { LinkedMedia } from "../platform/media-import";
@@ -872,6 +877,29 @@ describe("espace de travail : tableau collé et classeur (C10b)", () => {
     const ws = await setupWorkspace();
     expect(await ws.pasteTable("<table></table><p>rien</p>")).toBe(false);
     expect(tables(ws)).toHaveLength(0);
+  });
+
+  it("pasteText : texte tabulé 2 × 3 : un tableau avec ses textes ; texte sans tabulation : false", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pasteText("a\tb\tc\nd\te\tf")).toBe(true);
+    const t = tables(ws);
+    expect(t).toHaveLength(1);
+    const v = t[0];
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect([v.table.rows.length, v.table.cols.length, v.table.cells.map((c) => c.text)]).toEqual([2, 3, ["a", "b", "c", "d", "e", "f"]]);
+    expect(await ws.pasteText("bonjour")).toBe(false);
+    expect(tables(ws)).toHaveLength(1);
+  });
+
+  it("pasteText : texte au-dessus de PASTE_MAX_CHARS : jamais analysé ; texte normal : analysé une seule fois", async () => {
+    const ws = await setupWorkspace();
+    const spy = vi.mocked(tsvGrid);
+    spy.mockClear();
+    expect(await ws.pasteText(`a\tb\n${"x".repeat(PASTE_MAX_CHARS)}`)).toBe(true);
+    expect(spy).not.toHaveBeenCalled();
+    expect(shell.notify).toHaveBeenCalledWith(PASTE_TOO_BIG);
+    expect(await ws.pasteText("a\tb\nc\td")).toBe(true);
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it("S4 : .xlsx importé par le lecteur de classeur : un tableau dans l'onglet actif, message de troncature", async () => {

@@ -11,7 +11,8 @@ import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from 
 import { arrowWings, catmullRom, flattenPath, isFillable, lineGeomOf, linePath, normalizeShape } from "../../core/shapes";
 import { worldToScreen, type Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR, pageFrame, visibleGridRect, visiblePageRect, type PageRect } from "../page";
-import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
+import { faceOf, layoutRich, lineShift, measureWith, richBoxHeight, textFont, type RichLine } from "../text-layout";
+import { cellOf, cellTextFrame } from "../table-geom";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import type { ImageSource } from "./image-cache";
 import type { MediaFrames } from "./media-frames";
@@ -377,6 +378,23 @@ function applyOpacity(ctx: CanvasRenderingContext2D, look: Look | undefined): vo
   if (o < 100) ctx.globalAlpha *= Math.max(0, o) / 100;
 }
 
+/** Texte des cases (B1, D15) : chaque boîte découpée à sa boîte intérieure, lignes posées au cadre aligné
+ *  (`cellTextFrame`) et décalées par `lineShift` (dans `paintText`). Même peintre pour l'écran, l'image et le PDF. */
+export function paintCellTexts(ctx: CanvasRenderingContext2D, t: TableData, boxes: readonly CellTextBox[], lines: readonly (readonly RichLine[])[]): void {
+  boxes.forEach((b, i) => {
+    const ls = lines[i] ?? [];
+    const at = cellOf(t, b);
+    const f = at === null ? { x: b.x, y: b.y, w: b.w, ha: "left" as const } : cellTextFrame(t, at, richBoxHeight(ls));
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(b.x, b.y, b.w, b.h);
+    ctx.clip();
+    ctx.transform(1, 0, 0, 1, f.x, f.y);
+    paintText(ctx, ls, t.color, f.w, f.ha);
+    ctx.restore();
+  });
+}
+
 /** Décalage de ligne de base d'un segment plus petit que sa ligne, position et épaisseur du souligné (HC7-5). */
 export const BASELINE_SHIFT = 0.8;
 export const UNDERLINE_OFFSET = 0.92;
@@ -388,10 +406,8 @@ export const UNDERLINE_OFFSET = 0.92;
 export function paintText(ctx: CanvasRenderingContext2D, lines: readonly RichLine[], color: string, boxWidth = 0, align: TextAlign = "left"): void {
   ctx.textBaseline = "top";
   for (const line of lines) {
-    // Alignement (OG11, lot 2) : décalage de la ligne entière dans la boîte (droite : `boxWidth - largeur`, centre : moitié).
-    const last = line.segments[line.segments.length - 1];
-    const rest = align === "left" || last === undefined ? 0 : boxWidth - (last.x + last.width);
-    const dx = align === "right" ? rest : align === "center" ? rest / 2 : 0;
+    // Alignement (OG11, lot 2 ; D15) : décalage de la ligne entière dans la boîte, seul calcul (`lineShift`, lu aussi par `offsetAt`).
+    const dx = lineShift(line, boxWidth, align);
     // Le socle émettait fillText("") pour une ligne vide : conservé (compatibilité S3).
     if (line.segments.length === 0) {
       ctx.font = textFont(line.size);
@@ -675,15 +691,7 @@ export class Canvas2DRenderer implements Renderer {
       paintTableGrid(ctx, el.table, this.images ?? null);
       const boxes = cellTextBoxes(el.table);
       const lines = this.cellLinesOf(ctx, el.id, el.table, boxes);
-      boxes.forEach((b, i) => {
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(b.x, b.y, b.w, b.h);
-        ctx.clip();
-        ctx.transform(1, 0, 0, 1, b.x, b.y);
-        paintText(ctx, lines[i] ?? [], el.table.color);
-        ctx.restore();
-      });
+      paintCellTexts(ctx, el.table, boxes, lines);
     } else if (el.kind === "unknown") {
       paintPlaceholder(ctx, el.unknown.w, el.unknown.h, UNKNOWN_LABEL);
     }
@@ -811,10 +819,23 @@ export class Canvas2DRenderer implements Renderer {
       ctx.strokeStyle = SELECTION_COLOR;
       ctx.lineWidth = 1.5 * px;
       for (const g of o.grips) {
+        const big = g.kind === "row-move" || g.kind === "col-move";
         ctx.beginPath();
-        ctx.arc(g.x, g.y, 8 * px, 0, 2 * Math.PI);
+        ctx.arc(g.x, g.y, (big ? 12 : 8) * px, 0, 2 * Math.PI);
         ctx.fill();
         ctx.stroke();
+        if (big) {
+          // Lucide grip-vertical (cx 9 / 15, cy 5 / 12 / 19) ou grip-horizontal (cx 5 / 12 / 19, cy 9 / 15), grille 24 → 16 px.
+          const pts = g.kind === "row-move" ? [[9, 5], [15, 5], [9, 12], [15, 12], [9, 19], [15, 19]] : [[5, 9], [12, 9], [19, 9], [5, 15], [12, 15], [19, 15]];
+          ctx.save();
+          ctx.fillStyle = SELECTION_COLOR;
+          for (const [cx, cy] of pts) {
+            ctx.beginPath();
+            ctx.arc(g.x + ((cx ?? 12) - 12) * (16 / 24) * px, g.y + ((cy ?? 12) - 12) * (16 / 24) * px, 1.25 * px, 0, 2 * Math.PI);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
       }
       ctx.restore();
     }

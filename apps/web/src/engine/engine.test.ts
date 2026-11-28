@@ -1072,6 +1072,9 @@ function fakeTableTool(ctx: ToolContext, log: string[]) {
     act: (a) => {
       log.push(`act ${a}`);
     },
+    look: (l) => {
+      log.push(`look ${l.key}`);
+    },
     fill: (c) => {
       log.push(`fill ${String(c)}`);
     },
@@ -1136,7 +1139,46 @@ function setupTable() {
 }
 
 describe("moteur — outil Tableau (C10a, contrat T4)", () => {
+  it("PR 74 : Alt+E et Alt+→ hors de l'outil Tableau : aucune action ; avec l'outil Tableau : prises", () => {
+    const { engine, log, table } = setupTable();
+    table.setCell(CELL);
+    engine.setTool("pen");
+    const alt = (code: string, k: string): KeyLike => ({ key: k, code, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null });
+    expect(engine.key(alt("KeyE", "e"))).toBe(false);
+    engine.key(alt("ArrowRight", "ArrowRight"));
+    expect(log.some((l) => l.startsWith("act "))).toBe(false);
+    engine.setTool("table");
+    expect(engine.key(alt("KeyE", "e"))).toBe(true);
+    expect(log).toContain("act header-toggle");
+  });
   const CELL: TableCellState = { id: "t", row: 0, col: 1, rows: 3, cols: 4 };
+  it("S11 : Ctrl+Maj+↑ avec l'outil Tableau et une case : row-up", () => {
+    const { engine, log, table } = setupTable();
+    table.setCell(CELL);
+    engine.setTool("table");
+    expect(engine.key({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null })).toBe(true);
+    expect(log).toContain("act row-up");
+  });
+
+  it("S11 (négatif) : hors de l'outil Tableau, Ctrl+Maj+↑ ne va pas à la table, même case active (il reste au premier plan)", () => {
+    const { engine, log, table } = setupTable();
+    table.setCell(CELL);
+    engine.key({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null });
+    expect(log).not.toContain("act row-up");
+    engine.setTool("table");
+    engine.key({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null });
+    expect(log).toContain("act row-up");
+  });
+
+  it("D15 : tableLook relaie à l'outil Tableau ; Alt+Maj+C avec une case : ha-next", () => {
+    const { engine, log, table } = setupTable();
+    engine.setTool("table");
+    engine.tableLook({ key: "va", value: "bottom" });
+    expect(log).toContain("look va");
+    table.setCell(CELL);
+    expect(engine.key({ key: "C", code: "KeyC", ctrlKey: false, metaKey: false, shiftKey: true, altKey: true, isComposing: false, target: null })).toBe(true);
+    expect(log).toContain("act ha-next");
+  });
 
   it("Alt+I sans cellule active : la touche passe ; avec une cellule : cell-image", () => {
     const { engine, log, table } = setupTable();

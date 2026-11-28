@@ -145,7 +145,8 @@ pub enum BoundedReadError {
 }
 
 /// Lit au plus `max` octets de `r` (`take(max + 1)`) : au-delà, `TooLarge`, sans jamais remplir la mémoire d'une bombe
-/// de décompression. Seule lecture bornée du projet (R20) : `read_entry` et `roomboard_formats::container` l'appellent.
+/// de décompression. Lecture bornée du projet (R20), sur `read_capped` : `roomboard_formats::container` l'appelle,
+/// `read_entry` appelle `read_capped` directement.
 pub fn read_bounded(r: impl Read, max: u64) -> Result<Vec<u8>, BoundedReadError> {
     read_capped(r, max).map_err(|e| match e {
         Some(e) => BoundedReadError::Io(e.to_string()),

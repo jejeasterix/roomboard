@@ -25,8 +25,10 @@ import { Icon, IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { createTip } from "./tooltip";
 import { BUTTON_PX, optionsWidth, placeLinkAvoiding, placeOptions, topRowBottom, type Box, type Rect } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
+import { TableSection, type TableOptionsHost, type TableSectionKey } from "./TableOptions";
+import type { TableCellState } from "../engine/table-geom";
 import {
-  DISTRIBUTE_MIN_UNITS, FONTS, admitsDragCopy, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionOpen, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
+  DISTRIBUTE_MIN_UNITS, FONTS, admitsDragCopy, TEXT_SIZES, STROKES, WIDTH_OPTIONS, appliesTo, backgroundPicks, disabledIn, formValue, sectionOpen, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
 } from "./tool-options";
 
 export interface OptionsPanelProps {
@@ -61,6 +63,10 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   fillStyle: "Remplissage",
   strokeWidth: "Largeur du contour",
   pressure: "Pression",
+  tableObjects: "Objets",
+  tableAlign: "Alignement",
+  tableBorder: "Bordures",
+  tableRows: "Lignes",
   strokeStyle: "Style du trait",
   roughness: "Style de tracé",
   roundness: "Angles",
@@ -78,11 +84,6 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   transform: "Transformer",
   actions: "Actions",
 };
-const STROKES: readonly RadioOption<StrokeKind>[] = [
-  { value: "solid", label: "Plein", icon: "stroke-solid" },
-  { value: "dashed", label: "Tirets", icon: "stroke-dashed" },
-  { value: "dotted", label: "Pointillés", icon: "stroke-dotted" },
-];
 const ROUGH: readonly RadioOption<"0" | "1" | "2">[] = [
   { value: "0", label: "Net", icon: "sloppiness-0" },
   { value: "1", label: "À main levée", icon: "sloppiness-1" },
@@ -154,9 +155,6 @@ const LAYERS = [
   { value: "backward", label: "Reculer", icon: "chevron-down", act: (e: Engine) => e.reorder("down") },
   { value: "back", label: "Arrière-plan", icon: "send-to-back", act: (e: Engine) => e.sendToBack() },
 ] as const;
-const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({
-  value: w.value, label: w.label, icon: w.value === "2" ? "width-thin" : w.value === "4" ? "width-medium" : "width-thick",
-}));
 /** Sections à segments : valeur (chaîne) et mot du résumé gris de l'en-tête. */
 const SUMMARY: Readonly<Partial<Record<OptionKey, readonly RadioOption<string>[]>>> = {
   strokeWidth: WIDTH_OPTIONS, pressure: PRESSURE, strokeStyle: STROKES, roughness: ROUGH, roundness: CORNERS, fillStyle: FILLS,
@@ -189,7 +187,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const off = (k: OptionKey): boolean => disabledIn(k, editing());
   const keys = createMemo((): readonly OptionKey[] =>
     props.hidden?.() !== true && showsPanel(props.state().tool, props.state().selection.length, props.annotating())
-      ? sectionsFor(props.state().tool, targets(), editing(), (props.state().itemStyle ?? DEFAULT_ITEM_STYLE).background, props.state().selectionUnits ?? 0)
+      ? sectionsFor(props.state().tool, targets(), editing(), (props.state().itemStyle ?? DEFAULT_ITEM_STYLE).background, props.state().selectionUnits ?? 0, props.state().tableCell != null)
       : []);
   const saved = (): boolean => props.settings.island(props.profileId(), "options").collapsed === true;
   // Signal local (les réglages d'appareil ne notifient pas), relu du réglage à chaque profil.
@@ -482,7 +480,11 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       )}
     </For>
   );
+  const tableHost: TableOptionsHost = { act: (a) => props.engine().tableAction(a), look: (l) => props.engine().tableLook(l) };
+  const tableCell = (): TableCellState | null => props.state().tableCell ?? null;
+  const tableBody = (k: TableSectionKey) => () => <TableSection section={k} cell={tableCell} host={tableHost} picks={strokeChoices} />;
   const bodies: Readonly<Record<OptionKey, () => JSX.Element>> = {
+    tableObjects: tableBody("tableObjects"), tableAlign: tableBody("tableAlign"), tableBorder: tableBody("tableBorder"), tableRows: tableBody("tableRows"),
     strokeColor: () => colors("strokeColor", strokeChoices, (c) => ({ color: c ?? "#000000" })),
     background: () => colors("background", backgroundPicks, (c) => ({ background: c })),
     fillStyle: () => (
