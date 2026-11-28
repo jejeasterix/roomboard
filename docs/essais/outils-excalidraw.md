@@ -79,7 +79,7 @@ appliqué à la création, non appliqué au suivi d'une cible déplacée (le cœ
 | poignées de 28 px au doigt | `renderer/interactiveScene.ts` | adapté : 44 px | `outils-excalidraw-navigateur.mjs` cibles |
 | Maj au redimensionnement : proportions | `resizeElements.ts` | copié ; au doigt, second doigt tardif | `outils-excalidraw-navigateur.mjs` S2 ; `router.test.ts` « doigt tardif » |
 | Alt : depuis le centre | `resizeElements.ts` | lot 2 (lot 2b) | — |
-| rotation, Maj 15° | `resizeElements.ts` | lot 2 (lot 2b) | — |
+| rotation, Maj 15° | `resizeElements.ts:rotateSingleElement`, `SHIFT_LOCKING_ANGLE` (π/12) | adapté au tactile : poignée sous le coin bas droit du cadre (choix 4), second doigt tardif = Maj, Alt+T / Alt+Maj+T tournent de 15°, pas de poignée de taille sur un objet tourné (choix 7, écart) ; un texte glisse sans tourner | `outils-excalidraw-2b-navigateur.mjs` M2 (`Lire : M2.angle=30`, `M2.pas=0`, `M2.souris=45`, `M2.clavier=15`, `M2.undo=0`, `M2.cible=44`, `M2.coin=none`) ; `select.test.ts` « poignée de rotation » ; `tests/arrange.rs::rotate_30_keeps_center_one_step` |
 | flèches du clavier (1 px, Maj 5 px) | `App.tsx` | lot 2 (lot 2b) | — |
 | Ctrl+D : copie décalée | `actionDuplicateSelection.tsx` | copié | `outils-excalidraw-navigateur.mjs` S4 |
 | verrou | `actionToggleElementLock` | lot 2 (lot 2b) | — |
