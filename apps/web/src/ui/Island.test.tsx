@@ -4,6 +4,7 @@ import { createSignal, type Accessor } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IslandState } from "../device-settings";
 import type { Toolbar as Bar } from "../toolbar";
+import { ISLANDS_RESIZED } from "../app/island-watch";
 import { COLLAPSE_LABEL, EXPAND_LABEL, GRIP_LABEL, Island, IslandLayer, type IslandStore } from "./Island";
 import type { Anchor, Box, Corners, Lane } from "./island-place";
 
@@ -290,6 +291,41 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     expect(ids('.rb-corner[data-corner="bottom-start"] > .rb-island')).toEqual(["historique"]);
     expect(ids(".rb-islands > .rb-island")).toEqual(["outils", "pages"]);
     expect(rendered).toHaveBeenCalledTimes(6);
+  });
+
+  it("OG30 : un seul observateur de taille pour les îlots de barre et les onglets ; une taille changée émet ISLANDS_RESIZED", () => {
+    const made: { cb: ResizeObserverCallback; seen: Set<Element> }[] = [];
+    class FakeRO {
+      readonly seen = new Set<Element>();
+      constructor(readonly cb: ResizeObserverCallback) {
+        made.push(this);
+      }
+      observe(el: Element): void {
+        this.seen.add(el);
+      }
+      unobserve(el: Element): void {
+        this.seen.delete(el);
+      }
+      disconnect(): void {
+        this.seen.clear();
+      }
+    }
+    vi.stubGlobal("ResizeObserver", FakeRO);
+    try {
+      const { container, unmount } = layer(ALL);
+      const islands = [...container.querySelectorAll(".rb-island[data-island]")];
+      const sizes = made.filter((o) => islands.every((e) => o.seen.has(e)));
+      expect(sizes).toHaveLength(1);
+      expect(sizes[0]!.seen.size).toBe(islands.length);
+      const heard = vi.fn();
+      container.addEventListener(ISLANDS_RESIZED, heard);
+      sizes[0]!.cb([], sizes[0] as unknown as ResizeObserver);
+      expect(heard).toHaveBeenCalledTimes(1);
+      unmount();
+      expect(sizes[0]!.seen.size).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("personnalisation-1a : ordre DOM : l'îlot latéral vient après les centrés, quel que soit l'ordre du profil", () => {
