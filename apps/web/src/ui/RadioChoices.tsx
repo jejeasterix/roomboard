@@ -6,13 +6,25 @@
  * `data-edit` sur le groupe et `data-choice` sur chaque bouton : les sélecteurs des tests et des essais.
  */
 import { For, Show, type JSX } from "solid-js";
-import { Icon } from "./IconButton";
+import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
+import { createTip } from "./tooltip";
 
 export interface RadioOption<T extends string> {
   readonly value: T;
   readonly label: string;
   readonly icon?: string;
   readonly detail?: string;
+  /** Infobulle du segment (survol, focus clavier, appui long), comme un `IconButton` ; absente : pas de bulle. */
+  readonly tip?: string;
+}
+
+/** Focus clavier au sens du navigateur (`:focus-visible`) ; sélecteur inconnu : l'infobulle décide seule. */
+function focusVisible(el: Element): boolean {
+  try {
+    return el.matches(":focus-visible");
+  } catch {
+    return true;
+  }
 }
 
 export interface RadioChoicesProps<T extends string> {
@@ -41,7 +53,8 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
   const keep = (e: Event): void => { if (props.keepFocus === true) e.preventDefault(); };
   const known = (): boolean => props.value !== null && props.options.some((o) => o.value === props.value);
   const onKey = (e: KeyboardEvent, index: number): void => {
-    if (!Object.hasOwn(STEP, e.key)) return;
+    // Une flèche avec Alt, Ctrl ou Méta est un raccourci (Alt+Maj+flèche aligne, OG23) : le segment la laisse passer.
+    if (!Object.hasOwn(STEP, e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     const n = props.options.length;
     const rank = (index + STEP[e.key]! + n) % n;
@@ -56,8 +69,13 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
       <For each={props.options}>
         {(o, i) => {
           const on = (): boolean => o.value === props.value;
+          const tip = createTip();
+          let button: HTMLButtonElement | undefined;
+          const hasTip = (): boolean => o.tip !== undefined;
           return (
+            <>
             <button
+              ref={button}
               type="button"
               class="rb-radio"
               role="radio"
@@ -66,10 +84,13 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
               tabIndex={on() || (i() === 0 && !known()) ? 0 : -1}
               data-choice={o.value}
               {...(props.valueAttr ? { [props.valueAttr]: o.value } : {})}
-              onPointerDown={keep}
+              {...(hasTip() ? tipPointerHandlers(tip) : {})}
+              onPointerDown={(e) => { keep(e); if (hasTip()) tip.down(e.pointerType); }}
               onMouseDown={keep}
               onClick={() => props.choose(o.value)}
               onKeyDown={(e) => onKey(e, i())}
+              onFocus={(e) => { if (hasTip() && focusVisible(e.currentTarget)) tip.focus(); }}
+              onBlur={() => { if (hasTip()) tip.blur(document.hasFocus()); }}
             >
               <Show when={props.look === "card" && on()}>
                 <span class="rb-radio-chk">
@@ -80,6 +101,8 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
               <span class="rb-radio-label">{o.label}</span>
               <Show when={o.detail}>{(d) => <span class="rb-radio-detail">{d()}</span>}</Show>
             </button>
+            <Show when={o.tip}>{(label) => <TipBubble tip={tip} label={label()} anchor={() => button!} />}</Show>
+            </>
           );
         }}
       </For>

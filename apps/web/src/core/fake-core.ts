@@ -114,7 +114,8 @@ import {
 } from "./api";
 import { pageFrame, type PageRect } from "../engine/page";
 import { isAssetId } from "./asset-store";
-import { elbowedOf, newSeed, STROKE_STYLES, toLook, type Look, type LookPatch } from "./look";
+import { elbowedOf, newSeed, STROKE_STYLES, toLook, VARIABILITY_CONSTANT, type Look, type LookPatch } from "./look";
+import { arrangeUnknown, isArrangeHow, planArrange, type ArrangeUnit, type Reach } from "./arrange";
 import { ARROWHEADS, END_ARROWHEAD_DEFAULT, FILL_STYLES, START_ARROWHEAD_DEFAULT, TEXT_ALIGNS, validLink as validLookLink } from "./look";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
@@ -271,13 +272,18 @@ function validStyle(p: LookPatch): number | undefined {
   };
   if (outside("fillStyle", FILL_STYLES) || outside("startArrowhead", ARROWHEADS) || outside("endArrowhead", ARROWHEADS) || outside("textAlign", TEXT_ALIGNS)) badStyle();
   if ("link" in p && !absent(p.link) && !(typeof p.link === "string" && validLookLink(p.link))) badStyle();
+  // OG23 (`outside(&self.variability, …)`) : seule `constant` s'écrit.
+  if ("variability" in p && !absent(p.variability) && p.variability !== VARIABILITY_CONSTANT) badStyle();
+  // OG23 (T10) : `dragCopy` booléen seulement (`Option<bool>` du pont).
+  const drag: unknown = p.dragCopy;
+  if (drag !== undefined && typeof drag !== "boolean") badStyle();
   if ("elbowed" in p && !absent(p.elbowed) && typeof p.elbowed !== "boolean") badStyle();
   return opacityArg(p.opacity);
 }
 
-type StyleKind = "stroke" | "shape" | "text" | "image";
+type StyleKind = "stroke" | "shape" | "text" | "image" | "table" | "media" | "model3d";
 const styleKind = (e: FakeElement): StyleKind | null =>
-  e.malformed || e.unknown ? null : e.image ? "image" : e.shape ? "shape" : e.text ? "text" : e.local !== undefined ? "stroke" : null;
+  e.malformed || e.unknown ? null : e.table ? "table" : e.media ? "media" : e.model3d ? "model3d" : e.image ? "image" : e.shape ? "shape" : e.text ? "text" : e.local !== undefined ? "stroke" : null;
 
 /** `writes_for` + `differs` : l'élément restylé, ou null si aucune écriture effective (champ inapplicable ou même valeur). */
 function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): FakeElement | null {
@@ -293,7 +299,7 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
     else look[k] = v;
     changed = true;
   };
-  if (!absent(p.color) && kind !== "image" && style.color !== p.color) {
+  if (!absent(p.color) && (kind === "stroke" || kind === "shape" || kind === "text") && style.color !== p.color) {
     style = { ...style, color: p.color };
     changed = true;
   }
@@ -326,7 +332,8 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
   }
   // OG12 (T1) : `roundness` aussi sur une ligne ou une flèche (courbe).
   if ("roundness" in p && (shape?.shape === "rect" || shape?.shape === "line" || shape?.shape === "arrow")) put("roundness", p.roundness ?? undefined);
-  if (opacity !== undefined) put("opacity", opacity < 100 ? opacity : undefined);
+  const aspect = kind === "stroke" || kind === "shape" || kind === "text" || kind === "image"; // `look_view` : jamais tableau, média, objet 3D
+  if (opacity !== undefined && aspect) put("opacity", opacity < 100 ? opacity : undefined);
   // T12 (`writes_for`) : une pointe égale à son défaut retire le champ, jamais elle ne s'écrit.
   if ("fillStyle" in p && shape && (shape.shape === "rect" || shape.shape === "ellipse")) put("fillStyle", p.fillStyle ?? undefined);
   if (shape?.shape === "arrow") {
@@ -347,7 +354,11 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
     }
   }
   if ("textAlign" in p && kind === "text") put("textAlign", p.textAlign ?? undefined);
-  if ("link" in p) put("link", p.link ?? undefined);
+  if ("link" in p && aspect) put("link", p.link ?? undefined);
+  // OG23 (`writes_for`) : la pression ne s'écrit que sur un trait.
+  if ("variability" in p && kind === "stroke") put("variability", p.variability ?? undefined);
+  // OG23 (T10, `writes_for`) : tout genre dont l'aspect est lu ; seul `true` s'écrit.
+  if (p.dragCopy !== undefined) put("dragCopy", p.dragCopy ? true : undefined);
   if (!changed) return null;
   const { look: _old, ...rest } = e;
   return { ...rest, style, ...(shape ? { shape } : {}), ...(Object.keys(look).length > 0 ? { look } : {}) };
@@ -1403,6 +1414,65 @@ class FakeDocument implements CoreDocument {
           return { pages: [page.id], ids, removed: [] };
         });
       }
+      case "Arrange": {
+        // `cmd_arrange` (arrange.rs). Pas le patron de `Transform` (qui ignore les inconnus) : celui de `Restack`. `how`
+        // lu d'abord (le pont, `arrange_how`) ; ids dédoublonnés, premier inconnu refusé ; aucun id : aucune étape ;
+        // pages mêlées refusées ; groupe extérieur touché = tous ses membres de la page ; `fill`, inconnu, mal formé
+        // jamais bougés ; composée invalide : matrice invalide, rien d'écrit ; `Change.ids` = ids bougés, triés.
+        if (!isArrangeHow(cmd.how)) throw new Error(arrangeUnknown(String(cmd.how)));
+        const found: Found[] = [];
+        const seen = new Set<string>();
+        for (const id of cmd.ids) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+          const f = this.find(id);
+          if (!f) throw new Error(`élément inconnu : ${id}`);
+          found.push(f);
+        }
+        const page = found[0]?.page;
+        if (!page) return this.unchanged();
+        if (found.some((f) => f.page !== page)) throw new Error("objets de pages différentes");
+        const outers = new Set(found.map((f) => f.element.group?.[0]).filter((g): g is string => g !== undefined));
+        const reachOf = (e: FakeElement): Reach | null =>
+          e.malformed || e.unknown || e.fill ? null
+          : e.local !== undefined || e.shape || e.image ? "matrix"
+          : e.text || e.table || e.media || e.model3d ? "place"
+          : null;
+        const units = new Map<string, { members: { id: string; reach: Reach; bounds: Bounds }[] }>();
+        const transforms = new Map<string, Matrix>();
+        for (const e of page.elements) {
+          const outer = e.group?.[0];
+          if (!seen.has(e.id) && !(outer !== undefined && outers.has(outer))) continue;
+          const reach = reachOf(e);
+          if (reach === null) continue;
+          const bounds = this.snapBox([e.id]);
+          if (bounds === null) continue;
+          transforms.set(e.id, e.transform);
+          const key = outer ?? e.id;
+          const u = units.get(key) ?? { members: [] };
+          u.members.push({ id: e.id, reach, bounds });
+          units.set(key, u);
+        }
+        const moves = planArrange([...units.values()] satisfies ArrangeUnit[], cmd.how);
+        if (moves.length === 0) return this.unchanged();
+        const composed = new Map<string, Matrix>();
+        for (const [id, m] of moves) {
+          const t = transforms.get(id);
+          if (t === undefined) continue;
+          const c = composeMatrix(m, t);
+          if (!validMatrix(c)) throw new Error(MESSAGES.badMatrix);
+          composed.set(id, c);
+        }
+        const ids = [...composed.keys()].sort();
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === page.id);
+          if (p) p.elements.forEach((e, i) => {
+            const t = composed.get(e.id);
+            if (t) p.elements[i] = { ...e, transform: t };
+          });
+          return { pages: [page.id], ids, removed: [] };
+        });
+      }
       case "CommitStroke": {
         const look = creationLook(cmd.look); // OG11 : contrôlé d'abord, comme le pont
         if (cmd.points.length < 3 || cmd.points.length % 3 !== 0 || !cmd.points.every((v) => Number.isFinite(v))) {
@@ -2292,10 +2362,12 @@ class FakeDocument implements CoreDocument {
     const looked = e.look ? { look: e.look } : {};
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
     if (e.image) return { ...base, ...looked, kind: "image", image: e.image };
-    if (e.media) return { ...base, kind: "media", media: e.media };
-    if (e.model3d) return { ...base, kind: "model3d", model3d: e.model3d };
+    // OG23 (T22, `drag_copy_view`) : tableau, média et objet 3D ne servent que `dragCopy` de leur aspect.
+    const dragged = e.look?.dragCopy ? { look: { dragCopy: true as const } } : {};
+    if (e.media) return { ...base, ...dragged, kind: "media", media: e.media };
+    if (e.model3d) return { ...base, ...dragged, kind: "model3d", model3d: e.model3d };
     if (e.fill) return { ...base, kind: "fill", fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h } };
-    if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
+    if (e.table) return { ...base, ...dragged, kind: "table", table: tableView(e.table) };
     const styled = { ...base, ...looked, style: e.style };
     if (e.shape) return { ...styled, kind: "shape", shape: this.shapeView(e.shape, found.page) };
     if (e.text) return { ...styled, kind: "text", text: e.text };
@@ -2529,9 +2601,10 @@ class FakeDocument implements CoreDocument {
       return { pages: pages.map((p) => p.id), ids: pages.flatMap((p) => p.elements.map((e) => e.id)), removed: [] };
     });
   }
-  newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
+  newStrokeBuilder(style: StrokeStyle, constant = false): StrokeBuilderApi {
     const pts: number[] = [];
     void style;
+    void constant; // la fausse liaison n'a pas d'épaisseur variable : contour polygonal dans les deux cas
     return {
       push: (p: Float32Array, ahead?: Float32Array) => {
         pts.push(...p);
@@ -2668,10 +2741,10 @@ function savedElement(e: FakeElement): SavedElement {
   if (e.unknown) {
     return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw }, ...group, ...cellField(e) };
   }
-  if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...group, ...cellField(e) };
+  if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...(e.look ? { look: e.look } : {}), ...group, ...cellField(e) };
   if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: { ...e.imageRaw, ...e.image }, ...(e.look ? { look: e.look } : {}), ...group, ...cellField(e) };
-  if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...group, ...cellField(e) };
-  if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...group, ...cellField(e) };
+  if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...(e.look ? { look: e.look } : {}), ...group, ...cellField(e) };
+  if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...(e.look ? { look: e.look } : {}), ...group, ...cellField(e) };
   if (e.fill) return { id: e.id, kind: "fill", transform: [...e.transform], fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h, contours: e.fill.contours.map((r) => [...r]) }, ...group, ...cellField(e) };
   return {
     id: e.id,
@@ -2775,7 +2848,7 @@ function loadElement(e: SavedElement): FakeElement {
     const source = e.table ?? e.raw?.["table"];
     const t = loadTable(source);
     const m = toMatrix6(e.transform);
-    if (t !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, table: t, ...group, ...cell };
+    if (t !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, table: t, ...lookField(e), ...group, ...cell };
     const raw = { table: source };
     const unknown: FakeUnknown = {
       sourceKind: "table",
@@ -2792,7 +2865,7 @@ function loadElement(e: SavedElement): FakeElement {
     const source = e.media ?? e.raw?.["media"];
     const media = readMedia(source);
     const m = toMatrix6(e.transform);
-    if (media !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, media, ...group, ...cell };
+    if (media !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, media, ...lookField(e), ...group, ...cell };
     const unknown: FakeUnknown = {
       sourceKind: "media",
       raw: { media: source },
@@ -2808,7 +2881,7 @@ function loadElement(e: SavedElement): FakeElement {
     const source = e.model3d ?? e.raw?.["model3d"];
     const model3d = readModel3d(source);
     const m = toMatrix6(e.transform);
-    if (model3d !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, model3d, ...group, ...cell };
+    if (model3d !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, model3d, ...lookField(e), ...group, ...cell };
     const unknown: FakeUnknown = {
       sourceKind: "model3d",
       raw: { model3d: source },

@@ -275,3 +275,41 @@ describe("applyFill (C6b, B8)", () => {
     expect(() => applyFill(old, new Uint8Array(4), 1, 1, { seed: [0, 0], size: [1, 1], tolerance: 5, color: null })).toThrow(FILL_MODULE_OLD_MESSAGE);
   });
 });
+
+describe("départ de la baguette (OG23, T10)", () => {
+  const white = { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true };
+  it("départ mis à l'échelle du bitmap : image_transparent_seed reçoit (5, 5) pour 10, 10 sur 200 × 200 en 100 × 100", () => {
+    const calls: unknown[][] = [];
+    const mod = {
+      image_transparent: (...a: unknown[]): void => void calls.push(["global", ...a.slice(1)]),
+      image_adjust: (): void => undefined,
+      image_transparent_seed: (...a: unknown[]): void => void calls.push(["seed", ...a.slice(1)]),
+    };
+    const px = new Uint8Array(4 * 100 * 100);
+    applyPixels(mod, px, 100, 100, { transparent: { ...white, x: 10, y: 10 }, size: [200, 200] });
+    expect(calls).toEqual([["seed", 100, 100, 255, 255, 255, 10, 0, 5, 5]]);
+    calls.length = 0;
+    applyPixels(mod, px, 100, 100, { transparent: { ...white, x: 199, y: 199 }, size: [200, 200] });
+    expect(calls).toEqual([["seed", 100, 100, 255, 255, 255, 10, 0, 99, 99]]);
+    calls.length = 0;
+    applyPixels(mod, px, 100, 100, { transparent: white, size: [200, 200] });
+    expect(calls).toEqual([["global", 100, 100, 255, 255, 255, 10, 0, true]]);
+    calls.length = 0;
+    const { image_transparent_seed: _seed, ...old } = mod;
+    applyPixels(old, px, 100, 100, { transparent: { ...white, x: 10, y: 10 }, size: [200, 200] });
+    expect(calls).toEqual([["global", 100, 100, 255, 255, 255, 10, 0, true]]);
+  });
+
+  it("transparent x y : le travail envoie la taille source au Worker", async () => {
+    vi.useFakeTimers();
+    try {
+      const { workers, runner } = setup();
+      void runner.run("e1", job("a", { transparent: { ...white, x: 3, y: 4 }, size: [640, 480] }));
+      await tick();
+      expect(workers[0]?.posted[0]).toMatchObject({ transparent: { ...white, x: 3, y: 4 }, size: [640, 480] });
+      runner.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

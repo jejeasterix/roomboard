@@ -16,9 +16,10 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean; lineEditing?: string | null; linePoints?: number }
+interface Opts { openImage?: (s: "crop" | "background" | null) => void; units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean; lineEditing?: string | null; linePoints?: number }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
+  const picks: ((c: string | null) => void)[] = [];
   const engine = {
     setItemStyle: vi.fn((p: Partial<ItemStyle>) => { calls.push(p); }),
     duplicateSelection: vi.fn(() => true),
@@ -28,10 +29,14 @@ function mount(o: Opts) {
     bringToFront: vi.fn(() => true),
     sendToBack: vi.fn(() => true),
     reorder: vi.fn(() => true),
+    arrange: vi.fn(() => true),
+    setDragCopy: vi.fn(() => true),
+    pickColor: vi.fn(() => new Promise<string | null>((r) => { picks.push(r); })),
+    cancelPick: vi.fn(),
     editLinePoints: vi.fn(() => true),
     removeLinePoints: vi.fn(() => true),
   };
-  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, textFormat: o.editing ? {} : null, lineEditing: o.lineEditing ?? null, linePointsSelected: o.linePoints ?? 0 } as unknown as EngineState;
+  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, selectionUnits: o.units ?? o.selection.length, textFormat: o.editing ? {} : null, lineEditing: o.lineEditing ?? null, linePointsSelected: o.linePoints ?? 0 } as unknown as EngineState;
   const settings = createDeviceSettings(null);
   const r = render(() => (
     <OptionsPanel
@@ -45,9 +50,10 @@ function mount(o: Opts) {
       annotating={() => o.annotating ?? false}
       hidden={() => o.hidden ?? false}
       sideStart={() => null}
+      {...(o.openImage ? { openImage: o.openImage } : {})}
     />
   ));
-  return { ...r, calls, engine, settings };
+  return { ...r, calls, engine, settings, picks };
 }
 
 describe("OptionsPanel (OG11, T10)", () => {
@@ -123,9 +129,9 @@ describe("OptionsPanel (OG11, T10)", () => {
   it("pastilles : noms lisibles, pas le code hex", () => {
     const { container } = mount({ tool: "rect", selection: [] });
     const labels = [...container.querySelectorAll('[data-option="strokeColor"] .rb-pick')].map((b) => b.getAttribute("aria-label"));
-    expect(labels).toEqual(["Noir", "Rouge", "Bleu", "Vert", "Jaune"]);
+    expect(labels).toEqual(["Noir", "Rouge", "Bleu", "Vert"]);
     const bg = [...container.querySelectorAll('[data-option="background"] .rb-pick')].map((b) => b.getAttribute("aria-label"));
-    expect(bg).toEqual(["Transparent", "Jaune", "Vert", "Bleu", "Rose"]);
+    expect(bg).toEqual(["Transparent", "Jaune", "Vert", "Bleu"]);
   });
   it("bascule : aria-expanded suit le repli ; libellés Plein et Droits", () => {
     const { container } = mount({ tool: "rect", selection: [] });
@@ -445,6 +451,305 @@ describe("OptionsPanel : avant la saisie, focus, sélecteur borné (T31)", () =>
       Object.defineProperty(window, "innerHeight", { configurable: true, value: inner });
       if (h) Object.defineProperty(HTMLElement.prototype, "offsetHeight", h); else delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
     }
+  });
+});
+
+describe("OptionsPanel accordéon et couleurs (OG23, T5)", () => {
+  const head = (c: HTMLElement, k: string): HTMLElement => c.querySelector<HTMLElement>(`[data-option-head="${k}"]`)!;
+  it("sections repliées par défaut, état relu", () => {
+    const m = mount({ tool: "rect", selection: [] });
+    expect(head(m.container, "strokeWidth").getAttribute("aria-expanded")).toBe("true");
+    expect(head(m.container, "strokeStyle").getAttribute("aria-expanded")).toBe("false");
+    expect(m.container.querySelector<HTMLElement>("#opt-body-strokeStyle")!.hidden).toBe(true);
+    fireEvent.click(head(m.container, "strokeStyle"));
+    expect(head(m.container, "strokeStyle").getAttribute("aria-expanded")).toBe("true");
+    expect(m.settings.optionSections().strokeStyle).toBe(true);
+    m.unmount();
+    const again = render(() => (
+      <OptionsPanel engine={() => m.engine as never} state={() => ({ tool: "rect", selection: [], itemStyle: DEFAULT_ITEM_STYLE, textFormat: null }) as unknown as EngineState}
+        element={() => null} presets={() => presets} size={() => "s"} profileId={() => "p"} settings={m.settings} annotating={() => false} sideStart={() => null} />
+    ));
+    expect(head(again.container, "strokeStyle").getAttribute("aria-expanded")).toBe("true");
+  });
+  it("en-tête : Entrée et Espace basculent (vraies touches)", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const h = head(container, "roundness");
+    expect(h.tagName).toBe("BUTTON");
+    expect(h.getAttribute("aria-controls")).toBe("opt-body-roundness");
+    // Entrée : au keydown, comme un bouton natif.
+    fireEvent.keyDown(h, { key: "Enter" });
+    fireEvent.keyUp(h, { key: "Enter" });
+    expect(h.getAttribute("aria-expanded")).toBe("true");
+    // Espace : au keyup, comme un bouton natif ; le moteur (fenêtre) ne prend pas l'espace pour le panoramique.
+    const onWindow = vi.fn();
+    window.addEventListener("keydown", onWindow);
+    const down = fireEvent.keyDown(h, { key: " ", cancelable: true });
+    window.removeEventListener("keydown", onWindow);
+    expect(down).toBe(false);
+    expect(onWindow).not.toHaveBeenCalled();
+    expect(h.getAttribute("aria-expanded")).toBe("true"); // pas encore : le keyup bascule
+    expect(fireEvent.keyUp(h, { key: " ", cancelable: true })).toBe(false);
+    expect(h.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.keyDown(h, { key: " " });
+    fireEvent.keyUp(h, { key: " " });
+    expect(h.getAttribute("aria-expanded")).toBe("true");
+  });
+  it("en-tête : un titre h3 contient le bouton, data-option-head intact", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const h = head(container, "roundness");
+    expect(h.parentElement?.tagName).toBe("H3");
+    expect(container.querySelector("h3 > [data-option-head]")).not.toBeNull();
+  });
+  it("résumé de valeur", () => {
+    const m = mount({ tool: "rect", selection: [] });
+    expect(head(m.container, "roughness").textContent).toContain("Style de tracé");
+    expect(head(m.container, "roughness").textContent).toContain("· Net");
+    const a = rectEl("a", "#000000");
+    const b = { ...rectEl("b", "#000000"), look: { roughness: 2 } } as unknown as ElementView;
+    const mx = mount({ tool: "select", selection: [a, b] });
+    expect(head(mx.container, "roughness").textContent).toContain("· Mixte");
+  });
+  it("S ouvre Trait replié puis le sélecteur", async () => {
+    const { container, settings } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(head(container, "strokeColor")); // ouverte par défaut : on la replie
+    expect(head(container, "strokeColor").getAttribute("aria-expanded")).toBe("false");
+    expect(settings.optionSections().strokeColor).toBe(false);
+    fireEvent.keyDown(window, { key: "s", code: "KeyS" });
+    expect(head(container, "strokeColor").getAttribute("aria-expanded")).toBe("true");
+    await Promise.resolve();
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull();
+  });
+  it("4 pastilles et palette sur une ligne", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    expect(container.querySelectorAll('[data-option="strokeColor"] .rb-pick')).toHaveLength(4);
+    expect(container.querySelector('[data-more-colors="strokeColor"] [data-icon="palette"]')).not.toBeNull();
+  });
+  it("trait transparent : sélecteur seulement, rectangles seulement", () => {
+    const m = mount({ tool: "select", selection: [rectEl("a", "#000000"), rectEl("b", "#dc2626")] });
+    expect(m.container.querySelector('[data-option="strokeColor"] [data-transparent]')).toBeNull();
+    fireEvent.click(m.container.querySelector('[data-more-colors="strokeColor"]')!);
+    const t = m.container.querySelector('[data-color-transparent]')!;
+    expect(t).not.toBeNull();
+    fireEvent.click(t);
+    expect(m.calls).toContainEqual({ color: "transparent" });
+    m.unmount();
+    const pen = mount({ tool: "pen", selection: [] });
+    fireEvent.click(pen.container.querySelector('[data-more-colors="strokeColor"]')!);
+    expect(pen.container.querySelector("[data-color-transparent]")).toBeNull();
+    pen.unmount();
+    const bg = mount({ tool: "rect", selection: [] });
+    fireEvent.click(bg.container.querySelector('[data-more-colors="background"]')!);
+    expect(bg.container.querySelector("[data-color-transparent]")).not.toBeNull();
+  });
+  it("Largeur : icône et mot ; Style de tracé : Net, À main levée, Très à main levée", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const w = container.querySelector('[data-option="strokeWidth"] [data-choice="2"]')!;
+    expect(w.querySelector('[data-icon="width-thin"]')).not.toBeNull();
+    expect(w.textContent).toContain("Fin");
+    const labels = [...container.querySelectorAll('[data-option="roughness"] .rb-radio')].map((b) => b.textContent);
+    expect(labels).toEqual(["Net", "À main levée", "Très à main levée"]);
+  });
+});
+
+describe("OptionsPanel (OG23, T7) : Pression, Aligner, Transformer", () => {
+  const rects = (n: number): ElementView[] => Array.from({ length: n }, (_, i) => rectEl(`r${i}`, "#000000"));
+  it("Pression · Variable", () => {
+    const { container } = mount({ tool: "pen", selection: [] });
+    const head = container.querySelector('[data-option-head="pressure"]')!;
+    expect(head.textContent).toContain("Pression");
+    expect(head.textContent).toContain("· Variable");
+  });
+  it("Pression : Constante écrit variability", () => {
+    const { container, calls } = mount({ tool: "pen", selection: [] });
+    fireEvent.click(container.querySelector('[data-option="pressure"] [data-option-value="constant"]')!);
+    expect(calls).toContainEqual({ variability: "constant" });
+  });
+  it("Pression : un trait constant relu comme Constante", () => {
+    const stroke = { id: "s", kind: "stroke", style: { color: "#000000", width: 4 }, look: { variability: "constant" } } as unknown as ElementView;
+    const { container } = mount({ tool: "select", selection: [stroke] });
+    expect(container.querySelector('[data-option-head="pressure"]')!.textContent).toContain("· Constante");
+    expect(container.querySelector('[data-option="pressure"] [data-option-value="constant"]')!.getAttribute("aria-checked")).toBe("true");
+  });
+  it("Aligner : 2 unités, Répartir à 3", () => {
+    const two = mount({ tool: "select", selection: rects(2) }).container;
+    expect(two.querySelectorAll('[data-option="align"] button[data-option-value]').length).toBe(6);
+    expect(two.querySelector('[data-option="align"] [data-option-value="distribute-h"]')).toBeNull();
+    cleanup();
+    const three = mount({ tool: "select", selection: rects(3) }).container;
+    expect(three.querySelectorAll('[data-option="align"] button[data-option-value]').length).toBe(8);
+    expect(three.querySelector('[data-option="align"] [data-option-value="distribute-v"]')).not.toBeNull();
+  });
+  it("Aligner : un bouton appelle arrange, avec son raccourci", () => {
+    const { container, engine } = mount({ tool: "select", selection: rects(3) });
+    const b = container.querySelector('[data-option="align"] [data-option-value="align-left"]')!;
+    expect(b.getAttribute("aria-keyshortcuts")).toBe("Alt+Shift+ArrowLeft");
+    fireEvent.click(b);
+    fireEvent.click(container.querySelector('[data-option="align"] [data-option-value="distribute-h"]')!);
+    expect(engine.arrange.mock.calls).toEqual([["align-left"], ["distribute-h"]]);
+  });
+  it("Aligner : une seule unité, pas de section", () => {
+    const { container } = mount({ tool: "select", selection: rects(1) });
+    expect(container.querySelector('[data-option="align"]')).toBeNull();
+  });
+  it("Transformer : quatre boutons, arrange appelé", () => {
+    const { container, engine } = mount({ tool: "select", selection: rects(1) });
+    const btns = [...container.querySelectorAll('[data-option="transform"] button[data-option-value]')];
+    expect(btns.map((b) => b.getAttribute("data-option-value"))).toEqual(["flip-h", "flip-v", "rotate-ccw", "rotate-cw"]);
+    for (const b of btns) fireEvent.click(b);
+    expect(engine.arrange.mock.calls).toEqual([["flip-h"], ["flip-v"], ["rotate-ccw"], ["rotate-cw"]]);
+  });
+  it("ordre : Disposition, Aligner, Transformer, Actions", () => {
+    const { container } = mount({ tool: "select", selection: rects(2) });
+    const order = [...container.querySelectorAll("[data-option]")].map((e) => e.getAttribute("data-option"));
+    expect(order.slice(-4)).toEqual(["layers", "align", "transform", "actions"]);
+  });
+});
+
+describe("OptionsPanel : Pression (OG23, T17)", () => {
+  it("les segments Constante et Variable ont une infobulle visible (survol), pas d'aria-description posé après coup", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = mount({ tool: "pen", selection: [] });
+      const v = container.querySelector<HTMLElement>('[data-edit="pressure"] [data-option-value="variable"]')!;
+      expect(v.hasAttribute("aria-description")).toBe(false);
+      fireEvent.pointerEnter(v, { pointerType: "mouse" });
+      vi.advanceTimersByTime(1000);
+      expect(document.querySelector(".rb-tip")?.textContent).toBe("Épaisseur selon la pression du stylet");
+      fireEvent.pointerLeave(v, { pointerType: "mouse" });
+      const c = container.querySelector<HTMLElement>('[data-edit="pressure"] [data-option-value="constant"]')!;
+      fireEvent.pointerEnter(c, { pointerType: "mouse" });
+      vi.advanceTimersByTime(1000);
+      expect(document.querySelector(".rb-tip")?.textContent).toBe("Épaisseur constante");
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("OptionsPanel : pipette (OG23, T8)", () => {
+  const flush = async (): Promise<void> => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
+  it("pipette : écrit la section retenue puis ferme", async () => {
+    const { container, calls, picks, engine } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(container.querySelector('[data-more-colors="background"]')!);
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull();
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    expect(engine.pickColor).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull(); // reste ouvert pendant l'armement
+    picks[0]!("#336699");
+    await flush();
+    expect(calls.at(-1)).toEqual({ background: "#336699" });
+    expect(container.querySelector("[data-color-picker]")).toBeNull();
+  });
+  it("pipette : la clé est figée à l'armement (Trait), lecture nulle n'écrit rien", async () => {
+    const { container, calls, picks } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    picks[0]!("#102030");
+    await flush();
+    expect(calls.at(-1)).toEqual({ color: "#102030" });
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    const n = calls.length;
+    picks[1]!(null);
+    await flush();
+    expect(calls).toHaveLength(n);
+  });
+});
+
+describe("OptionsPanel : pipette, désarmement (OG23, T17)", () => {
+  const flush = async (): Promise<void> => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
+  it("armée pour le Trait puis ouverture du sélecteur du Fond : désarmée, rien n'est écrit au Trait", async () => {
+    const { container, calls, picks, engine } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    fireEvent.click(container.querySelector('[data-more-colors="background"]')!);
+    expect(engine.cancelPick).toHaveBeenCalledTimes(1);
+    const n = calls.length;
+    picks[0]!("#abcdef");
+    await flush();
+    expect(calls).toHaveLength(n);
+    expect(container.querySelector("[data-color-picker]")).not.toBeNull(); // le sélecteur du Fond reste ouvert
+  });
+  it("sélecteur fermé pendant l'armement : la pipette est désarmée et la couleur lue n'écrit rien", async () => {
+    const { container, calls, picks, engine } = mount({ tool: "rect", selection: [] });
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!); // referme
+    expect(container.querySelector("[data-color-picker]")).toBeNull();
+    expect(engine.cancelPick).toHaveBeenCalledTimes(1);
+    const n = calls.length;
+    picks[0]!("#abcdef");
+    await flush();
+    expect(calls).toHaveLength(n);
+  });
+  it("sélection changée pendant l'armement : rien n'est écrit sur d'autres cibles", async () => {
+    const a = rectEl("a", "#000000");
+    const b = rectEl("b", "#000000");
+    const [sel, setSel] = createSignal<string[]>(["a"]);
+    const picks: ((c: string | null) => void)[] = [];
+    const calls: Partial<ItemStyle>[] = [];
+    const engine = {
+      setItemStyle: vi.fn((p: Partial<ItemStyle>) => { calls.push(p); }),
+      pickColor: vi.fn(() => new Promise<string | null>((r) => { picks.push(r); })),
+      cancelPick: vi.fn(),
+    };
+    const state = () => ({ tool: "select", selection: sel(), itemStyle: DEFAULT_ITEM_STYLE, selectionUnits: sel().length, textFormat: null }) as unknown as EngineState;
+    const { container } = render(() => (
+      <OptionsPanel engine={() => engine as never} state={state} element={(id) => [a, b].find((e) => e.id === id) ?? null} presets={() => presets}
+        size={() => "s"} profileId={() => "p"} settings={createDeviceSettings(null)} annotating={() => false} sideStart={() => null} />
+    ));
+    fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+    fireEvent.click(container.querySelector("[data-color-pipette]")!);
+    setSel(["a", "b"]);
+    picks[0]!("#123456");
+    await flush();
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("OptionsPanel (OG23, T13) : section Image et Glisser une copie", () => {
+  const image = { id: "i", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: {} } as unknown as ElementView;
+  const withCopy = (e: ElementView, on: boolean): ElementView => ({ ...e, ...(on ? { look: { dragCopy: true } } : {}) }) as ElementView;
+  const toggle = (c: HTMLElement): HTMLElement => c.querySelector('[data-option-value="drag-copy"]')!;
+  it("image seule : section Image ouverte", () => {
+    const { container } = mount({ tool: "select", selection: [image] });
+    const sec = container.querySelector('[data-option="image"]')!;
+    expect(sec).not.toBeNull();
+    expect(sec.hasAttribute("data-open")).toBe(true);
+    expect([...sec.querySelectorAll("[data-image-action]")].map((b) => b.getAttribute("data-image-action"))).toEqual(["panel-crop", "panel-background", "panel-retouch"]);
+  });
+  it('Rogner appelle openImage("crop")', () => {
+    const openImage = vi.fn();
+    const { container } = mount({ tool: "select", selection: [image], openImage });
+    fireEvent.click(container.querySelector('[data-image-action="panel-crop"]')!);
+    fireEvent.click(container.querySelector('[data-image-action="panel-background"]')!);
+    fireEvent.click(container.querySelector('[data-image-action="panel-retouch"]')!);
+    expect(openImage.mock.calls).toEqual([["crop"], ["background"], [null]]);
+  });
+  it("bascule mixte", () => {
+    const { container, engine } = mount({ tool: "select", selection: [withCopy(rectEl("a", "#000000"), true), rectEl("b", "#000000")] });
+    const t = toggle(container);
+    expect(t.getAttribute("aria-pressed")).toBe("mixed");
+    expect(t.hasAttribute("data-mixed")).toBe(true);
+    fireEvent.click(t);
+    expect(engine.setDragCopy).toHaveBeenCalledWith(true);
+  });
+  it("bascule : pose puis retire", () => {
+    const off = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
+    expect(toggle(off.container).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle(off.container));
+    expect(off.engine.setDragCopy).toHaveBeenLastCalledWith(true);
+    cleanup();
+    const on = mount({ tool: "select", selection: [withCopy(rectEl("a", "#000000"), true), withCopy(rectEl("b", "#000000"), true)] });
+    expect(toggle(on.container).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(toggle(on.container));
+    expect(on.engine.setDragCopy).toHaveBeenLastCalledWith(false);
+  });
+  it("bascule grisée quand aucune cible ne l'admet", () => {
+    const unknown = { id: "t", kind: "unknown", transform: [1, 0, 0, 1, 0, 0] } as unknown as ElementView;
+    const { container } = mount({ tool: "select", selection: [unknown] });
+    expect(toggle(container).hasAttribute("disabled")).toBe(true);
   });
 });
 

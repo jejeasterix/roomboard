@@ -166,7 +166,7 @@ viennent de sa fonctionnalité `simple-text`, qui sert au texte des PDF. `twiggy
 `wasm-opt` tourne dans `scripts/verifier.sh` après `pnpm install --frozen-lockfile`, sur
 `apps/web/src/wasm-formats/roomboard_formats_wasm_bg.wasm`, avant les tests du vrai module et le build de vite.
 La colle JS reste celle de `wasm-bindgen` (mêmes exports) ; `-Oz` lit les fonctionnalités Wasm dans la section
-`target_features`. Durée : environ 1 min 35 s de plus par vérification. Le module principal n'y passe pas.
+`target_features`. Durée : environ 1 min 35 s de plus par vérification. Le module principal n’y passait pas avant OG23 (voir plus bas).
 Les recettes de l'installeur (`docs/essais/coque-windows.md`, `docs/essais/coque-macos.md`) lancent le même
 `wasm-opt` : sans lui, l'installeur livrerait le module non optimisé, que `verifier.sh` ne mesure pas.
 
@@ -186,3 +186,95 @@ chronométré ici ; ses tests et ses essais e2e passent sur le module optimisé.
 `scripts/verifier.sh --e2e` : OK sur la branche, essais de fidélité de C13 compris (`C13 tableaux : OK`) ;
 `module Wasm : 1374398 octets`, `module formats : 2794511 octets`. Marge du module formats : 351 217 o
 (cible : 100 Ko). Plafonds inchangés (1 572 864 o, 3 145 728 o).
+
+## OG23 (module principal passé à `wasm-opt -Oz`, 2026-11-28)
+
+Après la fusion d'OG12 (flèches, liaisons), d'OG26 (tableau, lots A et B) et d'OG23 (Arrange, pression, glisser une
+copie), le module principal sorti de `wasm-bindgen --remove-name-section` pesait **1 598 137 o**, au-dessus du plafond
+H2-13 (1 572 864 o). `main` seul était à 1 571 221 o (marge 1 643 o).
+
+| réglage | module principal | gain |
+|---|---:|---:|
+| départ (profil `s`, `lto`, `codegen-units = 1`, sans section `name`) | 1 598 137 | — |
+| `wasm-opt -Oz` (paquet npm `binaryen` 132.0.0, Apache-2.0), après `wasm-bindgen` | 1 456 551 | 141 586 (−8,9 %) |
+
+Décision prise par l'agent (OG23) : le module principal passe par le même `wasm-opt -Oz` que le module `formats`
+(OE71), dans `scripts/verifier.sh` et dans les recettes de l'installeur (`coque-windows.md`, `coque-macos.md`).
+Plafond inchangé. Marge : 116 313 o.
+
+Banc de vitesse du chemin de l'encre (`StrokeBuilder`, contours, gomme) sur le module optimisé : fait par OG28
+(section suivante). Le banc d'OE71 sur `formats` n'a montré aucune perte. Les essais e2e du stylo et de la gomme passent sur le module
+optimisé. Repli : retirer la ligne de `scripts/verifier.sh` ; il faut alors retirer d'abord 25 273 o de code.
+
+## OG28 (banc de `-Oz` sur le module principal, pistes de marge, 2026-11-28)
+
+Cible d'OG28 : 150 Ko de marge sous le plafond du module principal. OG23 a déjà posé `-Oz` (section au-dessus) ;
+OG28 ajoute le banc de vitesse et mesure d'autres réglages. `scripts/verifier.sh`, les recettes de l'installeur et les
+plafonds ne changent pas. Module principal sur `main` e2ac468 : 1 598 137 o en sortie de `wasm-bindgen`, 1 456 551 o
+après `-Oz` (marge 116 313 o) ; module formats inchangé.
+
+Mesure : comme OE71, mais sur `roomboard-wasm`, chaque réglage passé par
+`cargo --config 'profile.release.package.<crate>.opt-level="z"'`, dans un dossier de build à part (`~/.cache/tmp`).
+
+### Réglages
+
+Mesurés sur edf0200 (avant OG23), où `-Oz` seul donne 1 431 220 o (marge 141 644 o). Aucun n'est gardé.
+
+| Réglage | Module principal (o) | Pourquoi |
+|---|---:|---|
+| `wasm-opt -Os`, `-O3`, `-O2` | 1 439 578 à 1 461 861 | moins bons que `-Oz` |
+| `wasm-opt -Oz --converge` | 1 430 358 | 862 o de moins seulement, pour une passe bien plus longue |
+| `-Oz` + `--merge-similar-functions`, `--gufa-optimizing`, `--dae-optimizing`, `-O4` | 1 431 220 à 1 445 133 | aucun gain |
+| `opt-level = "z"` sur `roomboard-core`, + `-Oz` | 1 339 462 | banc : pot sur zone +12 à +52 %, tracé +3 à +11 % |
+| `z` sur `roomboard-core` et `roomboard-wasm`, + `-Oz` | 1 304 563 | mêmes pertes que la ligne au-dessus |
+| `z` sur `roomboard-core`, `roomboard-wasm` et `yrs`, + `-Oz` | 1 251 948 | pertes des deux lignes voisines ; pas de banc |
+| `z` sur `yrs` seul, + `-Oz` | 1 388 860 | banc : lecture +29 à +31 %, gomme +8 à +22 %, ajout de traits et enregistrement +7 à +9 % |
+| `z` sur `serde_json`, `zip`, `zlib-rs`, `flate2`, `serde-wasm-bindgen`, + `-Oz` | 1 429 458 | 1 762 o de moins seulement |
+
+Cible non tenue : 116 313 o sur `main`. Gagner plus demande `opt-level = "z"` sur `roomboard-core` ou `yrs`, que le
+banc refuse (perte au-delà de 5 %). OG12, OG26 et OG23 ont ajouté 26 916 o à eux trois : à ce rythme, la marge tient
+environ quatre lots de cette taille. Suite : chercher la place dans le code Rust. Deux pistes : le décompte par crate du
+module principal (fait pour `formats` seul, par OE71) ; sortir les chemins chauds (contours, `fill_zone`) dans une crate
+à part, pour passer le reste de `roomboard-core` en `z` (environ 92 Ko), puis rejouer le banc.
+
+### Banc de vitesse (Node, 5 passages, médianes en ms, deux séries)
+
+Script hors dépôt, qui charge le module par `initSync`, comme les tests du vrai module. Essais : 2 000 traits de 120
+points par `StrokeBuilder` (contour freedraw) ; 1 500 traits par `commit_stroke`, puis `save` ; `load` de ce fichier ;
+100 `hit_test` et 100 `ids_in_rect` sur ces 1 500 traits ; 5 passages de gomme (`erase`), puis 5 `undo` ; `fill_zone`
+sur la figure du banc S6 (`zone-s6-banc.test.ts`), puis `undo`.
+
+Module de `main` e2ac468, ce que `verifier.sh` livre (charge de la VM, `uptime` 1 min : 1,2) :
+
+| essai | sans `wasm-opt` | `-Oz` |
+|---|---:|---:|
+| `StrokeBuilder` | 353 ; 352 | 355 ; 347 |
+| `commit_stroke` + `save` | 109 ; 109 | 106 ; 105 |
+| `load` | 22 ; 22 | 21 ; 21 |
+| `hit_test` + `ids_in_rect` | 1 996 ; 1 988 | 1 878 ; 1 875 |
+| `erase` + `undo` | 178 ; 179 | 176 ; 178 |
+| `fill_zone` S6 + `undo` | 19 ; 19 | 19 ; 19 |
+
+Pire écart : +1 % (`fill_zone`, 19,3 contre 19,1 ms), sous le bruit et sous le seuil de 5 %. `-Oz` est gardé.
+
+`z` sur `roomboard-core`, module d'edf0200 (charge 7,9 à 6,8, puis 5,7 à 4,4) :
+
+| essai | départ | `-Oz` | `z` `roomboard-core` + `-Oz` |
+|---|---:|---:|---:|
+| `StrokeBuilder` | 381 ; 354 | 367 ; 350 | 393 ; 392 |
+| `commit_stroke` + `save` | 134 ; 108 | 114 ; 106 | 108 ; 107 |
+| `load` | 25 ; 22 | 24 ; 21 | 21 ; 21 |
+| `hit_test` + `ids_in_rect` | 2 292 ; 2 035 | 2 126 ; 1 893 | 2 160 ; 2 120 |
+| `erase` + `undo` | 204 ; 180 | 189 ; 179 | 195 ; 194 |
+| `fill_zone` S6 + `undo` | 26 ; 19 | 20 ; 20 | 29 ; 29 |
+
+`z` sur `yrs`, module d'edf0200 (charge 2,5 à 1,4) :
+
+| essai | départ | `-Oz` | `z` `yrs` + `-Oz` |
+|---|---:|---:|---:|
+| `StrokeBuilder` | 352 ; 352 | 348 ; 349 | 351 ; 347 |
+| `commit_stroke` + `save` | 109 ; 110 | 106 ; 105 | 118 ; 117 |
+| `load` | 22 ; 22 | 21 ; 21 | 28 ; 28 |
+| `hit_test` + `ids_in_rect` | 1 972 ; 1 974 | 1 886 ; 1 840 | 1 903 ; 1 951 |
+| `erase` + `undo` | 189 ; 175 | 178 ; 173 | 204 ; 214 |
+| `fill_zone` S6 + `undo` | 19 ; 19 | 20 ; 20 | 19 ; 20 |

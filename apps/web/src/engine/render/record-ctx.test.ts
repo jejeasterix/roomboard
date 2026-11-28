@@ -169,3 +169,26 @@ describe("contexte enregistreur (C12, DAPF4)", () => {
     expect(() => r.arc()).toThrow(TypeError);
   });
 });
+
+// OG23 (plan, écart PDF) : une peinture d'alpha nul n'enregistre aucune opération ; krilla écrirait sinon un `S`
+// d'opacité 0 au PDF.
+describe("peinture transparente (OG23)", () => {
+  it("peinture transparente : aucune opération (trait et fond), la peinture opaque reste", () => {
+    const r = rec();
+    const c = ctx(r);
+    const empty = r.encode().ops.length;
+    c.strokeStyle = "rgba(0, 0, 0, 0)";
+    c.beginPath();
+    c.moveTo(0, 0);
+    c.lineTo(10, 10);
+    c.stroke();
+    c.fillStyle = "rgba(0, 0, 0, 0)";
+    c.fillRect(0, 0, 10, 10);
+    expect(r.encode().ops.length).toBe(empty);
+    c.strokeStyle = "#ff0000";
+    c.stroke();
+    const ops = r.encode().ops;
+    expect(ops.length).toBeGreaterThan(empty);
+    expect(ops[empty]).toBe(OP.stroke);
+  });
+});

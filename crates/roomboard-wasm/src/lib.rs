@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
+use roomboard_core::arrange::ArrangeHow;
 use roomboard_core::asset::AssetRef;
 use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
 use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, EraseMode};
@@ -96,16 +97,17 @@ fn roughness_arg(v: Option<f64>) -> Result<Option<u8>, CommandError> {
 /// Aspect d'une création (OG11) : bornes des nombres vérifiées (tracé entier 0..=2, graine entière 0..=u32::MAX,
 /// opacité finie 0..=100 arrondie), hors bornes `BadStyle` ; le reste est assaini par le cœur (`Look::sanitized`).
 /// `named` (T12) : `fillStyle`, `startArrowhead`, `endArrowhead`, `textAlign`, `link`, dans cet ordre ; un défaut de
-/// pointe ou un lien hors des trois schémas n'écrit rien (`Look::sanitized`).
+/// pointe ou un lien hors des trois schémas n'écrit rien (`Look::sanitized`). OG23 : 6e nom, `variability` (seul
+/// `constant` écrit).
 fn look_of(
     stroke_style: Option<String>,
     roughness: Option<f64>,
     seed: Option<f64>,
     roundness: Option<String>,
     opacity: Option<f64>,
-    named: [Option<String>; 5],
+    named: [Option<String>; 6],
 ) -> Result<Look, CommandError> {
-    let [fill_style, start_arrowhead, end_arrowhead, text_align, link] = named;
+    let [fill_style, start_arrowhead, end_arrowhead, text_align, link, variability] = named;
     let opacity = match opacity {
         None => None,
         Some(o) if o.is_finite() && (0.0..=100.0).contains(&o) => Some(o.round() as u8),
@@ -122,6 +124,8 @@ fn look_of(
         end_arrowhead,
         text_align,
         link,
+        variability,
+        drag_copy: None,
         elbowed: None,
     })
 }
@@ -134,6 +138,12 @@ fn fmt_err(e: FormatError) -> JsError {
 /// reproduit). Sans JsValue, testée en natif.
 fn page_layout(mode: &str) -> Result<PageLayout, String> {
     PageLayout::parse(mode).ok_or_else(|| format!("mode de page inconnu : {mode}"))
+}
+
+/// Disposition `Arrange` lue d'un nom JS (`ArrangeHow::parse`) ; illisible : le message de l'Error JS (que
+/// `fake-core.ts` reproduit). Sans JsValue, testée en natif.
+fn arrange_how(how: &str) -> Result<ArrangeHow, String> {
+    ArrangeHow::parse(how).ok_or_else(|| format!("disposition inconnue : {how}"))
 }
 
 /// `mode` facultatif venu de JS : absent → `None` ; illisible → Error, levée avant la commande.
@@ -238,8 +248,8 @@ fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
 }
 
 /// Réglages d'image reçus de JS (C5, I6) : `crop` vide ou `[x, y, w, h]` ; `color` absente avec `transparent` vide, ou
-/// présente avec `[tolérance, plume, contigu (0 ou 1)]` ; toute autre forme : `BadImageParams`. Les valeurs sont
-/// contrôlées par le cœur.
+/// présente avec `[tolérance, plume, contigu (0 ou 1)]`, ou `[tolérance, plume, contigu, x, y]` avec le départ de la
+/// baguette (OG23, T10, pixels source) ; toute autre forme : `BadImageParams`. Les valeurs sont contrôlées par le cœur.
 #[allow(clippy::too_many_arguments)]
 fn image_params_input(
     crop: &[f64],
@@ -258,12 +268,21 @@ fn image_params_input(
     };
     let transparent = match (color, transparent) {
         (None, []) => None,
-        (Some(color), [tolerance, soft, contiguous]) => Some(TransparentInput {
-            color,
-            tolerance: *tolerance,
-            soft: *soft,
-            contiguous: *contiguous != 0.0,
-        }),
+        (Some(color), [tolerance, soft, contiguous, seed @ ..]) => {
+            let (x, y) = match seed {
+                [] => (None, None),
+                [x, y] => (Some(*x), Some(*y)),
+                _ => return Err(CommandError::BadImageParams),
+            };
+            Some(TransparentInput {
+                color,
+                tolerance: *tolerance,
+                soft: *soft,
+                contiguous: *contiguous != 0.0,
+                x,
+                y,
+            })
+        }
         _ => return Err(CommandError::BadImageParams),
     };
     Ok(ImageParamsInput {
@@ -1421,8 +1440,8 @@ impl Document {
         to_js(&self.restack_inner(ids, to).map_err(cmd_err)?)
     }
 
-    /// OG11 : les dix arguments après `width` sont l'aspect (`look_of`), contrôlé avant tout le reste ;
-    /// personnalisation-3 : les trois derniers, la case qui loge le trait (`cell_of`).
+    /// OG11 : les onze arguments après `width` sont l'aspect (`look_of`, `variability` en dernier, OG23), contrôlé
+    /// avant tout le reste ; personnalisation-3 : les trois derniers, la case qui loge le trait (`cell_of`).
     #[allow(clippy::too_many_arguments)]
     pub fn commit_stroke(
         &mut self,
@@ -1440,11 +1459,19 @@ impl Document {
         end_arrowhead: Option<String>,
         text_align: Option<String>,
         link: Option<String>,
+        variability: Option<String>,
         cell_table: Option<String>,
         cell_row: Option<String>,
         cell_col: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let named = [
+            fill_style,
+            start_arrowhead,
+            end_arrowhead,
+            text_align,
+            link,
+            variability,
+        ];
         let look =
             look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         let cell = cell_of(cell_table, cell_row, cell_col).map_err(cmd_err)?;
@@ -1495,6 +1522,7 @@ impl Document {
         end_arrowhead: Option<String>,
         text_align: Option<String>,
         link: Option<String>,
+        variability: Option<String>,
         elbowed: Option<bool>,
         points: Option<Vec<f64>>,
         start_id: Option<String>,
@@ -1502,7 +1530,14 @@ impl Document {
         end_id: Option<String>,
         end_fixed: Option<Vec<f64>>,
     ) -> Result<JsValue, JsError> {
-        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let named = [
+            fill_style,
+            start_arrowhead,
+            end_arrowhead,
+            text_align,
+            link,
+            variability,
+        ];
         let mut look =
             look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         look.elbowed = elbowed;
@@ -1583,6 +1618,9 @@ impl Document {
         text_align: Option<String>,
         link_set: bool,
         link: Option<String>,
+        variability_set: bool,
+        variability: Option<String>,
+        drag_copy: Option<bool>,
         elbowed_set: bool,
         elbowed: Option<bool>,
     ) -> Result<JsValue, JsError> {
@@ -1599,6 +1637,8 @@ impl Document {
             end_arrowhead: end_arrowhead_set.then_some(end_arrowhead),
             text_align: text_align_set.then_some(text_align),
             link: link_set.then_some(link),
+            variability: variability_set.then_some(variability),
+            drag_copy,
             elbowed: elbowed_set.then_some(elbowed),
         };
         to_js(&self.set_style_inner(ids, patch).map_err(cmd_err)?)
@@ -1629,8 +1669,16 @@ impl Document {
         end_arrowhead: Option<String>,
         text_align: Option<String>,
         link: Option<String>,
+        variability: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let named = [
+            fill_style,
+            start_arrowhead,
+            end_arrowhead,
+            text_align,
+            link,
+            variability,
+        ];
         let look =
             look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         let spans = spans_arg(spans).map_err(cmd_err)?;
@@ -1649,6 +1697,13 @@ impl Document {
                 )
                 .map_err(cmd_err)?,
         )
+    }
+
+    /// OG23 (DA-2) : aligner, répartir, retourner, tourner `ids` en une étape (`how` : `align-left` … `rotate-ccw`) ;
+    /// `how` inconnu : Error « disposition inconnue : <how> », levée avant la commande (le faux cœur lève la même).
+    pub fn arrange(&mut self, ids: Vec<String>, how: &str) -> Result<JsValue, JsError> {
+        let how = arrange_how(how).map_err(|m| JsError::new(&m))?;
+        to_js(&self.arrange_inner(ids, how).map_err(cmd_err)?)
     }
 
     /// `matrix` : six nombres `a, b, c, d, e, f`, composés à gauche de la matrice de chaque élément.
@@ -2507,6 +2562,14 @@ impl Document {
         })
     }
 
+    pub fn arrange_inner(
+        &mut self,
+        ids: Vec<String>,
+        how: ArrangeHow,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::Arrange { ids, how })
+    }
+
     pub fn restack_inner(&mut self, ids: Vec<String>, to: u32) -> Result<Change, CommandError> {
         self.run(Command::Restack { ids, to })
     }
@@ -2702,8 +2765,9 @@ pub struct StrokeBuilder(CoreBuilder);
 #[wasm_bindgen]
 impl StrokeBuilder {
     #[wasm_bindgen(constructor)]
-    pub fn new(width: f32) -> StrokeBuilder {
-        StrokeBuilder(CoreBuilder::new(InkStyle { width }))
+    /// OG23 : `constant` (`variability: "constant"`) donne l'encre vive à épaisseur constante, comme le contour final.
+    pub fn new(width: f32, constant: bool) -> StrokeBuilder {
+        StrokeBuilder(CoreBuilder::new(InkStyle { width, constant }))
     }
 
     pub fn push(&mut self, points: &[f32]) -> Vec<f32> {
@@ -2975,7 +3039,7 @@ mod tests {
 
     #[test]
     fn stroke_builder_push_and_finish() {
-        let mut b = StrokeBuilder::new(6.0);
+        let mut b = StrokeBuilder::new(6.0, false);
         assert!(!b.push(&hline(10.0)).is_empty());
         assert_eq!(b.point_count(), 41);
         assert!(!b.finish().is_empty());
@@ -3421,6 +3485,56 @@ mod tests {
             linked_files(&[], &[], &[], &[], &[1.0]),
             Err(CommandError::BadModel3d)
         );
+    }
+
+    // OG23 (T10) : départ de la baguette en 4e et 5e nombres ; toute autre longueur refusée.
+    #[test]
+    fn image_params_input_reads_seed() {
+        let input = |t: &[f64]| {
+            image_params_input(&[], false, false, 0.0, 0.0, 0.0, Some("#ffffff".into()), t)
+                .map(|p| p.transparent.map(|t| (t.contiguous, t.x, t.y)))
+        };
+        assert_eq!(input(&[10.0, 0.0, 1.0]), Ok(Some((true, None, None))));
+        assert_eq!(
+            input(&[10.0, 0.0, 0.0, 4.0, 7.0]),
+            Ok(Some((false, Some(4.0), Some(7.0))))
+        );
+        for bad in [
+            &[10.0, 0.0, 1.0, 4.0][..],
+            &[10.0, 0.0, 1.0, 4.0, 7.0, 1.0],
+            &[10.0, 0.0],
+        ] {
+            assert_eq!(input(bad), Err(CommandError::BadImageParams), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn set_style_drag_copy_through_the_bridge() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_image_inner(&p, png(), [64.0, 48.0], &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+            .expect("image")
+            .ids[0]
+            .clone();
+        let patch = |b: bool| StylePatch {
+            drag_copy: Some(b),
+            ..StylePatch::default()
+        };
+        let c = d
+            .set_style_inner(vec![id.clone()], patch(true))
+            .expect("pose");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let look = |d: &Document| {
+            d.core
+                .element(&id)
+                .and_then(|e| e.look)
+                .and_then(|l| l.drag_copy)
+        };
+        assert_eq!(look(&d), Some(true));
+        d.set_style_inner(vec![id.clone()], patch(false))
+            .expect("retrait");
+        assert_eq!(look(&d), None);
     }
 
     // C5 (I6) : réglages d'image par leur `_inner`.
@@ -4565,6 +4679,7 @@ mod tests {
             s("none"),
             s("right"),
             s("https://example.org"),
+            None,
         ];
         let l = look_of(None, None, None, None, None, named).expect("aspect");
         let want = Look {
@@ -4576,7 +4691,14 @@ mod tests {
             ..Look::default()
         };
         assert_eq!(l.sanitized(), want);
-        let named = [None, s("none"), s("arrow"), None, s("javascript:alert(1)")];
+        let named = [
+            None,
+            s("none"),
+            s("arrow"),
+            None,
+            s("javascript:alert(1)"),
+            None,
+        ];
         let l = look_of(None, None, None, None, None, named).expect("aspect");
         assert!(l.is_neutral());
     }
@@ -4647,6 +4769,49 @@ mod tests {
             .pages
             .is_empty());
         assert_eq!(d.move_page_inner(&a, 2), Err(CommandError::BadIndex));
+    }
+
+    /// OG23 (T1) : `Arrange` par le pont, une étape ; un `undo_inner` rend les deux positions.
+    #[test]
+    fn arrange_through_the_bridge_one_step() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let [a, b] = [100.0, 300.0].map(|x| {
+            d.add_shape_inner(
+                &p,
+                "rect",
+                [x, x / 2.0, x + 50.0, x / 2.0 + 20.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+                LineInit::default(),
+            )
+            .expect("forme")
+            .ids[0]
+                .clone()
+        });
+        let x0 = |d: &Document, id: &String| {
+            d.core.snap_box(std::slice::from_ref(id)).expect("boîte").x0
+        };
+        let v = d.core.version();
+        let ch = d
+            .arrange_inner(vec![a.clone(), b.clone()], ArrangeHow::AlignLeft)
+            .expect("aligner");
+        assert_eq!((ch.pages, ch.ids), (vec![p.clone()], vec![b.clone()]));
+        assert_eq!(d.core.version(), v + 1);
+        assert_eq!((x0(&d, &a), x0(&d, &b)), (100.0, 100.0));
+        d.undo_inner();
+        assert_eq!((x0(&d, &a), x0(&d, &b)), (100.0, 300.0), "une étape");
+    }
+
+    #[test]
+    fn arrange_unknown_how_message() {
+        assert_eq!(
+            arrange_how("spin"),
+            Err("disposition inconnue : spin".to_string())
+        );
+        assert_eq!(arrange_how("flip-h"), Ok(ArrangeHow::FlipH));
     }
 
     #[test]

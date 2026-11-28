@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, cellKey, editAction, inEditable, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "./keys";
+import { ARRANGE_HOWS } from "../../core/arrange";
+import { appShortcut, arrangeKey, cellKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -278,5 +279,130 @@ describe("OG12 : lineEditKey, linkedKey, isCtrlKey", () => {
     expect(isCtrlKey({ key: "Control" })).toBe(true);
     expect(isCtrlKey({ key: "Meta" })).toBe(true);
     expect(isCtrlKey({ key: "Shift" })).toBe(false);
+  });
+});
+
+describe("arrangeKey (OG23, déc. 24)", () => {
+  const letter = (l: string, code: string, mods: Partial<Omit<KeyLike, "key">>, azerty: boolean): KeyLike =>
+    mods.altKey === true ? k(azerty ? "˙" : "Ó", { ...mods, code }) : k(l, { ...mods, code });
+  const SPECS: ReadonlyArray<readonly [string, "h" | "v" | "r" | "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown", Partial<Omit<KeyLike, "key">>]> = [
+    ["flip-h", "h", { shiftKey: true }], ["flip-v", "v", { shiftKey: true }], ["rotate-cw", "r", { shiftKey: true }],
+    ["rotate-ccw", "r", { altKey: true, shiftKey: true }], ["align-center", "h", { altKey: true, shiftKey: true }], ["align-middle", "v", { altKey: true, shiftKey: true }],
+    ["distribute-h", "h", { altKey: true }], ["distribute-v", "v", { altKey: true }],
+    ["align-left", "ArrowLeft", { altKey: true, shiftKey: true }], ["align-right", "ArrowRight", { altKey: true, shiftKey: true }],
+    ["align-top", "ArrowUp", { altKey: true, shiftKey: true }], ["align-bottom", "ArrowDown", { altKey: true, shiftKey: true }],
+  ];
+  it("arrangeKey AZERTY et QWERTY", () => {
+    expect(SPECS.map(([how]) => how).sort()).toEqual([...ARRANGE_HOWS].sort());
+    for (const [how, l, mods] of SPECS) {
+      const named = l.startsWith("Arrow");
+      for (const azerty of [true, false]) {
+        const e = named ? k(l, mods) : letter(mods.shiftKey === true && mods.altKey !== true ? l.toUpperCase() : l, `Key${l.toUpperCase()}`, mods, azerty);
+        expect(arrangeKey(e), `${how} ${azerty ? "AZERTY" : "QWERTY"}`).toBe(how);
+      }
+    }
+  });
+  it("arrangeKey lit code avec Alt", () => {
+    expect(arrangeKey(k("˙", { code: "KeyH", altKey: true }))).toBe("distribute-h");
+    expect(arrangeKey(k("Ó", { code: "KeyH", altKey: true, shiftKey: true }))).toBe("align-center");
+    expect(arrangeKey(k("h", { altKey: true }))).toBeNull();
+  });
+  it("arrangeKey : un champ de saisie ou un évènement déjà traité ne range rien ; un bouton, un radio, une case de grille focalisés ne bloquent pas (OG23, T21)", () => {
+    const role = (r: string) => ({ tagName: "DIV", getAttribute: (n: string) => (n === "role" ? r : null) });
+    for (const target of [{ tagName: "INPUT", type: "text" }, { tagName: "TEXTAREA" }, { tagName: "DIV", isContentEditable: true }]) {
+      expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target })), JSON.stringify(target)).toBeNull();
+      expect(arrangeKey(k("H", { shiftKey: true, target })), JSON.stringify(target)).toBeNull();
+    }
+    for (const target of [{ tagName: "BUTTON" }, { tagName: "INPUT", type: "range" }, { tagName: "INPUT", type: "radio" }, role("radio"), role("gridcell"), role("tab")]) {
+      expect(arrangeKey(k("H", { shiftKey: true, target })), JSON.stringify(target)).toBe("flip-h");
+      expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target })), JSON.stringify(target)).toBe("align-left");
+    }
+    expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, defaultPrevented: true }))).toBeNull();
+    expect(arrangeKey(k("H", { shiftKey: true, defaultPrevented: true }))).toBeNull();
+    expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: { tagName: "CANVAS" } }))).toBe("align-left");
+    expect(arrangeKey(k("ArrowLeft", { altKey: true, shiftKey: true, target: null }))).toBe("align-left");
+  });
+  it("nudgeKey : une flèche seule sur un bouton ou un contrôle ne pousse rien (inchangé)", () => {
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "BUTTON" } }))).toBeNull();
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "DIV", getAttribute: (n: string) => (n === "role" ? "radio" : null) } }))).toBeNull();
+  });
+  it("arrangeKey refuse Ctrl, saisie, composition", () => {
+    expect(arrangeKey(k("H", { shiftKey: true, ctrlKey: true }))).toBeNull();
+    expect(arrangeKey(k("H", { shiftKey: true, metaKey: true }))).toBeNull();
+    expect(arrangeKey(k("H", { shiftKey: true, target: { tagName: "INPUT", type: "text" } }))).toBeNull();
+    expect(arrangeKey(k("H", { shiftKey: true, isComposing: true }))).toBeNull();
+    expect(arrangeKey(k("h"))).toBeNull();
+    expect(arrangeKey(k("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBe("front");
+  });
+  it("nudgeKey", () => {
+    expect(nudgeKey(k("ArrowLeft"))).toEqual({ dx: -1, dy: 0 });
+    expect(nudgeKey(k("ArrowRight"))).toEqual({ dx: 1, dy: 0 });
+    expect(nudgeKey(k("ArrowUp"))).toEqual({ dx: 0, dy: -1 });
+    expect(nudgeKey(k("ArrowDown", { shiftKey: true }))).toEqual({ dx: 0, dy: 5 });
+    expect(nudgeKey(k("ArrowLeft", { ctrlKey: true }))).toBeNull();
+    expect(nudgeKey(k("ArrowLeft", { metaKey: true }))).toBeNull();
+    expect(nudgeKey(k("ArrowLeft", { altKey: true }))).toBeNull();
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "TEXTAREA" } }))).toBeNull();
+    expect(nudgeKey(k("a"))).toBeNull();
+  });
+  it("nudgeKey : les flèches d'un contrôle de l'interface ne déplacent rien (OG23, T17)", () => {
+    const role = (r: string) => ({ tagName: "DIV", getAttribute: (n: string) => (n === "role" ? r : null) });
+    for (const target of [
+      { tagName: "BUTTON" },
+      { tagName: "INPUT", type: "range" },
+      { tagName: "INPUT", type: "checkbox" },
+      { tagName: "SELECT" },
+      role("radio"),
+      role("gridcell"),
+      role("tab"),
+      role("menuitem"),
+      role("slider"),
+      role("option"),
+      { tagName: "DIV", isContentEditable: true },
+    ]) {
+      expect(nudgeKey(k("ArrowLeft", { target }))).toBeNull();
+    }
+  });
+  it("nudgeKey : une flèche déjà traitée (defaultPrevented) ne déplace rien", () => {
+    expect(nudgeKey(k("ArrowLeft", { defaultPrevented: true }))).toBeNull();
+  });
+  it("nudgeKey : focus sur la scène, le body ou rien : la flèche déplace", () => {
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "CANVAS" } }))).toEqual({ dx: -1, dy: 0 });
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "BODY" } }))).toEqual({ dx: -1, dy: 0 });
+    expect(nudgeKey(k("ArrowLeft", { target: null }))).toEqual({ dx: -1, dy: 0 });
+  });
+});
+
+describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointes", () => {
+  // Les touches du Tableau (Alt+flèches, Alt+E, Alt+F, Alt+I, Alt+Entrée, Alt+Maj+Entrée) ne tombent sur aucun
+  // raccourci d'OG23 (Alt+Maj+flèches, Alt+Maj+H/V/R, Alt+H/V, Maj+H/V/R, flèches) : aucun arbitrage de contexte requis.
+  const table: KeyLike[] = [
+    ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, altKey: true })),
+    k("e", { code: "KeyE", altKey: true }),
+    k("f", { code: "KeyF", altKey: true }),
+    k("i", { code: "KeyI", altKey: true }),
+    k("Enter", { code: "Enter", altKey: true }),
+    k("Enter", { code: "Enter", altKey: true, shiftKey: true }),
+  ];
+  const og23: KeyLike[] = [
+    ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].flatMap((a) => [k(a, { code: a, altKey: true, shiftKey: true }), k(a, { code: a }), k(a, { code: a, shiftKey: true })]),
+    ...["h", "v", "r"].flatMap((l) => [k(l, { code: `Key${l.toUpperCase()}`, altKey: true, shiftKey: true }), k(l.toUpperCase(), { code: `Key${l.toUpperCase()}`, shiftKey: true })]),
+    k("h", { code: "KeyH", altKey: true }),
+    k("v", { code: "KeyV", altKey: true }),
+  ];
+  it("une touche du Tableau n'est ni Disposer ni un pas de flèche", () => {
+    for (const e of table) {
+      expect(tableKey(e) ?? cellKey(e), `${e.code}`).not.toBeNull();
+      expect(arrangeKey(e), `${e.code}`).toBeNull();
+      expect(nudgeKey(e), `${e.code}`).toBeNull();
+    }
+  });
+  it("une touche d'OG23 n'est ni une touche de l'outil Tableau ni une touche de case", () => {
+    for (const e of og23) {
+      expect(arrangeKey(e) ?? nudgeKey(e), `${e.code}`).not.toBeNull();
+      expect(tableKey(e), `${e.code}`).toBeNull();
+      expect(cellKey(e), `${e.code}`).toBeNull();
+    }
   });
 });

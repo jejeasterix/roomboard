@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDeviceSettings, FRAME_KEY, ITEM_STYLE_KEY, NO_ISLAND, islandKey, PALM_ERASER_KEY, SIDEBAR_KEY } from "./device-settings";
+import { createDeviceSettings, FRAME_KEY, ITEM_STYLE_KEY, NO_ISLAND, OPTION_SECTIONS_KEY, islandKey, PALM_ERASER_KEY, SIDEBAR_KEY } from "./device-settings";
 import { DEFAULT_ITEM_STYLE } from "./engine/item-style";
 import type { KeyValue } from "./profile-store";
 
@@ -191,6 +191,33 @@ describe("device-settings : barre latérale (personnalisation-1a T2)", () => {
     expect(s.sidebar()).toEqual({ tab: "pages", thumb: "m" });
     expect(() => s.setSidebar({ tab: "calques", thumb: "s" })).not.toThrow();
     expect(s.sidebar()).toEqual({ tab: "calques", thumb: "s" });
+  });
+});
+
+describe("sections du panneau d'options (OG23, T2)", () => {
+  it("optionSections : illisible = {}", () => {
+    expect(OPTION_SECTIONS_KEY).toBe("roomboard.options-sections");
+    expect(createDeviceSettings(memoryKv()).optionSections()).toEqual({});
+    for (const raw of ["pas du json", "[1]", "null", "3"]) {
+      expect(createDeviceSettings(memoryKv({ [OPTION_SECTIONS_KEY]: raw })).optionSections()).toEqual({});
+    }
+    expect(createDeviceSettings(throwing).optionSections()).toEqual({});
+    expect(createDeviceSettings(memoryKv({ [OPTION_SECTIONS_KEY]: '{"a":true,"b":"x","c":false}' })).optionSections()).toEqual({ a: true, c: false });
+  });
+  it("setOptionSection écrit la seule clé touchée et la relit", () => {
+    const kv = memoryKv();
+    const s = createDeviceSettings(kv);
+    expect(s.setOptionSection("strokeStyle", true)).toBe(true);
+    expect(JSON.parse(kv.map.get(OPTION_SECTIONS_KEY)!)).toEqual({ strokeStyle: true });
+    expect(s.setOptionSection("background", false)).toBe(true);
+    expect(JSON.parse(kv.map.get(OPTION_SECTIONS_KEY)!)).toEqual({ strokeStyle: true, background: false });
+    expect(createDeviceSettings(kv).optionSections()).toEqual({ strokeStyle: true, background: false });
+  });
+  it("stockage qui refuse : mémoire seule (rend false)", () => {
+    const s = createDeviceSettings(throwing);
+    expect(s.setOptionSection("layers", true)).toBe(false);
+    expect(s.optionSections()).toEqual({ layers: true });
+    expect(createDeviceSettings(null).setOptionSection("layers", true)).toBe(false);
   });
 });
 

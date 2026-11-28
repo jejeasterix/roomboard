@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 
 afterEach(cleanup);
@@ -61,6 +61,14 @@ describe("RadioChoices (design-l3, L3-23, DA-L3-2)", () => {
     await tick();
     expect(document.activeElement).toBe(radio("left"));
   });
+  it("OG23 : une flèche avec Alt, Ctrl ou Méta passe (raccourci d'alignement), sans choix ni preventDefault", () => {
+    const { radio, choose } = setup("tile", "top");
+    for (const mod of [{ altKey: true, shiftKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+      const passed = fireEvent.keyDown(radio("top"), { key: "ArrowLeft", ...mod });
+      expect(passed).toBe(true);
+    }
+    expect(choose).not.toHaveBeenCalled();
+  });
   it("L3-23 : une autre touche ne choisit rien", () => {
     const { radio, choose } = setup();
     fireEvent.keyDown(radio("top"), { key: "a" });
@@ -111,5 +119,29 @@ describe("RadioChoices (design-l3, L3-23, DA-L3-2)", () => {
       expect(choose).toHaveBeenCalledWith("b");
       r.unmount();
     }
+  });
+});
+
+describe("RadioChoices : infobulle par segment (OG23, T17)", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const tips: readonly RadioOption<"a" | "b">[] = [{ value: "a", label: "A", tip: "Texte de A" }, { value: "b", label: "B" }];
+  it("le survol d'un segment à infobulle montre sa bulle ; un segment sans infobulle n'en a pas", () => {
+    const r = render(() => <RadioChoices name="t" label="T" look="segment" options={tips} value="a" choose={() => {}} />);
+    const a = r.container.querySelector<HTMLElement>('[data-choice="a"]')!;
+    const b = r.container.querySelector<HTMLElement>('[data-choice="b"]')!;
+    fireEvent.pointerEnter(b, { pointerType: "mouse" });
+    vi.advanceTimersByTime(1000);
+    expect(document.querySelector(".rb-tip")).toBeNull();
+    fireEvent.pointerEnter(a, { pointerType: "mouse" });
+    vi.advanceTimersByTime(1000);
+    expect(document.querySelector(".rb-tip")?.textContent).toBe("Texte de A");
+    fireEvent.pointerLeave(a, { pointerType: "mouse" });
+  });
+  it("keepFocus : l'appui d'un segment à infobulle ne prend toujours pas le focus", () => {
+    const r = render(() => <RadioChoices keepFocus name="t" label="T" look="segment" options={tips} value="a" choose={() => {}} />);
+    const a = r.container.querySelector<HTMLElement>('[data-choice="a"]')!;
+    expect(fireEvent.pointerDown(a, { pointerType: "mouse", cancelable: true })).toBe(false);
+    expect(fireEvent.mouseDown(a, { cancelable: true })).toBe(false);
   });
 });

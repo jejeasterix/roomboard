@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use roomboard_core::commands::{Command, CommandError, EraseMode};
 use roomboard_core::document::Document;
-use roomboard_core::element::{Look, StrokeStyle};
+use roomboard_core::element::{apply_transform, Look, StrokeStyle};
 use roomboard_core::format::load;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput};
 use roomboard_core::shape::ShapeKind;
@@ -210,6 +210,29 @@ fn with_raw_image(d: &Document, id: &'static str, extra: Vec<(&'static str, In)>
             ("h", In::from(480.0)),
         ];
         fields.extend(extra);
+        els.push_back(txn, MapPrelim::from_iter(fields));
+    })
+}
+
+/// Élément brut minimal d'un genre donné (`fill` = zone du pot, `table`, `media`, `model3d`) posé sur la première page :
+/// la fonctionnalité `zone` n'est active que dans `roomboard-wasm`, et ces genres ont leurs propres commandes.
+fn with_raw_kind(d: &Document, id: &'static str, kind: &'static str) -> Document {
+    edit_raw(d, |txn, pages| {
+        let Some(Out::YMap(page)) = pages.get(txn, 0) else {
+            panic!("page")
+        };
+        let Some(Out::YArray(els)) = page.get(txn, "elements") else {
+            panic!("éléments")
+        };
+        let transform: Vec<Any> = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+            .into_iter()
+            .map(Any::from)
+            .collect();
+        let fields: Vec<(&'static str, In)> = vec![
+            ("id", In::from(id)),
+            ("kind", In::from(kind)),
+            ("transform", In::Any(Any::Array(transform.into()))),
+        ];
         els.push_back(txn, MapPrelim::from_iter(fields));
     })
 }
@@ -1270,4 +1293,423 @@ fn lot2_written_at_creation() {
     )[0]
     .clone();
     assert_eq!(look_of(&d, &t).text_align.as_deref(), Some("center"));
+}
+
+// --- OG23 (T1) : pression constante, champ `variability` (seul `"constant"` lu ; absent = variable, jamais écrit). ---
+
+fn constant() -> Look {
+    Look {
+        variability: Some("constant".into()),
+        ..Look::default()
+    }
+}
+
+fn thick() -> StrokeStyle {
+    StrokeStyle {
+        color: "#000000".into(),
+        width: 16.0,
+    }
+}
+
+/// Trait de x = `x0` à `x0 + 200` (pas 10) sur y = 100 ; pression donnée par point.
+fn stroke_with(d: &mut Document, x0: f32, pressure: impl Fn(f32) -> f32, look: Look) -> String {
+    let page = first_page(d);
+    let points: Vec<f32> = (0..=20)
+        .flat_map(|i| [x0 + i as f32 * 10.0, 100.0, pressure(i as f32 / 20.0)])
+        .collect();
+    d.apply(Command::CommitStroke {
+        page,
+        points,
+        style: thick(),
+        look,
+        cell: None,
+    })
+    .expect("trait")
+    .ids[0]
+        .clone()
+}
+
+/// Sommets monde finis du contour d'un trait.
+fn world_outline(d: &Document, id: &str) -> Vec<(f64, f64)> {
+    let t = d.element(id).expect("vue").transform;
+    let poly = d.outline(id).expect("contour");
+    poly.chunks(2)
+        .filter(|c| c.len() == 2 && c[0].is_finite() && c[1].is_finite())
+        .map(|c| apply_transform(&t, f64::from(c[0]), f64::from(c[1])))
+        .collect()
+}
+
+/// Demi-hauteur du contour autour de l'abscisse monde `x` (sommets à 8 unités au plus).
+fn half_height_at(d: &Document, id: &str, x: f64) -> f64 {
+    let ys: Vec<f64> = world_outline(d, id)
+        .into_iter()
+        .filter(|(wx, _)| (wx - x).abs() <= 8.0)
+        .map(|(_, wy)| wy)
+        .collect();
+    assert!(!ys.is_empty(), "sommets près de x = {x}");
+    let lo = ys.iter().copied().fold(f64::MAX, f64::min);
+    let hi = ys.iter().copied().fold(f64::MIN, f64::max);
+    (hi - lo) / 2.0
+}
+
+/// Discrimine le patron écarté (la pression lue malgré `variability`) : même rampe de pression, contour d'épaisseur
+/// constante avec le champ, variable sans.
+#[test]
+fn constant_outline_keeps_height() {
+    let mut d = blank();
+    let ramp = |t: f32| 0.1 + 0.9 * t;
+    let c = stroke_with(&mut d, 0.0, ramp, constant());
+    let (h1, h2) = (half_height_at(&d, &c, 50.0), half_height_at(&d, &c, 150.0));
+    assert!(
+        (h1 - h2).abs() / h1.max(h2) < 0.05,
+        "constant : {h1} contre {h2}"
+    );
+    let v = stroke_with(&mut d, 0.0, ramp, Look::default());
+    let (g1, g2) = (half_height_at(&d, &v, 50.0), half_height_at(&d, &v, 150.0));
+    assert!(
+        (g1 - g2).abs() / g1.min(g2) > 0.30,
+        "variable : {g1} contre {g2}"
+    );
+}
+
+#[test]
+fn set_style_variability_stroke_only() {
+    let mut d = blank();
+    let r = add_rect(&mut d, Look::default());
+    let s = add_stroke(&mut d, Look::default());
+    let on = StylePatch {
+        variability: Some(Some("constant".into())),
+        ..Default::default()
+    };
+    let c = set_style(&mut d, &[&r, &s], on).expect("style");
+    assert_eq!(c.ids, vec![s.clone()], "rectangle ignoré");
+    assert_eq!(look_of(&d, &s).variability.as_deref(), Some("constant"));
+    assert_eq!(
+        raw_field(&d, &s, "variability").as_deref(),
+        Some("constant")
+    );
+    assert!(!raw_keys(&d, &r).contains(&"variability".to_string()));
+    let off = StylePatch {
+        variability: Some(None),
+        ..Default::default()
+    };
+    let c = set_style(&mut d, &[&s], off).expect("retrait");
+    assert_eq!(c.ids, vec![s.clone()]);
+    assert_eq!(look_of(&d, &s).variability, None);
+    assert!(!raw_keys(&d, &s).contains(&"variability".to_string()));
+    let v = d.version();
+    let wavy = StylePatch {
+        variability: Some(Some("wavy".into())),
+        ..Default::default()
+    };
+    assert_eq!(set_style(&mut d, &[&s], wavy), Err(CommandError::BadStyle));
+    assert_eq!(d.version(), v);
+}
+
+/// Discrimine le patron écarté (gomme au rayon variable sur un contour constant) : à pression 0,1, les morceaux gardent
+/// `variability` et le trou entre leurs contours a la largeur de la gomme (2 × rayon) à 1 unité près.
+#[test]
+fn erase_partial_constant_keeps_variability_and_radius() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let id = stroke_with(&mut d, 100.0, |_| 0.1, constant());
+    let radius = 6.0_f32;
+    let c = d
+        .apply(Command::Erase {
+            page,
+            path: vec![200.0, 60.0, 200.0, 140.0],
+            radius,
+            mode: EraseMode::Partial,
+        })
+        .expect("gomme");
+    assert_eq!(c.removed, vec![id]);
+    assert!(c.ids.len() >= 2, "deux morceaux");
+    let (mut left, mut right) = (f64::MIN, f64::MAX);
+    for p in &c.ids {
+        assert_eq!(look_of(&d, p).variability.as_deref(), Some("constant"));
+        let xs: Vec<f64> = world_outline(&d, p).into_iter().map(|(x, _)| x).collect();
+        let (lo, hi) = (
+            xs.iter().copied().fold(f64::MAX, f64::min),
+            xs.iter().copied().fold(f64::MIN, f64::max),
+        );
+        if hi < 200.0 {
+            left = left.max(hi);
+        } else if lo > 200.0 {
+            right = right.min(lo);
+        }
+    }
+    let hole = right - left;
+    assert!(
+        (hole - 2.0 * f64::from(radius)).abs() <= 1.0,
+        "trou {hole} pour une gomme de {}",
+        2.0 * radius
+    );
+}
+
+#[test]
+fn old_stroke_has_no_variability_key() {
+    let mut d = blank();
+    let s = add_stroke(&mut d, Look::default());
+    assert!(!raw_keys(&d, &s).contains(&"variability".to_string()));
+    assert_eq!(look_of(&d, &s).variability, None);
+    let w = add_stroke(
+        &mut d,
+        Look {
+            variability: Some("wavy".into()),
+            ..Look::default()
+        },
+    );
+    assert!(
+        !raw_keys(&d, &w).contains(&"variability".to_string()),
+        "hors domaine : jamais écrit"
+    );
+    let k = add_stroke(&mut d, constant());
+    assert_eq!(
+        raw_field(&d, &k, "variability").as_deref(),
+        Some("constant")
+    );
+}
+
+// --- OG23 (T10) : `dragCopy` (seul `true` lu et écrit, booléen ; absent = déplacer, le neutre). ---
+
+fn drag_copy(v: bool) -> StylePatch {
+    StylePatch {
+        drag_copy: Some(v),
+        ..Default::default()
+    }
+}
+
+/// Valeur `Any` brute d'un champ de l'élément.
+fn raw_any(d: &Document, id: &str, key: &str) -> Option<Any> {
+    let (raw, pages) = raw_doc(d);
+    let txn = raw.transact();
+    match find_raw(&txn, &pages, id)?.get(&txn, key) {
+        Some(Out::Any(a)) => Some(a),
+        _ => None,
+    }
+}
+
+#[test]
+fn set_style_drag_copy_one_step() {
+    let mut d = blank();
+    let r = add_rect(&mut d, Look::default());
+    let s = add_stroke(&mut d, Look::default());
+    let t = set_text(&mut d, None, "Bonjour", Look::default())[0].clone();
+    let d = with_raw_kind(&d, "zone-brute", "fill");
+    let z = "zone-brute".to_string();
+    let mut d = with_raw_image(&d, "img-1", vec![]);
+    let i = "img-1".to_string();
+    let all = [&r, &s, &t, &i];
+    let c = set_style(&mut d, &[&r, &s, &t, &i, &z], drag_copy(true)).expect("pose");
+    assert_eq!(
+        c.ids,
+        vec![r.clone(), s.clone(), t.clone(), i.clone()],
+        "zone ignorée sans erreur"
+    );
+    for id in all {
+        assert_eq!(look_of(&d, id).drag_copy, Some(true));
+        assert_eq!(raw_any(&d, id, "dragCopy"), Some(Any::Bool(true)));
+    }
+    assert!(!raw_keys(&d, &z).contains(&"dragCopy".to_string()));
+    assert!(d.undo());
+    for id in all {
+        assert_eq!(look_of(&d, id).drag_copy, None, "une seule étape");
+    }
+    set_style(&mut d, &[&r, &s], drag_copy(true)).expect("pose");
+    let v = d.version();
+    let same = set_style(&mut d, &[&r], drag_copy(true)).expect("même valeur");
+    assert_eq!(same.ids, Vec::<String>::new());
+    assert_eq!(d.version(), v, "même valeur : aucune étape");
+    let off = set_style(&mut d, &[&r], drag_copy(false)).expect("retrait");
+    assert_eq!(off.ids, vec![r.clone()]);
+    assert_eq!(look_of(&d, &r).drag_copy, None);
+    assert!(!raw_keys(&d, &r).contains(&"dragCopy".to_string()));
+    assert_eq!(look_of(&d, &s).drag_copy, Some(true));
+    let v = d.version();
+    set_style(&mut d, &[&r], drag_copy(false)).expect("retrait de l'absent");
+    assert_eq!(d.version(), v, "retirer l'absent : aucune étape");
+}
+
+/// Une valeur non booléenne ou `false` gardée dans le fichier est lue neutre.
+#[test]
+fn drag_copy_unreadable_is_neutral() {
+    let d = blank();
+    let mut d = d;
+    let r = add_rect(&mut d, Look::default());
+    for v in [
+        In::Any(Any::Bool(false)),
+        In::from("true"),
+        In::Any(Any::from(1.0)),
+    ] {
+        let e = with_raw_field(&d, &r, "dragCopy", v);
+        assert_eq!(look_of(&e, &r).drag_copy, None);
+        assert_eq!(e.element(&r).expect("vue").look, None);
+    }
+}
+
+#[test]
+fn drag_copy_kept_by_extract() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let id = add_rect(&mut d, Look::default());
+    set_style(&mut d, &[&id], drag_copy(true)).expect("pose");
+    let frag = d
+        .extract(&page, std::slice::from_ref(&id))
+        .expect("extraction");
+    let ins = d
+        .insert_fragment(&frag, &page, 10.0, 10.0)
+        .expect("insertion");
+    assert_eq!(look_of(&d, &ins.ids[0]).drag_copy, Some(true));
+    assert_eq!(raw_any(&d, &ins.ids[0], "dragCopy"), Some(Any::Bool(true)));
+}
+
+/// Décision 29 : « glisser une copie » vaut pour tout objet (tableau, média, objet 3D compris), jamais pour une zone.
+#[test]
+fn set_style_drag_copy_every_object_kind() {
+    let d = blank();
+    let d = with_raw_kind(&d, "tab-1", "table");
+    let d = with_raw_kind(&d, "med-1", "media");
+    let mut d = with_raw_kind(&d, "m3d-1", "model3d");
+    let ids: Vec<String> = ["tab-1", "med-1", "m3d-1"].map(String::from).to_vec();
+    let refs: Vec<&String> = ids.iter().collect();
+    let c = set_style(&mut d, &refs, drag_copy(true)).expect("pose");
+    assert_eq!(c.ids, ids);
+    for id in &ids {
+        assert_eq!(raw_any(&d, id, "dragCopy"), Some(Any::Bool(true)), "{id}");
+    }
+    assert!(d.undo());
+    for id in &ids {
+        assert_eq!(raw_any(&d, id, "dragCopy"), None, "{id}");
+    }
+}
+
+/// `variability` n'est écrit qu'avec un trait : jamais sur une forme ni un texte (comme `StylePatch`).
+#[test]
+fn look_variability_written_only_for_stroke() {
+    let l = Look {
+        variability: Some("constant".into()),
+        ..Default::default()
+    };
+    let mut d = blank();
+    let r = add_rect(&mut d, l.clone());
+    let t = set_text(&mut d, None, "Bonjour", l.clone())[0].clone();
+    let s = add_stroke(&mut d, l);
+    assert!(!raw_keys(&d, &r).contains(&"variability".to_string()));
+    assert!(!raw_keys(&d, &t).contains(&"variability".to_string()));
+    assert_eq!(
+        raw_field(&d, &s, "variability").as_deref(),
+        Some("constant")
+    );
+}
+
+/// Le cache des contours est clé par `constant` : changer `variability` d'un trait existant (SetStyle) fait relire un
+/// contour différent (recalcul compté), et le retrait rend le premier contour au bit près.
+#[test]
+fn outline_cache_follows_variability_change() {
+    let mut d = blank();
+    let s = stroke_with(&mut d, 0.0, |p| 0.1 + 0.9 * p, Look::default());
+    let bits = |d: &Document| -> Vec<u32> {
+        d.outline(&s)
+            .expect("contour")
+            .iter()
+            .map(|v| v.to_bits())
+            .collect()
+    };
+    let variable = bits(&d);
+    let m = d.outline_cache_misses();
+    assert_eq!(bits(&d), variable);
+    assert_eq!(d.outline_cache_misses(), m, "même aspect : servi du cache");
+    let patch = |v: Option<&str>| StylePatch {
+        variability: Some(v.map(String::from)),
+        ..Default::default()
+    };
+    set_style(&mut d, &[&s], patch(Some("constant"))).expect("constant");
+    let constant = bits(&d);
+    assert_ne!(constant, variable, "contour à pression constante différent");
+    assert_eq!(d.outline_cache_misses(), m + 1, "recalcul");
+    set_style(&mut d, &[&s], patch(None)).expect("retrait");
+    assert_eq!(bits(&d), variable);
+}
+
+/// OG23 (T22) : la vue d'un tableau, d'un média et d'un objet 3D porte `look.dragCopy` (décision 29) ; seul ce champ
+/// d'aspect y est exposé, un élément sans bascule garde la même vue (`look` omis).
+#[test]
+fn drag_copy_is_in_the_view_of_table_media_and_model3d() {
+    use roomboard_core::asset::AssetRef;
+    use roomboard_core::media::MediaType;
+    use roomboard_core::model3d::{Model3dFormat, DEFAULT_PITCH, DEFAULT_YAW};
+    let asset = |c: char, name: &str, mime: &str| AssetRef {
+        id: c.to_string().repeat(64),
+        name: name.into(),
+        mime: mime.into(),
+        size: 1000.0,
+    };
+    let mut d = blank();
+    let p = first_page(&d);
+    let table = d
+        .apply(Command::AddTable {
+            page: p.clone(),
+            x: 100.0,
+            y: 200.0,
+            cols: 2,
+            rows: 2,
+            col_width: 240.0,
+            row_height: 64.0,
+            color: "#000000".into(),
+            size: 36.0,
+        })
+        .expect("tableau")
+        .ids[0]
+        .clone();
+    let media = d
+        .apply(Command::AddMedia {
+            page: p.clone(),
+            asset: asset('a', "clip.webm", "video/webm"),
+            linked: None,
+            media_type: MediaType::Video,
+            w: 320.0,
+            h: 180.0,
+            duration: 2.5,
+            poster: None,
+            matrix: [1.0, 0.0, 0.0, 1.0, 100.0, 50.0],
+        })
+        .expect("média")
+        .ids[0]
+        .clone();
+    let model = d
+        .apply(Command::AddModel3d {
+            page: p,
+            asset: asset('b', "chaise.gltf", "model/gltf+json"),
+            format: Model3dFormat::Gltf,
+            files: vec![],
+            w: 640.0,
+            h: 480.0,
+            yaw: DEFAULT_YAW,
+            pitch: DEFAULT_PITCH,
+            snapshot: None,
+            matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        })
+        .expect("objet 3D")
+        .ids[0]
+        .clone();
+    let ids = [&table, &media, &model];
+    for id in ids {
+        assert_eq!(d.element(id).expect("vue").look, None, "neutre : omis");
+    }
+    set_style(&mut d, &ids, drag_copy(true)).expect("pose");
+    for id in ids {
+        let look = d.element(id).expect("vue").look.expect("look présent");
+        assert_eq!(look.drag_copy, Some(true));
+        assert_eq!(
+            look,
+            Look {
+                drag_copy: Some(true),
+                ..Look::default()
+            }
+        );
+    }
+    assert!(d.undo());
+    for id in ids {
+        assert_eq!(d.element(id).expect("vue").look, None);
+    }
 }

@@ -78,6 +78,13 @@ class FakeRenderer implements Renderer {
   setImagePreview(p: ImagePreview | null): void {
     this.imagePreviews.push(p);
   }
+  /** OG23 (T8) : couleur rendue à chaque lecture de la pipette, et points demandés. */
+  color: string | null = "#abcdef";
+  readonly asked: [number, number][] = [];
+  colorAt(x: number, y: number): string | null {
+    this.asked.push([x, y]);
+    return this.color;
+  }
 }
 
 const PEN: StrokeStyle = { color: "#000000", width: 4 };
@@ -2230,6 +2237,100 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(colorOf(b)).toBe("#000000");
   });
 
+  it("arrange align-left : une étape", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const ids = [addRect(), addRect(), addRect()];
+    sel().setSelection(ids);
+    const before = ids.map((id) => doc.bounds([id]));
+    expect(engine.arrange("align-left")).toBe(true);
+    const xs = ids.map((id) => doc.bounds([id])?.x0);
+    expect(new Set(xs).size).toBe(1);
+    engine.undo();
+    expect(ids.map((id) => doc.bounds([id]))).toEqual(before);
+  });
+
+  it("arrange sans sélection : faux", () => {
+    const { engine } = styleSetup();
+    expect(engine.arrange("align-left")).toBe(false);
+  });
+
+  it("arrange : groupe en bloc", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    const b = addRect();
+    const c = addRect();
+    sel().setSelection([a, b]);
+    engine.group();
+    sel().setSelection([a, c]);
+    const before = [a, b, c].map((id) => doc.bounds([id])!);
+    expect(engine.arrange("align-right")).toBe(true);
+    const after = [a, b, c].map((id) => doc.bounds([id])!);
+    expect(after[0]!.x0 - before[0]!.x0).toBe(after[1]!.x0 - before[1]!.x0);
+    expect(after[0]!.x0).not.toBe(before[0]!.x0);
+  });
+
+  it("flèche : une Transform, une étape", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    const x0 = doc.bounds([a])!.x0;
+    const y0 = doc.bounds([a])!.y0;
+    expect(engine.key(key("ArrowRight"))).toBe(true);
+    expect(doc.bounds([a])!.x0).toBe(x0 + 1);
+    engine.view.zoomAt(0, 0, 2);
+    expect(engine.key(key("ArrowDown", { shiftKey: true }))).toBe(true);
+    expect(doc.bounds([a])!.y0).toBe(y0 + 5);
+    engine.undo();
+    engine.undo();
+    expect(doc.bounds([a])!.x0).toBe(x0);
+    expect(doc.bounds([a])!.y0).toBe(y0);
+  });
+
+  it("flèche avec le focus sur un contrôle de l'interface : la sélection ne bouge pas, la touche passe (T17)", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    const x0 = doc.bounds([a])!.x0;
+    for (const target of [{ tagName: "BUTTON" }, { tagName: "INPUT", type: "range" }, { tagName: "DIV", getAttribute: (n: string) => (n === "role" ? "radio" : null) }, { tagName: "DIV", getAttribute: (n: string) => (n === "role" ? "gridcell" : null) }]) {
+      expect(engine.key(key("ArrowRight", { target }))).toBe(false);
+    }
+    expect(engine.key(key("ArrowRight", { defaultPrevented: true }))).toBe(false);
+    expect(doc.bounds([a])!.x0).toBe(x0);
+    // Focus sur la scène : la flèche déplace.
+    expect(engine.key(key("ArrowRight", { target: { tagName: "CANVAS" } }))).toBe(true);
+    expect(doc.bounds([a])!.x0).toBe(x0 + 1);
+  });
+
+  it("flèche sans sélection : la touche passe", () => {
+    const { engine } = styleSetup();
+    expect(engine.key(key("ArrowLeft"))).toBe(false);
+    expect(engine.key(key("H", { shiftKey: true, code: "KeyH" }))).toBe(false);
+  });
+
+  it("Maj+H retourne", () => {
+    const { engine, doc, page, addRect, sel } = styleSetup();
+    const r = addRect();
+    const f = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 300, y0: 100, x1: 400, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
+    sel().setSelection([r, f]);
+    expect(engine.key(key("H", { shiftKey: true, code: "KeyH" }))).toBe(true);
+    // Miroir horizontal autour du centre de la sélection : la flèche (à droite) passe à gauche du rectangle.
+    expect(doc.bounds([f])!.x1).toBeLessThan(doc.bounds([r])!.x0);
+  });
+
+  it("style courant : transparent jamais gardé", () => {
+    const seen: string[] = [];
+    const { engine, addRect, sel, colorOf } = styleSetup();
+    engine.onItemStyle((s) => seen.push(s.color));
+    const a = addRect();
+    const b = addRect();
+    sel().setSelection([a, b]);
+    engine.setItemStyle({ color: "transparent" });
+    expect(colorOf(a)).toBe("transparent");
+    expect(colorOf(b)).toBe("transparent");
+    expect(engine.itemStyle().color).toBe("#000000");
+    expect(seen).not.toContain("transparent");
+  });
+
   it("arrowType sur une sélection mixte : SetStyle des seules flèches", () => {
     const { engine, doc, addRect, sel } = styleSetup();
     const r = addRect();
@@ -2332,6 +2433,55 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     engine.undo();
     expect(doc.element(copy)).toBeNull();
     expect(engine.state().elementCount).toBe(1);
+  });
+
+  describe("Glisser une copie (OG23, T11)", () => {
+    const withCopyProp = () => {
+      const s = styleSetup();
+      const a = s.addRect();
+      s.doc.apply({ type: "SetStyle", ids: [a], patch: { dragCopy: true } });
+      s.sel().setSelection([a]);
+      return { ...s, a };
+    };
+
+    it("dragCopy : copie sans la propriété, sélectionnée", () => {
+      const { engine, doc, a } = withCopyProp();
+      expect(engine.duplicate([a], 200, 0, true)).toBe(true);
+      const copy = engine.state().selection[0] ?? "";
+      expect(copy).not.toBe(a);
+      expect(doc.element(copy)?.look?.dragCopy).toBeUndefined();
+      expect(doc.element(a)?.look?.dragCopy).toBe(true);
+      expect(doc.element(copy)?.transform?.[4]).toBe((doc.element(a)?.transform?.[4] ?? Number.NaN) + 200);
+    });
+
+    it("Ctrl+D garde dragCopy", () => {
+      const { engine, doc } = withCopyProp();
+      expect(engine.duplicateSelection()).toBe(true);
+      const copy = engine.state().selection[0] ?? "";
+      expect(doc.element(copy)?.look?.dragCopy).toBe(true);
+    });
+
+    it("setDragCopy : une étape, hors style courant", () => {
+      const { engine, doc, addRect, sel } = styleSetup();
+      const a = addRect();
+      sel().setSelection([a]);
+      const before = engine.itemStyle();
+      expect(engine.setDragCopy(true)).toBe(true);
+      expect(doc.element(a)?.look?.dragCopy).toBe(true);
+      expect(engine.itemStyle()).toEqual(before);
+      engine.undo();
+      expect(doc.element(a)?.look?.dragCopy).toBeUndefined();
+    });
+
+    it("glisser encore l'original : 3 objets, Ctrl+Z : 2", () => {
+      const { engine, a } = withCopyProp();
+      engine.duplicate([a], 200, 0, true);
+      engine.select([a]);
+      engine.duplicate([a], 400, 0, true);
+      expect(engine.state().elementCount).toBe(3);
+      engine.undo();
+      expect(engine.state().elementCount).toBe(2);
+    });
   });
 
   describe("Disposition (T15)", () => {
@@ -2804,6 +2954,37 @@ describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () =
   });
 });
 
+describe("OG23 T8 : pipette de scène", () => {
+  it("pickColor : un toucher, Échap annule", async () => {
+    const { engine, renderer, log } = setup();
+    const p = engine.pickColor();
+    expect(engine.state().picking).toBe(true);
+    engine.sink.begin(1, "pen", [{ ...sample, x: 7, y: 9 }]);
+    engine.sink.close(1, "end");
+    expect(await p).toBe("#abcdef");
+    expect(renderer.asked).toEqual([[7, 9]]);
+    expect(log).toEqual([]); // le toucher lu n'atteint aucun outil
+    expect(engine.state().picking).toBe(false);
+    // le toucher suivant redevient un geste ordinaire
+    engine.sink.begin(2, "pen", [sample]);
+    engine.sink.close(2, "end");
+    expect(log).toContain("pen.begin 2");
+    // Échap annule
+    const q = engine.pickColor();
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect(await q).toBeNull();
+    expect(engine.state().picking).toBe(false);
+    // un second appel résout le premier à null
+    const a = engine.pickColor();
+    const b = engine.pickColor();
+    expect(await a).toBeNull();
+    expect(engine.state().picking).toBe(true);
+    renderer.color = null;
+    engine.sink.begin(3, "pen", [sample]);
+    expect(await b).toBeNull();
+  });
+});
+
 describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt tardif, survol", () => {
   function og12() {
     const doc = fakeCore.blank();
@@ -3011,9 +3192,40 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(doc.bounds([sel[0] ?? ""])!.x0).toBeGreaterThan(200);
     const b = rect(100, 400, 200, 500);
     engine.select([a, b]);
-    expect(engine.key(key("ArrowRight", { altKey: true, shiftKey: true }))).toBe(false);
+    // Fusion OG12 × OG23 : sur deux objets, la touche n'est plus libre, elle va à Aligner à droite (OG23) ; aucun AddLinked.
+    expect(engine.key(key("ArrowRight", { altKey: true, shiftKey: true }))).toBe(true);
     expect(engine.addLinked("down")).toBe(false);
     expect(doc.elementIds(page)).toHaveLength(4);
+  });
+
+  it("Alt+Maj+flèche (fusion OG12 × OG23) : séance « Modifier les points » et rectangle seul à OG12, sinon Aligner", () => {
+    const { engine, doc, page, rect, line } = og12();
+    const sent: Command[] = [];
+    const apply = doc.apply.bind(doc);
+    vi.spyOn(doc, "apply").mockImplementation((c) => { sent.push(c); return apply(c); });
+    const altShift = (k: string) => key(k, { altKey: true, shiftKey: true });
+    // Pendant une séance d'édition de points : le geste d'OG12 prime, jamais d'Arrange ; la séance reste ouverte.
+    const l = line();
+    engine.select([l]);
+    expect(engine.editLinePoints()).toBe(true);
+    engine.key(altShift("ArrowLeft"));
+    expect(sent.map((c) => c.type)).not.toContain("Arrange");
+    expect(engine.state().lineEditing).toBe(l);
+    engine.exitLineEdit();
+    // Un seul rectangle : l'objet relié d'OG12, pas d'Arrange.
+    const a = rect(100, 100, 200, 200);
+    engine.select([a]);
+    sent.length = 0;
+    expect(engine.key(altShift("ArrowDown"))).toBe(true);
+    expect(sent.map((c) => c.type)).toEqual(["AddLinked"]);
+    // Hors de ces contextes (deux objets) : Aligner d'OG23.
+    const b = rect(300, 400, 350, 450);
+    engine.select([a, b]);
+    sent.length = 0;
+    expect(engine.key(altShift("ArrowLeft"))).toBe(true);
+    expect(sent).toEqual([{ type: "Arrange", ids: [a, b], how: "align-left" }]);
+    expect(doc.bounds([b])!.x0).toBe(doc.bounds([a])!.x0);
+    expect(doc.elementIds(page)).toHaveLength(5);
   });
 
   it("Ctrl tenu : ctx.ctrl() vrai jusqu'au keyUp et à la perte du focus ; la touche n'est pas prise", () => {

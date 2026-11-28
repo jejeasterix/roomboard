@@ -110,3 +110,91 @@ describe("ColorPicker (OG11, T16)", () => {
     expect(m.cells()[19]!.getAttribute("aria-selected")).toBe("true");
   });
 });
+
+describe("ColorPicker transparent (OG23, T5)", () => {
+  it("Transparent dans le sélecteur", () => {
+    const choose = vi.fn();
+    const m = render(() => <ColorPicker value={null} transparent choose={choose} close={() => {}} anchor={document.body} />);
+    const t = m.container.querySelector("[data-color-transparent]")!;
+    expect(t).not.toBeNull();
+    fireEvent.click(t);
+    expect(choose).toHaveBeenCalledWith(null);
+    m.unmount();
+    const off = render(() => <ColorPicker value={null} choose={() => {}} close={() => {}} anchor={document.body} />);
+    expect(off.container.querySelector("[data-color-transparent]")).toBeNull();
+  });
+  it("75 cellules de grille avec la case Transparent", () => {
+    const m = render(() => <ColorPicker value={null} transparent choose={() => {}} close={() => {}} anchor={document.body} />);
+    expect(m.container.querySelectorAll("[role=gridcell]")).toHaveLength(75);
+    expect(m.container.querySelectorAll(".rb-color-cell")).toHaveLength(75);
+  });
+});
+
+describe("ColorPicker : pipette (OG23, T8)", () => {
+  function withPick(pick: () => Promise<string | null>) {
+    const anchor = document.createElement("button");
+    document.body.appendChild(anchor);
+    const choose = vi.fn();
+    const close = vi.fn();
+    const r = render(() => <ColorPicker value={null} choose={choose} close={close} anchor={anchor} pick={pick} />);
+    return { ...r, anchor, choose, close };
+  }
+  it("pipette : libellé sans raccourci, raccourci par aria-keyshortcuts (T18)", () => {
+    const m = withPick(() => Promise.resolve(null));
+    const b = m.container.querySelector("[data-color-pipette]")!;
+    expect(b.getAttribute("aria-label")).toBe("Pipette");
+    expect(b.getAttribute("aria-keyshortcuts")).toBe("I");
+  });
+  it("pipette : bouton absent sans pick", () => {
+    const m = mount();
+    expect(m.container.querySelector("[data-color-pipette]")).toBeNull();
+  });
+  it("pipette : le toucher extérieur ne ferme pas", async () => {
+    let resolve: (c: string | null) => void = () => {};
+    const pick = vi.fn(() => new Promise<string | null>((r) => { resolve = r; }));
+    const m = withPick(pick);
+    const outside = document.createElement("div");
+    document.body.appendChild(outside);
+    fireEvent.click(m.container.querySelector("[data-color-pipette]")!);
+    expect(pick).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(outside);
+    expect(m.close).not.toHaveBeenCalled();
+    resolve("#123456");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(m.choose).toHaveBeenCalledWith("#123456");
+    // lue : le sélecteur redevient fermable par un toucher extérieur
+    fireEvent.pointerDown(outside);
+    expect(m.close).toHaveBeenCalledTimes(1);
+  });
+  it("pipette : lecture nulle ou annulée, rien n'est choisi", async () => {
+    const m = withPick(() => Promise.resolve(null));
+    fireEvent.click(m.container.querySelector("[data-color-pipette]")!);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(m.choose).not.toHaveBeenCalled();
+  });
+  it("I arme la pipette (hors champ hexadécimal)", () => {
+    const pick = vi.fn(() => new Promise<string | null>(() => {}));
+    const m = withPick(pick);
+    fireEvent.keyDown(m.container.querySelector("[data-color-hex]")!, { key: "i" });
+    expect(pick).not.toHaveBeenCalled();
+    fireEvent.keyDown(m.container.querySelector("[role=gridcell]")!, { key: "i" });
+    expect(pick).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(m.container.querySelector("[role=gridcell]")!, { key: "i", ctrlKey: true });
+    expect(pick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ColorPicker : case Transparente et pipette (OG23, T20)", () => {
+  it("Transparente : libellé accessible, infobulle, damier ; avec la pipette sur la ligne .rb-color-tools", () => {
+    const m = render(() => <ColorPicker value={null} transparent pick={async () => null} choose={() => {}} close={() => {}} anchor={document.body} />);
+    const t = m.container.querySelector("[data-color-transparent]")!;
+    expect(t.getAttribute("aria-label")).toBe("Transparent");
+    expect(t.getAttribute("title")).toBe("Transparent");
+    const row = m.container.querySelector(".rb-color-tools")!;
+    expect(row.contains(t)).toBe(true);
+    expect(row.contains(m.container.querySelector("[data-color-pipette]"))).toBe(true);
+    m.unmount();
+  });
+});

@@ -38,10 +38,13 @@ grep -q "scripts/essais/fonds-navigateur.mjs" scripts/verifier.sh || ko "fonds-n
 grep -q "scripts/essais/restes-personnalisation-1-navigateur.mjs" scripts/verifier.sh || ko "restes-personnalisation-1-navigateur absent de verifier.sh"
 # OG20 gomme sur trait épais : ligne à part, comme personnalisation 1b.
 grep -q "scripts/essais/gomme-trait-epais-navigateur.mjs" scripts/verifier.sh || ko "gomme-trait-epais-navigateur absent de verifier.sh"
+# OG23 personnalisation-2-retours : ligne à part, comme OG20.
+grep -q "scripts/essais/personnalisation-2-retours-navigateur.mjs" scripts/verifier.sh || ko "personnalisation-2-retours-navigateur absent de verifier.sh"
 # OG25 gomme automatique à la paume : ligne à part, comme OG20.
 grep -q "scripts/essais/gomme-paume-navigateur.mjs" scripts/verifier.sh || ko "gomme-paume-navigateur absent de verifier.sh"
 # OG27 (restes d'OG19, d'OG14 et d'OG24) : ligne à part, comme la gomme.
 grep -q "scripts/essais/restes-og19-og14-og24-navigateur.mjs" scripts/verifier.sh || ko "restes-og19-og14-og24-navigateur absent de verifier.sh"
+grep -q "scripts/essais/restes-og27-navigateur.mjs" scripts/verifier.sh || ko "restes-og27-navigateur absent de verifier.sh"
 if grep -E 'essais/.*-navigateur\.mjs.*--captures?' scripts/verifier.sh >/dev/null; then ko "--e2e ne doit passer aucune option de capture"; fi
 # Les essais ne sont lancés que dans le bloc --e2e.
 awk '/essais\/.*-navigateur\.mjs/ && !in_e2e {print "hors bloc e2e : " $0; bad=1} /if \[ "\$E2E" = 1 \]/ {in_e2e=1} /^fi/ {in_e2e=0} END {exit bad}' scripts/verifier.sh >&2 || ko "un essai navigateur est lancé hors du bloc --e2e"

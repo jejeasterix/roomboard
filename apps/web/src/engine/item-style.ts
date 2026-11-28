@@ -19,6 +19,8 @@ export interface ItemStyle {
   /** T31 : police et taille du prochain texte (Excalidraw : currentItemFontFamily, currentItemFontSize) ; `default` : la police normale. */
   readonly font: string;
   readonly fontSize: number;
+  /** OG23 : pression du stylo ; `constant` : épaisseur uniforme. */
+  readonly variability: "variable" | "constant";
   /** OG12 (n° 24, H1) : type de la prochaine flèche ; « sharp » (Droite) par défaut. */
   readonly arrowType: ArrowType;
   /** OG12 (n° 19, H12) : réglage « Liaison des flèches », gardé sur l'appareil. */
@@ -26,7 +28,7 @@ export interface ItemStyle {
 }
 export const DEFAULT_ITEM_STYLE: ItemStyle = Object.freeze({
   color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100,
-  fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", font: "default", fontSize: 36, arrowType: "sharp", arrowBinding: true,
+  fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", font: "default", fontSize: 36, variability: "variable", arrowType: "sharp", arrowBinding: true,
 });
 const KINDS: readonly string[] = ["solid", ...STROKE_STYLES];
 const ok: { readonly [K in keyof ItemStyle]: (v: unknown) => boolean } = {
@@ -43,6 +45,7 @@ const ok: { readonly [K in keyof ItemStyle]: (v: unknown) => boolean } = {
   textAlign: (v) => v === "left" || v === "center" || v === "right",
   font: (v) => typeof v === "string" && v !== "" && v.length <= 64,
   fontSize: (v) => typeof v === "number" && Number.isFinite(v) && v > 0,
+  variability: (v) => v === "variable" || v === "constant",
   arrowType: (v) => v === "sharp" || v === "round" || v === "elbow",
   arrowBinding: (v) => typeof v === "boolean",
 };

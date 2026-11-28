@@ -16,10 +16,11 @@ use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 #[cfg(test)]
 use crate::element::ImageView;
 use crate::element::{
-    backdrop_view, finite_positive, look_view, out_f64, out_string, out_transform, read_backdrop,
-    read_cell_link, read_group, read_image, read_style, read_unknown, unknown_view, ElementView,
-    FillView, PageLayout, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND,
-    FIT_WIDTH, INFINITE_MODE, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
+    backdrop_view, drag_copy_view, finite_positive, look_view, out_f64, out_string, out_transform,
+    read_backdrop, read_cell_link, read_group, read_image, read_style, read_unknown, unknown_view,
+    ElementView, FillView, PageLayout, PageView, ShapeView, StrokeStyle, TextView,
+    DEFAULT_BACKGROUND, FIT_WIDTH, INFINITE_MODE, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND,
+    PORTRAIT_HEIGHT, SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
@@ -43,6 +44,8 @@ pub enum DecodeError {
 /// de points gardent quand même l'entrée : un écart force le recalcul.
 struct CachedOutline {
     width_bits: u32,
+    /// OG23 : pression constante (`variability`) ; un changement de ce champ recalcule le contour.
+    constant: bool,
     points: usize,
     outline: Rc<[f32]>,
 }
@@ -448,6 +451,7 @@ impl Document {
             Some(crate::table::TABLE_KIND) => Some(match crate::table::read(&txn, e) {
                 Some((transform, table)) => ElementView {
                     table: Some(table),
+                    look: drag_copy_view(&txn, e),
                     ..ElementView::bare(id, "table", transform)
                 },
                 // T2 : tableau mal formé → cadre inconnu, jamais `None`.
@@ -462,6 +466,7 @@ impl Document {
             Some(crate::media::MEDIA_KIND) => Some(match crate::media::read_media(&txn, e) {
                 Some((transform, media)) => ElementView {
                     media: Some(media),
+                    look: drag_copy_view(&txn, e),
                     ..ElementView::bare(id, "media", transform)
                 },
                 // M7 : média mal formé → cadre inconnu, jamais `None` (repli du tableau, pas de l'image).
@@ -477,6 +482,7 @@ impl Document {
                 Some(match crate::model3d::read_model3d(&txn, e) {
                     Some((transform, model3d)) => ElementView {
                         model3d: Some(model3d),
+                        look: drag_copy_view(&txn, e),
                         ..ElementView::bare(id, "model3d", transform)
                     },
                     // X8 : objet 3D mal formé → cadre inconnu, jamais `None` (repli du média, pas de l'image).
@@ -609,19 +615,25 @@ impl Document {
         id: &str,
         style: &StrokeStyle,
         pts: &[InkPoint],
+        constant: bool,
     ) -> Rc<[f32]> {
         let width_bits = style.width.to_bits();
         if let Some(c) = self.outlines.borrow().get(id) {
-            if c.width_bits == width_bits && c.points == pts.len() {
+            if c.width_bits == width_bits && c.constant == constant && c.points == pts.len() {
                 return Rc::clone(&c.outline);
             }
         }
         self.outline_misses.set(self.outline_misses.get() + 1);
-        let outline: Rc<[f32]> = ink_outline(pts, &InkStyle { width: style.width }).into();
+        let ink = InkStyle {
+            width: style.width,
+            constant,
+        };
+        let outline: Rc<[f32]> = ink_outline(pts, &ink).into();
         self.outlines.borrow_mut().insert(
             id.to_string(),
             CachedOutline {
                 width_bits,
+                constant,
                 points: pts.len(),
                 outline: Rc::clone(&outline),
             },
@@ -1023,19 +1035,25 @@ mod tests {
             width: 12.0,
         };
         let m = d.outline_cache_misses();
-        let o4 = d.cached_outline(&a, &thin, &pts);
+        let o4 = d.cached_outline(&a, &thin, &pts, false);
         assert_eq!(d.outline_cache_misses(), m + 1);
-        let o4_again = d.cached_outline(&a, &thin, &pts);
+        let o4_again = d.cached_outline(&a, &thin, &pts, false);
         assert_eq!(d.outline_cache_misses(), m + 1, "même clé : servi du cache");
         assert_eq!(bits(&o4_again), bits(&o4));
-        let o12 = d.cached_outline(&a, &thick, &pts);
+        let o12 = d.cached_outline(&a, &thick, &pts, false);
         assert_eq!(d.outline_cache_misses(), m + 2, "autre largeur : recalcul");
         assert_eq!(
             bits(&o12),
-            bits(&ink_outline(&pts, &InkStyle { width: 12.0 }))
+            bits(&ink_outline(
+                &pts,
+                &InkStyle {
+                    width: 12.0,
+                    constant: false
+                }
+            ))
         );
         let short = &pts[..pts.len() - 5];
-        let o_short = d.cached_outline(&a, &thick, short);
+        let o_short = d.cached_outline(&a, &thick, short, false);
         assert_eq!(
             d.outline_cache_misses(),
             m + 3,
@@ -1043,7 +1061,13 @@ mod tests {
         );
         assert_eq!(
             bits(&o_short),
-            bits(&ink_outline(short, &InkStyle { width: 12.0 }))
+            bits(&ink_outline(
+                short,
+                &InkStyle {
+                    width: 12.0,
+                    constant: false
+                }
+            ))
         );
         assert_eq!(d.outline_cache_len(), 1, "une entrée par id");
     }

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
-import { watchIslands } from "./island-watch";
+import { ISLANDS_RESIZED, watchIslands } from "./island-watch";
 
 function setup() {
   const root = document.createElement("div");
@@ -66,6 +66,18 @@ describe("watchIslands (OG27)", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("OG30 : taille d'un îlot changée sans attribut (ISLANDS_RESIZED d'IslandLayer) : un appel par image", async () => {
+    const { island, button, onChange, flush } = setup();
+    button.dispatchEvent(new Event(ISLANDS_RESIZED, { bubbles: true }));
+    island.dispatchEvent(new Event(ISLANDS_RESIZED, { bubbles: true }));
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    island.style.top = "80px"; // avec un mouvement dans la même image : toujours un seul appel
+    island.dispatchEvent(new Event(ISLANDS_RESIZED, { bubbles: true }));
+    await flush();
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
   it("arrêt : plus aucun appel, image en attente annulée", async () => {
     const { island, onChange, flush, stop } = setup();
     island.style.top = "80px";
@@ -73,6 +85,7 @@ describe("watchIslands (OG27)", () => {
     stop();
     await flush();
     island.style.top = "90px";
+    island.dispatchEvent(new Event(ISLANDS_RESIZED, { bubbles: true }));
     await flush();
     expect(onChange).not.toHaveBeenCalled();
   });

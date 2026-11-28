@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clampLines, createTablePicker, pickerAria, pickerLabel, PICKER_CLASS } from "./table-picker";
+import { ENGINE_KEYS, clampLines, createTablePicker, pickerAria, pickerLabel, PICKER_CLASS } from "./table-picker";
 
 afterEach(() => {
   document.body.innerHTML = "";
@@ -163,5 +163,11 @@ describe("grille de choix : bornée à la scène, touches consommées (C10a, T14
     expect(picker.element.querySelector('[role="grid"]')).toBeNull();
     const grid = picker.element.querySelector(".rb-table-picker-grid")!;
     expect([grid.getAttribute("role"), grid.getAttribute("aria-label")]).toEqual(["group", "Taille du tableau"]);
+  });
+});
+
+describe("ENGINE_KEYS (OG23, T17)", () => {
+  it("les flèches seules sont gardées par les menus et la grille comme les autres touches du moteur", () => {
+    for (const k of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "Escape"]) expect(ENGINE_KEYS.has(k)).toBe(true);
   });
 });
