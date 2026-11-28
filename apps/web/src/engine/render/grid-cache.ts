@@ -128,7 +128,8 @@ export function visibleLines(lines: GridLines, visible: Bounds): GridLines {
     }
     if (segments.length > 0 || dots.length > 0) levels.push({ ...l, segments, dots });
   }
-  return { above: lines.above, levels };
+  // OG69 (G3) : les niveaux sautés dépendent du pas, pas de la vue : gardés tels quels.
+  return lines.skipped === undefined ? { above: lines.above, levels } : { above: lines.above, levels, skipped: lines.skipped };
 }
 
 interface Entry {
