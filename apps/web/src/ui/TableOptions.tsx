@@ -107,7 +107,8 @@ export function TableSection(props: {
           attrs={{ "data-table-option": "sort-desc", class: "rb-opt-btn" }} onPress={() => props.host.act("sort-desc")} />
       </div>
     ),
-    // DS5 : libellés admis par les colonnes de la plage ; écrit au changement (Entrée ou perte du focus), une commande.
+    // DS5 : libellés admis par les colonnes de la plage ; écrit au changement (Entrée ou perte du focus), une commande ;
+    // Maj+Entrée insère un retour (OG79).
     tableAccept: () => {
       const write = (v: string): void => {
         const next = parseLabels(v);
@@ -122,7 +123,10 @@ export function TableSection(props: {
             data-table-option="accept"
             value={(props.cell()?.accept ?? []).join(", ")}
             onKeyDown={(e) => {
-              if (e.key === "Enter") write(e.currentTarget.value);
+              // OG79 : Entrée valide sans insérer de retour ; Maj+Entrée garde le retour (un libellé par ligne).
+              if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+              e.preventDefault();
+              write(e.currentTarget.value);
             }}
             onChange={(e) => write(e.currentTarget.value)}
           />

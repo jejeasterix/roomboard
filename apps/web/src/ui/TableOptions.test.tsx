@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 // @vitest-environment happy-dom
 import { fireEvent, render } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
@@ -117,6 +119,22 @@ describe("TableOptions (DS10)", () => {
     fireEvent.input(input, { target: { value: "chat, chien ; Chat" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(host.look).toHaveBeenLastCalledWith({ key: "accept", value: ["chat", "chien"] });
+  });
+  it("OG79 (DS5) : Entrée écrit la liste sans insérer de retour ; Maj+Entrée insère un retour et n'écrit rien", () => {
+    const { container, host } = mount("tableAccept", cell({ accept: [] }));
+    const area = container.querySelector<HTMLTextAreaElement>('[data-table-option="accept"]')!;
+    fireEvent.input(area, { target: { value: "chat" } });
+    expect(fireEvent.keyDown(area, { key: "Enter", shiftKey: true })).toBe(true);
+    expect(host.look).not.toHaveBeenCalled();
+    expect(fireEvent.keyDown(area, { key: "Enter" })).toBe(false);
+    expect(host.look).toHaveBeenLastCalledWith({ key: "accept", value: ["chat"] });
+  });
+  it("OG79 (DS5) : la zone « Accepte » n'est pas bloquée à 48 px : hauteur libre, 48 px au moins, agrandissable", () => {
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    const rule = /\n\.rb-options textarea \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toContain("block-size: auto");
+    expect(rule).toContain("min-block-size: var(--rb-btn-m)");
+    expect(rule).toContain("resize: vertical");
   });
   it("C4 (DS5) : « Accepte » est une zone de texte : une liste collée avec des retours à la ligne garde ses séparateurs", () => {
     const { container, host } = mount("tableAccept", cell({ accept: [] }));

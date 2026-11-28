@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { acceptsDrop, parseLabels, sortedRows, destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { acceptsDrop, frenchNumber, parseLabels, sortedRows, destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -339,6 +339,15 @@ describe("movedOrder, keepsMerges (D18, DS8)", () => {
     };
     expect(keepsMerges(t, "row", ["c", "a", "b"])).toBe(true);
     expect(keepsMerges(t, "row", ["a", "c", "b"])).toBe(false);
+  });
+});
+
+describe("frenchNumber (DS9, C4)", () => {
+  it("OG79 : valeurs admises : signe moins ou U+2212, milliers groupés par espace, U+00A0 ou U+202F, virgule décimale", () => {
+    expect(["12", "-3", "\u22123", "1 000", "1\u00a0000,5", "12\u202f345\u202f678", "0,25"].map(frenchNumber)).toEqual([12, -3, -3, 1000, 1000.5, 12345678, 0.25]);
+  });
+  it("OG79 : refus : point décimal, groupes mal formés, virgule seule ou double, signe plus, exposant, blancs, texte", () => {
+    for (const s of ["1.5", "1.000", "1 00", "10 00", "1  000", "12,", ",5", "1,2,3", "+3", "1e3", " 12", "12 ", "", "-", "douze", "1 000 000,5,1"]) expect(frenchNumber(s), s).toBeNull();
   });
 });
 
