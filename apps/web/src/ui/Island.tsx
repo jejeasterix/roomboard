@@ -474,9 +474,22 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     const t = tools();
     return tabsWidth(area(), startX(), endBox().w, t === null || t.moved ? null : { x: t.x, y: t.y }, statusW());
   });
-  /** OG30 : un seul observateur de taille pour les îlots de barre et l'îlot des onglets (ceux qui réservent le haut de la
-   *  page, `fitTop`) : une hauteur changée sans attribut prévient la session montrée (`ISLANDS_RESIZED`, `watchIslands`). */
-  const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(() => layer?.dispatchEvent(new Event(ISLANDS_RESIZED, { bubbles: true }))) : null;
+  /** OG30 : un seul observateur de taille pour les îlots qui réservent le haut de la page (`fitTop`) : îlots de barre hors
+   *  voie latérale, et îlot des onglets. Une hauteur changée sans attribut prévient la session montrée (`ISLANDS_RESIZED`,
+   *  `watchIslands`) ; une largeur seule ne réveille rien (`fitTop` ne lit que les hauteurs). */
+  const heights = new WeakMap<Element, number>();
+  const sizes =
+    typeof ResizeObserver === "function"
+      ? new ResizeObserver((entries) => {
+          let changed = false;
+          for (const e of entries) {
+            if (heights.get(e.target) === e.contentRect.height) continue;
+            heights.set(e.target, e.contentRect.height);
+            changed = true;
+          }
+          if (changed) layer?.dispatchEvent(new Event(ISLANDS_RESIZED, { bubbles: true }));
+        })
+      : null;
   onCleanup(() => sizes?.disconnect());
   const track = (el: Element): (() => void) => {
     sizes?.observe(el);
@@ -518,7 +531,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         area={area}
         corners={isSide(anchor) ? sideCornersOf(bar.role) : anchor.startsWith("top") ? topCorners : bottomCorners}
         sheet={sheet}
-        track={track}
+        {...(isSide(anchor) ? {} : { track })}
         {...(props.watch !== undefined ? { watch: props.watch } : {})}
         {...(bar.role === "tools" || anchor === "side-start"
           ? {

@@ -118,6 +118,7 @@ const pngChunk = (type: string, data: Buffer): Buffer => {
   return Buffer.concat([len, body, crc]);
 };
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PNG_IEND = pngChunk("IEND", Buffer.alloc(0));
 const pngIhdr = (w: number, h: number): Buffer => {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0);
@@ -132,13 +133,13 @@ export function pngBytes(w: number, h: number): Uint8Array {
   const row = 1 + 3 * w;
   const raw = Buffer.alloc(h * row, 0x80);
   for (let y = 0; y < h; y++) raw[y * row] = 0;
-  return Buffer.concat([PNG_SIGNATURE, pngIhdr(w, h), pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([PNG_SIGNATURE, pngIhdr(w, h), pngChunk("IDAT", deflateSync(raw)), PNG_IEND]);
 }
 
 /** OG30 : en-tête PNG `w × h` (signature, IHDR, IEND, sans pixels) : assez pour la sonde de taille, pas pour un
  *  décodeur. Une image « trop de pixels » (plus de `MAX_PIXELS`) en quelques octets, au lieu de ~300 Mo à compresser. */
 export function pngHead(w: number, h: number): Uint8Array {
-  return Buffer.concat([PNG_SIGNATURE, pngIhdr(w, h), pngChunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([PNG_SIGNATURE, pngIhdr(w, h), PNG_IEND]);
 }
 
 /** En-tête JPEG `w × h` (SOI, SOF0 à 3 composantes, EOI) : assez pour la sonde de taille, pas pour un décodeur. */

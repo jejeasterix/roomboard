@@ -294,7 +294,7 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     expect(rendered).toHaveBeenCalledTimes(6);
   });
 
-  it("OG30 : un seul observateur de taille pour les îlots de barre et les onglets ; une taille changée émet ISLANDS_RESIZED", () => {
+  it("OG30 : un seul observateur de taille pour les îlots du haut et les onglets (pas les latéraux) ; une hauteur changée émet ISLANDS_RESIZED, une largeur seule non", () => {
     const made: { cb: ResizeObserverCallback; seen: Set<Element> }[] = [];
     class FakeRO {
       readonly seen = new Set<Element>();
@@ -315,14 +315,21 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     try {
       const [bars, setBars] = createSignal<readonly Bar[]>(ALL);
       const { container, unmount } = layer(bars);
-      const islands = [...container.querySelectorAll(".rb-island[data-island]")];
+      const islands = [...container.querySelectorAll('.rb-island[data-island]:not([data-anchor^="side-"])')];
+      expect(container.querySelector('.rb-island[data-anchor^="side-"]')).not.toBeNull();
       const sizes = made.filter((o) => islands.every((e) => o.seen.has(e)));
       expect(sizes).toHaveLength(1);
       expect(sizes[0]!.seen.size).toBe(islands.length);
       const heard = vi.fn();
       container.addEventListener(ISLANDS_RESIZED, heard);
-      sizes[0]!.cb([], sizes[0] as unknown as ResizeObserver);
+      const resize = (height: number): void =>
+        sizes[0]!.cb([{ target: islands[0]!, contentRect: { height } } as unknown as ResizeObserverEntry], sizes[0] as unknown as ResizeObserver);
+      resize(48);
       expect(heard).toHaveBeenCalledTimes(1);
+      resize(48); // même hauteur (largeur seule changée) : rien
+      expect(heard).toHaveBeenCalledTimes(1);
+      resize(88);
+      expect(heard).toHaveBeenCalledTimes(2);
       // Une barre retirée n'est plus observée (`unobserve` de son `Island`), le calque vivant.
       setBars(ALL.filter((b) => b.id !== "zoom"));
       expect(sizes[0]!.seen.size).toBe(islands.length - 1);

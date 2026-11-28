@@ -23,10 +23,8 @@ const VIEWS = [
 const ARGS = ["--no-sandbox", "--disable-lcd-text", "--force-color-profile=srgb"];
 const SIDE = '[data-island="pages"]';
 const BAR = '#stage [data-scrollbar="page"]';
-const TOOLS = '.rb-island[data-island="outils"]';
-const TABS = '.rb-island[data-island="onglets"]';
-const TOOLS_BAR = `${TOOLS} > .rb-bar`;
-const TABS_BAR = `${TABS} > *`;
+const TOOLS_BAR = '.rb-island[data-island="outils"] > .rb-bar';
+const TABS_BAR = '.rb-island[data-island="onglets"] > *';
 const SIDE_GRIP = `${SIDE} [data-island-grip]`;
 const GROW = 40;
 const CAPTURES = join(ROOT, "docs", "design", "captures", "restes-og27");
@@ -118,13 +116,8 @@ async function grows(page, sel, name) {
   check(Math.abs(c2.ty - c0.ty) < 1.5 && Math.abs((await railTop(page)) - (st + c0.ty)) < 1.5, `${name} rendu : page et ascenseur revenus (${c2.ty})`);
 }
 
-async function scenario(browser, base, viewport) {
-  current = `${viewport.width}×${viewport.height}`;
-  const { ctx, page, errors } = await start(browser, base, viewport);
-  await toPortrait(page);
-  check(await page.isVisible(BAR), "page portrait ajustée : ascenseur visible");
-  await grows(page, TOOLS_BAR, "R1 barre d'outils");
-  // R3 : le panneau d'options déplié, une section ouverte puis fermée : il ne réserve pas le haut.
+/** R3 : panneau d'options déplié, une section ouverte puis fermée : il ne réserve pas le haut, la page ne bouge pas. */
+async function optionsStill(page) {
   const c0 = await camera(page);
   await page.click("[data-options-toggle]");
   await settle(page, 200);
@@ -135,6 +128,15 @@ async function scenario(browser, base, viewport) {
   await settle(page, 200);
   const c1 = await camera(page);
   check(c1.ty === c0.ty && c1.zoom === c0.zoom, "R3 section du panneau d'options ouverte puis fermée : page immobile");
+}
+
+async function scenario(browser, base, viewport) {
+  current = `${viewport.width}×${viewport.height}`;
+  const { ctx, page, errors } = await start(browser, base, viewport);
+  await toPortrait(page);
+  check(await page.isVisible(BAR), "page portrait ajustée : ascenseur visible");
+  await grows(page, TOOLS_BAR, "R1 barre d'outils");
+  await optionsStill(page);
   await moveSide(page);
   await grows(page, TABS_BAR, "R2 onglets, îlot des pages déplacé");
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` (${errors.join(" | ")})` : ""}`);
