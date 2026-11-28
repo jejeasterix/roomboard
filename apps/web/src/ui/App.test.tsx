@@ -47,7 +47,6 @@ const barIds = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll("[d
 function baseState(over: Partial<Record<string, unknown>> = {}): EngineState {
   return {
     tool: "pen",
-    eraserMode: "partial",
     canUndo: false,
     canRedo: false,
     page: "p",
@@ -88,7 +87,6 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
       return () => listeners.delete(cb);
     }),
     setTool: vi.fn(),
-    setEraserMode: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
     addPage: vi.fn(),
