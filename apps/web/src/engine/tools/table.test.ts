@@ -763,7 +763,7 @@ describe("appui long sur une case (menu de case, personnalisation-3 T7)", () => 
       s.tool.begin(1, [at(120, 220)]);
       vi.advanceTimersByTime(500);
       expect(s.menuOpens).toHaveLength(1);
-      expect(s.menuOpens[0]?.items.map((i) => i.id)).toEqual(["fit", "header"]);
+      expect(s.menuOpens[0]?.items.map((i) => i.id)).toEqual(["fit", "header", "delete-table"]);
       const opened = s.host.opened.length;
       s.tool.close(1, "end");
       expect(s.host.opened.length).toBe(opened);
@@ -809,6 +809,26 @@ describe("image de fond de case (personnalisation-3 T9, S5)", () => {
     return { ...s, id, image, link };
   }
 
+  it("OG41 (D14) : « Supprimer le tableau » : un Delete du tableau, une étape ; l'image logée reste libre (D15)", () => {
+    vi.useFakeTimers();
+    try {
+      const s = withImage();
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      const items = s.menuOpens[0]?.items ?? [];
+      const del = items.find((i) => i.id === "delete-table");
+      expect(del?.label).toBe("Supprimer le tableau");
+      s.tool.close(1, "end");
+      const table = s.doc.elementIdsOfKind(s.page, "table")[0] ?? "";
+      del?.run();
+      expect(s.last()).toEqual({ type: "Delete", ids: [table] });
+      expect(s.doc.element(table)).toBeNull();
+      expect(s.doc.element(s.image)?.kind).toBe("image");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("S5 : Alt+I (act cell-image) met l'image logée la plus haute de la case active en fond, une étape ; undo : image revenue", () => {
     const s = withImage();
     s.tool.begin(1, [at(120, 220)]);
@@ -842,8 +862,8 @@ describe("image de fond de case (personnalisation-3 T9, S5)", () => {
       vi.advanceTimersByTime(500);
       expect(s.menuOpens).toHaveLength(1);
       const items = s.menuOpens[0]?.items ?? [];
-      expect(items.map((i) => i.id)).toEqual(["fit", "cell-image", "unplace", "header"]);
-      expect(items.map((i) => i.label)).toEqual(["Rétrécir", "Mettre en fond", "Sortir", "En-tête"]);
+      expect(items.map((i) => i.id)).toEqual(["fit", "cell-image", "unplace", "header", "delete-table"]);
+      expect(items.map((i) => i.label)).toEqual(["Rétrécir", "Mettre en fond", "Sortir", "En-tête", "Supprimer le tableau"]);
       s.tool.close(1, "end");
       items[2]?.run();
       expect(s.last()).toEqual({ type: "PlaceInCell", ids: [s.image], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] });
