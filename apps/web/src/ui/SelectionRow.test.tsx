@@ -4,70 +4,37 @@ import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ToolbarHost } from "../app/toolbar-host";
 import type { ToolbarView } from "./item-state";
-import { SELECTION_ACTIONS, SelectionRow } from "./SelectionRow";
+import { SelectionRow } from "./SelectionRow";
 
 afterEach(cleanup);
 const base: ToolbarView = { tool: "select", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
-const btn = (c: HTMLElement, id: string): HTMLButtonElement | null => c.querySelector(`[data-selection-action="${id}"]`);
 function setup(v: ToolbarView) {
   const [view, setView] = createSignal(v);
   const selection = vi.fn();
-  const imagePanel = vi.fn();
-  const runAction = vi.fn();
-  const host = { selection, imagePanel, runAction } as unknown as ToolbarHost;
+  const host = { selection } as unknown as ToolbarHost;
   const { container } = render(() => <SelectionRow view={view} host={host} />);
-  return { container, setView, selection, imagePanel, runAction };
+  return { container, setView, selection };
 }
 
-describe("rangée Sélection (Z13)", () => {
-  it("montrée avec l'outil Sélection seulement, cinq actions puis « Image », dans l'ordre", () => {
-    const { container, setView } = setup({ ...base, tool: "pen" });
+describe("rangée Sélection (OG41, D22)", () => {
+  it("outil Sélection, aucune sélection, presse-papiers plein : un seul bouton icône « Coller »", () => {
+    const { container } = setup({ ...base, canPaste: true });
+    const all = [...container.querySelectorAll("[data-selection-action]")];
+    expect(all.map((b) => b.getAttribute("data-selection-action"))).toEqual(["paste"]);
+    expect(all[0]!.getAttribute("aria-label")).toBe("Coller");
+    expect(all[0]!.querySelector("svg")).not.toBeNull();
+  });
+  it("une sélection (la barre d'objet prend le relais), un autre outil ou rien à coller : rien", () => {
+    const { container, setView } = setup({ ...base, canPaste: true, selection: ["a"] });
     expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
-    setView({ ...base });
-    const ids = [...container.querySelectorAll("[data-selection-action]")].map((b) => [b.getAttribute("data-selection-action"), b.textContent]);
-    expect(ids).toEqual([["group", "Grouper"], ["ungroup", "Dégrouper"], ["copy", "Copier"], ["paste", "Coller"], ["export", "Exporter"], ["layer-front", "Premier plan"], ["layer-back", "Arrière-plan"], ["image", "Image"]]);
-    expect(SELECTION_ACTIONS.map((a) => a.id)).toEqual(["group", "ungroup", "copy", "paste", "export"]);
+    setView({ ...base, canPaste: false });
+    expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
+    setView({ ...base, tool: "pen", canPaste: true });
+    expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
   });
-  it("Image : grisé hors d'une seule image ; clic : host.imagePanel()", () => {
-    const { container, setView, imagePanel } = setup({ ...base, selection: ["a", "b"], selectionUnits: 2 });
-    expect(btn(container, "image")!.disabled).toBe(true);
-    setView({ ...base, selection: ["i"], selectionUnits: 1, selectionImage: "i" });
-    expect(btn(container, "image")!.disabled).toBe(false);
-    fireEvent.click(btn(container, "image")!);
-    expect(imagePanel).toHaveBeenCalledTimes(1);
-  });
-  it("Grouper : désactivé sous deux unités", () => {
-    const { container, setView } = setup({ ...base, selection: ["a"], selectionUnits: 1 });
-    expect(btn(container, "group")!.disabled).toBe(true);
-    setView({ ...base, selection: ["a", "b"], selectionUnits: 2 });
-    expect(btn(container, "group")!.disabled).toBe(false);
-  });
-  it("Dégrouper : désactivé sans groupe dans la sélection", () => {
-    const { container, setView } = setup({ ...base, selection: ["a"], selectionUnits: 1, selectionGrouped: false });
-    expect(btn(container, "ungroup")!.disabled).toBe(true);
-    setView({ ...base, selection: ["a"], selectionUnits: 1, selectionGrouped: true });
-    expect(btn(container, "ungroup")!.disabled).toBe(false);
-  });
-  it("Copier, Exporter : désactivés sans sélection ; Coller : désactivé sans presse-papiers interne", () => {
-    const { container, setView } = setup({ ...base });
-    expect([btn(container, "copy")!.disabled, btn(container, "export")!.disabled, btn(container, "paste")!.disabled]).toEqual([true, true, true]);
-    setView({ ...base, selection: ["a"], canPaste: true });
-    expect([btn(container, "copy")!.disabled, btn(container, "export")!.disabled, btn(container, "paste")!.disabled]).toEqual([false, false, false]);
-  });
-  it("clic : host.selection(id)", () => {
-    const { container, selection } = setup({ ...base, selection: ["a", "b"], selectionUnits: 2, canPaste: true });
-    for (const id of ["group", "copy", "paste", "export"]) fireEvent.click(btn(container, id)!);
-    expect(selection.mock.calls.map((c) => c[0])).toEqual(["group", "copy", "paste", "export"]);
-  });
-  it("Premier plan / Arrière-plan : grisés sans sélection, icônes Lucide, clic : host.runAction(layer-front | layer-back)", () => {
-    const { container, setView, runAction, selection } = setup({ ...base });
-    expect([btn(container, "layer-front")!.disabled, btn(container, "layer-back")!.disabled]).toEqual([true, true]);
-    setView({ ...base, selection: ["a"], selectionUnits: 1 });
-    expect(btn(container, "layer-front")!.querySelector('[data-icon="bring-to-front"]')).not.toBeNull();
-    expect(btn(container, "layer-back")!.querySelector('[data-icon="send-to-back"]')).not.toBeNull();
-    fireEvent.click(btn(container, "layer-front")!);
-    fireEvent.click(btn(container, "layer-back")!);
-    expect(runAction.mock.calls.map((c) => c[0])).toEqual(["layer-front", "layer-back"]);
-    expect(selection).not.toHaveBeenCalled();
+  it("toucher : host.selection('paste')", () => {
+    const { container, selection } = setup({ ...base, canPaste: true });
+    fireEvent.click(container.querySelector('[data-selection-action="paste"]')!);
+    expect(selection).toHaveBeenCalledWith("paste");
   });
 });

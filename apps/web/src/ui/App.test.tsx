@@ -92,6 +92,9 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
       return () => listeners.delete(cb);
     }),
     setTool: vi.fn(),
+    camera: vi.fn(() => ({ zoom: 1, tx: 0, ty: 0 })),
+    onCamera: vi.fn(() => () => undefined),
+    selectionKeepOut: vi.fn(() => []),
     undo: vi.fn(),
     redo: vi.fn(),
     addPage: vi.fn(),
@@ -1573,3 +1576,36 @@ describe("Aide : focus rendu et Échap (T39)", () => {
     expect(seen).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe("OG41 : barre d'objet montée", () => {
+  const sel = { tool: "select", selection: ["a"], selectionUnits: 1, selectionBounds: { x0: 100, y0: 100, x1: 200, y1: 200 } };
+  it("barre d'objet montée dans main.rb-stages, hors des barres ; Dupliquer relayé (D18, D22)", () => {
+    const { stages, workspace } = renderApp({ tab: fakeTab("Sans titre.roomboard", sel) });
+    const bar = stages.querySelector<HTMLElement>("[data-object-bar]");
+    expect(bar).not.toBeNull();
+    expect(bar!.hidden).toBe(false);
+    expect(bar!.closest("[data-toolbar]")).toBeNull();
+    bar!.querySelector<HTMLButtonElement>('[data-selection-action="duplicate"]')!.click();
+    expect(workspace.selection).toHaveBeenCalledWith("duplicate");
+  });
+  it("barre d'objet cachée pendant « Modifier les points » (Suppr y retire des points, OG33), revenue après", () => {
+    const tab = fakeTab("Sans titre.roomboard", sel);
+    const { stages } = renderApp({ tab });
+    const bar = stages.querySelector<HTMLElement>("[data-object-bar]")!;
+    tab.emit({ lineEditing: "a" });
+    expect(bar.hidden).toBe(true);
+    tab.emit({ lineEditing: null });
+    expect(bar.hidden).toBe(false);
+  });
+  it("barre d'objet cachée avec l'outil Gomme, sans sélection ou en annotation", () => {
+    const tab = fakeTab("Sans titre.roomboard", sel);
+    const { stages } = renderApp({ tab });
+    const bar = stages.querySelector<HTMLElement>("[data-object-bar]")!;
+    tab.emit({ tool: "eraser" });
+    expect(bar.hidden).toBe(true);
+    tab.emit({ tool: "select", selection: [], selectionBounds: null });
+    expect(bar.hidden).toBe(true);
+  });
+});
+

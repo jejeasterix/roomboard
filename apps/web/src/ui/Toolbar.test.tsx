@@ -49,14 +49,13 @@ describe("Toolbar", () => {
     expect(ann.container.querySelector('[data-item="desktop-annotation-ajout"]')).not.toBeNull();
     expect(ann.container.querySelector('[data-item="annotation-pointer-ajout"]')).not.toBeNull();
   });
-  it("rangée Sélection dans la barre d'outils : outil Sélection seulement (C3)", () => {
+  it("OG41 (D22) : rangée Sélection : « Coller » seul, outil Sélection sans sélection et presse-papiers plein", () => {
     const { container, setV } = setup();
     expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
     setV({ ...VIEW, tool: "select" });
-    // T16 : six actions de C3, puis Premier plan et Arrière-plan (lot 2, table 2 bis du cadrage personnalisation-1a)
-    const ids = [...container.querySelectorAll("[data-selection-action]")].map((b) => b.getAttribute("data-selection-action"));
-    expect(ids).toHaveLength(8);
-    expect(ids.slice(-3)).toEqual(["layer-front", "layer-back", "image"]);
+    expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
+    setV({ ...VIEW, tool: "select", canPaste: true });
+    expect([...container.querySelectorAll("[data-selection-action]")].map((b) => b.getAttribute("data-selection-action"))).toEqual(["paste"]);
   });
   it("defaut : un bouton par élément visible, dans l'ordre", () => {
     const { container } = setup();
@@ -544,7 +543,9 @@ describe("Toolbar — barre d'annotation (design-l4)", () => {
     const ann = setup({ ...mkBar([tool("pen")]), role: "annotation" }, NO_CAPS, "m", PEN);
     expect(ann.container.querySelectorAll("button[data-preset]")).toHaveLength(3);
     ann.setV({ ...VIEW, tool: "select" });
-    expect(ann.container.querySelectorAll("[data-selection-action]")).toHaveLength(8);
+    expect(ann.container.querySelectorAll("[data-selection-action]")).toHaveLength(0); // D27 : plus de boutons grisés
+    ann.setV({ ...VIEW, tool: "select", canPaste: true });
+    expect(ann.container.querySelectorAll("[data-selection-action]")).toHaveLength(1);
     cleanup();
     const other = setup({ ...mkBar([tool("pen")]), role: "autre" }, NO_CAPS, "m", PEN);
     expect(other.container.querySelectorAll("button[data-preset]")).toHaveLength(0);
