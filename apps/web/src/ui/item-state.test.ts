@@ -72,6 +72,11 @@ describe("itemState", () => {
 
 describe("état des actions du tableau (C10a, T10)", () => {
   const cell = (rows: number, cols: number) => ({ id: "t", row: 0, col: 0, rows, cols });
+  it("PR 74 : table-header enfoncé quand l'en-tête est posé, relâché sinon, grisé sans cellule", () => {
+    expect(itemState(action("table-header"), view({ tableCell: { ...cell(3, 3), header: true } }))).toMatchObject({ pressed: true, disabled: false });
+    expect(itemState(action("table-header"), view({ tableCell: cell(3, 3) })).pressed).toBe(false);
+    expect(itemState(action("table-header"), view()).disabled).toBe(true);
+  });
   it("sans cellule active : les cinq actions grisées", () => {
     for (const a of ["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform"]) {
       expect(itemState(action(a), view()).disabled, a).toBe(true);

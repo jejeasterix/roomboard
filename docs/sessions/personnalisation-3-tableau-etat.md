@@ -1,10 +1,10 @@
 # État — personnalisation-3-tableau
 
-Statut : en cours — lot A fusionné ; lot B partiel en fusion ; TB3–TB6 et lot C reportés (taille Wasm)
+Statut : en cours — OG32 : lot B + PR 75 fusionnés (PR #83) ; lot C en brouillon (PR #84, un majeur ouvert)
 Gabarit : lots (provisoire : 15 points en 3 lots A, B, C)
 Objectif : L'outil Tableau accueille des objets dans ses cases (la case s'adapte), se règle finement (bordures, alignement, en-tête) et sert en classe (case cachée, tri, tableau de tri, collage Excel/Word).
-Avancement : 1/3 lots clos (A, PR #72, main bf9eb292) · lot B 2/6 (TB1, TB2) en PR
-Étage : 4 (lot A) / 3 (lot B, worktree --B) — depuis 2026-11-27 22:20
+Avancement : 2/3 lots clos (A PR #72, B PR #83 avec PR #75) · lot C 4/4 tâches faites, non fusionné (PR #84)
+Étage : 4 (lot B clos) / 3 (lot C, correctif à reprendre) — depuis 2026-11-28 11:30
 Lot : A « objets dans les cases » — 11/11 tâches terminées — depuis 2026-11-27 19:25
 Tâche : —
 Questions à Jérôme : —
@@ -12,7 +12,7 @@ Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau   Branc
 Branche principale locale au lancement : 59b75db0
 Cadrage : docs/plans/personnalisation-3-tableau-cadrage.md (745275c1)   Plan(s) : docs/plans/personnalisation-3-tableau-PLAN.md (lot A) · …-PLAN-lotB.md (aff954e3, 6 tâches TB1–TB6, non relu)
 Mode du cadrage : autonome (brief OG26 : aucune question ne parvient à Jérôme pendant le tour)
-Arrêt ferme : 2026-11-28 00:50 (lancement 18:20 + 6 h 30) ; pousser à 00:40
+Arrêt ferme : 2026-11-28 12:10 (OG32, lancement 05:40 + 6 h 30) ; pousser à 12:00
 
 ## Référence
 Rapide = complète (worktree à 53a14b6e + docs) : cargo 1495 passés (2 ignorés) · apps/web 4043 (195 fichiers) · apps/cli 282 (30 fichiers)
@@ -80,3 +80,28 @@ ouvertes : — · passées : —
 ## Restes
 - [fort] Module Wasm principal à 1 571 221 o pour un plafond de 1 572 864 : toute commande Rust neuve (lot B 8, 9, 11 ; lot C 13, 14) demande d'abord un travail sur la taille.
 - [moyen] Points 7, 8, 9, 11 (lot B) et 12 (refermer le cache), 13, 14, 15 (collage tabulé) non faits.
+
+## Suite OG32 (plan docs/plans/personnalisation-3-tableau-PLAN-suite.md, 9c4575af ; relu 1/3, aucun bloquant, 1 majeur + 4 mineurs corrigés)
+Tailles Wasm à 161cf734 : principal 1 456 551 o · formats 2 795 907 o
+PR 75 (collage) : 3 constats corrigés (d498b062, 558412f3), origin/main fusionné 464a2f2d ; verifier.sh --e2e en cours
+| id | état | commit vert | preuve rejouée |
+|----|------|-------------|----------------|
+| T1 mineurs PR 74 | terminée | df9b529f | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T2 SetTableLook (Rust) | terminée | 8f10e011 | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T3 contrat SetTableLook | terminée | c6b47792 | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T4 ReorderTableLines | terminée | 275f0a65 | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T5 double appui (7) | terminée | abd01ce7 | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T6 alignement (8) | terminée | ff85cb13 | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T7 bordures (9) | terminée | 852ab476 | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T8 déplacer ligne (11) | terminée | f8e3b6f3 | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T9 panneau d'options | terminée | 90a01dca | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T10 essai + captures lot B | terminée | 02ccbb0c | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T11 cache (12) | terminée | 767596ca | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T12 tri (13) | terminée | 5c6992aa | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T13 tableau de tri (14) | terminée | dde78c8e | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+| T14 essai + captures lot C | terminée | 7a61623f | rejouée (vitest ciblé ; verifier.sh --e2e lot B à 8fed247a) |
+
+Correctifs : C1 (411e107b, forme SetTableLook, doublons par tri), C2 (1d683725, shownSpans, Alt+A case active), C3 (8fed247a, hauteur d'en-tête en gras, change_js), C4 lot C (f38fe0c8, tri des nombres français, contentBounds).
+Relectures : plan 1/3 ; lot B 2/2 tours (2 majeurs puis 1, corrigés) ; lot C 2/2 tours (2 majeurs corrigés, puis 1 majeur neuf ouvert : boîte de 600 d'une étiquette logée, PR #84).
+Tailles Wasm après (8fed247a) : principal 1 440 092 o · formats 2 795 715 o. S6 inchangée (07661146…).
+Restes : [fort] lot C non fusionné (PR #84, majeur cell-drop.ts:144-166) ; [faible] En-tête ne regrandit pas la ligne 0 (HS9).

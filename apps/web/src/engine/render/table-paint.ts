@@ -6,13 +6,15 @@
  * traits ; le texte d'une cellule ombrée ou couverte n'est jamais dessiné (F11).
  */
 import type { ImageSource } from "./image-cache";
-import type { Bounds, TableCell, TableData, TextSpan } from "../../core/api";
+import type { Bounds, TableBorder, TableCell, TableData, TextSpan } from "../../core/api";
+import { dashOf } from "./sketch";
 import {
   cellInnerBox,
   cellOf,
   cellRect,
   mergeRanges,
   rangeRect,
+  shownSpans,
   TABLE_HEADER_FILL,
   TABLE_LINE_WIDTH,
   TABLE_SHADE_HATCH,
@@ -96,10 +98,80 @@ function paintCellImage(ctx: CanvasRenderingContext2D, b: Bounds, asset: string,
   ctx.restore();
 }
 
+/** Deux cases d'une même zone (le bord commun est omis). */
+const sameZone = (zones: readonly Range[], r: number, c: number, r2: number, c2: number): boolean =>
+  zones.some((z) => r >= z.r0 && r <= z.r1 && c >= z.c0 && c <= z.c1 && r2 >= z.r0 && r2 <= z.r1 && c2 >= z.c0 && c2 <= z.c1);
+
+/** Bordure de chaque case par ses rangs (D16) : celle de l'ancre de sa zone ; absente : undefined. */
+function bordersByCell(t: TableData, zones: readonly Range[]): (r: number, c: number) => TableBorder | undefined {
+  const at = new Map<string, TableBorder>();
+  for (const cell of t.cells) {
+    if (cell.border === undefined) continue;
+    const a = visibleCell(t, zones, cell);
+    if (a !== null) at.set(`${a.row}:${a.col}`, cell.border);
+  }
+  return (r, c) => {
+    const z = zones.find((x) => r >= x.r0 && r <= x.r1 && c >= x.c0 && c <= x.c1);
+    return at.get(z === undefined ? `${r}:${c}` : `${z.r0}:${z.c0}`);
+  };
+}
+
+/** Traits par segment (D16, DS4) : bord commun = case du bas ou de droite, sinon du haut ou de gauche, sinon le trait
+ *  du tableau ; `none` : rien ; un chemin par réglage. Couleur lisible d'abord, comme `fillBox`. */
+function paintBorders(ctx: CanvasRenderingContext2D, t: TableData, zones: readonly Range[], xs: readonly number[], ys: readonly number[]): void {
+  const of = bordersByCell(t, zones);
+  const nc = t.cols.length;
+  const nr = t.rows.length;
+  const groups = new Map<string, { readonly border: TableBorder | null; readonly segs: number[][] }>();
+  const add = (b: TableBorder | null, x0: number, y0: number, x1: number, y1: number): void => {
+    if (b !== null && b[2] === "none") return;
+    const k = b === null ? "" : b.join("|");
+    const g = groups.get(k) ?? { border: b, segs: [] };
+    g.segs.push([x0, y0, x1, y1]);
+    groups.set(k, g);
+  };
+  for (let i = 0; i <= nc; i++) {
+    for (let r = 0; r < nr; r++) {
+      if (i > 0 && i < nc && sameZone(zones, r, i - 1, r, i)) continue;
+      const own = i < nc ? of(r, i) : undefined;
+      const left = i > 0 ? of(r, i - 1) : undefined;
+      add(own ?? left ?? null, xs[i] ?? 0, ys[r] ?? 0, xs[i] ?? 0, ys[r + 1] ?? 0);
+    }
+  }
+  for (let j = 0; j <= nr; j++) {
+    for (let c = 0; c < nc; c++) {
+      if (j > 0 && j < nr && sameZone(zones, j - 1, c, j, c)) continue;
+      const own = j < nr ? of(j, c) : undefined;
+      const up = j > 0 ? of(j - 1, c) : undefined;
+      add(own ?? up ?? null, xs[c] ?? 0, ys[j] ?? 0, xs[c + 1] ?? 0, ys[j] ?? 0);
+    }
+  }
+  for (const g of groups.values()) {
+    const [color, width, style] = g.border ?? [t.color, TABLE_LINE_WIDTH, "solid"];
+    const dash = style === "dashed" || style === "dotted" ? dashOf(style, width) : [];
+    ctx.beginPath();
+    for (const [x0, y0, x1, y1] of g.segs) {
+      ctx.moveTo(x0 ?? 0, y0 ?? 0);
+      ctx.lineTo(x1 ?? 0, y1 ?? 0);
+    }
+    if (dash.length > 0) ctx.setLineDash(dash);
+    ctx.strokeStyle = "transparent";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = style === "dotted" ? "round" : "square";
+    ctx.stroke();
+    if (dash.length > 0) ctx.setLineDash([]);
+  }
+}
+
 export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData, images: ImageSource | null = null): void {
   const zones = mergeRanges(t);
   // personnalisation-3 (D17) : fond d'en-tête sous les remplissages de case (un remplissage passe au-dessus).
-  if (t.header === true && t.rows.length > 0 && t.cols.length > 0) fillBox(ctx, rangeRect(t, { r0: 0, c0: 0, r1: 0, c1: t.cols.length - 1 }), TABLE_HEADER_FILL);
+  // PR 74 : une zone ancrée en ligne 0 appartient entière à l'en-tête (sinon sa partie basse sort blanche).
+  if (t.header === true && t.rows.length > 0 && t.cols.length > 0) {
+    fillBox(ctx, rangeRect(t, { r0: 0, c0: 0, r1: 0, c1: t.cols.length - 1 }), TABLE_HEADER_FILL);
+    for (const z of zones) if (z.r0 === 0 && z.r1 > 0) fillBox(ctx, rangeRect(t, z), TABLE_HEADER_FILL);
+  }
   for (const cell of t.cells) {
     if (cell.fill === null) continue;
     const at = visibleCell(t, zones, cell);
@@ -121,6 +193,11 @@ export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData, imag
   const ys = edges(t.rows.map((r) => r.height));
   const w = xs[xs.length - 1] ?? 0;
   const h = ys[ys.length - 1] ?? 0;
+  // DS4 : une bordure réglée quelque part : traits par segment ; sinon le chemin d'aujourd'hui, à l'identique.
+  if (t.cells.some((c) => c.border !== undefined)) {
+    paintBorders(ctx, t, zones, xs, ys);
+    return;
+  }
   ctx.beginPath();
   if (zones.length === 0) {
     for (const x of xs) {
@@ -133,8 +210,7 @@ export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData, imag
     }
   } else {
     // Segments par cellule ; le bord commun de deux cellules d'une même zone est omis.
-    const same = (r: number, c: number, r2: number, c2: number): boolean =>
-      zones.some((z) => r >= z.r0 && r <= z.r1 && c >= z.c0 && c <= z.c1 && r2 >= z.r0 && r2 <= z.r1 && c2 >= z.c0 && c2 <= z.c1);
+    const same = (r: number, c: number, r2: number, c2: number): boolean => sameZone(zones, r, c, r2, c2);
     for (let i = 0; i < xs.length; i++) {
       for (let r = 0; r < t.rows.length; r++) {
         if (i > 0 && i < t.cols.length && same(r, i - 1, r, i)) continue;
@@ -164,7 +240,7 @@ export function cellTextBoxes(t: TableData): CellTextBox[] {
     if (cell.text === "" || cell.shade !== null) continue;
     const at = visibleCell(t, zones, cell);
     if (at === null) continue;
-    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: t.header === true && at.row === 0 ? cell.spans.map((s) => ({ text: s.text, attrs: { ...s.attrs, bold: true as const } })) : cell.spans });
+    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: shownSpans(t, at) });
   }
   return out;
 }

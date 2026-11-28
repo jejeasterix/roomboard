@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { RoughGenerator } from "roughjs/bin/generator";
-import type { Bounds, CoreDocument, ElementView, MediaData, Model3dData, GridInput, GridLevel, GridView, ImageElement, TableElement, TextElement } from "../../core/api";
+import type { Bounds, CoreDocument, ElementView, MediaData, Model3dData, GridInput, GridLevel, GridView, ImageElement, TableData, TableElement, TextElement } from "../../core/api";
 import { NO_CHANGE } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import { orientMatrix } from "../../core/image-params";
@@ -10,8 +10,9 @@ import { arrowWings } from "../../core/shapes";
 import { catmullRom } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, arrowhead, paintText, HANDLE_FILL, MODEL3D_CARD_LABEL, paintShape, traceShape, PLACEHOLDER_FILL, SELECTION_COLOR, traceRings, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
-import type { RichLine } from "../text-layout";
+import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, arrowhead, paintCellTexts, paintText, HANDLE_FILL, MODEL3D_CARD_LABEL, paintShape, traceShape, PLACEHOLDER_FILL, SELECTION_COLOR, traceRings, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { cellTextFrame } from "../table-geom";
+import { layoutRich, offsetAt, type RichLine } from "../text-layout";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { headWings } from "./sketch";
@@ -19,6 +20,7 @@ import type { ImageSource } from "./image-cache";
 import type { MediaFrames } from "./media-frames";
 import type { ModelFrames } from "./model-frames";
 import { EMPTY_OVERLAY } from "./overlay";
+import { cellTextBoxes } from "./table-paint";
 import type { BackdropPainter, BackdropState, SceneSource } from "./renderer";
 
 class FakePath {
@@ -1893,6 +1895,30 @@ describe("canvas2d : lignes à points, pointes neuves, calque d'édition (OG12 T
     r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set(), { ...EMPTY_OVERLAY, bind: { id: "i", anchors: [[1, 2], [3, 4], [5, 6], [7, 8]] } });
     expect(c.calls).toContain("rect 10,20,100,60");
     expect(c.calls).toContain("stroke");
+  });
+});
+
+describe("paintCellTexts (D15, S8 ; même peintre pour l'écran et le PDF)", () => {
+  it("D15 : case centrée au milieu : texte décalé dans le cadre ; sans alignement : coin intérieur, comme avant", () => {
+    const t: TableData = {
+      color: "#000000", size: 36, merges: [],
+      cols: [{ id: "a", width: 240 }, { id: "b", width: 240 }], rows: [{ id: "r", height: 164 }],
+      cells: [
+        { row: "r", col: "a", text: "ab", fill: null, shade: null, spans: [{ text: "ab", attrs: {} }], ha: "center", va: "middle" },
+        { row: "r", col: "b", text: "ab", fill: null, shade: null, spans: [{ text: "ab", attrs: {} }] },
+      ],
+    };
+    const m = (s: string) => s.length * 10;
+    const ctx = new FakeCtx();
+    const boxes = cellTextBoxes(t);
+    const lines = boxes.map((b) => layoutRich(b.spans, { size: 36 }, b.w, m));
+    paintCellTexts(asCtx(ctx), t, boxes, lines);
+    expect(ctx.log).toContain("transform 1,0,0,1,8,59.5");
+    expect(ctx.log).toContain("transform 1,0,0,1,248,8");
+    expect(ctx.texts.map((x) => x.x)).toEqual([102, 0]);
+    // Collision (G11) : le point posé 5 après le « a » dessiné (8 + 102, 59,5) est sur « a » par le même cadre.
+    const f = cellTextFrame(t, { row: 0, col: 0 }, 45);
+    expect(offsetAt(t.cells[0]!.spans, { size: 36 }, f.w, m, 8 + 102 + 5 - f.x, 59.5 + 5 - f.y, f.ha)).toBe(0);
   });
 });
 

@@ -147,3 +147,88 @@ export function tableFromHtml(html: string, parse: (s: string) => Document): Tab
   for (let r = 0; r < nRows; r++) for (let c = 0; c < cols; c++) cells.push(texts[r * cap + c] ?? "");
   return { rows: nRows, cols, cells, merges, sourceRows: trs.length, sourceCols, cutCells: cut };
 }
+
+/** Champ cité à partir de `start` (un `"`) : [texte, position suivante], ou null si le guillemet fermant n'est pas
+ *  suivi d'une tabulation, d'une fin de ligne ou de la fin du texte (le champ est alors gardé tel quel). `\r\n` et `\r`
+ *  du champ deviennent `\n` (comme `cellText` côté HTML). */
+function quotedField(text: string, start: number): [string, number] | null {
+  const n = text.length;
+  let i = start + 1;
+  let field = "";
+  for (;;) {
+    const j = text.indexOf('"', i);
+    if (j < 0) return null;
+    field += text.slice(i, j);
+    if (text[j + 1] === '"') { field += '"'; i = j + 2; continue; }
+    const next = text[j + 1];
+    if (j + 1 >= n || next === "\t" || next === "\n" || next === "\r") return [field.replace(/\r\n?/g, "\n"), j + 1];
+    return null;
+  }
+}
+
+/** Texte à tabulations (Excel, Word) → grille (point 15, D22) : au moins une tabulation et deux cellules, sinon null ; une seule ligne exige la fin de ligne qu'Excel ajoute toujours.
+ *  Guillemets d'Excel (`"a\nb"`, `""` pour un guillemet) ; `\r\n` ; lignes vides de fin ignorées ; lignes courtes
+ *  complétées ; mêmes bornes que le HTML (64 × 64, source comptée à part, texte coupé à 2 000 caractères). */
+export function tsvGrid(text: string): TableGrid | null {
+  if (!text.includes("\t")) return null;
+  const rows: string[][] = []; // seulement les TABLE_MAX_LINES premières lignes et colonnes
+  const n = text.length;
+  let i = 0;
+  let nRec = 0;
+  let lastNonEmpty = 0; // nombre de lignes jusqu'à la dernière non vide
+  let maxCols = 0;
+  let colsAtLast = 0;
+  let row: string[] = [];
+  let nFields = 0;
+  let nonEmpty = false;
+  const endRecord = (): void => {
+    nRec++;
+    maxCols = Math.max(maxCols, nFields);
+    if (nonEmpty) { lastNonEmpty = nRec; colsAtLast = maxCols; }
+    if (rows.length < TABLE_MAX_LINES) rows.push(row);
+    row = [];
+    nFields = 0;
+    nonEmpty = false;
+  };
+  while (i <= n) {
+    const q = text[i] === '"' ? quotedField(text, i) : null;
+    let field = "";
+    if (q !== null) {
+      field = q[0];
+      i = q[1];
+      if (field.length > 0) nonEmpty = true;
+    } else {
+      let j = i;
+      while (j < n && text[j] !== "\t" && text[j] !== "\n" && text[j] !== "\r") j++;
+      if (j > i) nonEmpty = true;
+      if (nRec < TABLE_MAX_LINES && nFields < TABLE_MAX_LINES) field = text.slice(i, j);
+      i = j;
+    }
+    if (nRec < TABLE_MAX_LINES && nFields < TABLE_MAX_LINES) row.push(field);
+    nFields++;
+    if (i >= n) { endRecord(); break; }
+    const ch = text[i];
+    if (ch === "\t") { i++; continue; }
+    if (ch === "\r" && text[i + 1] === "\n") i++;
+    i++;
+    endRecord();
+    if (i >= n) break;
+  }
+  const records = rows;
+  const sourceRowsAll = lastNonEmpty;
+  const sourceCols = colsAtLast;
+  if (sourceRowsAll === 0 || sourceRowsAll * sourceCols < 2) return null;
+  if (nRec === 1 && !/[\r\n]$/.test(text)) return null;
+  const nRows = Math.min(sourceRowsAll, TABLE_MAX_LINES);
+  const cols = Math.min(sourceCols, TABLE_MAX_LINES);
+  let cut = false;
+  const cells: string[] = [];
+  for (let r = 0; r < nRows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const [t, wasCut] = cutText(records[r]?.[c] ?? "");
+      cut ||= wasCut;
+      cells.push(t);
+    }
+  }
+  return { rows: nRows, cols, cells, merges: [], sourceRows: sourceRowsAll, sourceCols, cutCells: cut };
+}

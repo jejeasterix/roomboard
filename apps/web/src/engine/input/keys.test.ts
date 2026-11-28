@@ -230,6 +230,7 @@ describe("cellKey (H12)", () => {
 describe("tableKey (H12)", () => {
   it("tableKey : Alt+flèches seules ; avec Ctrl, Maj, Cmd, sans Alt, en saisie ou en composition : null", () => {
     const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+    expect(tableKey(a("a", { code: "KeyA" }))).toBe("fit-content");
     expect(tableKey(a("ArrowRight"))).toBe("col-wider");
     expect(tableKey(a("ArrowLeft"))).toBe("col-narrower");
     expect(tableKey(a("ArrowDown"))).toBe("row-taller");
@@ -383,15 +384,21 @@ describe("arrangeKey (OG23, déc. 24)", () => {
 });
 
 describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointes", () => {
-  // Les touches du Tableau (Alt+flèches, Alt+E, Alt+F, Alt+I, Alt+Entrée, Alt+Maj+Entrée) ne tombent sur aucun
+  // Les touches du Tableau (Alt+flèches, Alt+E, Alt+F, Alt+I, Alt+Entrée, Alt+Maj+Entrée, Alt+Maj+C, Alt+Maj+M) ne tombent sur aucun
   // raccourci d'OG23 (Alt+Maj+flèches, Alt+Maj+H/V/R, Alt+H/V, Maj+H/V/R, flèches) : aucun arbitrage de contexte requis.
   const table: KeyLike[] = [
     ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, altKey: true })),
     k("e", { code: "KeyE", altKey: true }),
+    k("a", { code: "KeyA", altKey: true }),
     k("f", { code: "KeyF", altKey: true }),
     k("i", { code: "KeyI", altKey: true }),
     k("Enter", { code: "Enter", altKey: true }),
     k("Enter", { code: "Enter", altKey: true, shiftKey: true }),
+    k("C", { code: "KeyC", altKey: true, shiftKey: true }),
+    k("M", { code: "KeyM", altKey: true, shiftKey: true }),
+    k("b", { code: "KeyB", altKey: true }),
+    k("B", { code: "KeyB", altKey: true, shiftKey: true }),
+    ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, ctrlKey: true, shiftKey: true })),
   ];
   const og23: KeyLike[] = [
     ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].flatMap((a) => [k(a, { code: a, altKey: true, shiftKey: true }), k(a, { code: a }), k(a, { code: a, shiftKey: true })]),
@@ -412,6 +419,40 @@ describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointe
       expect(tableKey(e), `${e.code}`).toBeNull();
       expect(cellKey(e), `${e.code}`).toBeNull();
     }
+  });
+});
+
+describe("tableKey D15 : alignements", () => {
+  it("tableKey : Alt+Maj+C → ha-next, Alt+Maj+M → va-next (lus par code) ; Alt+Maj+→, Alt+C, Ctrl+Alt+Maj+C : null", () => {
+    const a = (key: string, code: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code, ctrlKey: false, metaKey: false, shiftKey: true, altKey: true, isComposing: false, target: null, ...o });
+    expect(tableKey(a("C", "KeyC"))).toBe("ha-next");
+    expect(tableKey(a("Ç", "KeyC"))).toBe("ha-next");
+    expect(tableKey(a("M", "KeyM"))).toBe("va-next");
+    expect(tableKey(a("ArrowRight", "ArrowRight"))).toBeNull();
+    expect(tableKey(a("c", "KeyC", { shiftKey: false }))).toBeNull();
+    expect(tableKey(a("C", "KeyC", { ctrlKey: true }))).toBeNull();
+    expect(tableKey(a("C", "KeyC", { target: { isContentEditable: true } }))).toBeNull();
+  });
+});
+
+describe("tableKey S9 : bordures", () => {
+  it("tableKey : Alt+B → border-set, Alt+Maj+B → border-none (lus par code) ; Ctrl+Alt+B : null", () => {
+    const a = (key: string, code: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+    expect(tableKey(a("b", "KeyB"))).toBe("border-set");
+    expect(tableKey(a("B", "KeyB", { shiftKey: true }))).toBe("border-none");
+    expect(tableKey(a("b", "KeyB", { ctrlKey: true }))).toBeNull();
+  });
+});
+
+describe("tableKey S11 : déplacer une ligne ou une colonne", () => {
+  const c = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null, ...o });
+  it("tableKey : Ctrl+Maj+flèches → row-up, row-down, col-left, col-right ; Ctrl+↑ seul : null", () => {
+    expect(tableKey(c("ArrowUp"))).toBe("row-up");
+    expect(tableKey(c("ArrowDown"))).toBe("row-down");
+    expect(tableKey(c("ArrowLeft"))).toBe("col-left");
+    expect(tableKey(c("ArrowRight"))).toBe("col-right");
+    expect(tableKey(c("ArrowUp", { shiftKey: false }))).toBeNull();
+    expect(tableKey(c("ArrowUp", { altKey: true }))).toBeNull();
   });
 });
 

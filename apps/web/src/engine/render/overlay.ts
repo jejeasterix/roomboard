@@ -28,7 +28,7 @@ export interface ShapePreview {
 }
 
 /** personnalisation-3 (D13, D18) : poignée de l'outil Tableau, point monde ; 44 px de cible, disque de 16 px dessiné. */
-export interface OverlayGrip { readonly x: number; readonly y: number; readonly kind: "col" | "row" }
+export interface OverlayGrip { readonly x: number; readonly y: number; readonly kind: "col" | "row" | "row-move" | "col-move" }
 /** OG12 : poignée de point (« point ») ou de milieu de segment (« mid »), en monde. */
 export interface PointHandle { readonly x: number; readonly y: number; readonly kind: "point" | "mid"; readonly selected: boolean }
 /** OG12 : cible d'accroche éclairée et ses quatre ancres monde. */

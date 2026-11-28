@@ -5,7 +5,7 @@
  * `compositionend` (porte partagée, `commit-gate.ts`) ; rien n'est écrit pendant la composition. Clic pendant l'édition : valide seulement.
  */
 import type { Matrix, TextSpan } from "../../core/api";
-import { lookFrom, type Look } from "../../core/look";
+import { lookFrom, type Look, type TextAlign } from "../../core/look";
 import { plainSpans, sameSpans } from "../../core/rich-text";
 import { LABEL_SIZE, labelMatrix, labelPlacement } from "../../core/shape-label";
 import { IDENTITY_MATRIX } from "../../core/shapes";
@@ -45,6 +45,8 @@ export interface TextEditSession {
   readonly spans: readonly TextSpan[];
   /** Fond opaque de la zone (cellule de tableau, C10a HC10-10) ; absent : transparent. */
   readonly background?: string;
+  /** D15 : alignement de la zone (case de tableau) ; absent : gauche. */
+  readonly align?: TextAlign;
   /** T32 : police du style courant d'une boîte neuve, pour que la zone la montre pendant la frappe ; absente : la normale. */
   readonly font?: string;
 }

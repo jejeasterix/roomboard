@@ -1,5 +1,5 @@
 /** Contrat des outils de geste (stylo, gomme ; sélection, formes, texte au lot 4) : aperçu sans écriture, une écriture au relâché (D38). */
-import type { Change, Command, CoreDocument } from "../../core/api";
+import type { CellLook, Change, Command, CoreDocument } from "../../core/api";
 import type { Camera } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
@@ -78,6 +78,8 @@ export interface TableTool extends GestureTool {
   cell(): CellRef | null;
   cellState(): TableCellState | null;
   act(a: TableAction): void;
+  /** DS1 : une clé de case sur la plage, sinon la zone active ; une SetTableLook. */
+  look(l: CellLook): void;
   fill(color: string | null): void;
   /** Suppr, saisie fermée : vide la cellule active ; false sans cellule active ou saisie ouverte. */
   clearCell(): boolean;
