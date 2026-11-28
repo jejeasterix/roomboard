@@ -85,10 +85,22 @@ describe("profile-edit (C1, DAC1-1)", () => {
     expect(moveItem(DEFAUT, "pages", "eraser", 1)).toEqual(DEFAUT);
   });
 
+  it("OG12 lot 2a (L4, OG19) : le Losange hors de la barre d'outils par défaut, proposé par l'éditeur de profil et ajoutable", () => {
+    for (const id of ["defaut", "annotation"]) {
+      const p = builtinProfile(id)!;
+      const tools = bar(p).groups.flatMap((g) => g.items).flatMap((i) => (i.kind === "tool" && i.tool !== undefined ? [i.tool] : []));
+      expect(tools, id).not.toContain("diamond");
+      const offered = catalog(p, "outils").filter((e) => e.kind === "tool");
+      expect(offered.map((e) => e.ref), id).toEqual(["diamond"]);
+      const added = bar(addItem(p, "outils", offered[0]!)).groups.flatMap((g) => g.items).find((i) => i.tool === "diamond");
+      expect(added, id).toMatchObject({ kind: "tool", tool: "diamond", label: "Losange" });
+    }
+  });
+
   it("catalogue : barre tools = outils et actions absents ; barre pages = actions seules (P15)", () => {
-    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["undo", "redo", "page-add", "page-remove", "page-insert-file", "page-duplicate", "edit-original", "export-pdf", "export-iwb", "export-ubz", "fit-page", "file-new", "file-open", "file-import", "file-save", "file-save-as", "settings", "help", "page-clear", "profiles", "grid", "library"]);
+    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["diamond", "undo", "redo", "page-add", "page-remove", "page-insert-file", "page-duplicate", "edit-original", "export-pdf", "export-iwb", "export-ubz", "fit-page", "file-new", "file-open", "file-import", "file-save", "file-save-as", "settings", "help", "page-clear", "profiles", "grid", "library"]);
     const simple = catalog(SIMPLE, "outils");
-    expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "ellipse", "line", "arrow", "text", "table", "fill"]);
+    expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "diamond", "ellipse", "line", "arrow", "text", "table", "fill"]);
     const pages = catalog(DEFAUT, "pages");
     expect(pages.every((e) => e.kind === "action")).toBe(true);
     expect(pages.map((e) => e.ref)).not.toContain("page-next");
@@ -275,7 +287,7 @@ describe("profile-edit : design-l3 (L3-14, L3-17, L3-20, L3-32)", () => {
 
   it("design-l3 L3-17 : barre d'annotation : outils absents et actions qui agissent en annotation, rien d'autre", () => {
     const entries = catalog(DEFAUT, "annotation");
-    expect(entries.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["hand", "select", "ellipse", "line", "table", "fill"]);
+    expect(entries.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["hand", "select", "diamond", "ellipse", "line", "table", "fill"]);
     expect(entries.filter((e) => e.kind === "action").map((e) => e.ref)).toEqual(["redo"]);
   });
 
