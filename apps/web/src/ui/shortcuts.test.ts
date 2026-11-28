@@ -114,8 +114,11 @@ describe("shortcuts", () => {
   it("fusion lot 2 + OG19 : aucune touche ne sert deux actions de la table", () => {
     // D18 : Ctrl+Maj+↑ / ↓ servent aussi l'ordre des objets (front, back) ; le moteur les donne à la table seulement
     // en outil Tableau (test « S11 » d'engine.test.ts), donc ces deux lignes sont écartées du contrôle de doublon.
-    const keys = SHORTCUTS.filter((s) => s.id !== "table-row-up" && s.id !== "table-row-down").map((s) => s.keys);
-    expect(keys.filter((k, i) => keys.indexOf(k) !== i)).toEqual([]);
+    // Seul ce couple partage ses touches : tout autre doublon, même avec une de ces deux lignes, échoue ici.
+    const byKeys = new Map<string, string[]>();
+    for (const s of SHORTCUTS) byKeys.set(String(s.keys), [...(byKeys.get(String(s.keys)) ?? []), s.id]);
+    const shared = [...byKeys.values()].filter((ids) => ids.length > 1).map((ids) => [...ids].sort().join(" ↔ "));
+    expect(shared.sort()).toEqual(["back ↔ table-row-down", "front ↔ table-row-up"]);
   });
   it("ids uniques", () => {
     expect(new Set(SHORTCUTS.map((s) => s.id)).size).toBe(SHORTCUTS.length);

@@ -1115,6 +1115,16 @@ describe("moteur — outil Tableau (C10a, contrat T4)", () => {
     expect(log).toContain("act row-up");
   });
 
+  it("S11 (négatif) : hors de l'outil Tableau, Ctrl+Maj+↑ ne va pas à la table, même case active (il reste au premier plan)", () => {
+    const { engine, log, table } = setupTable();
+    table.setCell(CELL);
+    engine.key({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null });
+    expect(log).not.toContain("act row-up");
+    engine.setTool("table");
+    engine.key({ key: "ArrowUp", code: "ArrowUp", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null });
+    expect(log).toContain("act row-up");
+  });
+
   it("D15 : tableLook relaie à l'outil Tableau ; Alt+Maj+C avec une case : ha-next", () => {
     const { engine, log, table } = setupTable();
     engine.setTool("table");
