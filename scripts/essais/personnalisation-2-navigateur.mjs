@@ -313,9 +313,9 @@ async function s3(browser, base, mode, tmp) {
   await useTool(page, mode, "select");
   await marquee(page, [360, 260], [580, 440]);
   await waitAttr(page, "data-selection", "1");
-  const dup = `${OPT} [data-option="actions"] [data-option-value="duplicate"]`;
-  const del = `${OPT} [data-option="actions"] [data-option-value="delete"]`;
-  check((await page.locator(dup).count()) === 1 && (await page.locator(del).count()) === 1, "S3.1 : Actions montre Dupliquer et Supprimer");
+  const dup = '[data-object-bar] [data-selection-action="duplicate"]';
+  const del = '[data-object-bar] [data-selection-action="delete"]';
+  check((await page.locator(dup).count()) === 1 && (await page.locator(del).count()) === 1, "S3.1 : la barre d'objet montre Dupliquer et Supprimer");
   check((await page.locator("button[data-selection-action]").count()) > 0, "S3.1 : la barre garde sa rangée Sélection (data-selection-action)");
   const bounds0 = (await attr(page, "data-bounds")).split(",").map(Number);
   const paste0 = await page.locator(item("paste")).count() ? await page.locator(item("paste")).isDisabled() : null;

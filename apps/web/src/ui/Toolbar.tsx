@@ -261,7 +261,8 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
   const items = createMemo(() => itemsForMode(props.bar, props.caps(), props.mode?.() ?? "board"));
   const ctx: Ctx = { view: props.view, host: props.host };
   /** Rangées contextuelles (C1 P18, C10a, C3, C7b) ; design-l2 (L2-13) : en `floating`, dans un îlot séparé posé sous la
-   *  barre par Island.tsx, toujours à l'intérieur de [data-toolbar] ; en bande, inchangées dans la barre. */
+   *  barre par Island.tsx, toujours à l'intérieur de [data-toolbar] ; en bande, inchangées dans la barre.
+   *  OG41 : la rangée Sélection ne porte plus que « Coller » ; les actions de l'objet sont dans la barre d'objet. */
   const rows = (): JSX.Element => (
     <>
       <Show when={props.presets !== undefined}>

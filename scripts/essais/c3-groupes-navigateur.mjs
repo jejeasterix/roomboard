@@ -153,6 +153,7 @@ async function scenario(page, url, { captures, tmp }) {
 
   // S3 : exporter la sélection, puis la redéposer.
   const dl = page.waitForEvent("download");
+  await page.click("[data-object-more]");
   await page.click('button[data-selection-action="export"]');
   const download = await dl;
   const names = await page.evaluate(() => window.__downloadNames);

@@ -27,7 +27,9 @@ import { ANNOTATION_ROLE, MENU_ROLE, annotationBarOf, itemsForMode, resolveStart
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
 import { IslandLayer } from "./Island";
+import { ObjectBar } from "./ObjectBar";
 import { OptionsPanel } from "./OptionsPanel";
+import type { Rect } from "./island-place";
 import { layoutFor } from "./layout";
 import { MediaBar, type MediaControls } from "./MediaBar";
 import { MenuBar } from "./MenuBar";
@@ -547,6 +549,15 @@ export function App(props: AppProps): JSX.Element {
         };
   };
 
+  /** OG41 : vue de la barre d'objet ; sans cadre pendant « Modifier les points » (OG33 : Suppr y retire des points, pas l'objet). */
+  const objectView = () => ({ ...view(), selectionBounds: state().lineEditing != null ? null : state().selectionBounds });
+  /** OG41 (D20) : rectangles fenêtre des barres flottantes hors des îlots (média, objet 3D), lus à l'appel. */
+  const popoverRects = (): readonly Rect[] =>
+    [...props.stages.ownerDocument.querySelectorAll(".rb-media-bar")].flatMap((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 ? [{ x: r.left, y: r.top, w: r.width, h: r.height }] : [];
+    });
+
   /** C1 (P18), design-l4 (L4-4) : préréglages dans la barre montrée en annotation, dans la première barre `tools` au tableau. */
   const presetsBarId = createMemo(() => (annotating() ? annotationBar()?.id : firstToolsBar()?.id));
   const toolbarOf = (bar: Bar, collapsed?: Accessor<boolean>): JSX.Element => (
@@ -668,7 +679,8 @@ export function App(props: AppProps): JSX.Element {
         size={size}
         sheetOpen={() => panel() === "editor"}
         watch={islandWatch}
-        extra={(sideStart, above) => (
+        extra={(sideStart, above, islands) => (
+          <>
           <OptionsPanel
             engine={() => board().engine}
             state={state}
@@ -690,6 +702,16 @@ export function App(props: AppProps): JSX.Element {
               </Show>
             )}
           />
+          {/* OG41 (DA3) : barre d'objet par portail dans .rb-stages, collée à la sélection ; obstacles : les îlots et les barres de média. */}
+          <ObjectBar
+            view={objectView}
+            host={host}
+            engine={() => board().engine}
+            stage={() => board().stage}
+            mount={props.stages}
+            obstacles={() => [...islands(), ...popoverRects()]}
+          />
+          </>
         )}
         onTopFree={setPopTop}
       />

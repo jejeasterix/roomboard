@@ -518,10 +518,12 @@ async function s4(browser, base, tmp) {
   // Rangée Sélection : Arrière-plan.
   await tap(page, cdp, `${ROWS} >> nth=1`);
   await waitAttr(page, "data-selection", "2");
+  await page.click("[data-object-more]");
   await page.click('[data-selection-action="layer-front"]');
   await settle(page);
   const l4 = await labels(page);
   check(l4[0] === "Groupe (2)", `« Premier plan » remonte le groupe en haut (${l4.join(" | ")})`);
+  await page.click("[data-object-more]");
   await page.click('[data-selection-action="layer-back"]');
   await settle(page);
   const l5 = await labels(page);

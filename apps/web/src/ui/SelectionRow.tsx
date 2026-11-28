@@ -1,61 +1,22 @@
-/** Rangée « Sélection » (C3, Z13, HZ1-4 ; C5, I25) : outil Sélection actif ; cinq actions, hors catalogue des profils (C7b R13), puis « Image » (une seule image sélectionnée : panneau de retouche). */
-import { For, Show, type Accessor, type JSX } from "solid-js";
-import type { SelectionAction, ToolbarHost } from "../app/toolbar-host";
+/** Rangée « Sélection » (C3, Z13 ; OG41, D22) : outil Sélection, aucune sélection, presse-papiers interne non vide : un
+ *  seul bouton icône « Coller » (Ctrl+V). Avec une sélection, la barre d'objet collée à l'objet porte les actions
+ *  (`ObjectBar.tsx`, tables dans `object-bar.ts`). */
+import { Show, type Accessor, type JSX } from "solid-js";
+import type { ToolbarHost } from "../app/toolbar-host";
 import { TOOL_TABLE } from "../toolbar";
-import { Icon } from "./IconButton";
+import { IconButton } from "./IconButton";
 import type { ToolbarView } from "./item-state";
-
-export const SELECTION_ACTIONS: readonly { readonly id: SelectionAction; readonly label: string }[] = Object.freeze([
-  { id: "group", label: "Grouper" },
-  { id: "ungroup", label: "Dégrouper" },
-  { id: "copy", label: "Copier" },
-  { id: "paste", label: "Coller" },
-  { id: "export", label: "Exporter" },
-]);
-
-/** Ordre des objets (lot 2, décision 27) : actions hors catalogue, jouées par `host.runAction` ; grisées sans sélection. */
-export const LAYER_ACTIONS: readonly { readonly id: string; readonly label: string; readonly icon: string }[] = Object.freeze([
-  { id: "layer-front", label: "Premier plan", icon: "bring-to-front" },
-  { id: "layer-back", label: "Arrière-plan", icon: "send-to-back" },
-]);
-
-/** Table de prédicats (la garde de src/ui interdit `switch`) : vrai = bouton grisé. */
-const DISABLED: Readonly<Record<SelectionAction, (v: ToolbarView) => boolean>> = {
-  group: (v) => (v.selectionUnits ?? 0) < 2,
-  ungroup: (v) => v.selectionGrouped !== true,
-  copy: (v) => (v.selection?.length ?? 0) === 0,
-  export: (v) => (v.selection?.length ?? 0) === 0,
-  paste: (v) => v.canPaste !== true,
-  duplicate: (v) => (v.selection?.length ?? 0) === 0,
-  delete: (v) => (v.selection?.length ?? 0) === 0,
-};
-
-export function selectionDisabled(a: SelectionAction, v: ToolbarView): boolean {
-  return DISABLED[a](v);
-}
+import { buttonShortcut } from "./shortcuts";
 
 export function SelectionRow(props: { view: Accessor<ToolbarView>; host: ToolbarHost }): JSX.Element {
+  const shown = (): boolean => {
+    const v = props.view();
+    return v.tool === TOOL_TABLE["select"]?.choice && (v.selection?.length ?? 0) === 0 && v.canPaste === true;
+  };
   return (
-    <Show when={props.view().tool === TOOL_TABLE["select"]?.choice}>
+    <Show when={shown()}>
       <span class="rb-sep" role="separator" data-selection-sep />
-      <For each={SELECTION_ACTIONS}>
-        {(a) => (
-          <button type="button" data-selection-action={a.id} disabled={selectionDisabled(a.id, props.view())} onClick={() => props.host.selection(a.id)}>
-            {a.label}
-          </button>
-        )}
-      </For>
-      <For each={LAYER_ACTIONS}>
-        {(a) => (
-          <button type="button" data-selection-action={a.id} disabled={(props.view().selection?.length ?? 0) === 0} onClick={() => props.host.runAction(a.id)}>
-            <Icon name={a.icon} />
-            {a.label}
-          </button>
-        )}
-      </For>
-      <button type="button" data-selection-action="image" disabled={!props.view().selectionImage} onClick={() => props.host.imagePanel()}>
-        Image
-      </button>
+      <IconButton icon="clipboard-paste" label="Coller" attrs={{ "data-selection-action": "paste" }} shortcut={buttonShortcut("paste")} onPress={() => props.host.selection("paste")} />
     </Show>
   );
 }
