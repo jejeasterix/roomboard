@@ -1686,6 +1686,24 @@ mod tests {
         );
     }
 
+    // C1 : doublon cherché par tri d'une copie des références puis voisins comparés (`windows(2)`), plus en O(n²) :
+    // 20 000 ids au long préfixe commun, le doublon en dernier (le pire cas de la recherche linéaire), refusé vite.
+    #[test]
+    fn reorder_refuses_long_order_with_duplicate_fast() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let mut o: Vec<String> = (0..20_000)
+            .map(|i| format!("{}{i}", "ligne-".repeat(20)))
+            .collect();
+        o[19_999] = o[0].clone();
+        let v = d.version();
+        let start = std::time::Instant::now();
+        assert_eq!(d.apply(reorder(&t, o)), Err(CommandError::BadTable));
+        assert!(start.elapsed() < std::time::Duration::from_secs(2));
+        assert_eq!(d.version(), v);
+    }
+
     // S11 : une zone coupée est refusée sans écriture ; la zone entière déplacée (même ordre interne) passe.
     #[test]
     fn reorder_refuses_cut_merge() {
