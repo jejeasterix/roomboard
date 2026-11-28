@@ -30,6 +30,7 @@ import {
   EDGE_SLOP_PX,
   DOUBLE_TAP_MS,
   DOUBLE_TAP_PX,
+  TABLE_LINE_WIDTH,
   expandRange,
   FIT_MAX_WIDTH,
   GRIP_PX,
@@ -652,7 +653,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
       const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
       const look = cellLook(t, at.ref.row, at.ref.col);
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ha: look.ha, va: look.va };
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ha: look.ha, va: look.va, border: look.border };
     },
     act(a) {
       if (!settle()) return;
@@ -719,6 +720,14 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         case "va-next": {
           const now = cellLook(t, ref.row, ref.col).va;
           api.look({ key: "va", value: now === "top" ? "middle" : now === "middle" ? "bottom" : "top" });
+          return;
+        }
+        case "border-set":
+          api.look({ key: "border", value: [style().color, 4, "solid"] });
+          return;
+        case "border-none": {
+          const cur = cellLook(t, ref.row, ref.col).border;
+          api.look({ key: "border", value: [cur?.[0] ?? t.color, cur?.[1] ?? TABLE_LINE_WIDTH, "none"] });
           return;
         }
         case "cell-image": {

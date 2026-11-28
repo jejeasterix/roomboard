@@ -26,7 +26,7 @@ export const TABLE_SHADE_HATCH_STEP = 16;
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
 /** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
 export const TABLE_HEADER_FILL = "#E0E0E8";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next" | "border-set" | "border-none";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -49,6 +49,7 @@ export interface TableCellState {
   /** personnalisation-3 (D17) : la ligne 0 est un en-tête, `#stage[data-table-header]`. */
   readonly header?: boolean;
   /** D15 : alignements de la cellule active (absents : gauche, haut), `#stage[data-table-align]`. */
+  readonly border?: TableBorder | null;
   readonly ha?: HAlign;
   readonly va?: VAlign;
   /** personnalisation-3 : nombre d'objets logés dans ce tableau (`cell[0]`), `#stage[data-table-linked]`. */
