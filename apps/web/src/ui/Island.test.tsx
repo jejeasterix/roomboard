@@ -280,6 +280,25 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     const ids = (sel: string): (string | null)[] => [...r.container.querySelectorAll(sel)].map((e) => e.getAttribute("data-island"));
     return { ...r, rendered, ids };
   }
+  it("OG41 (D20) : islands() rend les rectangles fenêtre des îlots visibles, lus à l'appel", () => {
+    const box = (x: number, y: number, w: number, h: number): DOMRect => ({ x, y, left: x, top: y, width: w, height: h, right: x + w, bottom: y + h, toJSON: () => ({}) }) as DOMRect;
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      if (this.classList.contains("rb-islands")) return box(0, 0, 1280, 900);
+      if (this.matches('.rb-island[data-island="outils"]')) return box(170, 16, 940, 56);
+      if (this.matches('.rb-island[data-island="onglets"]')) return box(80, 16, 0, 0);
+      return real.call(this);
+    });
+    let got: (() => readonly { x: number; y: number; w: number; h: number }[]) | null = null;
+    render(() => (
+      <IslandLayer bars={() => [bar("outils", "tools")]} render={(b) => <div data-toolbar={b.id} />} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false}
+        extra={(_s, _a, islands) => { got = islands; return <div class="rb-island" data-island="essai" />; }} />
+    ));
+    expect(got).not.toBeNull();
+    const rects = got!();
+    expect(rects).toContainEqual({ x: 170, y: 16, w: 940, h: 56 });
+    expect(rects.some((r) => r.w === 0 || r.h === 0)).toBe(false);
+  });
   const ALL = [bar("outils", "tools"), bar("menu", "menu"), bar("historique", "history"), bar("panneaux", "panels"), bar("pages", "pages"), bar("zoom", "zoom")];
 
   it("design-l2 L2-5 : menu en haut à gauche, puis onglets et #etat ; panneaux puis rôle inconnu en haut à droite ; historique en bas à gauche ; outils et pages centrés", () => {

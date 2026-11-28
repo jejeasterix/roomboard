@@ -74,12 +74,11 @@ describe("OptionsPanel (OG11, T10)", () => {
     expect(s.hasAttribute("data-mixed")).toBe(true);
     expect(s.querySelector('[aria-pressed="true"]')).toBeNull();
   });
-  it("sélection : actions Dupliquer et Supprimer", () => {
-    const { container, engine } = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
-    fireEvent.click(container.querySelector('[data-option-value="duplicate"]')!);
-    fireEvent.click(container.querySelector('[data-option-value="delete"]')!);
-    expect(engine.duplicateSelection).toHaveBeenCalledTimes(1);
-    expect(engine.deleteSelection).toHaveBeenCalledTimes(1);
+  it("OG41 (D33) : Actions ne porte ni Dupliquer ni Supprimer (passés à la barre d'objet) ; le lien reste", () => {
+    const { container } = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
+    expect(container.querySelector('[data-option-value="duplicate"]')).toBeNull();
+    expect(container.querySelector('[data-option-value="delete"]')).toBeNull();
+    expect(container.querySelector('[data-option="actions"] [data-option-value="link"]')).not.toBeNull();
   });
   it("toucher une pastille écrit le style", () => {
     const { container, calls } = mount({ tool: "rect", selection: [] });
@@ -411,7 +410,7 @@ describe("OptionsPanel : avant la saisie, focus, sélecteur borné (T31)", () =>
   });
   it("T32 : Disposition et Actions gardent aussi le focus de la saisie", () => {
     const { container } = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
-    for (const v of ["front", "duplicate", "delete", "link"]) {
+    for (const v of ["front", "link"]) {
       const b = container.querySelector(`[data-option-value="${v}"]`)!;
       expect(fireEvent.pointerDown(b), v).toBe(false);
     }
