@@ -19,7 +19,7 @@ import { elbowedOf, type LookPatch } from "../core/look";
 import { isSegment } from "../core/shapes";
 import { createLineEditor, type LineEditor } from "./tools/line-edit";
 import { linkedCopy } from "./tools/line-points";
-import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
+import { mergeOverlays, overlayKey, overlayKeepOut, EMPTY_OVERLAY, type EditOverlay, type ElementBadges, type ScreenRect } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
 import { validColor } from "../core/rich-text";
@@ -356,6 +356,9 @@ export interface Engine {
   prevPage(): boolean;
   wheel(e: WheelInput): void;
   resize(width: number, height: number, dpr: number): void;
+  /** OG41 (DA2) : rectangles écran (px de la scène) de ce qui entoure le cadre de la sélection, cibles comprises
+   *  (`overlayKeepOut` sur le calque peint) ; vide sans sélection. */
+  selectionKeepOut(): readonly ScreenRect[];
   camera(): Camera;
   state(): EngineState;
   onState(cb: (s: EngineState) => void): () => void;
@@ -934,15 +937,20 @@ export function createEngine(deps: EngineDeps): Engine {
     return lineEditor === null ? toolList : [...toolList.filter((t) => t !== selectTool), lineEditor];
   }
 
+  /** Calque peint à partir des parts des outils (`liveTools`) ; OG41 : aussi lu par `selectionKeepOut`. */
+  function paintedOverlay(parts: readonly LivePart[]): EditOverlay {
+    const merged = mergeOverlays(parts.map((p) => p.overlay));
+    // C5 (I28) : pendant le rognage, le cadre de la sélection cède la place au cadre de rognage.
+    return imageEdit?.mode() === "crop" ? { ...merged, frame: null, handles: false } : merged;
+  }
+
   function frame(now: number): void {
     const painted = liveTools();
     for (const t of painted) t.frame();
     const parts: LivePart[] = painted.map((t) => t.live());
     const hidden = new Set<string>();
     for (const p of parts) for (const id of p.hidden) hidden.add(id);
-    const merged = mergeOverlays(parts.map((p) => p.overlay));
-    // C5 (I28) : pendant le rognage, le cadre de la sélection cède la place au cadre de rognage.
-    const overlay = imageEdit?.mode() === "crop" ? { ...merged, frame: null, handles: false } : merged;
+    const overlay = paintedOverlay(parts);
     const key = overlayKey(overlay);
     const hint = overlay.bind?.id ?? null;
     if (hint !== bindHint) {
@@ -1230,6 +1238,20 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     run,
     runAll,
+    selectionKeepOut() {
+      const sel = selectTool.selection();
+      if (sel.length === 0) return [];
+      const badges: ElementBadges[] = [];
+      for (const id of sel) {
+        const look = doc.element(id)?.look;
+        const link = look?.link !== undefined;
+        const copy = look?.dragCopy === true;
+        const b = link || copy ? doc.bounds([id]) : null;
+        if (b !== null) badges.push({ bounds: b, link, copy });
+      }
+      // Le calque que l'écran peint (éditeur de points à la place de l'outil Sélection, cadre masqué au rognage).
+      return overlayKeepOut(paintedOverlay(liveTools().map((t) => t.live())), camera, lastPointer !== "mouse", badges);
+    },
     group,
     ungroup,
     deleteSelection() {

@@ -3048,6 +3048,32 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     return { doc, frames, renderer, engine, page, rect, line, ctx, sel, pointsOf, tap };
   }
 
+  /** OG41 (DA2) : carré écran de demi-côté `half` centré sur le point monde (wx, wy). */
+  const keepSq = (cam: Camera, wx: number, wy: number, half: number) => {
+    const [x, y] = worldToScreen(cam, wx, wy);
+    return { x: x - half, y: y - half, w: 2 * half, h: 2 * half };
+  };
+  it("OG41 (DA2) selectionKeepOut : flèche seule, ses poignées de points, jamais les poignées de son cadre", () => {
+    const { engine, line } = og12();
+    const id = line("arrow");
+    engine.select([id]);
+    const cam = engine.camera();
+    const b = engine.state().selectionBounds!;
+    const keep = engine.selectionKeepOut();
+    expect(keep).toContainEqual(keepSq(cam, 100, 100, 12));
+    expect(keep).toContainEqual(keepSq(cam, 200, 100, 12));
+    expect(keep).not.toContainEqual(keepSq(cam, b.x0, b.y0, 12));
+    expect(keep).not.toContainEqual(keepSq(cam, b.x1, b.y0, 12));
+  });
+  it("OG41 (DA2) selectionKeepOut : « Modifier les points » suit le calque peint (éditeur), pas celui de l'outil Sélection", () => {
+    const { engine, line } = og12();
+    const id = line("arrow");
+    engine.select([id]);
+    const before = engine.selectionKeepOut();
+    expect(before).not.toContainEqual(keepSq(engine.camera(), 150, 50, 12));
+    expect(engine.editLinePoints()).toBe(true);
+    expect(engine.selectionKeepOut()).toContainEqual(keepSq(engine.camera(), 150, 50, 12));
+  });
   it("Ctrl+Entrée : Modifier les points sur la flèche seule sélectionnée ; l'outil reste Sélection, la sélection est gardée", () => {
     const { engine, line } = og12();
     const id = line("arrow");

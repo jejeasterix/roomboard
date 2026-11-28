@@ -46,8 +46,8 @@ export function hitHandle(b: Bounds, x: number, y: number, reach: number, skip?:
 
 /** Poignée « Déplacer » (OG23, T11) : au-dessus du milieu du bord haut, hors des huit poignées de taille. */
 export const MOVE_HANDLE_GAP_PX = 28;
-const MOVE_REACH_TOUCH_PX = 22;
-const MOVE_REACH_MOUSE_PX = 12;
+export const MOVE_REACH_TOUCH_PX = 22;
+export const MOVE_REACH_MOUSE_PX = 12;
 
 /** Centre monde de la poignée « Déplacer » : milieu du bord haut, 28 px écran au-dessus. */
 export function moveHandlePoint(b: Bounds, zoom: number): [number, number] {

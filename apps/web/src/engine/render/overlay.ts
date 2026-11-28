@@ -1,5 +1,9 @@
 /** Calque d'édition (lot 4, CL4-1) : aperçus des outils d'édition, peints sur la scène après les éléments. */
 import type { Bounds, LinkDir, Look, Matrix, ShapeKind, StrokeStyle } from "../../core/api";
+import { worldToScreen, type Camera } from "../camera";
+import { HANDLE_GRAB_PX, MOVE_REACH_MOUSE_PX, MOVE_REACH_TOUCH_PX, handlesOf, moveHandlePoint } from "../tools/handles";
+import { LINK_REACH_PX, POINT_REACH_PX, POINT_REACH_TOUCH_PX } from "../tools/line-points";
+import { LINK_MOUSE_PX, LINK_TOUCH_PX, copyBadgeBox, linkBadgeBox } from "./link-badge";
 
 /** Élément masqué de la scène et redessiné avec une matrice provisoire posée avant la sienne (D38). */
 export interface GhostView {
@@ -82,3 +86,39 @@ export const overlayKey = (o: EditOverlay): string => JSON.stringify(o);
 export const isEmptyOverlay = (o: EditOverlay): boolean =>
   o.ghosts.length === 0 && o.shapes.length === 0 && o.frame === null && o.band === null && (o.target ?? null) === null && (o.grips ?? []).length === 0 &&
   (o.points?.length ?? 0) === 0 && !o.bind && (o.links?.length ?? 0) === 0;
+
+/** OG41 (DA2) : rectangle écran, px CSS de la scène. Même forme que `Rect` (ui/island-place.ts). */
+export interface ScreenRect { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+/** Badges d'un élément sélectionné (lien T18, « copie » OG23), lus sur son aspect par le moteur. */
+export interface ElementBadges { readonly bounds: Bounds; readonly link: boolean; readonly copy: boolean }
+/** Demi-côté dessiné du rond « Déplacer » (24 px, `paintMoveHandle`). */
+const MOVE_DRAWN_HALF_PX = 12;
+
+/** OG41 (DA2) : ce qui entoure la sélection, cibles comprises, en px de la scène : huit poignées de taille (prise
+ *  `HANDLE_GRAB_PX`), « Déplacer » (22 px au doigt, 12 à la souris), « + » (`LINK_REACH_PX`), points d'une ligne ou d'une
+ *  flèche seule (calque sans cadre, `select.ts:375-380` : `POINT_REACH_TOUCH_PX` au doigt, `POINT_REACH_PX` à la
+ *  souris), badges de lien et de copie (44 px au doigt, 24 à la souris). Une seule source pour la barre d'objet : une
+ *  poignée ajoutée au calque (rotation d'OG33) n'est évitée que si elle entre ici. Calque vide : rien. */
+export function overlayKeepOut(o: EditOverlay, camera: Camera, touch: boolean, badges: readonly ElementBadges[] = []): readonly ScreenRect[] {
+  const out: ScreenRect[] = [];
+  const square = (x: number, y: number, half: number): void => void out.push({ x: x - half, y: y - half, w: 2 * half, h: 2 * half });
+  const world = (x: number, y: number, half: number): void => {
+    const [sx, sy] = worldToScreen(camera, x, y);
+    square(sx, sy, half);
+  };
+  for (const p of o.points ?? []) world(p.x, p.y, touch ? POINT_REACH_TOUCH_PX : POINT_REACH_PX);
+  if (o.frame !== null && o.handles) {
+    for (const h of handlesOf(o.frame)) world(h.x, h.y, HANDLE_GRAB_PX);
+    if (o.move === true) {
+      const [mx, my] = moveHandlePoint(o.frame, camera.zoom);
+      world(mx, my, Math.max(MOVE_DRAWN_HALF_PX, touch ? MOVE_REACH_TOUCH_PX : MOVE_REACH_MOUSE_PX));
+    }
+  }
+  for (const k of o.links ?? []) world(k.x, k.y, LINK_REACH_PX);
+  const reach = (touch ? LINK_TOUCH_PX : LINK_MOUSE_PX) / 2;
+  for (const b of badges) {
+    const boxes = [...(b.link ? [linkBadgeBox(b.bounds, camera)] : []), ...(b.copy ? [copyBadgeBox(b.bounds, camera)] : [])];
+    for (const x of boxes) square(x.x + x.size / 2, x.y + x.size / 2, Math.max(x.size / 2, reach));
+  }
+  return out;
+}
