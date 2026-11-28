@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import { toEnvelope } from "./clipboard";
+import { tsvGrid } from "./html-table";
 import type { DroppedFile } from "./files";
-import { handlePaste, isEditable, pastedFiles, pastedItems, pastedTableHtml } from "./paste";
+import { handlePaste, isEditable, pastedFiles, pastedItems, pastedTableHtml, pastedTabText } from "./paste";
+
+vi.mock("./html-table", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("./html-table")>();
+  return { ...mod, tsvGrid: vi.fn(mod.tsvGrid) };
+});
 
 const files = (...f: File[]) => ({ files: f });
 const png = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
@@ -187,6 +193,12 @@ describe("collage d'un texte tabulé (point 15)", () => {
     const s = sink();
     expect(handlePaste(mk("bonjour\nmonde"), s)).toBeNull();
     expect(s.pasteText).not.toHaveBeenCalled();
+  });
+  it("pastedTabText ne fait qu'un test bon marché : tsvGrid n'est jamais appelé au collage", () => {
+    const spy = vi.mocked(tsvGrid);
+    spy.mockClear();
+    expect(pastedTabText(mk(tsv))).toBe(tsv);
+    expect(spy).not.toHaveBeenCalled();
   });
   it("cible éditable : null", () => {
     const area = document.createElement("textarea");
