@@ -53,3 +53,28 @@ describe("Model3dBar (C15, X24)", () => {
     expect(a.q("message")).toBeNull();
   });
 });
+
+describe("Model3dBar (OG34) : design des îlots et raccourcis", () => {
+  it("icônes Lucide : rotate-3d pour Tourner, scan pour Vue initiale", () => {
+    const { q } = setup();
+    expect([q("orbit")!.querySelector("svg")!.getAttribute("data-icon"), q("reset")!.querySelector("svg")!.getAttribute("data-icon")]).toEqual(["rotate-3d", "scan"]);
+  });
+  it("raccourcis dans la barre : T tourne, V revient à la vue initiale ; arrêtés à la barre", () => {
+    const { container, toggle, reset } = setup();
+    const root = container.querySelector<HTMLElement>("[data-model3d-bar]")!;
+    const outside = vi.fn();
+    window.addEventListener("keydown", outside);
+    fireEvent.keyDown(root, { key: "t" });
+    fireEvent.keyDown(root, { key: "v" });
+    window.removeEventListener("keydown", outside);
+    expect([toggle.mock.calls.length, reset.mock.calls.length]).toEqual([1, 1]);
+    expect(outside).not.toHaveBeenCalled();
+  });
+  it("raccourcis grisés comme leurs boutons (sans WebGL)", () => {
+    const { container, toggle, reset } = setup("sans-webgl");
+    const root = container.querySelector<HTMLElement>("[data-model3d-bar]")!;
+    fireEvent.keyDown(root, { key: "t" });
+    fireEvent.keyDown(root, { key: "v" });
+    expect([toggle.mock.calls.length, reset.mock.calls.length]).toEqual([0, 0]);
+  });
+});

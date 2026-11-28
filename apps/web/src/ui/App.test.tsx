@@ -44,6 +44,11 @@ function beforeL4Copy(id: string): Profile {
 }
 const barIds = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll("[data-toolbar]")].map((b) => b.getAttribute("data-toolbar"));
 
+/** OG34 : un média ou un objet 3D montré est sélectionné (outil Sélection), comme dans le vrai moteur. */
+const selectionOf = (m: unknown): Record<string, unknown> => {
+  const id = (m as { id?: string } | null)?.id;
+  return id === undefined ? { selection: [], selectionUnits: 0 } : { tool: "select", selection: [id], selectionUnits: 1 };
+};
 function baseState(over: Partial<Record<string, unknown>> = {}): EngineState {
   return {
     tool: "pen",
@@ -138,6 +143,8 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     doc: {
       pageIds: () => ["p1", "p2", "p3"],
       page: (id: string) => ({ id, width: 1920, height: 1080, background: "#ffffff", backdrop: null, grid: null }),
+      // OG34 : le panneau d'options lit l'élément choisi (sections Média et Objet 3D).
+      element: (id: string) => [mediaView.current, modelView.current].find((e) => (e as { id?: string } | null)?.id === id) ?? null,
       asset: (id: string) => (id === "ef".repeat(32) ? { id, name: "chaise.glb", mime: "model/gltf-binary", size: 4 } : null),
     },
     media,
@@ -166,14 +173,14 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
       mediaView.current = m;
       mediaView.status = status;
       for (const cb of mediaListeners) cb();
-      state = baseState({ ...(state as unknown as Record<string, unknown>), version: Number((state as unknown as { version: number }).version) + 1 });
+      state = baseState({ ...(state as unknown as Record<string, unknown>), ...selectionOf(m), version: Number((state as unknown as { version: number }).version) + 1 });
       for (const cb of listeners) cb(state);
     },
     model3d,
     showModel3d(m, status = "instantane") {
       modelView.current = m;
       modelView.status = status;
-      state = baseState({ ...(state as unknown as Record<string, unknown>), version: Number((state as unknown as { version: number }).version) + 1 });
+      state = baseState({ ...(state as unknown as Record<string, unknown>), ...selectionOf(m), version: Number((state as unknown as { version: number }).version) + 1 });
       for (const cb of listeners) cb(state);
     },
     setDirty(d) {
@@ -1246,12 +1253,12 @@ describe("App : barre du média (C14)", () => {
     media: { asset: "ab".repeat(32), mediaType: "video", w: 200, h: 100, duration: 2.5, poster: null, trimStart: 0, trimEnd: null, loop: false, volume: 1 },
   };
 
-  it("la classe rb-media-bar n'est posée qu'une fois (enveloppe), sans doubler bordure et ombre", async () => {
+  it("OG34 : la barre du média vit dans la section Média du panneau d'options, plus de barre flottante", async () => {
     const { container, tab } = renderApp();
     tab.showMedia(MEDIA);
     await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).not.toBeNull());
-    expect(container.querySelectorAll(".rb-media-bar")).toHaveLength(1);
-    expect(container.querySelector("[data-media-bar]")!.parentElement!.className).toBe("rb-popover rb-media-bar");
+    expect(container.querySelectorAll(".rb-media-bar")).toHaveLength(0);
+    expect(container.querySelector("[data-media-bar]")!.closest('[data-options] [data-option="media"] .rb-opt-body')).not.toBeNull();
   });
 
   it("visible pour un média sélectionné, absente sinon", async () => {
@@ -1314,8 +1321,8 @@ describe("App : barre 3D (C15)", () => {
     expect(container.querySelector("[data-model3d-bar]")).toBeNull();
     tab.showModel3d(MODEL);
     await vi.waitFor(() => expect(container.querySelector("[data-model3d-bar]")).not.toBeNull());
-    // Même enveloppe flottante que la barre du média (X24), aucune rangée.
-    expect(container.querySelector("[data-model3d-bar]")!.parentElement!.className).toBe("rb-popover rb-media-bar");
+    // OG34 : comme la barre du média, dans sa section du panneau d'options (Objet 3D), aucune rangée.
+    expect(container.querySelector("[data-model3d-bar]")!.closest('[data-options] [data-option="model3d"] .rb-opt-body')).not.toBeNull();
     expect(container.querySelector('[data-model3d="name"]')?.textContent).toBe("chaise.glb");
     tab.showModel3d(null); // groupe : la session ne rend aucun objet 3D seul
     await vi.waitFor(() => expect(container.querySelector("[data-model3d-bar]")).toBeNull());

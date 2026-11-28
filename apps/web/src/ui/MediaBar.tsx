@@ -1,10 +1,12 @@
 /**
- * Barre flottante du média (C14, M22, DAM5) : posée sur la scène (l'enveloppe d'App porte `.rb-media-bar`), jamais une rangée permanente.
+ * Commandes du média (C14, M22, DAM5), dans la section Média du panneau d'options (OG34 : au design des îlots, icônes Lucide).
  * Lecture/Pause, position, rognage (« Début ici », « Fin ici », « Tout garder »), boucle, volume. Chaque réglage est un
  * seul appel `set` avec l'état complet ; le volume n'est écrit qu'au relâché (`change`, M23). Un refus du cœur est
  * affiché tel quel (`error`). L'état de lecture vient des `controls` ; il est relu à chaque tic de rafraîchissement.
  */
 import { createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
+import { Icon, IconButton, LabelButton } from "./IconButton";
+import { panelKeyDown } from "./panel-keys";
 
 export type MediaBarStatus = "poster" | "lecture" | "pause" | "echec";
 
@@ -73,40 +75,59 @@ export function MediaBar(props: MediaBarProps): JSX.Element {
     if (refused === null) setSettings(next);
   };
   const here = (): number => Math.round(time() * 1000) / 1000;
+  const playing = (): boolean => status() === "lecture";
+  // Volume montré pendant le glisser (l'écriture n'a lieu qu'au relâché, M23).
+  const [volume, setVolume] = createSignal<number | null>(null);
+  const shownVolume = (): number => volume() ?? Math.round(settings().volume * VOLUME_MAX);
+  const start = (): void => apply({ ...settings(), trimStart: here() });
+  const end = (): void => apply({ ...settings(), trimEnd: here() });
+  const keep = (): void => apply({ ...settings(), trimStart: 0, trimEnd: null });
+  const loop = (): void => apply({ ...settings(), loop: !settings().loop });
+  // OG34 : raccourcis de la barre (focus dans la barre) ; Espace et Entrée restent ceux du bouton qui a le focus.
+  const onKeyDown = panelKeyDown({
+    k: () => (status() === "echec" ? false : props.controls.toggle()),
+    d: start,
+    f: end,
+    g: keep,
+    b: loop,
+  });
   return (
-    <div role="group" aria-label="Commandes du média" data-media-bar>
-      <div class="rb-media-bar-inner">
-        <button type="button" data-media="toggle" disabled={status() === "echec"} onClick={() => props.controls.toggle()}>
-          {status() === "lecture" ? "Pause" : "Lecture"}
-        </button>
-        <input
-          type="range"
-          data-media="position"
-          aria-label="Position"
-          aria-valuetext={`${clock(time())} sur ${clock(props.media.duration)}`}
-          min={0}
-          max={props.media.duration}
-          step={POSITION_STEP}
-          value={time()}
-          style={{
-            "--rb-trim-start": percent(settings().trimStart, props.media.duration),
-            "--rb-trim-end": percent(settings().trimEnd ?? props.media.duration, props.media.duration),
-          }}
-          onInput={(e) => props.controls.seek(Number(e.currentTarget.value))}
+    <div role="group" aria-label="Commandes du média" data-media-bar class="rb-mbar" onKeyDown={onKeyDown}>
+      <div class="rb-mbar-row">
+        <IconButton
+          icon={playing() ? "pause" : "play"}
+          label={playing() ? "Pause" : "Lecture"}
+          shortcut={{ text: "K", aria: "K" }}
+          disabled={status() === "echec"}
+          attrs={{ "data-media": "toggle", class: "rb-opt-btn" }}
+          onPress={() => props.controls.toggle()}
         />
-        <span data-media="time">{`${clock(time())} / ${clock(props.media.duration)}`}</span>
-        <button type="button" data-media="start" onClick={() => apply({ ...settings(), trimStart: here() })}>
-          Début ici
-        </button>
-        <button type="button" data-media="end" onClick={() => apply({ ...settings(), trimEnd: here() })}>
-          Fin ici
-        </button>
-        <button type="button" data-media="keep" onClick={() => apply({ ...settings(), trimStart: 0, trimEnd: null })}>
-          Tout garder
-        </button>
-        <button type="button" data-media="loop" aria-pressed={settings().loop} onClick={() => apply({ ...settings(), loop: !settings().loop })}>
-          Boucle
-        </button>
+        <span data-media="time" class="rb-mbar-time">{`${clock(time())} / ${clock(props.media.duration)}`}</span>
+      </div>
+      <input
+        type="range"
+        data-media="position"
+        class="rb-mbar-pos"
+        aria-label="Position"
+        aria-valuetext={`${clock(time())} sur ${clock(props.media.duration)}`}
+        min={0}
+        max={props.media.duration}
+        step={POSITION_STEP}
+        value={time()}
+        style={{
+          "--rb-trim-start": percent(settings().trimStart, props.media.duration),
+          "--rb-trim-end": percent(settings().trimEnd ?? props.media.duration, props.media.duration),
+        }}
+        onInput={(e) => props.controls.seek(Number(e.currentTarget.value))}
+      />
+      <div class="rb-mbar-trim">
+        <LabelButton icon="arrow-right-to-line" label="Début ici" keys="D" attrs={{ "data-media": "start" }} onPress={start} />
+        <LabelButton icon="arrow-left-to-line" label="Fin ici" keys="F" attrs={{ "data-media": "end" }} onPress={end} />
+        <LabelButton icon="move-horizontal" label="Tout garder" keys="G" attrs={{ "data-media": "keep" }} onPress={keep} />
+      </div>
+      <LabelButton icon="repeat" label="Boucle" look="toggle" keys="B" pressed={settings().loop} attrs={{ "data-media": "loop" }} onPress={loop} />
+      <label class="rb-opacity" data-media-volume>
+        <Icon name="volume-2" />
         <input
           type="range"
           data-media="volume"
@@ -115,19 +136,24 @@ export function MediaBar(props: MediaBarProps): JSX.Element {
           max={VOLUME_MAX}
           step={1}
           value={Math.round(settings().volume * VOLUME_MAX)}
-          onChange={(e) => apply({ ...settings(), volume: Number(e.currentTarget.value) / VOLUME_MAX })}
+          onInput={(e) => setVolume(Number(e.currentTarget.value))}
+          onChange={(e) => {
+            setVolume(null);
+            apply({ ...settings(), volume: Number(e.currentTarget.value) / VOLUME_MAX });
+          }}
         />
-        <Show when={status() === "echec"}>
-          <span data-media="failed">{MEDIA_FAILED_LABEL}</span>
-        </Show>
-        <Show when={error()}>
-          {(m) => (
-            <span data-media="error" role="status">
-              {m()}
-            </span>
-          )}
-        </Show>
-      </div>
+        <output>{`${shownVolume()} %`}</output>
+      </label>
+      <Show when={status() === "echec"}>
+        <span data-media="failed" class="rb-mbar-note" data-tone="error">{MEDIA_FAILED_LABEL}</span>
+      </Show>
+      <Show when={error()}>
+        {(m) => (
+          <span data-media="error" class="rb-mbar-note" data-tone="error" role="status">
+            {m()}
+          </span>
+        )}
+      </Show>
     </div>
   );
 }

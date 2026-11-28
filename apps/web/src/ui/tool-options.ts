@@ -6,16 +6,18 @@ import { presetsOf, TABLE_FILLS, type Profile } from "../toolbar";
 
 export type OptionKey =
   | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "pressure" | "strokeStyle" | "roughness" | "roundness"
-  | "font" | "fontSize" | "textAlign" | "arrowType" | "arrowheads" | "opacity" | "image" | "layers" | "align" | "transform" | "actions";
+  | "font" | "fontSize" | "textAlign" | "arrowType" | "arrowheads" | "opacity" | "image" | "media" | "model3d" | "layers" | "align" | "transform" | "actions";
 export const OPTION_ORDER: readonly OptionKey[] = [
   "strokeColor", "background", "fillStyle", "strokeWidth", "pressure", "strokeStyle", "roughness", "roundness",
   // OG12 : la place réservée `editPoints` est devenue sa vraie section, « Type de flèche » (`arrowType`), à l'ordre
   // décidé par OG12 (avant les pointes, comme Excalidraw) ; « Modifier les points » est un bouton d'`actions`.
   "font", "fontSize", "textAlign", "arrowType", "arrowheads", "opacity", "image",
+  // OG34 : les commandes du média et de l'objet 3D (barres flottantes de C14 et C15) deviennent des sections.
+  "media", "model3d",
   "layers", "align", "transform", "actions",
 ];
-/** OG23 : sections ouvertes au premier affichage (`image` : la section de l'image seule). */
-export const OPEN_BY_DEFAULT: ReadonlySet<OptionKey> = new Set<OptionKey>(["strokeColor", "background", "strokeWidth", "image"]);
+/** OG23 : sections ouvertes au premier affichage (`image`, `media`, `model3d` : la section propre d'un objet seul). */
+export const OPEN_BY_DEFAULT: ReadonlySet<OptionKey> = new Set<OptionKey>(["strokeColor", "background", "strokeWidth", "image", "media", "model3d"]);
 /** Section ouverte : l'état gardé sur l'appareil s'il est booléen, sinon le défaut. */
 export function sectionOpen(key: OptionKey, saved: Readonly<Partial<Record<string, boolean>>>): boolean {
   const v = Object.hasOwn(saved, key) ? saved[key] : undefined;
@@ -60,7 +62,8 @@ export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _
   const on = new Set<OptionKey>(BY_TOOL[tool] ?? []);
   for (const t of targets) for (const k of byElement(t)) on.add(k);
   if (targets.length > 0) { on.add("layers"); on.add("transform"); on.add("actions"); }
-  if (targets.length === 1 && targets[0]!.kind === "image") on.add("image");
+  const only = targets.length === 1 ? targets[0]!.kind : null;
+  if (only === "image" || only === "media" || only === "model3d") on.add(only);
   if (units >= ALIGN_MIN_UNITS) on.add("align");
   const filled = targets.length > 0 ? targets.some((t) => t.kind === "shape" && t.shape.fill != null) : background !== null;
   if (!filled) on.delete("fillStyle");

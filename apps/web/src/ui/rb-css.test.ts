@@ -57,7 +57,8 @@ describe("rb.css (design-l1, L1-6)", () => {
     expect(rule('.rb-bar button[aria-pressed="true"]')).not.toContain("border-color");
     expect(rule('.rb-bar button[aria-current="page"]')).toContain(flat);
     expect(rule('.rb-bar button[aria-current="page"]')).not.toContain("border-color");
-    expect(rule('.rb-media-bar-inner button[aria-pressed="true"]')).toContain(on);
+    expect(rule('.rb-imgedit .rb-opt-toggle[aria-pressed="true"]')).toContain("background: var(--rf-violet-100); color: var(--rf-violet-700);");
+    void on;
     // #888888 jamais pour du texte (charte.md:28) : gris AA sur les boutons à texte, gris 500 sur les boutons à icône
     expect(rule(".rb-bar button:disabled")).toContain("color: var(--rf-text-muted-aa);");
     expect(rule(".rb-bar button.rb-ib:disabled")).toContain("color: var(--rf-gray-500);");
@@ -308,11 +309,11 @@ describe("rb.css (design-l2)", () => {
     expect(rule("[data-menu-list][hidden]")).toContain("display: none;");
     expect(rule('.rb-bar button[data-menu-toggle][aria-expanded="true"]')).toMatch(/background: var\(--rf-violet-100\);.*color: var\(--rf-violet-700\);/);
   });
-  it("design-l2 L2-15 : panneaux passagers en îlot, sous la rangée du haut ; menu Profil à droite ; barres du média au-dessus des pages", () => {
+  it("design-l2 L2-15 : panneaux passagers en îlot, sous la rangée du haut ; menu Profil à droite (OG34 : barres du média dans le panneau d'options)", () => {
     expect(rule(".rb-popover")).toMatch(/border: 0;.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-hover\);.*margin: var\(--rb-pop-top, 88px\) 0 0 16px;/);
     expect(rule('.rb-popover[data-panel="image"]')).toMatch(/justify-self: end;.*margin: var\(--rb-pop-top, 88px\) 16px 0 0;/);
     expect(rule('.rb-popover[data-panel="menu-profils"]')).toMatch(/justify-self: end;.*margin: 88px 16px 0 0;/);
-    expect(rule(".rb-media-bar")).toContain("margin: 0 0 88px;");
+    expect(CSS).not.toContain(".rb-media-bar");
   });
   it("design-l2 L2-16 : largeur du panneau des profils en --rb-sheet-w ; panneau et bibliothèque sur toute la hauteur", () => {
     expect(CSS).toContain("--rb-sheet-w: 600px;");
@@ -369,5 +370,15 @@ describe("rb.css (T33)", () => {
     expect(r).toContain("display: flex");
     expect(r).toContain("gap: 2px");
     expect(rule(".rb-color-transparent")).not.toContain("margin-block-end");
+  });  it("OG34 : panneau de retouche d'image et commandes du média au design des îlots, cibles de 44 px", () => {
+    expect(rule(".rb-imgedit")).toMatch(/inline-size: 320px;.*--rb-btn-size: 44px;/);
+    expect(rule(".rb-imgedit .rb-opt-btn")).toMatch(/inline-size: 44px; block-size: 44px;.*border: 0;.*border-radius: var\(--rf-radius-lg\);/);
+    expect(rule(".rb-imgedit .rb-opt-wide, .rb-imgedit .rb-opt-toggle, .rb-imgedit .rb-opt-primary")).toContain("min-block-size: 44px;");
+    expect(rule(".rb-imgedit .rb-opt-primary")).toMatch(/background: var\(--rf-violet-600\); color: var\(--rf-white\);/);
+    expect(rule(".rb-imgedit-select select")).toMatch(/block-size: 44px;.*border: 1px solid var\(--rf-gray-300\);.*appearance: none;/);
+    expect(rule('.rb-imgedit-range input[type="range"]')).toContain("block-size: 44px;");
+    expect(rule(".rb-mbar .rb-opt-btn")).toContain("min-block-size: 44px;");
+    expect(rule(".rb-mbar-pos")).toMatch(/block-size: 44px;.*var\(--rb-trim-start\)/);
+    expect(rule(".rb-options .rb-mbar-trim .rb-opt-wide")).toContain("min-block-size: 64px;");
   });
 });

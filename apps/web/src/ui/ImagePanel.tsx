@@ -1,13 +1,15 @@
 /**
  * Panneau de retouche d'une image (C5, I25-I27, I31) : géométrie immédiate (Rogner, Retourner, Tourner : une étape
  * chacun, par la séance du moteur) ; luminosité, contraste et couleur transparente en brouillon, aperçu en direct, écrits
- * ensemble par « Valider » (une étape). Une écriture géométrique de la séance garde le brouillon ; toute autre écriture
+ * ensemble par « Valider » (une étape). OG34 : au design des îlots (jetons `--rf-*`, icônes Lucide, cibles de 44 px). Une écriture géométrique de la séance garde le brouillon ; toute autre écriture
  * (Valider, Rétablir, annuler, rétablir, ailleurs) le reprend du document. Démonté : la séance est fermée.
  */
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack, type Accessor, type JSX } from "solid-js";
 import type { ImageData, ImageParams } from "../core/api";
 import { clean, flipShown, paramsOf, turnShown } from "../core/image-params";
 import type { ImageEdit } from "../engine/tools/image-edit";
+import { Icon, IconButton, LabelButton } from "./IconButton";
+import { panelKeyDown } from "./panel-keys";
 import { syncValue } from "./ProfileEditor";
 
 /** Défauts du panneau (I12, I13, HC5-7). */
@@ -123,89 +125,110 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
     if (i !== null) props.edit.geometry(next(paramsOf(i)));
   };
   const num = (e: { currentTarget: HTMLInputElement }): number => Number(e.currentTarget.value);
+  const apply = (): void => {
+    disarm();
+    props.edit.commit(pixelParams(draft()));
+  };
+  /** Curseur d'un réglage : icône (Réglages seulement), libellé, valeur lue ; curseur de la Transparence du panneau d'options. */
+  const range = (key: "brightness" | "contrast" | "tolerance" | "soft", label: string, icon: string | null, min: number): JSX.Element => (
+    <label class="rb-imgedit-range">
+      <Show when={icon}>{(name) => <Icon name={name()} />}</Show>
+      <span class="rb-imgedit-label">{label}</span>
+      <input type="range" min={min} max="100" step="1" data-image-input={key} value={draft()[key]} onInput={(e) => setPixels({ ...draft(), [key]: num(e) })} />
+      <output>{draft()[key]}</output>
+    </label>
+  );
+  // OG34 : raccourcis du panneau (focus dedans) ; Échap reste celui du moteur (rognage, pipette).
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.repeat) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (mode() === "crop") props.edit.finishCrop(true);
+      else apply();
+      return;
+    }
+    panelKeyDown({ i: () => (mode() === "pick" ? disarm() : pipette()) })(e);
+  };
+  const geo = (action: string, label: string, icon: string, next: (p: ImageParams) => ImageParams): JSX.Element => (
+    <IconButton icon={icon} label={label} attrs={{ "data-image-action": action, class: "rb-opt-btn" }} onPress={() => geometry(next)} />
+  );
   return (
-    <div id="image-retouche" class="rb-editor" role="group" aria-label="Retouche de l'image">
-      <Show
-        when={mode() === "crop"}
-        fallback={
-          <div class="rb-editor-actions">
-            <button type="button" data-image-action="crop" onClick={() => props.edit.startCrop()}>Rogner</button>
-            <button type="button" data-image-action="flip-h" onClick={() => geometry((p) => flipShown(p, "h"))}>Retourner ↔</button>
-            <button type="button" data-image-action="flip-v" onClick={() => geometry((p) => flipShown(p, "v"))}>Retourner ↕</button>
-            <button type="button" data-image-action="turn-left" onClick={() => geometry((p) => turnShown(p, -1))}>Tourner ⟲</button>
-            <button type="button" data-image-action="turn-right" onClick={() => geometry((p) => turnShown(p, 1))}>Tourner ⟳</button>
+    <div id="image-retouche" class="rb-imgedit" role="group" aria-label="Retouche de l'image" onKeyDown={onKeyDown}>
+      <div class="rb-imgedit-head">
+        <h2>Retouche de l'image</h2>
+        <IconButton icon="close" label="Fermer" attrs={{ "data-image-action": "close", class: "rb-opt-btn" }} onPress={() => props.close()} />
+      </div>
+      <section class="rb-imgedit-sec" aria-label="Géométrie">
+        <h3 class="rb-imgedit-h">Géométrie</h3>
+        <Show
+          when={mode() === "crop"}
+          fallback={
+            <div class="rb-pick-row">
+              <IconButton icon="crop" label="Rogner" attrs={{ "data-image-action": "crop", class: "rb-opt-btn" }} onPress={() => props.edit.startCrop()} />
+              {geo("flip-h", "Retourner horizontalement", "flip-horizontal", (p) => flipShown(p, "h"))}
+              {geo("flip-v", "Retourner verticalement", "flip-vertical", (p) => flipShown(p, "v"))}
+              {geo("turn-left", "Tourner à gauche", "rotate-ccw-square", (p) => turnShown(p, -1))}
+              {geo("turn-right", "Tourner à droite", "rotate-cw-square", (p) => turnShown(p, 1))}
+            </div>
+          }
+        >
+          <div class="rb-opt-stack">
+            <LabelButton icon="check" label="Valider le rognage" look="primary" keys="Control+Enter" attrs={{ "data-image-action": "crop-apply" }} onPress={() => props.edit.finishCrop(true)} />
+            <LabelButton icon="close" label="Annuler" keys="Escape" attrs={{ "data-image-action": "crop-cancel" }} onPress={() => props.edit.finishCrop(false)} />
           </div>
-        }
-      >
-        <div class="rb-editor-actions">
-          <button type="button" data-image-action="crop-apply" onClick={() => props.edit.finishCrop(true)}>Valider le rognage</button>
-          <button type="button" data-image-action="crop-cancel" onClick={() => props.edit.finishCrop(false)}>Annuler</button>
+        </Show>
+      </section>
+      <section class="rb-imgedit-sec" aria-label="Réglages">
+        <h3 class="rb-imgedit-h">Réglages</h3>
+        {range("brightness", "Luminosité", "sun", -100)}
+        {range("contrast", "Contraste", "contrast", -100)}
+      </section>
+      <section class="rb-imgedit-sec" aria-label="Couleur transparente">
+        <h3 class="rb-imgedit-h">Couleur transparente</h3>
+        <div class="rb-imgedit-pick">
+          <LabelButton icon="pipette" label="Pipette" look="toggle" keys="I" pressed={mode() === "pick"} attrs={{ "data-image-action": "pick" }} onPress={pipette} />
+          <span
+            class="rb-imgedit-swatch"
+            data-image-color={draft().color ?? ""}
+            data-empty={draft().color === null ? "" : undefined}
+            style={draft().color === null ? {} : { background: draft().color! }}
+          />
         </div>
-      </Show>
-      <label>
-        Luminosité{" "}
-        <input type="range" min="-100" max="100" step="1" data-image-input="brightness" value={draft().brightness} onInput={(e) => setPixels({ ...draft(), brightness: num(e) })} />
-      </label>
-      <label>
-        Contraste{" "}
-        <input type="range" min="-100" max="100" step="1" data-image-input="contrast" value={draft().contrast} onInput={(e) => setPixels({ ...draft(), contrast: num(e) })} />
-      </label>
-      <fieldset>
-        <legend>Couleur transparente</legend>
-        <div class="rb-editor-actions">
-          <button
-            type="button"
-            data-image-action="pick"
-            aria-pressed={mode() === "pick"}
-            onClick={pipette}
-          >
-            Pipette
-          </button>
-          <span class="rb-swatch" data-image-color={draft().color ?? ""} style={{ background: draft().color ?? "transparent" }} />
-        </div>
-        <label>
-          Tolérance{" "}
-          <input type="range" min="0" max="100" step="1" data-image-input="tolerance" value={draft().tolerance} onInput={(e) => setPixels({ ...draft(), tolerance: num(e) })} />
+        <label class="rb-imgedit-field">
+          <span class="rb-imgedit-label">Départ</span>
+          <span class="rb-imgedit-select">
+            <select
+              data-image-input="mode"
+              ref={(el) => syncValue(el, () => draft().mode)}
+              onChange={(e) => {
+                const v = e.currentTarget.value as SeedMode;
+                disarm();
+                setPixels({ ...draft(), mode: v, contiguous: v !== "global", seed: v === "seed" ? draft().seed : null });
+              }}
+            >
+              <option value="seed">Depuis le point touché</option>
+              <option value="contiguous">Depuis les bords</option>
+              <option value="global">Global</option>
+            </select>
+            <Icon name="chevron-down" />
+          </span>
         </label>
-        <label>
-          Plume{" "}
-          <input type="range" min="0" max="100" step="1" data-image-input="soft" value={draft().soft} onInput={(e) => setPixels({ ...draft(), soft: num(e) })} />
-        </label>
-        <label>
-          Mode{" "}
-          <select
-            data-image-input="mode"
-            ref={(el) => syncValue(el, () => draft().mode)}
-            onChange={(e) => {
-              const v = e.currentTarget.value as SeedMode;
-              disarm();
-              setPixels({ ...draft(), mode: v, contiguous: v !== "global", seed: v === "seed" ? draft().seed : null });
-            }}
-          >
-            <option value="seed">Depuis le point touché</option>
-            <option value="contiguous">Depuis les bords</option>
-            <option value="global">Global</option>
-          </select>
-        </label>
-      </fieldset>
-      <div class="rb-editor-actions">
-        <button type="button" data-image-action="apply" onClick={() => {
-          disarm();
-          props.edit.commit(pixelParams(draft()));
-        }}>Valider</button>
-        <button
-          type="button"
-          data-image-action="cancel"
-          onClick={() => {
+        {range("tolerance", "Tolérance", null, 0)}
+        {range("soft", "Plume", null, 0)}
+      </section>
+      <div class="rb-imgedit-foot">
+        <LabelButton
+          icon="undo"
+          label="Annuler les réglages"
+          attrs={{ "data-image-action": "cancel" }}
+          onPress={() => {
             disarm();
             setDraft(draftOf(props.image()));
             props.edit.preview(null);
           }}
-        >
-          Annuler les réglages
-        </button>
-        <button type="button" data-image-action="restore" onClick={() => props.edit.restore()}>Rétablir l'original</button>
-        <button type="button" data-image-action="close" onClick={() => props.close()}>Fermer</button>
+        />
+        <LabelButton icon="rotate-ccw" label="Rétablir l'original" attrs={{ "data-image-action": "restore" }} onPress={() => props.edit.restore()} />
+        <LabelButton icon="check" label="Valider" look="primary" keys="Control+Enter" attrs={{ "data-image-action": "apply" }} onPress={apply} />
       </div>
     </div>
   );

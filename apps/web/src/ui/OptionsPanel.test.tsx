@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
-import { createSignal } from "solid-js";
+import { createSignal, type JSX } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ElementView } from "../core/api";
 import { createDeviceSettings } from "../device-settings";
@@ -16,7 +16,7 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { openImage?: (s: "crop" | "background" | null) => void; units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean; lineEditing?: string | null; linePoints?: number }
+interface Opts { media?: () => JSX.Element; model3d?: () => JSX.Element; openImage?: (s: "crop" | "background" | null) => void; units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean; lineEditing?: string | null; linePoints?: number }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
   const picks: ((c: string | null) => void)[] = [];
@@ -51,6 +51,8 @@ function mount(o: Opts) {
       hidden={() => o.hidden ?? false}
       sideStart={() => null}
       {...(o.openImage ? { openImage: o.openImage } : {})}
+      {...(o.media ? { media: o.media } : {})}
+      {...(o.model3d ? { model3d: o.model3d } : {})}
     />
   ));
   return { ...r, calls, engine, settings, picks };
@@ -785,5 +787,27 @@ describe("OptionsPanel : Modifier les points (OG12 T11)", () => {
     expect(b).not.toBeNull();
     fireEvent.click(b!);
     expect(engine.removeLinePoints).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("OptionsPanel (OG34) : sections Média et Objet 3D en accordéon", () => {
+  const media = { id: "m", kind: "media", transform: [1, 0, 0, 1, 0, 0], media: {} } as unknown as ElementView;
+  const model = { id: "o", kind: "model3d", transform: [1, 0, 0, 1, 0, 0], model3d: {} } as unknown as ElementView;
+  it("média seul : section Média ouverte, en-tête d'accordéon, corps fourni par l'appelant", () => {
+    const { container } = mount({ tool: "select", selection: [media], media: () => <div data-media-bar>barre</div> });
+    const sec = container.querySelector('[data-option="media"]')!;
+    expect(sec.hasAttribute("data-open")).toBe(true);
+    expect(sec.querySelector('[data-option-head="media"]')!.textContent).toContain("Média");
+    expect(sec.querySelector(".rb-opt-body [data-media-bar]")).not.toBeNull();
+    fireEvent.click(sec.querySelector('[data-option-head="media"]')!);
+    expect(container.querySelector('[data-option="media"]')!.hasAttribute("data-open")).toBe(false);
+    expect((container.querySelector('#opt-body-media') as HTMLElement).hidden).toBe(true);
+  });
+  it("objet 3D seul : section Objet 3D ouverte, corps fourni par l'appelant", () => {
+    const { container } = mount({ tool: "select", selection: [model], model3d: () => <div data-model3d-bar>barre</div> });
+    const sec = container.querySelector('[data-option="model3d"]')!;
+    expect(sec.hasAttribute("data-open")).toBe(true);
+    expect(sec.querySelector('[data-option-head="model3d"]')!.textContent).toContain("Objet 3D");
+    expect(sec.querySelector(".rb-opt-body [data-model3d-bar]")).not.toBeNull();
   });
 });

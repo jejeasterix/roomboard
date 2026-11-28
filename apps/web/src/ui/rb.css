@@ -432,16 +432,24 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-bar [data-table-action], .rb-bar [data-table-fill], .rb-bar .rb-format { padding: 0 calc(var(--rb-pad) / 2); }
 .rb-bar [data-table-fill], .rb-bar .rb-format.rb-preset { gap: calc(var(--rb-gap) / 2); }
 
-/* Barre flottante du média (C14, M22) : posée en bas de la scène (case « stage »), jamais une rangée ; la scène garde ses 640 px.
-   design-l2 (L2-15) : 88 px au-dessus du bas, au-dessus de l'îlot des pages. */
-.rb-media-bar { align-self: end; justify-self: center; margin: 0 0 88px; z-index: 3; max-width: 100%; background: #ffffff; border: 1px solid var(--rf-gray-300); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
-.rb-media-bar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); padding: var(--rb-pad); }
-.rb-media-bar-inner button { min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); }
-.rb-media-bar-inner button[aria-pressed="true"] { background: var(--rf-violet-100); border-color: var(--rf-violet-600); color: var(--rf-violet-700); }
-.rb-media-bar-inner input[type="range"] { min-height: var(--rb-btn-m); }
-.rb-media-bar-inner [data-media="position"] { flex: 1 1 12em; --rb-trim-start: 0%; --rb-trim-end: 100%; background: linear-gradient(to right, #e4e4e7 var(--rb-trim-start), #93c5fd var(--rb-trim-start), #93c5fd var(--rb-trim-end), #e4e4e7 var(--rb-trim-end)); }
-.rb-media-bar-inner [data-media="time"] { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rb-media-bar-inner [data-media="failed"], .rb-media-bar-inner [data-media="error"] { color: #b91c1c; }
+/* OG34 : commandes du média (C14) et de l'objet 3D (C15) dans leur section du panneau d'options, plus de barre flottante.
+   Position : piste de 4 px, partie gardée par le rognage en violet ; cibles de 44 px au moins, quelle que soit la taille. */
+.rb-mbar { display: grid; gap: 4px; min-inline-size: 0; }
+.rb-mbar-row { display: flex; align-items: center; gap: 8px; }
+.rb-mbar-time { font-size: 14px; line-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--rf-gray-800); }
+.rb-mbar-name { min-inline-size: 0; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; color: var(--rf-text-muted-aa); }
+.rb-mbar-note { padding: 0 4px; font-size: 14px; line-height: 20px; color: var(--rf-text-muted-aa); }
+.rb-mbar-note[data-tone="error"] { color: var(--rf-danger-text); }
+.rb-mbar .rb-opt-btn { min-inline-size: 44px; min-block-size: 44px; }
+.rb-mbar-pos { --rb-trim-start: 0%; --rb-trim-end: 100%; --rb-trim-kept: color-mix(in srgb, var(--rf-violet-600) 45%, var(--rf-white)); appearance: none; -webkit-appearance: none; box-sizing: border-box; inline-size: 100%; block-size: 44px; margin: 0; padding: 0; border: 0; background: linear-gradient(to right, var(--rf-gray-300) var(--rb-trim-start), var(--rb-trim-kept) var(--rb-trim-start), var(--rb-trim-kept) var(--rb-trim-end), var(--rf-gray-300) var(--rb-trim-end)) center / 100% 4px no-repeat; cursor: pointer; }
+.rb-mbar-pos::-webkit-slider-thumb { -webkit-appearance: none; inline-size: 20px; block-size: 20px; box-sizing: border-box; border: 1.5px solid var(--rf-violet-600); border-radius: 50%; background: var(--rf-white); box-shadow: var(--rf-shadow-card); }
+.rb-mbar-pos::-moz-range-thumb { inline-size: 20px; block-size: 20px; box-sizing: border-box; border: 1.5px solid var(--rf-violet-600); border-radius: 50%; background: var(--rf-white); box-shadow: var(--rf-shadow-card); }
+.rb-mbar-trim { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.rb-options .rb-mbar-trim .rb-opt-wide { flex-direction: column; justify-content: center; gap: 2px; min-block-size: 64px; padding: 4px 2px; text-align: center; }
+.rb-options .rb-opt-wide:disabled { color: var(--rf-gray-500); cursor: default; }
+.rb-options .rb-opt-wide:disabled:hover { background: transparent; }
+.rb-opt-wide:disabled .rb-opt-wide-label, .rb-opt-toggle:disabled .rb-opt-wide-label { color: var(--rf-text-muted-aa); }
+.rb-opt-toggle[aria-pressed="true"] .rb-opt-wide-label { color: var(--rf-violet-700); }
 /* Hôte des lecteurs : dans la page (la lecture l'exige) mais invisible et hors de la scène. */
 .rb-media-host { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
 /* C16 (O25) : conversion Office en cours : curseur d'attente sur la scène (le moteur pose son curseur en ligne). */
@@ -555,3 +563,32 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-options .rb-opt-toggle[aria-pressed="mixed"] { background: var(--rf-gray-50); color: var(--rf-navy-500); box-shadow: inset 0 0 0 1.5px var(--rf-violet-600); }
 .rb-options .rb-opt-toggle:disabled { color: var(--rf-gray-500); cursor: default; }
 .rb-opt-wide-label { color: var(--rf-gray-800); }
+/* OG34 : panneau de retouche d'image (C5) au design des îlots : en-tête, trois groupes séparés d'un filet gris 300, boutons
+   à icône Lucide de 44 px, curseurs de la Transparence, action principale violette. Netteté (§ 10) : largeur fixe de 320 px,
+   marges et hauteurs entières. */
+.rb-imgedit { box-sizing: border-box; inline-size: 320px; max-inline-size: 100%; display: grid; gap: 12px; padding: 12px; color: var(--rf-navy-500); font-size: 14px; line-height: 20px; --rb-btn-size: 44px; }
+.rb-imgedit-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-inline-start: 4px; }
+.rb-imgedit-head h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--rf-navy-500); }
+.rb-imgedit-sec, .rb-imgedit-foot { display: grid; gap: 4px; padding-block-start: 12px; border-block-start: 1px solid var(--rf-gray-300); }
+.rb-imgedit-h { margin: 0 0 4px; padding: 0 4px; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--rf-gray-800); }
+.rb-imgedit .rb-opt-btn { display: inline-grid; place-items: center; flex: none; inline-size: 44px; block-size: 44px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
+.rb-imgedit .rb-opt-wide, .rb-imgedit .rb-opt-toggle, .rb-imgedit .rb-opt-primary { display: flex; align-items: center; gap: 8px; inline-size: 100%; min-block-size: 44px; padding: 0 8px; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; font-size: 14px; line-height: 20px; text-align: start; cursor: pointer; }
+.rb-imgedit .rb-opt-btn:hover, .rb-imgedit .rb-opt-wide:hover, .rb-imgedit .rb-opt-toggle:hover { background: var(--rf-gray-50); }
+.rb-imgedit .rb-opt-toggle[aria-pressed="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); box-shadow: inset 0 0 0 1px var(--rf-violet-600); }
+.rb-imgedit .rb-opt-primary { justify-content: center; background: var(--rf-violet-600); color: var(--rf-white); font-weight: 600; }
+.rb-imgedit .rb-opt-primary:hover { background: var(--rf-violet-700); }
+.rb-imgedit .rb-opt-primary .rb-opt-wide-label { color: inherit; }
+.rb-imgedit button:focus-visible, .rb-imgedit input:focus-visible, .rb-imgedit select:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+.rb-imgedit .rb-opt-primary:focus-visible { outline-offset: 2px; }
+.rb-imgedit-range, .rb-imgedit-field { display: flex; align-items: center; gap: 8px; padding-inline-start: 4px; }
+.rb-imgedit-range > .rb-icon { flex: none; }
+.rb-imgedit-label { flex: none; inline-size: 76px; color: var(--rf-gray-800); }
+.rb-imgedit-range input[type="range"] { flex: 1 1 auto; min-inline-size: 0; block-size: 44px; margin: 0; accent-color: var(--rf-violet-600); }
+.rb-imgedit-range output { flex: none; inline-size: 32px; text-align: end; font-variant-numeric: tabular-nums; color: var(--rf-gray-800); }
+.rb-imgedit-pick { display: flex; align-items: center; gap: 8px; }
+.rb-imgedit-pick .rb-opt-toggle { flex: 1 1 auto; inline-size: auto; }
+.rb-imgedit-swatch { flex: none; inline-size: 24px; block-size: 24px; box-sizing: border-box; margin-inline-end: 10px; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-md); }
+.rb-imgedit-swatch[data-empty] { background: repeating-conic-gradient(var(--rf-gray-300) 0 25%, var(--rf-white) 0 50%) 0 0 / 8px 8px; }
+.rb-imgedit-select { position: relative; flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; }
+.rb-imgedit-select select { inline-size: 100%; block-size: 44px; box-sizing: border-box; padding: 0 36px 0 12px; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); font: inherit; font-size: 14px; color: var(--rf-navy-500); text-overflow: ellipsis; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.rb-imgedit-select > .rb-icon { position: absolute; inset-inline-end: 8px; pointer-events: none; }
