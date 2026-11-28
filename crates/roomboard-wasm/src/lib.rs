@@ -27,6 +27,7 @@ use roomboard_core::shape::ShapeKind;
 use roomboard_core::style::StylePatch;
 use roomboard_core::table::TableAxis;
 use roomboard_core::table_links::LineSize;
+use roomboard_core::table_look::CellLook;
 use wasm_bindgen::prelude::*;
 
 /// Version du cœur, pour vérifier que le module Wasm est chargé.
@@ -1292,6 +1293,28 @@ impl Document {
         )
     }
 
+    /// personnalisation-3 (suite OG32, DS1) : `key` = `ha` | `va` (`text` : valeur, absente = défaut), `border` (`text` :
+    /// couleur, absente = retirer ; `width` ; `labels[0]` : style), `open` (`width` ≠ 0 : ouvert), `accept` (`labels`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_table_look(
+        &mut self,
+        id: &str,
+        from_row: &str,
+        from_col: &str,
+        to_row: &str,
+        to_col: &str,
+        key: &str,
+        text: Option<String>,
+        width: f64,
+        labels: Vec<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_look_inner(id, [from_row, from_col], [to_row, to_col], key, text, width, labels)
+                .map_err(cmd_err)?,
+        )
+    }
+
     /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
     #[allow(clippy::too_many_arguments)]
     pub fn import_table(
@@ -2423,6 +2446,34 @@ impl Document {
             row: row.to_string(),
             col: col.to_string(),
             from,
+        })
+    }
+
+    /// Clé inconnue : `BadTable` (comme le faux cœur).
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_table_look_inner(
+        &mut self,
+        id: &str,
+        from: [&str; 2],
+        to: [&str; 2],
+        key: &str,
+        text: Option<String>,
+        width: f64,
+        labels: Vec<String>,
+    ) -> Result<Change, CommandError> {
+        let look = match key {
+            "ha" => CellLook::Ha(text),
+            "va" => CellLook::Va(text),
+            "border" => CellLook::Border(text.map(|c| (c, width, labels.into_iter().next().unwrap_or_default()))),
+            "open" => CellLook::Open(width != 0.0),
+            "accept" => CellLook::Accept(labels),
+            _ => return Err(CommandError::BadTable),
+        };
+        self.run(Command::SetTableLook {
+            id: id.to_string(),
+            from: (from[0].to_string(), from[1].to_string()),
+            to: (to[0].to_string(), to[1].to_string()),
+            look,
         })
     }
 

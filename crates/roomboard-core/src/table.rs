@@ -6,6 +6,7 @@
 //! `element::unknown_view` (jamais invisible). C10b : fusion = `span` `[id de la dernière ligne, id de la dernière colonne]`
 //! (`Any::Array` de deux chaînes) sur l'ancre seule ; la couverture se déduit à la lecture par `merges_of` (F2), jamais
 //! écrite (aucun `mergedInto`) ; `shade` = couleur d'un ombrage opaque (F8). Aucune `Any::Map`.
+//! Réglages de case `ha`, `va`, `border`, `open` et de colonne `accept` : `table_look.rs` (suite OG32).
 //! Objet logé (personnalisation-3) : champ `cell` de l'objet, `table_links.rs` ; les commandes qui bougent une ligne
 //! ou une colonne font suivre ses objets liés dans leur propre transaction (`follow_in`).
 use std::collections::{HashMap, HashSet};
@@ -31,6 +32,8 @@ pub const MAX_TABLE_LINES: u32 = 64;
 pub struct TableColView {
     pub id: String,
     pub width: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accept: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -50,6 +53,18 @@ pub struct TableCellView {
     /// Image de fond de case (personnalisation-3, T9) : id d'asset ; omise quand il n'y en a pas.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bg: Option<String>,
+    /// Suite OG32 (D15, DS6) : `center` ou `right` ; absent = gauche.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ha: Option<String>,
+    /// `middle` ou `bottom` ; absent = haut.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub va: Option<String>,
+    /// DS4 : `[couleur, épaisseur, style]`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border: Option<(String, f64, String)>,
+    /// DS3 : cache ouvert (seulement sur une case ombrée).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub open: bool,
     pub spans: Vec<TextSpanView>,
 }
 
@@ -111,6 +126,10 @@ pub(crate) struct RawCell {
     pub fill: Option<String>,
     pub shade: Option<String>,
     pub bg: Option<String>,
+    pub ha: Option<String>,
+    pub va: Option<String>,
+    pub border: Option<crate::table_look::CellBorder>,
+    pub open: bool,
 }
 
 pub(crate) fn cell_key(row: &str, col: &str) -> String {
@@ -218,6 +237,10 @@ pub(crate) fn read_cell<T: ReadTxn>(
     let fill = out_string(map.get(txn, "fill")).filter(|c| valid_color(c));
     let shade = out_string(map.get(txn, "shade")).filter(|c| valid_color(c));
     let bg = out_string(map.get(txn, "bg")).filter(|a| crate::asset::is_asset_id(a));
+    let ha = out_string(map.get(txn, "ha")).filter(|v| crate::table_look::HA.contains(&v.as_str()));
+    let va = out_string(map.get(txn, "va")).filter(|v| crate::table_look::VA.contains(&v.as_str()));
+    let border = crate::table_look::read_border(map.get(txn, "border"));
+    let open = matches!(map.get(txn, "open"), Some(Out::Any(Any::Bool(true))));
     Some(RawCell {
         map,
         text,
@@ -225,11 +248,15 @@ pub(crate) fn read_cell<T: ReadTxn>(
         fill,
         shade,
         bg,
+        ha,
+        va,
+        border,
+        open,
     })
 }
 
 /// Clé de cellule posée par `set_on_targets`.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum PaintKey {
     Fill,
     Shade,
@@ -334,6 +361,9 @@ impl RawTable {
                     && cell.fill.is_none()
                     && cell.shade.is_none()
                     && cell.bg.is_none()
+                    && cell.ha.is_none()
+                    && cell.va.is_none()
+                    && cell.border.is_none()
                 {
                     continue;
                 }
@@ -342,8 +372,12 @@ impl RawTable {
                     col: c.id.clone(),
                     text: cell.content,
                     fill: cell.fill,
+                    open: cell.open && cell.shade.is_some(),
                     shade: cell.shade,
                     bg: cell.bg,
+                    ha: cell.ha,
+                    va: cell.va,
+                    border: cell.border,
                     spans: rich_text::cell_spans(txn, cell.text.as_ref()),
                 });
             }
@@ -368,6 +402,7 @@ impl RawTable {
                 .map(|l| TableColView {
                     id: l.id.clone(),
                     width: l.size,
+                    accept: crate::table_look::read_accept(l.map.get(txn, "accept")),
                 })
                 .collect(),
             rows: self
@@ -506,7 +541,7 @@ pub(crate) fn insert_cell(
 
 /// Ancres et cellules simples du rectangle, dans l'ordre de lecture, sans doublon (F9, F15, PC11) ; la couverture
 /// vient des zones de `merges_of` (GC11).
-fn targets(rect: &Merge, merges: &[Merge]) -> Vec<(usize, usize)> {
+pub(crate) fn targets(rect: &Merge, merges: &[Merge]) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     for r in rect.r0..=rect.r1 {
         for c in rect.c0..=rect.c1 {
@@ -599,7 +634,7 @@ impl RawTable {
     }
 
     /// Rectangle normalisé par les rangs de deux coins.
-    fn rect(&self, from: (&str, &str), to: (&str, &str)) -> Option<Merge> {
+    pub(crate) fn rect(&self, from: (&str, &str), to: (&str, &str)) -> Option<Merge> {
         let (ra, ca) = self.ranks(from)?;
         let (rb, cb) = self.ranks(to)?;
         Some(Merge {
@@ -610,7 +645,7 @@ impl RawTable {
         })
     }
 
-    fn key(&self, r: usize, c: usize) -> String {
+    pub(crate) fn key(&self, r: usize, c: usize) -> String {
         cell_key(&self.rows[r].id, &self.cols[c].id)
     }
 }
@@ -1030,7 +1065,9 @@ impl Document {
                         PaintKey::Fill => x.fill.clone(),
                         PaintKey::Shade => x.shade.clone(),
                     });
-                    (current.as_deref() != value).then_some(((r, c), cell))
+                    (current.as_deref() != value
+                        || (key == PaintKey::Shade && cell.as_ref().is_some_and(|x| x.open)))
+                    .then_some(((r, c), cell))
                 })
                 .collect()
         };
@@ -1044,6 +1081,9 @@ impl Document {
                 match (value, cell) {
                     (Some(v), Some(x)) => {
                         x.map.insert(&mut txn, key.name(), In::from(v));
+                        if key == PaintKey::Shade {
+                            x.map.remove(&mut txn, "open");
+                        }
                     }
                     (Some(v), None) => {
                         insert_cell(
@@ -1056,6 +1096,9 @@ impl Document {
                     }
                     (None, Some(x)) => {
                         x.map.remove(&mut txn, key.name());
+                        if key == PaintKey::Shade {
+                            x.map.remove(&mut txn, "open");
+                        }
                     }
                     (None, None) => {}
                 }
@@ -1286,11 +1329,11 @@ pub(crate) mod tests {
             vec![
                 TableColView {
                     id: "c1".into(),
-                    width: 240.0
+                    width: 240.0, accept: None
                 },
                 TableColView {
                     id: "c2".into(),
-                    width: 100.0
+                    width: 100.0, accept: None
                 },
             ]
         );
@@ -1308,7 +1351,7 @@ pub(crate) mod tests {
                     fill: None,
                     shade: None,
                     bg: None,
-                    spans: plain_spans("Lundi")
+                    spans: plain_spans("Lundi"), ha: None, va: None, border: None, open: false
                 },
                 TableCellView {
                     row: "r2".into(),
@@ -1317,7 +1360,7 @@ pub(crate) mod tests {
                     fill: Some("#fef08a".into()),
                     shade: None,
                     bg: None,
-                    spans: plain_spans("")
+                    spans: plain_spans(""), ha: None, va: None, border: None, open: false
                 },
             ]
         );
@@ -1349,7 +1392,7 @@ pub(crate) mod tests {
             t.cols,
             vec![TableColView {
                 id: "c-ok".into(),
-                width: 240.0
+                width: 240.0, accept: None
             }]
         );
         let txn = d.read();
@@ -2386,7 +2429,7 @@ pub(crate) mod tests {
                 fill: Some("#fef08a".into()),
                 shade: None,
                 bg: None,
-                spans: plain_spans("")
+                spans: plain_spans(""), ha: None, va: None, border: None, open: false
             }]
         );
         let w = writes(&d);
@@ -2644,7 +2687,7 @@ pub(crate) mod tests {
             t.cols,
             vec![TableColView {
                 id: "c2".into(),
-                width: 100.0
+                width: 100.0, accept: None
             }]
         );
         assert_eq!(
