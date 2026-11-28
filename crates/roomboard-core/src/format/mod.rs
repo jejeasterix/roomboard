@@ -115,12 +115,16 @@ impl std::fmt::Display for FormatError {
 
 impl std::error::Error for FormatError {}
 
-fn zip_err(e: zip::result::ZipError) -> FormatError {
-    FormatError::Corrupt(e.to_string())
+/// Échec d'écriture de l'archive, qui vit en mémoire : il n'arrive pas en pratique. Message fixe (OG35) : mettre en
+/// texte `ZipError` ou `io::Error` lierait tout leur `Display` au module Wasm (environ N Ko).
+const WRITE_FAILED: &str = "écriture de l'archive impossible";
+
+fn zip_err(_: zip::result::ZipError) -> FormatError {
+    FormatError::Corrupt(WRITE_FAILED.into())
 }
 
-fn io_err(e: std::io::Error) -> FormatError {
-    FormatError::Corrupt(e.to_string())
+fn io_err(_: std::io::Error) -> FormatError {
+    FormatError::Corrupt(WRITE_FAILED.into())
 }
 
 pub fn load(bytes: &[u8]) -> Result<Document, FormatError> {
@@ -143,12 +147,19 @@ pub enum BoundedReadError {
 /// Lit au plus `max` octets de `r` (`take(max + 1)`) : au-delà, `TooLarge`, sans jamais remplir la mémoire d'une bombe
 /// de décompression. Seule lecture bornée du projet (R20) : `read_entry` et `roomboard_formats::container` l'appellent.
 pub fn read_bounded(r: impl Read, max: u64) -> Result<Vec<u8>, BoundedReadError> {
+    read_capped(r, max).map_err(|e| match e {
+        Some(e) => BoundedReadError::Io(e.to_string()),
+        None => BoundedReadError::TooLarge,
+    })
+}
+
+/// Lecture bornée de `read_bounded`, erreur d'entrée-sortie gardée brute (`None` : plus de `max` octets). `read_entry`
+/// l'appelle pour ne pas mettre en texte une erreur qu'il ignore (OG35, taille du module Wasm).
+fn read_capped(r: impl Read, max: u64) -> Result<Vec<u8>, Option<std::io::Error>> {
     let mut out = Vec::new();
-    r.take(max.saturating_add(1))
-        .read_to_end(&mut out)
-        .map_err(|e| BoundedReadError::Io(e.to_string()))?;
+    r.take(max.saturating_add(1)).read_to_end(&mut out)?;
     if out.len() as u64 > max {
-        return Err(BoundedReadError::TooLarge);
+        return Err(None);
     }
     Ok(out)
 }
@@ -163,12 +174,12 @@ fn read_entry(
     let Ok(file) = archive.by_name(name) else {
         return Ok(None);
     };
-    match read_bounded(file, max) {
+    match read_capped(file, max) {
         Ok(bytes) => Ok(Some(bytes)),
-        Err(BoundedReadError::TooLarge) => Err(FormatError::Corrupt(format!(
+        Err(None) => Err(FormatError::Corrupt(format!(
             "{name} trop gros : plus de {max} octets"
         ))),
-        Err(BoundedReadError::Io(_)) => Ok(None),
+        Err(Some(_)) => Ok(None),
     }
 }
 
