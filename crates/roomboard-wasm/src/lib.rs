@@ -1488,7 +1488,7 @@ impl Document {
 
     /// OG12 lot 2a (n° 34) : rectangle, losange ou ellipse devient une ligne fermée ; une étape.
     pub fn shape_to_polygon(&mut self, id: &str) -> Result<JsValue, JsError> {
-        to_js(&self.shape_to_polygon_inner(id).map_err(cmd_err)?)
+        change_js(self.shape_to_polygon_inner(id))
     }
 
     /// OG12 (n° 27) : copie et flèche coudée liée ; direction inconnue : `BadShape`.

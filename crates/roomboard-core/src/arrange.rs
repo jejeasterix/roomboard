@@ -239,10 +239,11 @@ impl Document {
             if found.iter().any(|f| f.page_id != page) {
                 return Err(CommandError::MixedPages);
             }
-            let outers: BTreeSet<String> = found
-                .iter()
-                .filter_map(|f| read_group(&txn, &f.element)?.into_iter().next())
-                .collect();
+            let outers = crate::order::string_set(
+                found
+                    .iter()
+                    .filter_map(|f| read_group(&txn, &f.element)?.into_iter().next()),
+            );
             let mut picked = Vec::new();
             // Un seul passage sur la page, dans l'ordre de la pile (patron de `cmd_group`).
             if let Some(els) = self.page_elements(&txn, &page) {
@@ -321,7 +322,7 @@ impl Document {
             }
         }
         let mut moved: Vec<String> = writes.iter().map(|(p, _)| p.id.clone()).collect();
-        moved.sort();
+        crate::order::sort_stable_by(&mut moved, String::cmp);
         moved.dedup();
         Ok(self.done(Change {
             pages: vec![page],

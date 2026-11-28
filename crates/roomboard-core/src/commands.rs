@@ -812,7 +812,7 @@ struct Cut {
 /// Les chaînes données, triées et sans doublon.
 fn sorted_unique(items: impl Iterator<Item = String>) -> Vec<String> {
     let mut v: Vec<String> = items.collect();
-    v.sort();
+    crate::order::sort_stable_by(&mut v, String::cmp);
     v.dedup();
     v
 }
@@ -1478,7 +1478,7 @@ impl Document {
         // Ids triés des cibles élargies (sans objet lié : ceux de `find_unique`, déjà triés, G9), puis les lignes suivies
         // (OG12) qui n'y sont pas encore.
         let mut ids: Vec<String> = targets.into_iter().map(|t| t.3).collect();
-        ids.sort();
+        crate::order::sort_stable_by(&mut ids, String::cmp);
         for f in followed {
             if !ids.contains(&f) {
                 ids.push(f);
@@ -2077,16 +2077,17 @@ impl Document {
         if targets.iter().any(|t| t.page != page) {
             return Err(CommandError::BadGroup);
         }
-        let outers: BTreeSet<String> = targets
-            .iter()
-            .map(|t| t.path.first().unwrap_or(&t.id).clone())
-            .collect();
+        let outers = crate::order::string_set(
+            targets
+                .iter()
+                .map(|t| t.path.first().unwrap_or(&t.id).clone()),
+        );
         if outers.len() < 2 {
             return Err(CommandError::BadGroup);
         }
         // Un groupe touché en partie est étendu à tous ses membres (même groupe extérieur, même page).
         // Un seul passage sur la page (pas un `find_element` par id).
-        let known: BTreeSet<String> = targets.iter().map(|t| t.id.clone()).collect();
+        let known = crate::order::string_set(targets.iter().map(|t| t.id.clone()));
         {
             let txn = self.read();
             if let Some(els) = self.page_elements(&txn, &page) {

@@ -19,6 +19,18 @@ pub(crate) fn sort_stable_by<T>(v: &mut Vec<T>, cmp: impl Fn(&T, &T) -> Ordering
     v.extend(order.into_iter().filter_map(|i| slots[i].take()));
 }
 
+/// Ensemble des chaînes données, rempli par `insert` : `collect()` trierait d'abord un `Vec<String>` par son propre
+/// tri (environ 5 Ko de Wasm), alors que `insert` est déjà dans le module.
+pub(crate) fn string_set(
+    items: impl Iterator<Item = String>,
+) -> std::collections::BTreeSet<String> {
+    let mut set = std::collections::BTreeSet::new();
+    for s in items {
+        set.insert(s);
+    }
+    set
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
