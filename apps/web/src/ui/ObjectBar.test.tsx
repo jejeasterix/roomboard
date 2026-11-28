@@ -65,6 +65,8 @@ describe("ObjectBar (OG41, D18-D27)", () => {
     expect(t.bar().querySelector('[data-selection-action="duplicate"]')?.getAttribute("aria-keyshortcuts")).toBe("Control+D");
     expect(t.bar().querySelector("[data-object-more]")?.getAttribute("aria-label")).toBe(MORE_LABEL);
     expect(t.bar().classList.contains("rb-island")).toBe(false);
+    // Suppr est avalé dans la barre (D24, effet de bord 12) : pas d'annonce d'un raccourci qui n'y agit pas.
+    expect(t.bar().querySelector('[data-selection-action="delete"]')?.hasAttribute("aria-keyshortcuts")).toBe(false);
   });
   it("D18 : icônes seules (aucun libellé visible, aucun bouton grisé), aucun glisser HTML5", () => {
     const t = setup();
@@ -171,6 +173,10 @@ describe("ObjectBar (OG41, D18-D27)", () => {
     expect(engineKeys).not.toHaveBeenCalled();
     expect(t.host.selection).not.toHaveBeenCalled();
     expect(t.bar().hidden).toBe(false);
+    // Ctrl ou Méta remontent : Ctrl+D pressé dans la barre atteint encore le moteur.
+    fireEvent.keyDown(first, { key: "d", ctrlKey: true });
+    expect(engineKeys).toHaveBeenCalledTimes(1);
+    expect(engineKeys.mock.calls[0]![0]).toMatchObject({ key: "d", ctrlKey: true });
     window.removeEventListener("keydown", engineKeys);
   });
   it("S7 : « … » : Premier plan, Arrière-plan, Exporter la sélection, icône et libellé ; jouées", () => {
@@ -227,5 +233,73 @@ describe("ObjectBar (OG41, D18-D27)", () => {
     expect(() => t.setView({ ...BASE, selection: [], selectionBounds: null })).not.toThrow();
     expect(t.bar().querySelector("[data-object-menu]")).toBeNull();
     expect(t.bar().hidden).toBe(true);
+  });
+  it("revue 1 : liste « … » fermée quand une action de la barre est jouée, quand la barre suit la caméra, quand le focus sort", () => {
+    const t = setup();
+    const menu = (): Element | null => t.bar().querySelector("[data-object-menu]");
+    const openList = (): void => {
+      fireEvent.click(t.bar().querySelector("[data-object-more]")!);
+      expect(menu()).not.toBeNull();
+    };
+    openList();
+    fireEvent.click(t.bar().querySelector('[data-selection-action="duplicate"]')!);
+    expect(t.host.selection).toHaveBeenCalledWith("duplicate");
+    expect(menu()).toBeNull();
+    openList();
+    t.moveCamera({ zoom: 2, tx: 0, ty: -300 });
+    expect(menu()).toBeNull();
+    openList();
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    fireEvent.focusOut(menu()!.querySelector("button")!, { relatedTarget: outside });
+    expect(menu()).toBeNull();
+  });
+  it("revue 2 (D21) : pincement à deux doigts dans la scène : la barre ne revient qu'au dernier doigt levé", () => {
+    const t = setup();
+    fireEvent.pointerDown(t.stage, { pointerType: "touch", pointerId: 1 });
+    fireEvent.pointerDown(t.stage, { pointerType: "touch", pointerId: 2 });
+    expect(t.bar().hidden).toBe(true);
+    fireEvent.pointerUp(window, { pointerType: "touch", pointerId: 1 });
+    expect(t.bar().hidden).toBe(true);
+    fireEvent.pointerCancel(window, { pointerType: "touch", pointerId: 2 });
+    expect(t.bar().hidden).toBe(false);
+  });
+  it("revue 3 (D24) : bouton joué au clavier qui disparaît : focus au même rang (Grouper → Dégrouper), ou à la scène (Supprimer)", () => {
+    const two: ObjectBarView = { ...BASE, selectionImage: null, selection: ["a", "b"], selectionUnits: 2 };
+    const t = setup(two);
+    (t.host.selection as ReturnType<typeof vi.fn>).mockImplementation((a: string) => {
+      if (a === "group") t.setView({ ...two, selectionUnits: 1, selectionGrouped: true });
+      if (a === "delete") t.setView({ ...two, selection: [], selectionBounds: null });
+    });
+    const group = t.bar().querySelector<HTMLButtonElement>('[data-selection-action="group"]')!;
+    group.focus();
+    fireEvent.click(group);
+    expect(document.activeElement?.getAttribute("data-selection-action")).toBe("ungroup");
+    expect([...t.bar().querySelectorAll<HTMLElement>("[data-object-button]")].filter((b) => b.tabIndex === 0).map((b) => b.getAttribute("data-selection-action"))).toEqual(["ungroup"]);
+    const del = t.bar().querySelector<HTMLButtonElement>('[data-selection-action="delete"]')!;
+    del.focus();
+    fireEvent.click(del);
+    expect(t.bar().hidden).toBe(true);
+    expect(document.activeElement).toBe(t.stage);
+  });
+  it("revue 4 (D25) : clic droit ou appui long sur la barre : aucun menu natif", () => {
+    const t = setup();
+    expect(fireEvent.contextMenu(t.bar().querySelector('[data-selection-action="duplicate"]')!)).toBe(false);
+    expect(fireEvent.contextMenu(t.bar())).toBe(false);
+  });
+  it("revue 5 (D24) : Supprimer garde « Suppr » dans son infobulle, sans aria-keyshortcuts ; Dupliquer annonce Control+D", () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup();
+      const del = t.bar().querySelector<HTMLButtonElement>('[data-selection-action="delete"]')!;
+      fireEvent.pointerDown(del, { pointerType: "touch" });
+      vi.advanceTimersByTime(600);
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Supprimer");
+      expect(document.querySelector('[role="tooltip"]')?.getAttribute("data-keys")).toBe("Suppr");
+      expect(del.hasAttribute("aria-keyshortcuts")).toBe(false);
+      expect(t.bar().querySelector('[data-selection-action="duplicate"]')?.getAttribute("aria-keyshortcuts")).toBe("Control+D");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
