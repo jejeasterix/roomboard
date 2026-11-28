@@ -388,6 +388,8 @@ describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointe
     k("Enter", { code: "Enter", altKey: true, shiftKey: true }),
     k("C", { code: "KeyC", altKey: true, shiftKey: true }),
     k("M", { code: "KeyM", altKey: true, shiftKey: true }),
+    k("b", { code: "KeyB", altKey: true }),
+    k("B", { code: "KeyB", altKey: true, shiftKey: true }),
   ];
   const og23: KeyLike[] = [
     ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].flatMap((a) => [k(a, { code: a, altKey: true, shiftKey: true }), k(a, { code: a }), k(a, { code: a, shiftKey: true })]),
@@ -421,5 +423,14 @@ describe("tableKey D15 : alignements", () => {
     expect(tableKey(a("c", "KeyC", { shiftKey: false }))).toBeNull();
     expect(tableKey(a("C", "KeyC", { ctrlKey: true }))).toBeNull();
     expect(tableKey(a("C", "KeyC", { target: { isContentEditable: true } }))).toBeNull();
+  });
+});
+
+describe("tableKey S9 : bordures", () => {
+  it("tableKey : Alt+B → border-set, Alt+Maj+B → border-none (lus par code) ; Ctrl+Alt+B : null", () => {
+    const a = (key: string, code: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+    expect(tableKey(a("b", "KeyB"))).toBe("border-set");
+    expect(tableKey(a("B", "KeyB", { shiftKey: true }))).toBe("border-none");
+    expect(tableKey(a("b", "KeyB", { ctrlKey: true }))).toBeNull();
   });
 });

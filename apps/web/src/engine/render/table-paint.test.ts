@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { TableData } from "../../core/api";
+import type { TableBorder, TableData } from "../../core/api";
 import { plainSpans } from "../../core/rich-text";
 import { TABLE_HEADER_FILL, TABLE_LINE_WIDTH, TABLE_PADDING, TABLE_SHADE_HATCH, TABLE_SHADE_HATCH_WIDTH } from "../table-geom";
 import { asCtx, FakeCtx } from "./fake-ctx";
@@ -195,5 +195,45 @@ describe("S10 en-tête (D17)", () => {
     expect(b.find((x) => x.row === "r0")?.spans).toEqual([{ text: "Nom", attrs: { bold: true } }]);
     expect(b.find((x) => x.row === "r1")?.spans).toEqual(plainSpans("Léa"));
     expect(cellTextBoxes(HEAD(false)).find((x) => x.row === "r0")?.spans).toEqual(plainSpans("Nom"));
+  });
+});
+
+describe("S9 bordures par case (D16, DS4)", () => {
+  const red: TableBorder = ["#dc2626", 8, "dashed"];
+  const grid = (cells: TableData["cells"]): TableData => ({
+    color: "#000000", size: 36, merges: [],
+    cols: [{ id: "a", width: 100 }, { id: "b", width: 100 }, { id: "c", width: 100 }],
+    rows: [{ id: "r0", height: 64 }, { id: "r1", height: 64 }, { id: "r2", height: 64 }],
+    cells,
+  });
+  const bordered = (row: string, col: string, border: TableBorder) => ({ row, col, text: "", fill: null, shade: null, spans: plainSpans(""), border });
+  const strokes = (ctx: FakeCtx) => ctx.log.filter((l) => l.startsWith("stroke "));
+  it("S9 : aucune bordure réglée : un seul trait, au trait du tableau (chemin d'aujourd'hui)", () => {
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), grid([]));
+    expect(strokes(ctx)).toEqual([`stroke #000000 ${TABLE_LINE_WIDTH}`]);
+    expect(ctx.log.some((l) => l.startsWith("setLineDash"))).toBe(false);
+  });
+  it("S9 : plage 2 × 2 rouge 8 tirets : ses 12 segments en rouge tirets, les 12 autres au trait du tableau", () => {
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), grid([bordered("r0", "a", red), bordered("r0", "b", red), bordered("r1", "a", red), bordered("r1", "b", red)]));
+    expect(strokes(ctx).sort()).toEqual([`stroke #000000 ${TABLE_LINE_WIDTH}`, "stroke #dc2626 8"].sort());
+    expect(ctx.log).toContain("setLineDash 16,16");
+    expect(ctx.log.filter((l) => l === "moveTo")).toHaveLength(24);
+  });
+  it("S9 : bord commun : la case de droite l'emporte ; « none » efface ses bords", () => {
+    const blue: TableBorder = ["#1d4ed8", 2, "solid"];
+    const none: TableBorder = ["#000000", 2, "none"];
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), grid([bordered("r0", "a", blue), bordered("r0", "b", none)]));
+    expect(ctx.log.filter((l) => l === "moveTo")).toHaveLength(24 - 4);
+    expect(strokes(ctx)).toContain("stroke #1d4ed8 2");
+  });
+  it("S9 : zone : le réglage de l'ancre vaut pour tout son contour, l'intérieur reste omis", () => {
+    const t: TableData = { ...grid([bordered("r0", "a", red)]), merges: [{ row: "r0", col: "a", rows: 2, cols: 2 }] };
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), t);
+    expect(strokes(ctx)).toContain("stroke #dc2626 8");
+    expect(ctx.log.filter((l) => l === "moveTo")).toHaveLength(24 - 4);
   });
 });

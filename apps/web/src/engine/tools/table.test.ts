@@ -1241,3 +1241,16 @@ describe("outil Tableau — D15 alignement (S8)", () => {
     expect(o.boxWidth).toBe(224);
   });
 });
+
+describe("outil Tableau — S9 bordures (DS4)", () => {
+  it("S9 : Alt+B pose [couleur du style, 4, solid] sur la plage ; Alt+Maj+B pose none ; cellState.border suit", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    s.tool.act("border-set");
+    expect(s.last()).toMatchObject({ type: "SetTableLook", id, look: { key: "border", value: ["#000000", 4, "solid"] } });
+    expect(s.tool.cellState()?.border).toEqual(["#000000", 4, "solid"]);
+    s.tool.act("border-none");
+    expect(s.tool.cellState()?.border).toEqual(["#000000", 4, "none"]);
+  });
+});
