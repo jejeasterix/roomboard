@@ -57,11 +57,12 @@ function splitLabel(text: string): readonly [string, string] {
 }
 
 /** Nom, séparateur (lu, pas montré) et valeur d'une rangée : `textContent` = libellé complet. */
-function RowText(props: { text: string; hideValue?: boolean }): JSX.Element {
+function RowText(props: { text: string; hideValue?: boolean; afterName?: JSX.Element }): JSX.Element {
   const parts = () => splitLabel(props.text);
   return (
     <>
       <span class="rb-set-name">{parts()[0]}</span>
+      {props.afterName}
       <span class="rb-set-sep"> : </span>
       <span class="rb-set-val" classList={{ "rb-set-sr": props.hideValue === true }}>{parts()[1]}</span>
     </>
@@ -129,10 +130,7 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
       aria-describedby={needsReload(key) ? "reglages-recharge" : undefined}
       onClick={() => void click(key)}
     >
-      <RowText text={settingLabel(key, settings(), props.effective())} />
-      <Show when={needsReload(key)}>
-        <Icon name="reset" />
-      </Show>
+      <RowText text={settingLabel(key, settings(), props.effective())} afterName={needsReload(key) ? <Icon name="reset" /> : undefined} />
     </button>
   );
 

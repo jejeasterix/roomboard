@@ -98,12 +98,15 @@ try {
   await page.tap(palm);
   check((await page.getAttribute(palm, "aria-checked")) === "true", "S4 : un autre toucher → « active »");
 
-  // S5 — clavier : Entrée et Espace sur une rangée passent à la valeur suivante, comme un clic.
+  // S5 — clavier : Tab mène aux rangées, Entrée passe à la valeur suivante, comme un toucher. Espace reste au geste
+  // « Espace + glisser » de toute l'app (déplacer la vue, shortcuts.ts) : le panneau ne le reprend pas.
   await page.focus(ROW("finger"));
   await page.keyboard.press("Enter");
   check((await text(ROW("finger"))) === "Doigt : trace", "S5 : Entrée → « Doigt : trace »");
-  await page.keyboard.press("Space");
-  check((await text(ROW("finger"))) === "Doigt : vue", "S5 : Espace → « Doigt : vue »");
+  await page.keyboard.press("Enter");
+  check((await text(ROW("finger"))) === "Doigt : vue", "S5 : Entrée encore → « Doigt : vue »");
+  await page.keyboard.press("Tab");
+  check((await page.evaluate(() => document.activeElement?.getAttribute("data-reglage"))) === "palm", "S5 : Tab → rangée suivante (Paume)");
 
   check(errors.length === 0, `aucune erreur de page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
 } catch (e) {
