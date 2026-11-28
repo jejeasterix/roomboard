@@ -1,12 +1,12 @@
 # État — gomme-et-barre-objet
 
-Statut : en cours
+Statut : arrêté (borne de 6 h 30) — lot gomme vert sur d2fd686c, non fusionné : main a reçu OG32 (PR 83) à 12:27, intégré en 6dc00669, passe finale impossible (verrous de la VM pris)
 Gabarit : chantier (provisoire : 2 lots, gomme puis barre d'objet)
 Objectif : Une seule gomme dont l'effet dépend de l'objet touché (trait coupé, objet effacé, contenu du tableau seulement), et une barre d'objet discrète en icônes, attachée à la sélection.
-Avancement : 9/11 tâches terminées (L1 : T1-T4 + T11 correctif, sur la branche ; L2 : T5-T9 vertes sur feat/gomme-et-barre-objet--T9, T10 en cours)
-Étage : 3/4 (L1 en clôture : verifier.sh --e2e sur 875ec284 en cours ; L2 vague finale) — depuis 2026-11-28 10:45
+Avancement : L1 complet sur la branche (PR 86, brouillon) ; L2 : T5-T9, T12 sur feat/gomme-et-barre-objet--T9 (d65b0022), T10 partielle
+Étage : 4 (L1) / 3 (L2) — depuis 2026-11-28 12:45
 Lot : 1 « gomme » — 0/? tâches terminées — depuis 2026-11-28 07:05
-Tâche : T10 — essai barre-objet et captures (VM og41-l2) — depuis 2026-11-28 10:10
+Tâche : —
 Questions à Jérôme : —
 Worktree : /Users/jeromedenis/projets/roomboard-wt/gomme-et-barre-objet   Branche : feat/gomme-et-barre-objet   Base : origin/main @ 161cf734
 Branche principale locale au lancement : 161cf734
@@ -42,6 +42,10 @@ toutes les tâches terminées · double relecture sans bloquant · verifier.sh -
 
 ## Hypothèses à revoir
 17 hypothèses (10 de niveau 1 : H1, H17, H2, H3, H4, H8, H16, H9, H10, H13), détail au cadrage. Scénarios S1…S8 : S1 trait coupé · S2 objets effacés · S3 tableau épargné · S4 paume et stylet · S5 barre collée suit · S6 barre dessous et obstacles · S7 grouper/… · S8 supprimer tableau, coller. 33 décisions, 16+ modules à réutiliser.
+
+## Reprise
+- L1 : jouer `verifier.sh --e2e` sur 6dc00669 (ou plus récent après intégration de main), puis fusion locale --no-ff de la PR 86.
+- L2 (branche feat/gomme-et-barre-objet--T9, d65b0022) : T10 — tracé du rectangle de S6 dans `scripts/essais/barre-objet-navigateur.mjs` (aucun objet créé), captures l2 avant/après, relire `personnalisation-1a` (code 1 après fusion) ; intégrer feat/gomme-et-barre-objet (6dc00669) ; double relecture faite (aucun bloquant, correctifs T12 faits) ; verifier.sh --e2e ; PR.
 
 ## Hors périmètre
 —
