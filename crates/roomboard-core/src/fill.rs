@@ -13,7 +13,7 @@ use crate::fill_element::FILL_KIND;
 use crate::ink::hit::dist_to_edges;
 use crate::query::world_outline;
 use crate::rich_text::valid_color;
-use crate::shape::{shape_polygon, ShapeGeom};
+use crate::shape::shape_polygon;
 
 /// Pose `v` sous `key` (ou retire la clé si `None`) ; faux si la valeur lue dans `txn` est déjà celle-là (aucune
 /// écriture, D38). Partagée par `cmd_fill` et `cmd_set_style` (OG11, T2).
@@ -75,15 +75,15 @@ pub enum FillTarget {
     },
 }
 
-/// Clé écrite pour une cible d'élément ; `None` si la cible ne convient pas (intérieur d'une ligne, d'une flèche, d'un
-/// trait ; texte, image, tableau, élément inconnu ou mal formé).
+/// Clé écrite pour une cible d'élément ; `None` si la cible ne convient pas (intérieur d'une ligne ouverte, d'une flèche,
+/// d'un trait ; texte, image, tableau, élément inconnu ou mal formé). Intérieur : `ShapeFields::fillable` (C4a).
 fn field_for<T: ReadTxn>(txn: &T, e: &MapRef, inside: bool) -> Option<&'static str> {
     match out_string(e.get(txn, "kind")).as_deref() {
         Some("stroke") if !inside => Some("color"),
         Some("shape") => {
             let s = read_shape(txn, e)?;
             if inside {
-                (!s.kind.is_segment()).then_some("fill")
+                s.fillable().then_some("fill")
             } else {
                 Some("color")
             }
@@ -200,9 +200,10 @@ impl Document {
         self.cmd_fill(page, &FillTarget::Background, color)
     }
 
-    /// Bord d'un rectangle ou d'une ellipse (D5, DA2) : distance du point (monde) au tracé `shape_polygon(kind, w, h,
-    /// 0.0)` porté en monde comme `hit_test`, au plus `tol` + demi-épaisseur × échelle de la matrice (similitude : son
-    /// facteur ; sinon racine du déterminant). Faux pour une ligne, une flèche, un trait, tout autre élément, un id inconnu.
+    /// Bord d'une forme remplissable (D5, DA2 ; C4a : ligne fermée comprise) : distance du point (monde) au tracé
+    /// `shape_polygon(geom, 0.0)` porté en monde comme `hit_test`, au plus `tol` + demi-épaisseur × échelle de la matrice
+    /// (similitude : son facteur ; sinon racine du déterminant). Faux pour une ligne ouverte, une flèche, un trait, tout
+    /// autre élément, un id inconnu.
     pub fn edge_hit(&self, id: &str, x: f64, y: f64, tol: f32) -> bool {
         let txn = self.read();
         let Some(found) = self.find_element(&txn, id) else {
@@ -213,12 +214,12 @@ impl Document {
         else {
             return false;
         };
-        if s.kind.is_segment() {
+        if !s.fillable() {
             return false;
         }
         let scale = (t[0] * t[3] - t[1] * t[2]).abs().sqrt();
         let band = f64::from(tol) + f64::from(s.style.width) / 2.0 * scale;
-        let outline = world_outline(&t, &shape_polygon(&ShapeGeom::plain(s.kind, s.w, s.h), 0.0));
+        let outline = world_outline(&t, &shape_polygon(&s.geom(), 0.0));
         f64::from(dist_to_edges(&outline, x as f32, y as f32)) <= band
     }
 }

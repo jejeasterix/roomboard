@@ -4,6 +4,7 @@
 // StrokeBuilderApi.push : polygones x, y monde séparés par une paire NaN, NaN (blocs figés au-delà de 2 000 points).
 // Change.full = true : tout invalider (annuler, rétablir). Lot 4 : AddShape, SetText, Transform ; éléments shape et text.
 // Forme : rect / ellipse = boîte locale (0, 0)-(w, h), w, h ≥ 0 ; line / arrow = segment (0, 0)-(w, h) (core/shapes.ts).
+// OG12 lot 2a : diamond = losange inscrit dans la boîte ; line + polygon = ligne fermée (fermeture implicite) ; ShapeToPolygon.
 // Texte : boîte locale (0, 0)-(boxWidth, boxHeight) ; style.color = couleur du texte, style.width = 0.
 // C2 : AddImage, SetBackdrop ; éléments image et unknown (style absent) ; page(id), citedAssets, asset, saveParts, loadParts.
 // C7 : FormatText (patch d'attributs sur une plage UTF-16, une étape) ; TextData.spans = segments du texte (U27, DAU9).
@@ -28,7 +29,7 @@ export type { ArrangeHow } from "./arrange";
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
 export type EraseMode = "partial" | "object";
-export type ShapeKind = "rect" | "ellipse" | "line" | "arrow";
+export type ShapeKind = "rect" | "ellipse" | "diamond" | "line" | "arrow";
 export type ElementKind = "stroke" | "shape" | "text" | "image" | "media" | "model3d" | "table" | "fill" | "unknown";
 export interface AssetRef { readonly id: string; readonly name: string; readonly mime: string; readonly size: number }
 /** Métadonnée d'un asset cité (K3) : même forme que la référence ; défauts du cœur pour une entrée absente (K4). */
@@ -96,6 +97,9 @@ export type Command =
   | { readonly type: "SetLinePoints"; readonly id: string; readonly points: readonly number[]; readonly start: LineBinding | null; readonly end: LineBinding | null }
   /** OG12 : copie de `id` dans la direction `dir` et flèche qui les lie ; change.ids = [copie, flèche]. */
   | { readonly type: "AddLinked"; readonly id: string; readonly dir: LinkDir }
+  /** OG12 lot 2a (n° 34, H5) : rectangle, losange ou ellipse convertis en place (même id) en ligne fermée, une étape ;
+   *  `roundness` retiré ; refus `BadShape` (ligne, flèche, boîte nulle) ; change.ids = [id]. */
+  | { readonly type: "ShapeToPolygon"; readonly id: string }
   | {
       readonly type: "SetText";
       readonly page: string;
@@ -246,6 +250,9 @@ export interface LineBinding { readonly id: string; readonly fx: number; readonl
 export interface ShapeData {
   readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null;
   readonly points?: readonly number[]; readonly start?: LineBinding; readonly end?: LineBinding;
+  /** OG12 lot 2a (n° 34) : ligne fermée, du dernier sommet vers le départ (jamais répété, DA-1) ; absent = ouverte,
+   *  jamais écrit à false (GC8) ; lu sur `shape: "line"` seulement. */
+  readonly polygon?: true;
 }
 export type LinkDir = "up" | "down" | "left" | "right";
 /** OG12 (n° 17) : cible d'accroche ; `anchors` = 4 ancres monde, ordre `ANCHOR_RATIOS`. */

@@ -1581,6 +1581,11 @@ impl Document {
         )
     }
 
+    /// OG12 lot 2a (n° 34) : rectangle, losange ou ellipse devient une ligne fermée ; une étape.
+    pub fn shape_to_polygon(&mut self, id: &str) -> Result<JsValue, JsError> {
+        to_js(&self.shape_to_polygon_inner(id).map_err(cmd_err)?)
+    }
+
     /// OG12 (n° 27) : copie et flèche coudée liée ; direction inconnue : `BadShape`.
     pub fn add_linked(&mut self, id: &str, dir: &str) -> Result<JsValue, JsError> {
         to_js(&self.add_linked_inner(id, dir).map_err(cmd_err)?)
@@ -2665,6 +2670,10 @@ impl Document {
             start,
             end,
         })
+    }
+
+    pub fn shape_to_polygon_inner(&mut self, id: &str) -> Result<Change, CommandError> {
+        self.run(Command::ShapeToPolygon { id: id.to_string() })
     }
 
     pub fn add_linked_inner(&mut self, id: &str, dir: &str) -> Result<Change, CommandError> {

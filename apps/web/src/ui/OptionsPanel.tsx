@@ -10,7 +10,7 @@ import {
   dragCopyOf, endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, variabilityOf,
   elbowedOf, type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
 } from "../core/look";
-import { isSegment } from "../core/shapes";
+import { isBoxShape, isSegment } from "../core/shapes";
 import type { DeviceSettings } from "../device-settings";
 import type { Engine, EngineState } from "../engine/engine";
 import { DEFAULT_ITEM_STYLE, type ArrowType, type ItemStyle } from "../engine/item-style";
@@ -170,11 +170,17 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     props.state().selection.map((id) => props.element(id)).filter((e): e is ElementView => e !== null));
   /** Saisie de texte ouverte (outil Texte ou Tableau) : la rangée Format gouverne police, taille et couleur. */
   const editing = (): boolean => props.state().textFormat != null;
-  /** OG12 T11 : une ligne ou une flèche non coudée seule (cible de « Modifier les points »). */
+  /** OG12 T11 et lot 2a : une ligne ou flèche non coudée, ou une forme convertible (n° 34), seule : cible de « Modifier les points ». */
   const lineTarget = (): boolean => {
     const t = targets();
-    return t.length === 1 && t[0]!.kind === "shape" && isSegment(t[0]!.shape.shape) && !elbowedOf(t[0]!.look);
+    if (t.length !== 1 || t[0]!.kind !== "shape") return false;
+    const s = t[0]!.shape;
+    return (isSegment(s.shape) && !elbowedOf(t[0]!.look)) || isBoxShape(s.shape);
   };
+  /** Bouton « Modifier les points » : cible seule, hors édition. */
+  const showEditPoints = createMemo(() => lineTarget() && !props.state().lineEditing);
+  /** Bouton « Retirer le point » : en édition, au moins un point choisi. */
+  const showRemovePoint = createMemo(() => props.state().lineEditing != null && (props.state().linePointsSelected ?? 0) > 0);
   const off = (k: OptionKey): boolean => disabledIn(k, editing());
   const keys = createMemo((): readonly OptionKey[] =>
     props.hidden?.() !== true && showsPanel(props.state().tool, props.state().selection.length, props.annotating())
@@ -568,20 +574,27 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       </div>
     ),
     actions: () => (
+      <>
+      <Show when={showEditPoints() || showRemovePoint()}>
+        {/* OG23 rangera cette section dans son accordéon par cet attribut */}
+        <div class="rb-pick-row" data-section="points">
+          <Show when={showEditPoints()}>
+          <IconButton keepFocus icon="edit-points" label="Modifier les points (Ctrl+Entrée)" attrs={{ "data-option-value": "line-edit", class: "rb-opt-btn" }} onPress={() => void props.engine().editLinePoints()} />
+          </Show>
+          <Show when={showRemovePoint()}>
+          <IconButton keepFocus icon="point-remove" label="Retirer le point (Suppr)" attrs={{ "data-option-value": "point-remove", class: "rb-opt-btn" }} onPress={() => void props.engine().removeLinePoints()} />
+          </Show>
+        </div>
+      </Show>
       <div class="rb-pick-row">
         {dragCopyToggle()}
         <Show when={props.state().selection.length === 1}>
           <IconButton keepFocus icon="link" label="Lien (Ctrl+K)" attrs={{ "data-option-value": "link", class: "rb-opt-btn" }} onPress={() => void props.engine().editLink()} />
         </Show>
-        <Show when={lineTarget() && !props.state().lineEditing}>
-          <IconButton keepFocus icon="edit-points" label="Modifier les points (Ctrl+Entrée)" attrs={{ "data-option-value": "line-edit", class: "rb-opt-btn" }} onPress={() => void props.engine().editLinePoints()} />
-        </Show>
-        <Show when={props.state().lineEditing && (props.state().linePointsSelected ?? 0) > 0}>
-          <IconButton keepFocus icon="point-remove" label="Retirer le point (Suppr)" attrs={{ "data-option-value": "point-remove", class: "rb-opt-btn" }} onPress={() => void props.engine().removeLinePoints()} />
-        </Show>
         <IconButton keepFocus icon="copy-plus" label="Dupliquer" attrs={{ "data-option-value": "duplicate", class: "rb-opt-btn" }} onPress={() => void props.engine().duplicateSelection()} />
         <IconButton keepFocus icon="trash-2" label="Supprimer" attrs={{ "data-option-value": "delete", class: "rb-opt-btn" }} onPress={() => void props.engine().deleteSelection()} />
       </div>
+      </>
     ),
   };
   /** Police et taille : un FormatText sur tout le contenu de chaque texte choisi (hors saisie). */

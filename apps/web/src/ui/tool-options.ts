@@ -1,6 +1,7 @@
 // OG11 (DA-1) : sections du panneau d'options et valeurs mixtes. `formValue` adapte `getFormValue` d'Excalidraw
 // (packages/excalidraw/actions/actionProperties.tsx:230-272), Copyright (c) 2020 Excalidraw, licence MIT.
 import type { ElementView } from "../core/api";
+import { isClosedShape } from "../core/shapes";
 import type { ToolChoice } from "../engine/input/gesture"; // gesture.ts:27
 import { presetsOf, TABLE_FILLS, type Profile } from "../toolbar";
 
@@ -37,13 +38,16 @@ const BY_TOOL: Readonly<Partial<Record<string, readonly OptionKey[]>>> = {
   pen: ["strokeColor", "strokeWidth", "pressure", "opacity"],
   rect: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "roundness", "opacity"],
   ellipse: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity"],
+  diamond: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity"],
   line: [...FORM.slice(0, 4), "roundness", "opacity"],
   arrow: [...FORM.slice(0, 4), "arrowType", "arrowheads", "opacity"],
   text: ["strokeColor", "font", "fontSize", "textAlign", "opacity"],
 };
+/** OG12 lot 2a : ligne fermée (`polygon: true`), options d'une forme sans Angles. */
+const POLYGON: readonly OptionKey[] = BY_TOOL["diamond"]!;
 const BY_KIND: Readonly<Record<string, (e: ElementView) => readonly OptionKey[]>> = {
   stroke: () => BY_TOOL["pen"]!,
-  shape: (e) => (e.kind === "shape" ? BY_TOOL[e.shape.shape] ?? [] : []),
+  shape: (e) => (e.kind === "shape" ? (isClosedShape(e.shape) ? POLYGON : BY_TOOL[e.shape.shape] ?? []) : []),
   text: () => BY_TOOL["text"]!,
   image: () => ["opacity"],
 };
@@ -114,7 +118,7 @@ export function backgroundPicks(): readonly Pick[] {
     }),
   ];
 }
-const DRAW = new Set(["pen", "rect", "ellipse", "line", "arrow", "text"]);
+const DRAW = new Set(["pen", "rect", "ellipse", "diamond", "line", "arrow", "text"]);
 export function showsPanel(tool: ToolChoice, selection: number, annotating: boolean): boolean {
   if (annotating) return false;
   return DRAW.has(tool) || selection > 0;
