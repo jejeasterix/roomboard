@@ -41,3 +41,15 @@ describe("calque d'édition", () => {
     expect(isEmptyOverlay(EMPTY_OVERLAY)).toBe(true);
   });
 });
+
+describe("OG33 lot 2b : poignée de rotation", () => {
+  it("mergeOverlays garde rotate et noResize s'ils sont dans une part, les omet sinon", () => {
+    const a = { ...EMPTY_OVERLAY, handles: true, rotate: true, noResize: true };
+    const m = mergeOverlays([a, { ...EMPTY_OVERLAY }]);
+    expect(m.rotate).toBe(true);
+    expect(m.noResize).toBe(true);
+    const n = mergeOverlays([{ ...EMPTY_OVERLAY, handles: true }, { ...EMPTY_OVERLAY }]);
+    expect("rotate" in n).toBe(false);
+    expect("noResize" in n).toBe(false);
+  });
+});

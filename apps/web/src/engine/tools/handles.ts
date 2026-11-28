@@ -61,6 +61,43 @@ export function hitMoveHandle(b: Bounds, x: number, y: number, zoom: number, poi
   return Math.max(Math.abs(hx - x), Math.abs(hy - y)) <= reach;
 }
 
+/** OG33 (lot 2b, choix 4) : poignée de rotation sous le coin bas droit du cadre, à 26 px écran en diagonale : le haut est
+ *  pris par « + » (40 px, n° 28) et « Déplacer » (28 px, OG23), le coin haut droit par le badge du lien (T18), le coin
+ *  haut gauche par le badge « copie » (OG23). */
+export const ROTATE_HANDLE_GAP_PX = 26;
+const ROTATE_REACH_TOUCH_PX = 22;
+const ROTATE_REACH_MOUSE_PX = 12;
+
+/** Centre monde de la poignée de rotation : coin bas droit du cadre, 26 px écran en diagonale. */
+export function rotateHandlePoint(b: Bounds, zoom: number): [number, number] {
+  return [b.x1 + ROTATE_HANDLE_GAP_PX / zoom, b.y1 + ROTATE_HANDLE_GAP_PX / zoom];
+}
+
+/** Appui (x, y monde) sur la poignée de rotation : 22 px au doigt et au stylet (cible de 44 px), 12 px à la souris. */
+export function hitRotateHandle(b: Bounds, x: number, y: number, zoom: number, pointerType?: string): boolean {
+  const [hx, hy] = rotateHandlePoint(b, zoom);
+  const reach = (pointerType === "mouse" ? ROTATE_REACH_MOUSE_PX : ROTATE_REACH_TOUCH_PX) / zoom;
+  return Math.max(Math.abs(hx - x), Math.abs(hy - y)) <= reach;
+}
+
+/** Pas de la rotation calée : `SHIFT_LOCKING_ANGLE` d'Excalidraw (π/12, MIT). */
+export const ROTATE_STEP_DEG = 15;
+
+/** Angle (degrés, sens horaire à l'écran) de (x0, y0) à (x, y) autour de (cx, cy) ; `snap` : l'angle absolu `base + Δ`
+ *  calé au pas de 15°, rendu en Δ (choix 5), comme `rotateSingleElement` d'Excalidraw (resizeElements.ts, MIT). */
+export function rotateAngle(cx: number, cy: number, x0: number, y0: number, x: number, y: number, snap: boolean, base = 0): number {
+  const raw = ((Math.atan2(y - cy, x - cx) - Math.atan2(y0 - cy, x0 - cx)) * 180) / Math.PI;
+  return snap ? Math.round((base + raw) / ROTATE_STEP_DEG) * ROTATE_STEP_DEG - base : raw;
+}
+
+/** Partie linéaire alignée sur les axes ou quart de tour : le cadre et ses huit poignées restent justes (choix 7). */
+export function isAxisAligned(m: Matrix, eps = 1e-9): boolean {
+  return (Math.abs(m[1]) <= eps && Math.abs(m[2]) <= eps) || (Math.abs(m[0]) <= eps && Math.abs(m[3]) <= eps);
+}
+
+/** Angle (degrés, sens horaire à l'écran) de la partie linéaire d'une matrice. */
+export const matrixAngle = (m: Matrix): number => (Math.atan2(m[1], m[0]) * 180) / Math.PI;
+
 export { isIdentity, translateMatrix };
 
 function clampScale(s: number): number {

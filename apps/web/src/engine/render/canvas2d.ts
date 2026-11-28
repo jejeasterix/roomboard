@@ -19,8 +19,8 @@ import type { ModelFrames } from "./model-frames";
 import { GridLinesCache } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
-import { copyBadgeBox, linkBadgeBox, paintCopyBadge, paintLinkBadge, paintMoveHandle } from "./link-badge";
-import { moveHandlePoint } from "../tools/handles";
+import { copyBadgeBox, linkBadgeBox, paintCopyBadge, paintLinkBadge, paintMoveHandle, paintRotateHandle } from "./link-badge";
+import { moveHandlePoint, rotateHandlePoint } from "../tools/handles";
 import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { setLiveOpacity } from "./renderer";
 import { cornerRadius, dashOf, hatched, headWings, seedOf, sketchShape, strokeWith, wingDashOf, type SketchMemo, type SketchPlan } from "./sketch";
@@ -543,6 +543,7 @@ export class Canvas2DRenderer implements Renderer {
     this.paintLinkBadges(ctx, linked, camera);
     this.paintCopyBadges(ctx, copyable, camera);
     this.paintMoveHandle(ctx, overlay, camera);
+    this.paintRotateHandle(ctx, overlay, camera);
     this.images?.endScene?.();
   }
 
@@ -580,6 +581,17 @@ export class Canvas2DRenderer implements Renderer {
     ctx.save();
     ctx.setTransform(this.sx, 0, 0, this.sy, 0, 0);
     paintMoveHandle(ctx, sx, sy, SELECTION_COLOR);
+    ctx.restore();
+  }
+
+  /** OG33 (lot 2b, choix 4) : poignée de rotation, 26 px écran sous le coin bas droit du cadre ; jamais à l'export. */
+  private paintRotateHandle(ctx: CanvasRenderingContext2D, o: EditOverlay, camera: Camera): void {
+    if (this.forExport || o.rotate !== true || !o.frame || !o.handles) return;
+    const [wx, wy] = rotateHandlePoint(o.frame, camera.zoom);
+    const [sx, sy] = worldToScreen(camera, wx, wy);
+    ctx.save();
+    ctx.setTransform(this.sx, 0, 0, this.sy, 0, 0);
+    paintRotateHandle(ctx, sx, sy, SELECTION_COLOR);
     ctx.restore();
   }
 
@@ -797,7 +809,8 @@ export class Canvas2DRenderer implements Renderer {
       ctx.setLineDash([6 * px, 4 * px]);
       box(o.frame);
       ctx.stroke();
-      if (o.handles) {
+      // OG33 (choix 7) : objet tourné hors des quarts de tour : le cadre reste, sans ses huit poignées de taille.
+      if (o.handles && o.noResize !== true) {
         ctx.setLineDash([]);
         paintHandles(ctx, o.frame, px);
       }

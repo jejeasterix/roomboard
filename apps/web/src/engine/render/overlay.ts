@@ -45,6 +45,10 @@ export interface EditOverlay {
   readonly band: Bounds | null;
   /** OG23 (T11) : poignée « Déplacer » au-dessus du cadre (sélection contenant un objet `dragCopy`). */
   readonly move?: boolean;
+  /** OG33 (lot 2b, choix 4) : poignée de rotation sous le coin bas droit du cadre (sélection tournable). */
+  readonly rotate?: boolean;
+  /** OG33 (lot 2b, choix 7) : objet tourné hors des quarts de tour : cadre sans ses huit poignées de taille. */
+  readonly noResize?: boolean;
   /** personnalisation-3 : cadre de la case visée (monde), ou null. */
   readonly target?: Bounds | null;
   /** personnalisation-3 (D13) : poignées de taille de la case active. */
@@ -75,6 +79,8 @@ export function mergeOverlays(parts: readonly (EditOverlay | undefined)[]): Edit
     ...(pts.length > 0 ? { points: pts } : {}),
     ...(bind ? { bind } : {}),
     ...(links.length > 0 ? { links } : {}),
+    ...(present.some((p) => p.rotate === true) ? { rotate: true } : {}),
+    ...(present.some((p) => p.noResize === true) ? { noResize: true } : {}),
   };
 }
 

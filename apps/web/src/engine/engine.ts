@@ -13,7 +13,7 @@ import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import type { ArrangeHow } from "../core/arrange";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { arrangeKey, cellKey, nudgeKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
+import { arrangeKey, rotateKey, cellKey, nudgeKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isBoxShape, isSegment } from "../core/shapes";
@@ -585,6 +585,14 @@ export function createEngine(deps: EngineDeps): Engine {
     if (ids.length === 0) return false;
     const version = doc.version();
     run({ type: "Arrange", ids, how });
+    return doc.version() !== version;
+  }
+  /** OG33 (lot 2b, choix 6) : tourne la sélection de `deg` degrés (sens horaire à l'écran) ; une `Rotate`, une étape. */
+  function rotateSelection(deg: number): boolean {
+    const ids = selectedBlock();
+    if (ids.length === 0) return false;
+    const version = doc.version();
+    run({ type: "Rotate", ids, angle: deg });
     return doc.version() !== version;
   }
   /** OG23 : déplace la sélection de (dx, dy) unités de scène, quel que soit le zoom ; une `Transform`, une étape. */
@@ -1367,6 +1375,12 @@ export function createEngine(deps: EngineDeps): Engine {
         const how = linked !== null && lineEditor !== null ? null : arrangeKey(e);
         if (how !== null) {
           arrange(how);
+          return true;
+        }
+        // OG33 (lot 2b) : Alt+T / Alt+Maj+T, 15° ; pas pendant « Modifier les points ».
+        const turn = lineEditor === null ? rotateKey(e) : null;
+        if (turn !== null) {
+          rotateSelection(turn);
           return true;
         }
         // Lot 2a (L8) : pendant « Modifier les points », les flèches ne déplacent pas la sélection entière.

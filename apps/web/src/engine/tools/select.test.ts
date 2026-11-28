@@ -4,7 +4,7 @@ import { fakeCore } from "../../core/fake-core";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
 import { createSelectTool } from "./select";
-import { moveHandlePoint } from "./handles";
+import { moveHandlePoint, rotateHandlePoint } from "./handles";
 import type { SelectionTool, ToolContext } from "./tool";
 
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
@@ -738,4 +738,121 @@ describe("OG12 C2 : double toucher sur une poignée de la ligne sélectionnée",
       });
     }
   }
+});
+
+describe("OG33 lot 2b : poignée de rotation", () => {
+  const turned = (cx: number, cy: number, [x, y]: [number, number], deg: number): [number, number] => {
+    const r = (deg * Math.PI) / 180;
+    return [cx + (x - cx) * Math.cos(r) - (y - cy) * Math.sin(r), cy + (x - cx) * Math.sin(r) + (y - cy) * Math.cos(r)];
+  };
+  const centre = (f: { x0: number; y0: number; x1: number; y1: number }): [number, number] => [(f.x0 + f.x1) / 2, (f.y0 + f.y1) / 2];
+  it("poignée de rotation : glisser d'un quart de tour écrit une Rotate de 90°", () => {
+    const { tool, runs, rect, doc } = setup();
+    const a = rect(100, 100, 200, 200);
+    tool.setSelection([a]);
+    expect(tool.live().overlay).toMatchObject({ rotate: true });
+    const f = doc.bounds([a])!;
+    const h = rotateHandlePoint(f, 1);
+    const c = centre(f);
+    gesture(tool, [h, turned(c[0], c[1], h, 45), turned(c[0], c[1], h, 90)]);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ type: "Rotate", ids: [a] });
+    expect((runs[0] as { angle: number }).angle).toBeCloseTo(90, 6);
+  });
+  it("poignée de rotation : Maj tenue, 37° demandés, 30° écrits", () => {
+    const { tool, runs, rect, doc, setShift } = setup();
+    const a = rect(100, 100, 200, 200);
+    tool.setSelection([a]);
+    const f = doc.bounds([a])!;
+    const h = rotateHandlePoint(f, 1);
+    const c = centre(f);
+    setShift(true);
+    gesture(tool, [h, turned(c[0], c[1], h, 37)]);
+    expect((runs[0] as { angle: number }).angle).toBeCloseTo(30, 6);
+  });
+  it("poignée de rotation : objet tourné de 30° : aucune poignée de taille", () => {
+    const { tool, rect, doc } = setup();
+    const a = rect(100, 100, 200, 200);
+    doc.apply({ type: "Rotate", ids: [a], angle: 30 });
+    tool.setSelection([a]);
+    expect(tool.live().overlay).toMatchObject({ handles: true, noResize: true, rotate: true });
+  });
+  it("poignée de rotation : texte seul : aucune poignée ; appui sans glisser : rien d'écrit", () => {
+    const { tool, runs, rect, doc } = setup();
+    const page = doc.pageIds()[0]!;
+    const t = doc.apply({ type: "SetText", page, id: null, x: 0, y: 0, content: "a", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 }).ids[0]!;
+    tool.setSelection([t]);
+    expect(tool.live().overlay?.rotate).toBeUndefined();
+    const a = rect(100, 100, 200, 200);
+    tool.setSelection([a]);
+    gesture(tool, [rotateHandlePoint(doc.bounds([a])!, 1)]);
+    expect(runs).toEqual([]);
+  });
+  // Discriminant (patron interdit : une matrice unique posée sur tous les fantômes) : l'aperçu suit `planRotate`, un
+  // fantôme par membre ; le texte glisse sans tourner, et chaque fantôme vaut la transformation écrite au relâché.
+  it("poignée de rotation : texte et forme : le texte glisse sans tourner, l'aperçu est l'écrit", () => {
+    const { tool, runs, rect, doc } = setup();
+    const page = doc.pageIds()[0]!;
+    const t = doc.apply({ type: "SetText", page, id: null, x: 0, y: 0, content: "a", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 }).ids[0]!;
+    const a = rect(100, 100, 200, 200);
+    tool.setSelection([t, a]);
+    const before = new Map([t, a].map((id) => [id, doc.element(id)!.transform] as const));
+    const f = doc.bounds([t, a])!;
+    const h = rotateHandlePoint(f, 1);
+    const c = centre(f);
+    tool.begin(1, [at(h[0], h[1])]);
+    const end = turned(c[0], c[1], h, 90);
+    tool.extend(1, [at(end[0], end[1])], []);
+    const ghosts = tool.live().overlay?.ghosts ?? [];
+    const of = (id: string) => ghosts.find((g) => g.id === id)?.matrix;
+    const mt = of(t)!;
+    const ma = of(a)!;
+    expect(mt).toBeDefined();
+    expect(ma).toBeDefined();
+    // Texte : partie linéaire identité, centre déplacé (translation non nulle).
+    expect([mt[0], mt[1], mt[2], mt[3]]).toEqual([1, 0, 0, 1]);
+    expect(Math.hypot(mt[4], mt[5])).toBeGreaterThan(1);
+    // Forme : environ un quart de tour horaire (doigt tourné autour du centre du cadre, pivot du cœur sans le trait).
+    expect(ma[1]).toBeGreaterThan(0.99);
+    tool.close(1, "end");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ type: "Rotate", ids: [t, a] });
+    // Écrit = fantôme ∘ transformation d'avant (le fantôme se pose sur l'élément peint).
+    for (const [id, g] of [[t, mt], [a, ma]] as const) {
+      const o = before.get(id)!;
+      const want = [
+        g[0] * o[0] + g[2] * o[1], g[1] * o[0] + g[3] * o[1],
+        g[0] * o[2] + g[2] * o[3], g[1] * o[2] + g[3] * o[3],
+        g[0] * o[4] + g[2] * o[5] + g[4], g[1] * o[4] + g[3] * o[5] + g[5],
+      ];
+      const w = doc.element(id)!.transform;
+      for (let i = 0; i < 6; i += 1) expect(w[i]).toBeCloseTo(want[i]!, 6);
+    }
+  });
+  // Second patron interdit (D28) : aucune lecture `element()` par image pendant le glisser ; membres lus au `begin`.
+  it("poignée de rotation : pendant le glisser, aucun element() par image", () => {
+    const { tool, rect, doc } = setup();
+    const a = rect(100, 100, 200, 200);
+    const b = rect(300, 100, 400, 200);
+    tool.setSelection([a, b]);
+    tool.live();
+    const f = doc.bounds([a, b])!;
+    const h = rotateHandlePoint(f, 1);
+    const c = centre(f);
+    tool.begin(1, [at(h[0], h[1])]);
+    const step = (deg: number): void => {
+      const p = turned(c[0], c[1], h, deg);
+      tool.extend(1, [at(p[0], p[1])], []);
+    };
+    step(10);
+    tool.live();
+    const spy = vi.spyOn(doc, "element");
+    for (const deg of [20, 30, 40]) {
+      step(deg);
+      expect(tool.live().overlay?.ghosts).toHaveLength(2);
+    }
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+    tool.close(1, "cancel");
+  });
 });
