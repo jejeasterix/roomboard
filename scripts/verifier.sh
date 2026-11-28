@@ -153,6 +153,8 @@ if [ "$E2E" = 1 ]; then
   echo "personnalisation-2-retours : OK"
   node scripts/essais/outils-excalidraw-navigateur.mjs
   echo "outils-excalidraw : OK"
+  node scripts/essais/outils-excalidraw-2b-navigateur.mjs
+  echo "outils-excalidraw-2b : OK"
   node scripts/essais/design-l3-navigateur.mjs
   echo "design L3 : OK"
   node scripts/essais/personnalisation-1a-navigateur.mjs

@@ -28,7 +28,7 @@ import { iconFor } from "./icons";
 import { itemState, pagesLabel, type ToolbarView } from "./item-state";
 import { padToPixel } from "./Island";
 import { PointerSwitch } from "./PointerSwitch";
-import { buttonShortcut } from "./shortcuts";
+import { buttonShortcut, toolShortcut } from "./shortcuts";
 import { createTip } from "./tooltip";
 
 /** Libellé du curseur du pot (C6b, B10). */
@@ -62,7 +62,7 @@ const DROP_ICON = "drop";
 function Button(props: { item: ToolItem; ctx: Ctx; onPress: () => void }): JSX.Element {
   const st = createMemo(() => itemState(props.item, props.ctx.view()));
   const primary = props.item.kind === "action" && PRIMARY_ACTIONS.has(props.item.action ?? "");
-  const keys = props.item.kind === "action" ? buttonShortcut(props.item.action) : null;
+  const keys = props.item.kind === "action" ? buttonShortcut(props.item.action) : props.item.kind === "tool" ? toolShortcut(props.item.tool) : null;
   return (
     <IconButton
       icon={iconFor(props.item, st().icon)}
@@ -254,6 +254,42 @@ function TableActionRow(props: { view: Accessor<ToolbarView>; host: ToolbarHost 
   );
 }
 
+/** OG33 (lot 2b, choix 1) : outils du menu « Formes », dans l'ordre d'Excalidraw (`Tools.tsx`). */
+export const SHAPE_TOOLS: readonly ToolId[] = ["rect", "diamond", "ellipse"];
+const shapeItem = (t: ToolId): ToolItem => ({ id: `shape-${t}`, kind: "tool", tool: t, label: TOOL_TABLE[t]?.label ?? t, requires: [], rest: {} });
+
+/** Rangée « Formes » (OG33) : un outil de forme actif et au moins une des trois formes absente de la barre (le Losange du
+ *  profil par défaut, f97bbae0) : les trois formes dans l'îlot contextuel, sous la barre ; aucune largeur prise à la barre. */
+function ShapeRow(props: { items: Accessor<readonly ToolItem[]>; view: Accessor<ToolbarView>; host: ToolbarHost }): JSX.Element {
+  const shown = createMemo(() => {
+    const active = toolOf(props.view().tool);
+    if (active === null || !SHAPE_TOOLS.includes(active)) return false;
+    const inBar = new Set(props.items().filter((i) => i.kind === "tool").map((i) => i.tool));
+    return SHAPE_TOOLS.some((t) => !inBar.has(t));
+  });
+  return (
+    <Show when={shown()}>
+      <span class="rb-sep" role="separator" data-shapes-sep />
+      <For each={SHAPE_TOOLS}>
+        {(t) => {
+          const item = shapeItem(t);
+          const st = createMemo(() => itemState(item, props.view()));
+          return (
+            <IconButton
+              icon={iconFor(item, st().icon)}
+              label={st().label}
+              pressed={st().pressed}
+              shortcut={toolShortcut(t)}
+              attrs={{ "data-shape-choice": t }}
+              onPress={() => props.host.setTool(t)}
+            />
+          );
+        }}
+      </For>
+    </Show>
+  );
+}
+
 /** C1 (P18), design-l4 (L4-4) : rôles qui portent les rangées contextuelles (préréglages, tableau, sélection, format). */
 const CONTEXT_ROLES: ReadonlySet<string> = new Set(["tools", ANNOTATION_ROLE]);
 
@@ -264,6 +300,7 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
    *  barre par Island.tsx, toujours à l'intérieur de [data-toolbar] ; en bande, inchangées dans la barre. */
   const rows = (): JSX.Element => (
     <>
+      <ShapeRow items={items} view={props.view} host={props.host} />
       <Show when={props.presets !== undefined}>
         <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
       </Show>
