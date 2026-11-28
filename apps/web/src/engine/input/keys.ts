@@ -62,6 +62,12 @@ export function linkedKey(e: KeyLike): LinkDir | null {
   if (e.isComposing || !e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey || inEditable(e.target)) return null;
   return Object.hasOwn(LINK_KEYS, e.key) ? LINK_KEYS[e.key]! : null;
 }
+/** OG33 (lot 2b, choix 10) : Alt+flèche seule va à l'objet relié dans cette direction ; Alt+Maj+flèche reste à `linkedKey`,
+ *  hors champ, hors contrôle qui a le focus, hors IME. */
+export function navKey(e: KeyLike): LinkDir | null {
+  if (e.isComposing || !e.altKey || e.shiftKey || e.ctrlKey || e.metaKey || inEditable(e.target) || inControl(e.target)) return null;
+  return Object.hasOwn(LINK_KEYS, e.key) ? LINK_KEYS[e.key]! : null;
+}
 /** OG12 (n° 19) : touche Ctrl ou Cmd seule (tenue pendant un glisser). */
 export const isCtrlKey = (e: { readonly key: string }): boolean => e.key === "Control" || e.key === "Meta";
 

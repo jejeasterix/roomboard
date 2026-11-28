@@ -13,11 +13,12 @@ import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import type { ArrangeHow } from "../core/arrange";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { arrangeKey, rotateKey, cellKey, nudgeKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
+import { arrangeKey, rotateKey, cellKey, nudgeKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, navKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isBoxShape, isSegment } from "../core/shapes";
 import { labelPlacement } from "../core/shape-label";
+import { linkedNodeIn } from "./flow-nav";
 import { createLineEditor, type LineEditor } from "./tools/line-edit";
 import { linkedCopy } from "./tools/line-points";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -1372,6 +1373,19 @@ export function createEngine(deps: EngineDeps): Engine {
       if (tk !== null && tool === "table" && tableTool.cell() !== null) {
         tableTool.act(tk);
         return true;
+      }
+      // OG33 (lot 2b, choix 10) : Alt+flèche, une forme seule choisie, va à l'objet relié dans cette direction ; pas pendant
+      // le rognage ou la pipette, ni « Modifier les points » ; sans objet relié la touche passe.
+      const nav = navKey(e);
+      if (nav !== null && tool === "select" && lineEditor === null && textTool.editing() === null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        const sel = selectTool.selection();
+        const next = sel.length === 1 ? linkedNodeIn(doc, pageId, sel[0]!, nav) : null;
+        if (next !== null) {
+          selectTool.setSelection([next]);
+          requestScene();
+          emit();
+          return true;
+        }
       }
       const order = orderKey(e);
       if (order !== null) {

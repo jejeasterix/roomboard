@@ -28,6 +28,7 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   // contexte (engine.ts, `key`) : un rectangle ou une ellipse seul, ou une séance « Modifier les points », va à OG12 ;
   // hors de ces contextes (au moins deux unités), Aligner.
   s("linked-node", "Édition", "Objet relié", "Alt+Maj+↑ ↓ ← →"),
+  s("flow-nav", "Édition", "Aller à l'objet relié", "Alt+↑ ↓ ← →"),
   s("no-binding", "Édition", "Flèche sans liaison", "Ctrl tenu"),
   s("front", "Disposition", "Premier plan", "Ctrl+Maj+↑"),
   s("forward", "Disposition", "Avancer", "Ctrl+↑"),
