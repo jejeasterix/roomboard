@@ -3,9 +3,10 @@
  * levée : coupé là où elle passe (`Erase` partiel du cœur, qui coupe tous les traits du chemin). Objet au premier plan
  * sous le centre de la gomme (forme, image, texte, ligne, flèche, média, objet 3D, genre inconnu) : effacé entier
  * (`Delete`) ; à tolérance 0 d'abord (un trait ne compte que sous son contour), au rayon si rien n'est sous le centre
- * ou si le centre n'est que dans l'intérieur d'un rectangle ou d'une ellipse sans fond.
- * Jamais effacés : tableau, remplissage du pot (D4, D30). Rectangle ou ellipse sans fond : seulement sur son trait
- * (`edgeHit`, D31). Un plan par geste : le document ne change qu'au relâché (D32).
+ * ou si le centre n'est que dans l'intérieur d'une forme à fond (rectangle, ellipse, losange, ligne fermée) sans fond.
+ * Jamais effacés : tableau, remplissage du pot (D4, D30). Forme à fond sans fond : seulement sur son trait
+ * (`edgeHit`, D31). Limite (H18) : `hitTest` rend le cadre vide à toute tolérance, une image posée dessous n'est jamais
+ * le premier plan : elle reste. Un plan par geste : le document ne change qu'au relâché (D32).
  * Coût borné (D8) : candidats fixés au début du geste, leurs boîtes mesurées par paquets (`ERASER_BOUNDS_PER_FRAME` par
  * image : `bounds` cherche l'élément dans tout le document), un candidat pas encore mesuré comptant comme proche ;
  * échantillons au pas du cœur (`sample_path`) gardés près d'un candidat non touché, au plus `ERASER_PROBES_PER_FRAME`
@@ -15,6 +16,7 @@
  * `resize` (OG25, paume) l'agrandit et relance la sonde des objets depuis le début (D7).
  */
 import type { Bounds, Change, Command } from "../../core/api";
+import { isFillable } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
@@ -122,13 +124,13 @@ export function createEraserTool(ctx: ToolContext, radiusPx: number = ERASER_RAD
     let v = p.outline.get(id);
     if (v === undefined) {
       const el = ctx.doc.element(id);
-      v = el?.kind === "shape" && (el.shape.shape === "rect" || el.shape.shape === "ellipse") && el.shape.fill === null;
+      v = el?.kind === "shape" && isFillable(el.shape) && el.shape.fill === null;
       p.outline.set(id, v);
     }
     return v;
   };
 
-  /** (x, y) n'est que dans l'intérieur d'un candidat rectangle ou ellipse sans fond, loin de son trait (D31). */
+  /** (x, y) n'est que dans l'intérieur d'un candidat à fond (rectangle, ellipse, losange, ligne fermée) sans fond, loin de son trait (D31). */
   const hollow = (p: Pass, id: string, x: number, y: number): boolean =>
     p.boxes.has(id) && outlineOnly(p, id) && !ctx.doc.edgeHit(id, x, y, p.radius);
 
