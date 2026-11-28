@@ -20,20 +20,22 @@ réutiliser) ; plan du lot 2a `docs/plans/personnalisation-2-outils-LOT2-PLAN.md
 `docs/sessions/personnalisation-2-outils-etat.md` (Lot 2b, Pièges, Prémisses démenties) ; profil `.claude/chantier.md` ;
 charte `docs/plans/design-cadrage.md` (§ 10 netteté, Lucide du lot L1) ; fiche `docs/essais/outils-excalidraw.md`.
 
+Base : le lot 2a est fusionné dans `main` (0e683c75) ; la branche du lot 2b intègre `origin/main` avant l'exécution.
+
 ## Table des tâches
 
 | id | titre | dépend de | fichiers touchés | worktree | subagent | preuve | scénario | section |
 |----|-------|-----------|------------------|----------|----------|--------|----------|---------|
 | B1 | M1 : rangée « Formes », lettres des outils dans les infobulles, essai M1 | — | apps/web/src/ui/{Toolbar.tsx, Toolbar.test.tsx, shortcuts.ts, shortcuts.test.ts}, scripts/essais/{outils-excalidraw-2b-navigateur.mjs (neuf), dist-avant.sh (neuf), restes-personnalisation-1-navigateur.mjs}, scripts/verifier.sh, scripts/tests/verifier-e2e.test.sh, docs/essais/outils-excalidraw.md, docs/design/captures/personnalisation-2-outils/{avant-formes.png, apres-formes.png, apres-formes-infobulle.png} | isolé | implementeur-tdd | vitest `Toolbar.test.tsx` ≥ 1 test `rangée Formes` et ≥ 1 test `lettre de l'outil` ; `shortcuts.test.ts` ≥ 1 test `toolShortcut` ; `outils-excalidraw-2b : OK` avec `Lire : M1.tool=diamond` | S10 | #tache-b1 |
 | B2 | M1 : message `BadFill` (losange, ligne fermée) | — | crates/roomboard-core/src/commands.rs, crates/roomboard-core/tests/pot.rs, apps/web/src/core/{fake-core.ts, wasm-core.contract.test.ts} | isolé | implementeur-tdd | `cargo test -p roomboard-core --test pot` ≥ 1 test `bad_fill_message_is_readable` ; vitest contrat ≥ 2 tests `C6a` verts (deux fabriques) | S10 | #tache-b2 |
-| B3 | M2 : commande `Rotate` (cœur, pont, faux cœur, contrat, CLI) | B2 | crates/roomboard-core/src/{arrange.rs, commands.rs}, crates/roomboard-core/tests/arrange.rs, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts, arrange.ts, arrange.test.ts, fake-core.ts, wasm-core.ts, wasm-core.contract.test.ts}, apps/cli/src/{ops.ts, ops.test.ts}, scripts/essais/cli-essai.mjs | isolé | concepteur-critique | `cargo test -p roomboard-core --test arrange` ≥ 4 tests `rotate_` dont `rotate_30_keeps_center_one_step` ; vitest `contrat OG33 Rotate` ≥ 2 (deux fabriques) ; `CLI : OK` ; Wasm ≤ 1 572 864 o | S11 | #tache-b3 |
+| B3 | M2 : commande `Rotate` (cœur, pont, faux cœur, contrat, CLI) | B2 | crates/roomboard-core/src/{arrange.rs, commands.rs}, crates/roomboard-core/tests/arrange.rs, crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts, arrange.ts, arrange.test.ts, fake-core.ts, wasm-core.ts, wasm-core.contract.test.ts}, apps/cli/src/{ops.ts, ops.test.ts}, scripts/essais/cli-essai.mjs | isolé | concepteur-critique | `cargo test -p roomboard-core --test arrange` ≥ 6 tests `rotate_` dont `rotate_30_keeps_center_one_step` et `rotate_bound_arrow_follows` ; taille Wasm avant/après au rapport ; vitest `contrat OG33 Rotate` ≥ 2 (deux fabriques) ; `CLI : OK` ; Wasm ≤ 1 572 864 o | S11 | #tache-b3 |
 | B4 | M2 : poignée de rotation, Maj 15°, Alt+T, rendu | B1, B3 | apps/web/src/engine/tools/{handles.ts, handles.test.ts, select.ts, select.test.ts}, apps/web/src/engine/render/{overlay.ts, overlay.test.ts, canvas2d.ts, canvas2d.test.ts, link-badge.ts}, apps/web/src/engine/input/{keys.ts, keys.test.ts}, apps/web/src/engine/{engine.ts, engine.test.ts}, apps/web/src/ui/{shortcuts.ts, shortcuts.test.ts} | isolé | concepteur-critique | vitest `select.test.ts` ≥ 4 tests `poignée de rotation` ; `handles.test.ts` ≥ 1 test `rotateAngle` ; `engine.test.ts` ≥ 1 test `Alt+T` ; suite web verte | S11 | #tache-b4 |
 | B5 | M2 : essai navigateur rotation, captures, fiche | B4 | scripts/essais/outils-excalidraw-2b-navigateur.mjs, docs/essais/outils-excalidraw.md, docs/design/captures/personnalisation-2-outils/{avant-rotation.png, apres-rotation.png} | isolé | implementeur-tdd | `outils-excalidraw-2b : OK` avec `Lire : M2.angle=30`, `M2.pas=0`, `M2.clavier=15`, `M2.coin=none` ; `verifier.sh : OK` | S11 | #tache-b5 |
 | B6 | M3 : texte de forme `SetShapeLabel` (cœur, pont, faux cœur, contrat, CLI) | B3 | crates/roomboard-core/src/{label.rs (neuf), lib.rs, element.rs, document.rs, commands.rs, linear.rs}, crates/roomboard-core/tests/etiquettes.rs (neuf), crates/roomboard-wasm/src/lib.rs, apps/web/src/core/{api.ts, fake-core.ts, wasm-core.ts, wasm-core.contract.test.ts}, apps/cli/src/{ops.ts, ops.test.ts}, scripts/essais/cli-essai.mjs | partagé | concepteur-critique | `cargo test -p roomboard-core --test etiquettes` ≥ 6 tests dont `label_one_step_undo` ; vitest `contrat OG33 SetShapeLabel` ≥ 2 ; `CLI : OK` ; Wasm ≤ 1 572 864 o | S12 | #tache-b6 |
-| B7 | M3 : édition et rendu du texte de forme, double toucher, Entrée, export | B4, B6 | apps/web/src/core/{shape-label.ts (neuf), shape-label.test.ts (neuf)}, apps/web/src/engine/tools/{tool.ts, text.ts, text.test.ts, select.ts, select.test.ts}, apps/web/src/engine/render/{overlay.ts, canvas2d.ts, canvas2d.test.ts}, apps/web/src/engine/{engine.ts, engine.test.ts}, apps/web/src/app/{board-io.ts, board-io.test.ts} | isolé | implementeur-tdd | vitest `text.test.ts` ≥ 2 tests `texte de forme` ; `select.test.ts` ≥ 1 test `double toucher sur une forme : son texte` ; `engine.test.ts` ≥ 1 test `Entrée sur une forme` ; `canvas2d.test.ts` ≥ 1 test `texte de forme` ; `board-io.test.ts` ≥ 1 test `texte de forme exporté` | S12 | #tache-b7 |
+| B7 | M3 : édition et rendu du texte de forme, double toucher, Entrée, export | B4, B6 | apps/web/src/core/{shape-label.ts (neuf), shape-label.test.ts (neuf)}, apps/web/src/engine/tools/{tool.ts, text.ts, text.test.ts, select.ts, select.test.ts}, apps/web/src/engine/render/{overlay.ts, canvas2d.ts, canvas2d.test.ts}, apps/web/src/engine/input/{keys.ts, keys.test.ts}, apps/web/src/engine/{engine.ts, engine.test.ts}, apps/web/src/app/{board-io.ts, board-io.test.ts} | isolé | implementeur-tdd | vitest `text.test.ts` ≥ 2 tests `texte de forme` ; `select.test.ts` ≥ 1 test `double toucher sur une forme : son texte` ; `engine.test.ts` ≥ 1 test `Entrée sur une forme` ; `canvas2d.test.ts` ≥ 1 test `texte de forme` ; `board-io.test.ts` ≥ 1 test `texte de forme exporté` | S12 | #tache-b7 |
 | B8 | M3 : essai navigateur texte dans une forme, captures, fiche | B5, B7 | scripts/essais/outils-excalidraw-2b-navigateur.mjs, docs/essais/outils-excalidraw.md, docs/design/captures/personnalisation-2-outils/{avant-texte-forme.png, apres-texte-forme.png, apres-texte-losange.png} | isolé | implementeur-tdd | `outils-excalidraw-2b : OK` avec `Lire : M3.label=Bonjour`, `M3.shape=rect`, `M3.enter=Losange` ; `verifier.sh : OK` | S12 | #tache-b8 |
 | B9 | M4 : pointes `diamond` et `diamond_outline` | B6, B7 | crates/roomboard-core/src/element.rs, crates/roomboard-core/tests/fleches.rs, apps/web/src/core/{look.ts, look.test.ts}, apps/web/src/engine/render/{canvas2d.ts, canvas2d.test.ts, sketch.ts, sketch.test.ts}, apps/web/src/ui/{OptionsPanel.tsx, OptionsPanel.test.tsx, icons.ts, icons.test.ts} | isolé | implementeur-tdd | `cargo test -p roomboard-core --test fleches` ≥ 1 test `diamond_heads_round_trip` ; vitest `look.test.ts`, `canvas2d.test.ts` ≥ 1 test `pointe losange` ; `OptionsPanel.test.tsx` ≥ 1 test `Losange creux` | S13 | #tache-b9 |
-| B10 | M4 : navigation Alt+flèche entre objets reliés, essai M4, fiche | B8, B9 | apps/web/src/engine/{flow-nav.ts (neuf), flow-nav.test.ts (neuf), engine.ts, engine.test.ts}, apps/web/src/engine/input/{keys.ts, keys.test.ts}, apps/web/src/ui/{shortcuts.ts, shortcuts.test.ts}, scripts/essais/outils-excalidraw-2b-navigateur.mjs, docs/essais/outils-excalidraw.md | isolé | implementeur-tdd | vitest `flow-nav.test.ts` ≥ 3 tests ; `engine.test.ts` ≥ 1 test `Alt+→` ; `outils-excalidraw-2b : OK` avec `Lire : M4.nav=<id B>` ; `verifier.sh : OK` | S13 | #tache-b10 |
+| B10 | M4 : navigation Alt+flèche entre objets reliés, essai M4, fiche | B8, B9 | apps/web/src/engine/{flow-nav.ts (neuf), flow-nav.test.ts (neuf), engine.ts, engine.test.ts}, apps/web/src/engine/input/{keys.ts, keys.test.ts}, apps/web/src/ui/{shortcuts.ts, shortcuts.test.ts}, scripts/essais/outils-excalidraw-2b-navigateur.mjs, docs/essais/outils-excalidraw.md | isolé | implementeur-tdd | vitest `flow-nav.test.ts` ≥ 3 tests ; `engine.test.ts` ≥ 1 test `Alt+→` ; `outils-excalidraw-2b : OK` avec `Lire : M4.nav` = boîte de B (`data-bounds`) ; `verifier.sh : OK` | S13 | #tache-b10 |
 
 **Morceaux** (fusion dans `main` après la dernière tâche de chacun, `scripts/verifier.sh --e2e` vert) : M1 = B1 + B2 ; M2 =
 B3 + B4 + B5 ; M3 = B6 + B7 + B8 ; M4 = B9 + B10. Ordre de sortie si le temps manque : M4 entier, puis M3 entier ; un
@@ -191,7 +193,7 @@ cd <worktree> && nice -n 10 pnpm --filter @roomboard/web build >/dev/null && pnp
 ## Review Focus
 
 1. **Barre à 1 280 px** : la rangée « Formes » ne doit jamais élargir la barre d'outils ni la faire changer de rangée (cause
-   de f97bbae0) — S10. Test : `rangée Formes : hors de la barre, dans l'îlot contextuel` (B1) et lecture `M1.barre` (B1).
+   de f97bbae0) — S10. Test : `rangée Formes : hors de la barre, dans l'îlot contextuel` (B1) et lectures `M1.barre` (place et largeur) et `M1.ilot` (bord droit ≤ 1280) (B1).
 2. **Texte d'une forme tournée ou retournée** : il tourne avec la forme (repère local), à l'export comme à l'écran — choix 8,
    S12. Test : `texte de forme : peint dans le repère de la forme` (B7), `texte de forme exporté avec la matrice` (B7).
 3. **Rotation d'une sélection mêlée texte + forme** : le texte garde sa matrice, sa place tourne ; jamais de texte tourné —
@@ -242,8 +244,8 @@ Puis la commande « Wasm », la commande « Essai » avec `--only m1` (attendu `
 `bash scripts/tests/verifier-e2e.test.sh` (code 0).
 
 **Preuve visuelle :** lectures d'abord : `Lire : M1.row=rect,diamond,ellipse`, `Lire : M1.cible=44x44` (au moins),
-`Lire : M1.tool=diamond`, `Lire : M1.diamond=1`, `Lire : M1.tip=R ou 2`, `Lire : M1.barre=<hauteur>` (égale avec et sans
-rangée), `Lire : M1.nettete=0`. Puis captures 2x : `avant-formes.png` (base : Rectangle actif, pas de rangée),
+`Lire : M1.tool=diamond`, `Lire : M1.diamond=1`, `Lire : M1.tip=R ou 2`, `Lire : M1.barre=<y:largeur>/<y:largeur>` (égales avec et sans
+rangée ; `.rb-context` est en absolute, la hauteur ne prouverait rien), `Lire : M1.ilot=<bord droit>` (≤ 1280), `Lire : M1.nettete=0`. Puis captures 2x : `avant-formes.png` (base : Rectangle actif, pas de rangée),
 `apres-formes.png` (rangée sous la barre, Losange enfoncé), `apres-formes-infobulle.png`. À décrire : alignement de la
 rangée sous la barre, netteté de l'icône losange.
 
@@ -410,7 +412,12 @@ echo "dist-avant : $dest (base $base)"
 /** M1 (S10) : Losange par la rangée « Formes » au doigt ; lettre dans l'infobulle ; barre inchangée. */
 async function m1(browser, base, tmp) {
   const { ctx, page, cdp, errors } = await newPage(browser, base, { scale: 2 });
-  const bar = async () => (await page.locator('[data-toolbar="outils"]').first().boundingBox()).height;
+  // `.rb-context` est en `position: absolute` (rb.css:143) : la hauteur de la barre ne bouge jamais ; on lit sa place
+  // (y, largeur) avant et après, et le bord droit de l'îlot contextuel (dans la fenêtre de 1280 px).
+  const bar = async () => {
+    const b = await page.locator('[data-toolbar="outils"]').first().boundingBox();
+    return `${Math.round(b.y)}:${Math.round(b.width)}`;
+  };
   const h0 = await bar();
   await tool(page, "rect");
   const row = await page.$$eval("[data-shape-choice]", (bs) => bs.map((b) => b.getAttribute("data-shape-choice")).join(","));
@@ -421,7 +428,10 @@ async function m1(browser, base, tmp) {
   check(bb.width >= 43.5 && bb.height >= 43.5, "M1 : cible Losange ≥ 44 px");
   const h1 = await bar();
   lire("M1.barre", `${h0}/${h1}`);
-  check(h0 === h1, "M1 : la barre d'outils garde sa hauteur (même rangée à 1280 px)");
+  check(h0 === h1, "M1 : la barre d'outils garde sa place et sa largeur (même rangée à 1280 px)");
+  const isle = await page.locator('[data-toolbar="outils"] [data-island-context]').first().boundingBox();
+  lire("M1.ilot", Math.round(isle.x + isle.width));
+  check(isle.x + isle.width <= VIEWPORT.width, "M1 : l'îlot de la rangée Formes tient dans la fenêtre de 1280 px");
   await tapAt(page, bb.x + bb.width / 2, bb.y + bb.height / 2);
   await waitAttr(page, "data-tool", "diamond");
   lire("M1.tool", "diamond");
@@ -536,6 +546,8 @@ wasm-core.contract.test.ts}`, `apps/cli/src/{ops.ts, ops.test.ts}`, `scripts/ess
   `export function reachOfKind(kind: string): Reach | null` (`arrange.ts`).
 - Réutilise : `crates/roomboard-core/src/arrange.rs:222` — `cmd_arrange` (corps extrait en `arrange_with`), `Unit`,
   `Member`, `Reach`, `box_of`, `shift`.
+- Réutilise : `crates/roomboard-core/src/linear.rs` — `follow(doc, txn, moved, Some(m))`, appelé comme dans
+  `cmd_transform` (`commands.rs:1463-1473`).
 - Réutilise : `apps/web/src/core/arrange.ts:35` — `planArrange` (bras de retournement extrait en `applyFull`).
 - Réutilise : `apps/web/src/core/fake-core.ts:1487` — cas `Arrange` (corps extrait en `private arrangeWith(ids, plan)`).
 - Réutilise : `apps/cli/src/ops.ts:12` — `COMMAND_TYPES`, contrôle de `how` d'`Arrange` (l. 89) comme modèle.
@@ -545,8 +557,10 @@ wasm-core.contract.test.ts}`, `apps/cli/src/{ops.ts, ops.test.ts}`, `scripts/ess
 cd <worktree> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH CARGO_TARGET_DIR=$PWD/target CARGO_BUILD_JOBS=4 \
  && nice -n 10 cargo test -p roomboard-core --test arrange -j 4 2>&1 | grep -E "test result|FAILED|rotate_"
 # attendu : 0 FAILED ; rotate_30_keeps_center_one_step, rotate_90_equals_arrange_rotate_cw,
-#           rotate_text_keeps_matrix_moves_place, rotate_zero_and_nan, rotate_unknown_id_refused ok
+#           rotate_text_keeps_matrix_moves_place, rotate_zero_and_nan, rotate_unknown_id_refused, rotate_bound_arrow_follows ok
 ```
+Taille du module principal relevée **avant** (commande « Wasm » sur la base de B3) et **après** : `main` est à 1 465 748 o
+(marge 107 116 o sous 1 572 864) ; les deux valeurs vont au rapport.
 Puis commande « Wasm » (taille ≤ 1 572 864 o, citée), `cd apps/web && nice -n 10 npx vitest run src/core/arrange.test.ts
 src/core/wasm-core.contract.test.ts -t "Rotate|rotation" 2>&1 | tail -6` (≥ 2 tests par fabrique), `cd apps/cli && nice -n
 10 npx vitest run src/ops.test.ts 2>&1 | tail -4`, `pnpm --filter @roomboard/cli build >/dev/null && node
@@ -668,37 +682,63 @@ pub(crate) fn rotation(cx: f64, cy: f64, deg: f64) -> Transform {
     [c, s, -s, c, cx - c * cx + s * cy, cy - s * cx - c * cy]
 }
 
-/// OG33 : plan d'une rotation autour du centre des boîtes réunies ; angle nul modulo 360 : rien (D38).
-pub(crate) fn plan_rotate(units: &[Unit], deg: f64) -> Vec<(String, Transform)> {
+/// Plan d'une disposition : matrices à composer, et matrice pleine passée à `linear::follow` (suivi des flèches liées).
+pub(crate) type Planned = (Vec<(String, Transform)>, Option<Transform>);
+
+/// OG33 : plan d'une rotation autour du centre des boîtes réunies ; angle nul modulo 360 : rien (D38). La matrice pleine
+/// est rendue aussi : `Rotate` suit les flèches liées comme `cmd_transform` (n° 7).
+pub(crate) fn plan_rotate(units: &[Unit], deg: f64) -> Planned {
     let boxes: Vec<Bounds> = units.iter().filter_map(box_of).collect();
     if boxes.len() != units.len() || boxes.is_empty() || deg.rem_euclid(360.0) == 0.0 {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let sel = boxes.iter().skip(1).fold(boxes[0], |a, b| a.union(*b));
+    let full = rotation((sel.x0 + sel.x1) / 2.0, (sel.y0 + sel.y1) / 2.0, deg);
     let mut out = Vec::new();
-    apply_full(units, rotation((sel.x0 + sel.x1) / 2.0, (sel.y0 + sel.y1) / 2.0, deg), &mut out);
-    out
+    apply_full(units, full, &mut out);
+    (out, Some(full))
 }
 ```
 
-   Le bras de retournement de `plan` appelle `apply_full(units, full, &mut out)`. Puis `cmd_arrange` devient :
+   Le bras de retournement de `plan` appelle `apply_full(units, full, &mut out)`. Puis `cmd_arrange` devient (son
+   comportement ne change pas : pas de suivi, `arrange.rs:316-321`) :
 
 ```rust
     pub fn cmd_arrange(&mut self, ids: &[String], how: ArrangeHow) -> Result<Change, CommandError> {
-        self.arrange_with(ids, |units| plan(units, how))
+        self.arrange_with(ids, &|units| (plan(units, how), None))
     }
 
-    /// OG33 (lot 2b) : `Rotate` ; angle non fini : `BadMatrix` avant toute lecture ; sinon les règles de `cmd_arrange`.
+    /// OG33 (lot 2b) : `Rotate` ; angle non fini : `BadMatrix` avant toute lecture ; sinon les règles de `cmd_arrange`,
+    /// plus le suivi des flèches liées dans la même transaction (une étape).
     pub fn cmd_rotate(&mut self, ids: &[String], deg: f64) -> Result<Change, CommandError> {
         if !deg.is_finite() {
             return Err(CommandError::BadMatrix);
         }
-        self.arrange_with(ids, |units| plan_rotate(units, deg))
+        self.arrange_with(ids, &|units| plan_rotate(units, deg))
     }
 ```
 
-   et `fn arrange_with(&mut self, ids: &[String], planner: impl Fn(&[Unit]) -> Vec<(String, Transform)>) -> Result<Change,
-   CommandError>` porte le corps et la doc actuels de `cmd_arrange`, seule `plan(&units, how)` devenant `planner(&units)`.
+   et `fn arrange_with(&mut self, ids: &[String], planner: &dyn Fn(&[Unit]) -> Planned) -> Result<Change, CommandError>`
+   (`&dyn Fn`, pas `impl Fn` : le corps n'est compilé qu'une fois, marge Wasm) porte le corps et la doc actuels de
+   `cmd_arrange`, `plan(&units, how)` devenant `let (moves, follow) = planner(&units);`. Dans la transaction unique de
+   l'étape 5, après les `insert` de `transform`, et seulement si `follow` est `Some(m)` : `let followed =
+   crate::linear::follow(self, &mut txn, &moved_ids, Some(&m));` (forme exacte de `cmd_transform`, `commands.rs:1463-1473` ;
+   `moved_ids` = ids écrits) ; les ids suivis qui manquent s'ajoutent à `Change.ids` comme dans `cmd_transform`
+   (l. 1478-1484). Test de plus dans l'étape 1 :
+
+```rust
+#[test]
+fn rotate_bound_arrow_follows() {
+    // Deux rectangles reliés par une flèche liée aux deux (patron des tests de liaison de tests/fleches.rs : AddShape
+    // arrow avec `line.start` / `line.end`) ; Rotate 90 du second : la fin de la flèche suit son contour dans la même
+    // étape (Change.ids contient la flèche) ; undo : flèche et rectangle reviennent ensemble.
+}
+```
+
+   (corps écrit avec les aides de liaison de `tests/fleches.rs`, à recopier). Faux cœur : dans `arrangeWith`, le planificateur
+   rend aussi la matrice pleine (`rotationMatrix` du centre des boîtes, `null` pour `Arrange`) et, si elle est donnée,
+   appelle dans la même étape le suivi que le cas `Transform` du faux cœur appelle déjà (même fonction, même place). Contrat :
+   un cas « Rotate : la flèche liée suit, une étape » de plus dans le bloc de l'étape 5.
    `commands.rs` : variante `Rotate { ids: Vec<String>, angle: f64 }` après `Arrange` (doc : « OG33 (lot 2b) : tourne les
    `ids` d'`angle` degrés… portée et groupes comme `Arrange` ») ; bras `Command::Rotate { ids, angle } =>
    self.cmd_rotate(&ids, angle),` après celui d'`Arrange` (l. 904). Vert.
@@ -994,8 +1034,9 @@ export const matrixAngle = (m: Matrix): number => (Math.atan2(m[1], m[0]) * 180)
 ```
 
 3. `select.ts` :
-   - `Mode` gagne `"rotate"` ; `Drag` gagne `readonly pivot?: readonly [number, number]; readonly base?: number; readonly
-     members?: readonly ArrangeMember[];` ; `startDrag` les accepte dans `extra` et les recopie.
+   - `Mode` gagne `"rotate"` ; `Drag` gagne `readonly pivot?: readonly [number, number]; readonly angle0?: number; readonly
+     members?: readonly ArrangeMember[];` (`angle0`, pas `base` : `Drag.base` existe déjà, `Bounds | null`, `select.ts:63`,
+     comme `extra.base`, l. 171) ; `startDrag` les accepte dans `extra` et les recopie.
    - Dans `createSelectTool` :
 
 ```ts
@@ -1022,7 +1063,7 @@ export const matrixAngle = (m: Matrix): number => (Math.atan2(m[1], m[0]) * 180)
       return reach !== null && b !== null ? [{ id, reach, bounds: b }] : [];
     });
   const turnOf = (d: Drag): number =>
-    d.pivot === undefined ? 0 : rotateAngle(d.pivot[0], d.pivot[1], d.x0, d.y0, d.x, d.y, ctx.shift?.() === true, d.base ?? 0);
+    d.pivot === undefined ? 0 : rotateAngle(d.pivot[0], d.pivot[1], d.x0, d.y0, d.x, d.y, ctx.shift?.() === true, d.angle0 ?? 0);
 ```
 
    - `begin` : la ligne `const h = frame && !isLine(v) ? grabbedHandle(...) : null` devient `frame && !isLine(v) &&
@@ -1034,7 +1075,7 @@ export const matrixAngle = (m: Matrix): number => (Math.atan2(m[1], m[0]) * 180)
         const only = selection.length === 1 ? ctx.doc.element(selection[0]!) : null;
         startDrag(pointerId, "rotate", x, y, {
           pivot: [(frame.x0 + frame.x1) / 2, (frame.y0 + frame.y1) / 2],
-          base: only === null ? 0 : matrixAngle(only.transform),
+          angle0: only === null ? 0 : matrixAngle(only.transform),
           members: rotateMembers(),
         });
         return;
@@ -1333,8 +1374,8 @@ Scénario S12.
 
 **Fichiers :** `apps/web/src/core/{shape-label.ts (neuf), shape-label.test.ts (neuf)}`,
 `apps/web/src/engine/tools/{tool.ts, text.ts, text.test.ts, select.ts, select.test.ts}`,
-`apps/web/src/engine/render/{overlay.ts, canvas2d.ts, canvas2d.test.ts}`, `apps/web/src/engine/{engine.ts, engine.test.ts}`,
-`apps/web/src/app/{board-io.ts, board-io.test.ts}`.
+`apps/web/src/engine/render/{overlay.ts, canvas2d.ts, canvas2d.test.ts}`, `apps/web/src/engine/input/{keys.ts, keys.test.ts}`,
+`apps/web/src/engine/{engine.ts, engine.test.ts}`, `apps/web/src/app/{board-io.ts, board-io.test.ts}`.
 
 **Interfaces :**
 - Consomme (B6) : `ShapeData.label`, `Command` `SetShapeLabel`.
@@ -1350,6 +1391,8 @@ Scénario S12.
   `measureWith(ctx)` ; patron du cache `linesOf`.
 - Réutilise : `apps/web/src/engine/tools/select.ts` — branche du double toucher de `close` (`isDoubleTap`, `lastTap`,
   `isNode`).
+- Réutilise : `apps/web/src/engine/text-layout.ts` — `layoutRich`, `richBoxHeight`, `measureOrFallback` (export).
+- Réutilise : `apps/web/src/engine/input/keys.ts` — `inControl` (garde d'`enterAction`, comme `nudgeKey`).
 - Réutilise : `apps/web/src/app/board-io.ts:398` — boucle d'export (un objet texte poussé après la forme) ;
   `apps/web/src/core/shapes.ts:207` — `composeMatrix`.
 
@@ -1357,8 +1400,8 @@ Scénario S12.
 ```bash
 cd <worktree> && pnpm install --frozen-lockfile >/dev/null && cd apps/web \
  && nice -n 10 npx vitest run src/core/shape-label.test.ts src/engine/tools/text.test.ts src/engine/tools/select.test.ts \
-    src/engine/render/canvas2d.test.ts src/engine/engine.test.ts src/app/board-io.test.ts 2>&1 | tail -8
-# attendu : « Test Files  6 passed » ; « texte de forme » (≥ 4), « double toucher sur une forme : son texte »,
+    src/engine/render/canvas2d.test.ts src/engine/input/keys.test.ts src/engine/engine.test.ts src/app/board-io.test.ts 2>&1 | tail -8
+# attendu : « Test Files  7 passed » ; « texte de forme » (≥ 4), « double toucher sur une forme : son texte »,
 #           « Entrée sur une forme » présents ; « aucune conversion (C4b) » vert
 ```
 Puis `tsc` et la suite web par `suite-vm.cjs`.
@@ -1479,6 +1522,11 @@ export const labelTop = (box: { readonly cy: number }, height: number): number =
    === null || imageEdit.mode() === "idle")) { const sel = selectTool.selection(); if (sel.length === 1 &&
    editShapeText(sel[0]!)) return true; }`. Test (aide `og12()`, faux outil Texte dont `openLabel` note l'id) : « Entrée
    sur une forme : son texte » ; « Entrée sur une ligne : la touche passe ».
+   `keys.ts:134` (`enterAction`) n'écarte que `inEditable` : ajouter `|| inControl(e.target)` à sa garde, comme `nudgeKey`
+   (l. ~219), et garder le test `BUTTON` existant. Tests : `keys.test.ts` « enterAction : Entrée sur un contrôle
+   (bouton, radio, case de grille) : faux » ; `engine.test.ts` « Entrée sur un bouton qui a le focus : le bouton agit, le
+   texte de la forme ne s'ouvre pas » (forme seule choisie, `key("Enter", { target: <bouton> })` : `openLabel` non appelé,
+   touche non prise).
 
 6. `board-io.ts` : dans la boucle, après `levels.at(-1)!.push(o);` :
 
@@ -1487,13 +1535,17 @@ export const labelTop = (box: { readonly cy: number }, height: number): number =
       if (el.kind === "shape" && el.shape.label !== undefined) {
         const box = labelBox(el.shape);
         if (box !== null) {
-          const boxHeight = el.shape.label.split("\n").length * LABEL_SIZE * TEXT_LINE_HEIGHT;
+          // Même mise en page qu'à l'écran (`layoutRich` dans `box.w`) ; sans canevas, la mesure de repli
+          // (`measureOrFallback(null)`, 0,6 × taille par caractère) : la hauteur peut différer de l'écran (écart écrit dans la fiche).
+          const boxHeight = richBoxHeight(layoutRich(plainSpans(el.shape.label), { size: LABEL_SIZE }, box.w, measureOrFallback(null)));
           levels.at(-1)!.push({ kind: "text", m: composeMatrix(el.transform, [1, 0, 0, 1, box.x, labelTop(box, boxHeight)]), x: 0, y: 0, boxWidth: box.w, boxHeight, size: LABEL_SIZE, color: el.style.color, spans: plainSpans(el.shape.label) });
         }
       }
 ```
 
-   Test : « texte de forme exporté avec la matrice » (rectangle tourné par `Rotate`, label « A » : un objet `text` dont `m`
+   Imports : `layoutRich`, `richBoxHeight`, `measureOrFallback` de `../engine/text-layout`. Test : « texte de forme exporté
+   avec la matrice » et « texte de forme exporté : hauteur de `layoutRich` (deux lignes repliées pour un mot plus large que
+   `box.w`, aucun `\n`) » ; la fiche (B8) écrit l'écart de mesure. Premier test : (rectangle tourné par `Rotate`, label « A » : un objet `text` dont `m`
    commence par la partie linéaire de la forme).
 7. Vert, `tsc`, suite web. Commit : `feat(engine): text inside a shape by double tap and Enter (OG33 lot 2b)`.
 
@@ -1541,7 +1593,8 @@ double toucher sans effet), `apres-texte-forme.png`, `apres-texte-losange.png` (
    état. `Control+z` : le texte du losange disparaît (une étape).
 2. `capturesM3` puis `dist-avant.sh /tmp/og33-avant-m3`, captures avant et après.
 3. Fiche, « Rectangle, losange, ellipse » : « double toucher = texte lié, Entrée » → `adapté` : clé `label` de la forme
-   (choix 8, écart : texte simple, taille 24, pas d'agrandissement de la forme), essai m3, `tests/etiquettes.rs`.
+   (choix 8, écarts : texte simple, taille 24, pas d'agrandissement de la forme ; à l'export, la hauteur de la boîte vient de
+   la mesure de repli, la page qui relit le fichier replie de nouveau), essai m3, `tests/etiquettes.rs`.
 4. `verifier.sh --e2e`. Commits : `test(essais): lot 2b browser check M3 (text in a shape)` puis `docs(og33): text in a shape
    sheet and captures`.
 
@@ -1624,7 +1677,8 @@ cd <worktree> && pnpm install --frozen-lockfile >/dev/null && cd apps/web \
  && nice -n 10 npx vitest run src/engine/flow-nav.test.ts src/engine/input/keys.test.ts src/engine/engine.test.ts src/ui/shortcuts.test.ts 2>&1 | tail -6
 # attendu : « Test Files  4 passed » ; flow-nav ≥ 3 tests ; « Alt+→ » présent
 ```
-Puis commande « Wasm », commande « Essai » `--only m4` (`Lire : M4.nav=<id B>`, `Lire : M4.pointe=diamond_outline`),
+Puis commande « Wasm », commande « Essai » `--only m4` (`Lire : M4.nav=<data-bounds>` égal à la boîte de B (`#stage` ne publie que `data-selection` et `data-bounds`,
+`board-session.ts:771-772`), `Lire : M4.pointe=diamond_outline`),
 `verifier.sh --e2e` par `suite-vm.cjs` (`verifier.sh : OK`).
 
 **Contraintes (recopiées) :**
@@ -1675,13 +1729,16 @@ export function linkedNodeIn(doc: CoreDocument, page: string, id: string, dir: L
    null.
 2. `keys.ts` : `export function navKey(e: KeyLike): LinkDir | null { if (e.isComposing || !e.altKey || e.shiftKey ||
    e.ctrlKey || e.metaKey || inEditable(e.target)) return null; return Object.hasOwn(LINK_KEYS, e.key) ? LINK_KEYS[e.key]! :
-   null; }`. `engine.ts`, juste après le bloc `tableKey` : `const nav = navKey(e); if (nav !== null && tool === "select" &&
-   lineEditor === null) { const sel = selectTool.selection(); const next = sel.length === 1 ? linkedNodeIn(doc, pageId,
+   null; }`. `engine.ts`, juste après le bloc `tableKey` (avant la garde `imageBusy`, l. 1342-1358, d'où la condition image) :
+   `const nav = navKey(e); if (nav !== null && tool === "select" && lineEditor === null && (imageEdit === null ||
+   imageEdit.mode() === "idle")) { const sel = selectTool.selection(); const next = sel.length === 1 ? linkedNodeIn(doc, pageId,
    sel[0]!, nav) : null; if (next !== null) { selectTool.setSelection([next]); requestScene(); emit(); return true; } }`.
-   Test `engine.test.ts` (aide `og12()`, `AddLinked` à droite) : « Alt+→ choisit l'objet relié » ; sans objet : faux.
+   Test `engine.test.ts` (aide `og12()`, `AddLinked` à droite) : « Alt+→ choisit l'objet relié » ; sans objet : faux ;
+   pendant le rognage d'une image (`imageEdit.mode() === "crop"`) : la sélection ne change pas.
    `shortcuts.ts` : ligne `flow-nav`.
 3. `m4` dans l'essai : rectangle A au doigt, poignée « + » de droite (patron de S3) : B relié ; A choisi ;
-   `page.keyboard.press("Alt+ArrowRight")` ; `data-selection` = 1 et l'id lu par `saved` + `#stage` ; pointe de fin
+   `page.keyboard.press("Alt+ArrowRight")` ; `data-selection` = 1 et `data-bounds` de `#stage` égal (à 1 près) à la boîte
+   de B lue dans l'état `saved` (transform, `w`, `h`, demi-épaisseur) ; `lire("M4.nav", …)` ; pointe de fin
    « Losange creux » choisie au doigt sur la flèche (`choose(page, "doigt", "endArrowhead", "diamond_outline")`, clé réelle
    de la section Pointes à lire dans `OptionsPanel.tsx`), cible ≥ 44 lue, état `look.endArrowhead`.
 4. Fiche : « navigation Alt+flèche entre nœuds » → `adapté` (le plus proche, sans grappe), essai m4 ; « pointes » →
