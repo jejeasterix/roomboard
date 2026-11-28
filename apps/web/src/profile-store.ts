@@ -1,3 +1,4 @@
+import { MAX_JSON_DEPTH, valueTooDeep } from "./json-depth";
 import { parseProfile, serializeProfile, type Profile } from "./toolbar";
 import { DEFAULT_PROFILE_ID } from "./toolbar-profiles";
 
@@ -99,9 +100,13 @@ export function createProfileStore(kv: KeyValue | null, builtins: readonly Profi
   }
   active = read(ACTIVE_KEY);
 
-  /** Écrit `next` d'abord (sérialisation et stockage peuvent lever) ; la mémoire ne change qu'une fois l'écriture faite. */
+  /** Écrit `next` d'abord (sérialisation et stockage peuvent lever) ; la mémoire ne change qu'une fois l'écriture faite.
+   *  Un profil trop imbriqué (OG45) lève avant `JSON.stringify`, sans compter sur le débordement de pile. */
   const commit = (next: Profile[]): void => {
-    const text = JSON.stringify(next.map(serializeProfile));
+    const json = next.map(serializeProfile);
+    const deep = json.findIndex((p) => valueTooDeep(p));
+    if (deep >= 0) throw new RangeError(`profil ${next[deep]!.id} trop imbriqué (plus de ${MAX_JSON_DEPTH} niveaux)`);
+    const text = JSON.stringify(json);
     if (kv !== null) kv.setItem(PROFILES_KEY, text);
     saved = next;
   };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_JSON_DEPTH } from "./json-depth";
 import { ACTIVE_KEY, PROFILES_KEY, browserKeyValue, createProfileStore, type KeyValue } from "./profile-store";
 import { parseProfile, serializeProfile } from "./toolbar";
 import { BUILTIN_PROFILES, DEFAULT_PROFILE_JSON } from "./toolbar-profiles";
@@ -248,14 +249,34 @@ describe("magasin : écriture refusée (T11)", () => {
     expect(s.hasOverride("simple")).toBe(true);
   });
 
-  it("save : imbrication trop profonde (RangeError de JSON.stringify) : lève, magasin utilisable ensuite", () => {
+  it("OG45 : un profil d'exactement MAX_JSON_DEPTH niveaux s'enregistre et se recharge", () => {
+    const kv = fakeKv();
+    let deep: unknown = 1;
+    for (let i = 0; i < MAX_JSON_DEPTH - 1; i++) deep = [deep];
+    createProfileStore(kv, BUILTIN_PROFILES).save({ ...user("limite"), rest: { x: deep } });
+    expect(createProfileStore(kv, BUILTIN_PROFILES).get("limite")).not.toBeNull();
+  });
+
+  it("chargement : profil stocké au-delà de MAX_JSON_DEPTH (OG45) écarté avec un avertissement, les autres gardés", () => {
+    const kv = fakeKv();
+    let deep: unknown = 1;
+    for (let i = 0; i < MAX_JSON_DEPTH; i++) deep = [deep];
+    kv.setItem(PROFILES_KEY, JSON.stringify([userJson("profond", { x: deep }), userJson("ok")]));
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    expect(s.get("profond")).toBeNull();
+    expect(s.get("ok")).not.toBeNull();
+    expect(s.warnings()).toContain(`profil stocké écarté : profil : plus de ${MAX_JSON_DEPTH} niveaux d'imbrication`);
+  });
+
+  it("save : imbrication au-delà de MAX_JSON_DEPTH (OG45) : lève avant JSON.stringify, magasin utilisable ensuite", () => {
     const kv = fakeKv();
     const s = createProfileStore(kv, BUILTIN_PROFILES);
     let deep: unknown = 1;
     for (let i = 0; i < 50000; i++) deep = [deep];
     const hostile = { ...user("hostile"), rest: { x: deep } };
-    expect(() => s.save(hostile)).toThrow(RangeError);
+    expect(() => s.save(hostile)).toThrow(new RangeError(`profil hostile trop imbriqué (plus de ${MAX_JSON_DEPTH} niveaux)`));
     expect(s.get("hostile")).toBeNull();
+    expect(kv.map.has(PROFILES_KEY)).toBe(false);
     s.save(user("sain"));
     expect(s.get("sain")).not.toBeNull();
   });

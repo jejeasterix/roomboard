@@ -1,10 +1,11 @@
+import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { OfficeConvertError } from "../../web/src/platform/office-import";
 import { CliError } from "./contract";
-import { BINARY_MISSING, checkOffice, convertOfficeFile, killLeftovers, NO_SOFFICE, officeBinary, officeReady } from "./office-node";
+import { BINARY_MISSING, checkOffice, convertOfficeFile, killLeftovers, NO_SOFFICE, officeBinary, officeReady, parsePs, processCommands } from "./office-node";
 import { tmpDir } from "./testing";
 
 /** Faux binaire `sh` : `--check` rend `check` (code, et la racine `root` sur stdout si 0) ; une conversion rend `convert`. */
@@ -184,5 +185,29 @@ describe("killLeftovers (cli-lot4, D79, G4)", () => {
     expect(killLeftovers(root, 77, proc, (p) => void calls.push(p))).toEqual([100]);
     expect(calls).toEqual([-100]);
   });
-  it("D79 — pas de /proc (hors Linux) : rien tué", () => expect(killLeftovers("/r", 1, join(tmpDir(), "absent"), () => undefined)).toEqual([]));
+  it("D79 — pas de /proc (macOS) : ps lu, aucun processus ne cite la racine, rien tué", () =>
+    expect(killLeftovers(join(tmpDir(), "racine"), 1, join(tmpDir(), "absent"), () => undefined)).toEqual([]));
+  it("OG45 — pas de /proc : un vrai processus qui cite la racine est trouvé par ps et lui seul est visé", async () => {
+    const root = join(tmpDir(), "racine é");
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)", `${root}/conversions/77-1/source.docx`], {
+      stdio: "ignore",
+    });
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      const calls: number[] = [];
+      expect(killLeftovers(root, 77, join(tmpDir(), "absent"), (p) => void calls.push(p))).toEqual([child.pid]);
+      expect(calls).toEqual([-child.pid!]);
+    } finally {
+      child.kill("SIGKILL");
+    }
+  });
+  it("OG45 — pas de /proc : ps liste les processus vivants, le processus courant compris", () => {
+    const self = processCommands(join(tmpDir(), "absent")).find((p) => p.pid === process.pid);
+    expect(self?.cmd).toMatch(/node|vitest/);
+  });
+  it("OG45 — sortie de ps : pid et ligne de commande, espaces et accents gardés", () =>
+    expect(parsePs("  100 soffice --headless /r/caché é/conversions/77-1/x.docx\n 7 /bin/zsh\n\n")).toEqual([
+      { pid: 100, cmd: "soffice --headless /r/caché é/conversions/77-1/x.docx" },
+      { pid: 7, cmd: "/bin/zsh" },
+    ]));
 });

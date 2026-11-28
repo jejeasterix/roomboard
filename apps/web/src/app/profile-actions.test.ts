@@ -337,7 +337,7 @@ describe("gestes de profil : échecs (T11)", () => {
     const deep = `{"format":"roomboard-profile","schema":1,"id":"deep","label":"D","x":${"[".repeat(50000)}${"]".repeat(50000)},"toolbars":[]}`;
     const { actions, shell, store } = setup([{ name: "d.rbprofile", text: deep }]);
     expect(await actions.importFile()).toBe("refused");
-    expect(String(shell.notify.mock.calls[0]![0])).toMatch(/^Profil non importé \(d\.rbprofile\) : /);
+    expect(String(shell.notify.mock.calls[0]![0])).toMatch(/^Profil non importé \(d\.rbprofile\) : fichier trop imbriqué \(plus de 64 niveaux\)/);
     expect(store.get("deep")).toBeNull();
     expect(actions.saveAsNew(DEFAUT, "Après")!.id).toBe("apres");
   });

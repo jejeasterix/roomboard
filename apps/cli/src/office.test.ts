@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { OfficeConvertError } from "../../web/src/platform/office-import";
 import { main } from "./main";
-import { BINARY_MISSING, convertOfficeFile, NO_SOFFICE, officeBinary } from "./office-node";
+import { BINARY_MISSING, convertOfficeFile, NO_SOFFICE, officeBinary, processCommands } from "./office-node";
 import { describeWasm, memoryIO, stampOf, tmpDir, XLSX_FIXTURE, warmModules, type Json } from "./testing";
 
 const REAL = process.env["ROOMBOARD_SANS_SOFFICE"] !== "1";
@@ -18,23 +18,8 @@ const FIX = fileURLToPath(new URL("../../../crates/roomboard-shell/tests/fixture
 const SLOW = { timeout: 180_000 };
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
-/** Processus vivants dont la ligne de commande cite `needle` (Linux). */
-function processesWith(needle: string): string[] {
-  let names: string[];
-  try {
-    names = readdirSync("/proc").filter((n) => /^\d+$/.test(n));
-  } catch {
-    return [];
-  }
-  return names.flatMap((n) => {
-    try {
-      const c = readFileSync(join("/proc", n, "cmdline"), "utf8").replaceAll("\0", " ");
-      return c.includes(needle) ? [c] : [];
-    } catch {
-      return [];
-    }
-  });
-}
+/** Processus vivants dont la ligne de commande cite `needle` (`/proc` sous Linux, `ps` sous macOS : `processCommands`). */
+const processesWith = (needle: string): string[] => processCommands().flatMap((p) => (p.cmd.includes(needle) ? [p.cmd] : []));
 
 function scratch(): { dir: string; cache: string; env: Record<string, string> } {
   const dir = tmpDir();

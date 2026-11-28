@@ -1,4 +1,5 @@
 import type { ToolChoice } from "./engine/input/gesture";
+import { MAX_JSON_DEPTH, valueTooDeep } from "./json-depth";
 
 /** Identifiant d'outil : chaîne ouverte, connue par `TOOL_TABLE` (usage § 8 point 3), jamais une union figée. */
 export type ToolId = string;
@@ -537,9 +538,11 @@ function ensureProfilesAccess(bars: readonly Toolbar[], ctx: Ctx): readonly Tool
   return shown.map((b, i) => (i === first ? appendToLastGroup(b, item, "profil") : b));
 }
 
-/** Analyse un profil JSON (règles du plan du lot 5b, T83) ; toutes les erreurs sont rassemblées, sauf format et version. */
+/** Analyse un profil JSON (règles du plan du lot 5b, T83) ; toutes les erreurs sont rassemblées, sauf format, version
+ *  et imbrication au-delà de `MAX_JSON_DEPTH` (OG45 : refusée ici, pour l'import comme pour le magasin). */
 export function parseProfile(json: unknown): ParsedProfile {
   if (!isObject(json)) return { errors: ["profil : objet JSON attendu"] };
+  if (valueTooDeep(json)) return { errors: [`profil : plus de ${MAX_JSON_DEPTH} niveaux d'imbrication`] };
   if (json.format !== PROFILE_FORMAT) {
     return { errors: [`profil : format ${show(json.format)} inconnu, ${show(PROFILE_FORMAT)} attendu`] };
   }

@@ -4,11 +4,11 @@
  * son code de sortie, le premier mot de stderr (code de `ConvertError`) et la ligne `racine :` de `--check`. Binaire :
  * `ROOMBOARD_OFFICE`, sinon `target/debug/` puis `target/release/` du dépôt (H41). `--check` une fois par binaire, par
  * racine et par processus. Délai : celui du binaire (120 s, H46). Ctrl-C (SIGINT, SIGTERM) pendant une conversion :
- * transmis au binaire ; après sa sortie, sous Linux, les processus qui citent `<racine>/conversions/<pid du binaire>-`
- * (LibreOffice, dans son propre groupe) sont tués, puis sortie en 130 ou 143 avec une ligne `{"error":…}` (D79 ; limite
- * H50).
+ * transmis au binaire ; après sa sortie, les processus qui citent `<racine>/conversions/<pid du binaire>-` (LibreOffice,
+ * dans son propre groupe ; lus dans `/proc` sous Linux, par `ps` ailleurs, OG45) sont tués, puis sortie en 130 ou 143
+ * avec une ligne `{"error":…}` (D79).
  */
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -82,8 +82,46 @@ export async function checkOffice(sources: readonly string[], env: Env = process
   if ("reason" in r) throw new CliError("unsupported", unavailableMessage(first, r.reason));
 }
 
+/** Sortie de `ps -axww -o pid=,command=` → pid et ligne de commande (arguments séparés par une espace). */
+export function parsePs(out: string): Array<{ pid: number; cmd: string }> {
+  return out.split("\n").flatMap((line) => {
+    const m = /^\s*(\d+)\s(.*)$/.exec(line);
+    return m === null ? [] : [{ pid: Number(m[1]), cmd: m[2]! }];
+  });
+}
+
+const fromProc = (procDir: string): Array<{ pid: number; cmd: string }> | null => {
+  let names: string[];
+  try {
+    names = readdirSync(procDir).filter((n) => /^\d+$/.test(n));
+  } catch {
+    return null;
+  }
+  return names.flatMap((n) => {
+    try {
+      return [{ pid: Number(n), cmd: readFileSync(join(procDir, n, "cmdline"), "utf8").replaceAll("\0", " ") }];
+    } catch {
+      return [];
+    }
+  });
+};
+
+/** `ps` par son chemin absolu (pas de `PATH`), en locale UTF-8 : sinon `ps` écrit `é` en `M-CM-)` et une racine
+ *  accentuée n'est plus trouvée. En échec : aucun processus. */
+const fromPs = (): Array<{ pid: number; cmd: string }> => {
+  try {
+    const env = { ...process.env, LC_ALL: "C.UTF-8" };
+    return parsePs(execFileSync("/bin/ps", ["-axww", "-o", "pid=,command="], { encoding: "utf8", env, maxBuffer: 64 * 1024 * 1024 }));
+  } catch {
+    return [];
+  }
+};
+
+/** Processus vivants (D79, OG45) : `procDir` (`/proc`, Linux), sinon (macOS) `ps`. */
+export const processCommands = (procDir = "/proc"): Array<{ pid: number; cmd: string }> => fromProc(procDir) ?? fromPs();
+
 /** D79 : processus dont la ligne de commande cite `<racine>/conversions/<pid>-` : tués (groupe, sinon processus) ;
- *  rend leurs pids. Sans `/proc` (hors Linux) : rien (H50). */
+ *  rend leurs pids. */
 export function killLeftovers(
   root: string,
   pid: number,
@@ -97,22 +135,9 @@ export function killLeftovers(
     // absent : le chemin tel quel
   }
   const needles = [...new Set([`${join(root, "conversions")}/${pid}-`, `${conversions}/${pid}-`])];
-  let names: string[];
-  try {
-    names = readdirSync(procDir).filter((n) => /^\d+$/.test(n));
-  } catch {
-    return [];
-  }
   const killed: number[] = [];
-  for (const n of names) {
-    let cmd: string;
-    try {
-      cmd = readFileSync(join(procDir, n, "cmdline"), "utf8").replaceAll("\0", " ");
-    } catch {
-      continue;
-    }
+  for (const { pid: p, cmd } of processCommands(procDir)) {
     if (!needles.some((x) => cmd.includes(x))) continue;
-    const p = Number(n);
     try {
       kill(-p, "SIGKILL");
     } catch {
