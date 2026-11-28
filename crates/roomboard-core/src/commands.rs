@@ -809,14 +809,6 @@ struct Cut {
     look: Vec<(&'static str, Any)>,
 }
 
-/// Les chaînes données, triées et sans doublon.
-fn sorted_unique(items: impl Iterator<Item = String>) -> Vec<String> {
-    let mut v: Vec<String> = items.collect();
-    crate::order::sort_stable_by(&mut v, String::cmp);
-    v.dedup();
-    v
-}
-
 /// Élément visé par `Group` ou `Ungroup` : son chemin lu (vide sans groupe lisible).
 struct GroupTarget {
     id: String,
@@ -839,7 +831,7 @@ impl Document {
         txn: &T,
         ids: &[String],
     ) -> Vec<(String, FoundElement)> {
-        sorted_unique(ids.iter().cloned())
+        crate::order::sorted_unique(ids.iter().cloned())
             .into_iter()
             .filter_map(|id| {
                 let found = self.find_element(txn, &id)?;
@@ -1474,7 +1466,7 @@ impl Document {
             let moved: Vec<String> = targets.iter().map(|t| t.3.clone()).collect();
             crate::linear::follow(self, &mut txn, &moved, Some(m))
         };
-        let pages = sorted_unique(targets.iter().map(|t| t.2.clone()));
+        let pages = crate::order::sorted_unique(targets.iter().map(|t| t.2.clone()));
         // Ids triés des cibles élargies (sans objet lié : ceux de `find_unique`, déjà triés, G9), puis les lignes suivies
         // (OG12) qui n'y sont pas encore.
         let mut ids: Vec<String> = targets.into_iter().map(|t| t.3).collect();
@@ -2066,7 +2058,7 @@ impl Document {
     }
 
     fn cmd_group(&mut self, ids: &[String]) -> Result<Change, CommandError> {
-        let unique = sorted_unique(ids.iter().cloned());
+        let unique = crate::order::sorted_unique(ids.iter().cloned());
         let mut targets = self.group_targets(ids);
         if targets.len() != unique.len() {
             return Err(CommandError::BadGroup);
@@ -2149,7 +2141,7 @@ impl Document {
                 }
             }
         }
-        let pages = sorted_unique(targets.iter().map(|t| t.page.clone()));
+        let pages = crate::order::sorted_unique(targets.iter().map(|t| t.page.clone()));
         Ok(self.done(Change {
             pages,
             ids: targets.into_iter().map(|t| t.id).collect(),
@@ -2181,7 +2173,7 @@ impl Document {
                 t.elements.remove(&mut txn, t.index);
             }
         }
-        let pages = sorted_unique(targets.iter().map(|t| t.page.clone()));
+        let pages = crate::order::sorted_unique(targets.iter().map(|t| t.page.clone()));
         let removed = targets.into_iter().map(|t| t.id).collect();
         Ok(self.done(Change {
             pages,
