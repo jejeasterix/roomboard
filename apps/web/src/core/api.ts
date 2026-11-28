@@ -13,7 +13,7 @@
 // élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
 // C10b : MergeTableCells, SplitTableCell, SetTableShade, ImportTable ; RemoveTableLine.to, SetTableFill.to (plages) ;
 // TableData.merges (zones calculées par le cœur, règle F2 : la page les lit, ne les recalcule pas) ; TableCell.shade (F8).
-// personnalisation-3 : PlaceInCell, SetTableLineSizes, SetTableLook (une étape chacune) ; ElementBase.cell (lien de case, D1), suivi des objets liés (D5, D6).
+// personnalisation-3 : PlaceInCell, SetTableLineSizes, SetTableLook, ReorderTableLines (une étape chacune) ; ElementBase.cell (lien de case, D1), suivi des objets liés (D5, D6).
 // C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
 // C6a : Fill (contour, intérieur, fond de page ; une étape, D38) ; edgeHit (bord d'une forme, mesuré par le cœur, DA2).
 // C3 : Group, Ungroup ; ElementBase.group ; extract, insertFragment, insertPages, saveFragment(Parts), loadFragment(Parts).
@@ -213,6 +213,8 @@ export type Command =
   | { readonly type: "SetCellImage"; readonly id: string; readonly row: string; readonly col: string; readonly from: string | null }
   /** personnalisation-3 (suite OG32, DS1) : une clé de case ou la liste `accept` des colonnes ; une étape. */
   | { readonly type: "SetTableLook"; readonly id: string; readonly from: CellIds; readonly to: CellIds; readonly look: CellLook }
+  /** personnalisation-3 (D18) : `order` = tous les ids de l'axe, dans l'ordre voulu ; zone coupée refusée ; objets liés suivis ; une étape. */
+  | { readonly type: "ReorderTableLines"; readonly id: string; readonly axis: TableAxis; readonly order: readonly string[] }
   /** C10b (F18) : tableau rempli ; cells = rows × cols textes en rangées ; merges = [ligne, colonne, lignes, colonnes]. */
   | {
       readonly type: "ImportTable";

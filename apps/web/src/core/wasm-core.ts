@@ -774,6 +774,8 @@ class WasmCoreDocument implements CoreDocument {
         const labels = l.key === "border" ? (l.value === null ? [] : [l.value[2]]) : l.key === "accept" ? [...l.value] : [];
         return toChange(this.d.set_table_look(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col, l.key, text, width, labels));
       }
+      case "ReorderTableLines":
+        return toChange(this.d.reorder_table_lines(cmd.id, cmd.axis === "row", [...cmd.order]));
       case "ImportTable":
         return toChange(
           this.d.import_table(

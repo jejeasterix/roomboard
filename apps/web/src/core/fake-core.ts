@@ -1794,6 +1794,26 @@ class FakeDocument implements CoreDocument {
         }
         return changed ? this.writeTable(found, cmd.id, { ...t, cells }) : this.unchanged();
       }
+      case "ReorderTableLines": {
+        // personnalisation-3 (D18), comme `cmd_reorder_table_lines` : valeur seule d'abord (vide, doublon), puis tableau,
+        // permutation, zones ni coupées ni retournées, puis écriture : les entrées recopiées telles quelles (clés
+        // inconnues comprises), cellules par ids inchangées, suivi des objets liés par writeTable.
+        const order = [...cmd.order];
+        if (order.length === 0 || order.some((x, i) => order.indexOf(x) !== i)) throw new Error(MESSAGES.badTable);
+        const { found, t } = this.tableOf(cmd.id);
+        const lines: readonly (TableRow | TableCol)[] = cmd.axis === "row" ? t.rows : t.cols;
+        const ids = lines.map((l) => l.id);
+        if (order.length !== ids.length || ids.some((x) => !order.includes(x))) throw new Error(MESSAGES.badTable);
+        if (ids.every((x, i) => x === order[i])) return this.unchanged();
+        for (const m of mergesOf(t)) {
+          const [a, b] = cmd.axis === "row" ? [m.r0, m.r1] : [m.c0, m.c1];
+          const start = order.indexOf(ids[a] ?? "");
+          for (let k = a; k <= b; k++) if (order.indexOf(ids[k] ?? "") !== start + (k - a)) throw new Error(MESSAGES.badTable);
+        }
+        const pick = <L extends TableRow | TableCol>(from: readonly L[]): L[] =>
+          order.map((x) => from.find((l) => l.id === x)).filter((l): l is L => l !== undefined);
+        return this.writeTable(found, cmd.id, cmd.axis === "row" ? { ...t, rows: pick(t.rows) } : { ...t, cols: pick(t.cols) });
+      }
       case "PlaceInCell": {
         // personnalisation-3 (D3), refus dans l'ordre de `cmd_place_in_cell` (section T1a) : 1 matrice, 2 tableau parmi les
         // ids (D36), 3 aucun id (aucune étape), 4 plusieurs pages, 5 case visée (D35), 6 tableaux des tailles puis
