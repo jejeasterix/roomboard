@@ -213,6 +213,35 @@ describe("board-io : copie au format (C13, D18)", () => {
     expect(r.warnings).toEqual([]);
   });
 
+  it("texte de forme exporté avec la matrice (OG33)", async () => {
+    const draft = fakeCore.blank();
+    const pid = draft.pageIds()[0]!;
+    const id = draft.apply({ type: "AddShape", page: pid, shape: "rect", x0: 0, y0: 0, x1: 200, y1: 100, style: { color: "#000000", width: 2 }, fill: null }).ids[0]!;
+    draft.apply({ type: "SetShapeLabel", id, label: "A" });
+    draft.apply({ type: "Rotate", ids: [id], angle: Math.PI / 2 });
+    const r = await boardListOf(draft, createAssetStore(fakeHasher), "iwb");
+    const objs = decodeBoardList(r.list.ops, r.list.texts)[0]!.objects;
+    expect(objs.map((o) => o.kind)).toEqual(["shape", "text"]);
+    const shape = objs[0] as Shape;
+    const text = objs[1] as Text;
+    expect(text.boxWidth).toBe(190);
+    expect(text.size).toBe(24);
+    expect(text.spans.map((s) => s.text).join("")).toBe("A");
+    expect(text.m.slice(0, 4).map((n) => Math.round(n * 1000) / 1000)).toEqual(shape.m.slice(0, 4).map((n) => Math.round(n * 1000) / 1000));
+  });
+
+  it("texte de forme exporté : hauteur de layoutRich (deux lignes repliées pour un mot plus large que box.w, aucun \\n)", async () => {
+    const draft = fakeCore.blank();
+    const pid = draft.pageIds()[0]!;
+    const id = draft.apply({ type: "AddShape", page: pid, shape: "rect", x0: 0, y0: 0, x1: 60, y1: 100, style: { color: "#000000", width: 2 }, fill: null }).ids[0]!;
+    // box.w = 50 ; repli à 0,6 x 24 par caractère : 12 caractères = 172,8 > 50, donc plus d'une ligne
+    draft.apply({ type: "SetShapeLabel", id, label: "AAAAAAAAAAAA" });
+    const r = await boardListOf(draft, createAssetStore(fakeHasher), "iwb");
+    const text = decodeBoardList(r.list.ops, r.list.texts)[0]!.objects[1] as Text;
+    expect(text.boxHeight).toBeGreaterThan(24 * 1.25);
+    expect(text.spans.map((s) => s.text).join("")).not.toContain("\n");
+  });
+
   it("C13 : boardListOf : tableau non exporté, flèche écrite en ligne pour .ubz, objet hors du cadre", async () => {
     const draft = fakeCore.blank();
     const pid = draft.pageIds()[0]!;

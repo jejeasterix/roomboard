@@ -165,6 +165,7 @@ const VIEWS: Record<string, ElementView> = {
   a: { id: "a", kind: "stroke", transform: [1, 0, 0, 1, 5, 6], style: { color: "#000000", width: 4 } },
   r: { id: "r", kind: "shape", transform: [1, 0, 0, 1, 10, 20], style: { color: "#1e40af", width: 4 }, shape: { shape: "rect", w: 200, h: 100, fill: null } },
   e: { id: "e", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#1e40af", width: 4 }, shape: { shape: "ellipse", w: 50, h: 30, fill: "#ff0000" } },
+  lab: { id: "lab", kind: "shape", transform: [0, 1, -1, 0, 30, 40], style: { color: "#1e40af", width: 4 }, shape: { shape: "rect", w: 200, h: 100, fill: null, label: "Bonjour" } },
   f: { id: "f", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#1e40af", width: 4 }, shape: { shape: "arrow", w: 100, h: 0, fill: null } },
   t: { id: "t", kind: "text", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 0 }, text: { content: "un deux\ntrois", size: 20, boxWidth: 1000, boxHeight: 50, spans: [{ text: "un deux\ntrois", attrs: {} }] } },
 };
@@ -184,6 +185,24 @@ describe("Canvas2DRenderer — lot 4 (formes, texte, calque)", () => {
     const tail = after("transform 1,0,0,1,10,20");
     expect(tail.slice(0, 4)).toEqual(["transform 1,0,0,1,10,20", "beginPath", "rect", "stroke #1e40af 4"]);
     expect(tail.some((l) => l.startsWith("fill "))).toBe(false);
+  });
+
+  it("texte de forme : peint dans le repère de la forme, centré, après le contour", () => {
+    const { r, scene } = makeViews();
+    r.drawScene({ id: "p", elementIds: ["lab"] }, IDENTITY, new Set());
+    const i = scene.log.findIndex((l) => l.startsWith("fillText Bonjour"));
+    expect(i).toBeGreaterThan(0);
+    expect(scene.log.indexOf("transform 0,1,-1,0,30,40")).toBeGreaterThan(-1);
+    expect(scene.log.indexOf("transform 0,1,-1,0,30,40")).toBeLessThan(scene.log.indexOf("stroke #1e40af 4"));
+    expect(scene.log.indexOf("stroke #1e40af 4")).toBeLessThan(i);
+    expect(scene.log[i - 1]).toMatch(/^transform 1,0,0,1,5,/);
+  });
+
+  it("texte de forme : fantôme noLabel sans fillText", () => {
+    const { r, scene } = makeViews();
+    r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set(), { ghosts: [{ id: "lab", matrix: [1, 0, 0, 1, 0, 0], noLabel: true }], shapes: [], frame: null, handles: false, band: null });
+    expect(scene.log.some((l) => l.startsWith("stroke #1e40af"))).toBe(true);
+    expect(scene.log.some((l) => l.startsWith("fillText"))).toBe(false);
   });
 
   it("forme remplie : ellipse, fill de la couleur de remplissage puis stroke", () => {
