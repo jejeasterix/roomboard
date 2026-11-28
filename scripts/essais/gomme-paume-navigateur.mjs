@@ -365,8 +365,9 @@ try {
   const hauteur = await page.$eval(SETTING, (b) => b.getBoundingClientRect().height);
   console.log(`hauteur du bouton Réglages : ${hauteur} px`);
   check(hauteur >= 44, `S8 : bouton du panneau Réglages haut de ${hauteur} px (cible tactile, 44 au moins)`);
+  // OG39 : le panneau porte des icônes Lucide ; toutes au viewBox calé du § 10 (mesure complète : reglages-design-navigateur.mjs).
   const icons = await page.$$eval("#reglages svg", (l) => l.map((s) => s.getAttribute("viewBox")));
-  check(icons.length === 0, "S8 : netteté § 10 sans objet, panneau sans icône");
+  check(icons.length > 0 && icons.every((v) => v === "-0.25 -0.25 24 24"), "S8 : netteté § 10, icônes du panneau au viewBox calé");
   const panel = await page.locator("#reglages").boundingBox();
   await shot("reglage-gomme-paume.png", around(panel, 8));
   await clickItem(page, "settings");

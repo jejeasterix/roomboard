@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, arrangeKey, cellKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, arrangeKey, cellKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -18,6 +18,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
   "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
   "palm-eraser": ["app", "palm-eraser"],
+  ...Object.fromEntries(["select", "rect", "diamond", "ellipse", "arrow", "line", "pen", "text", "eraser", "hand"].flatMap((t) => [[`tool-${t}`, ["tool", t]], ...(t === "hand" ? [] : [[`tool-${t}-num`, ["tool", t]]])])),
   "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
   "table-fit-content": ["table", "fit-content"], "table-border-set": ["table", "border-set"], "table-border-none": ["table", "border-none"], "table-sort-asc": ["table", "sort-asc"], "table-sort-desc": ["table", "sort-desc"], "table-ha-next": ["table", "ha-next"], "table-va-next": ["table", "va-next"], "table-header": ["table", "header-toggle"], "table-shade-open": ["table", "shade-open-toggle"], "table-col-wider": ["table", "col-wider"], "table-col-narrower": ["table", "col-narrower"], "table-row-taller": ["table", "row-taller"], "table-row-shorter": ["table", "row-shorter"],
   "table-row-up": ["table", "row-up"], "table-row-down": ["table", "row-down"], "table-col-left": ["table", "col-left"], "table-col-right": ["table", "col-right"],
@@ -61,6 +62,7 @@ describe("shortcuts", () => {
       else if (by === "lineEdit") expect(lineEditKey(e), s.id).toBe(true);
       else if (by === "linked") expect(linkedKey({ ...press("→"), key: "ArrowRight", altKey: true, shiftKey: true }), s.id).toBe(value);
       else if (by === "ctrlHeld") expect(isCtrlKey({ key: "Control" }), s.id).toBe(true);
+      else if (by === "tool") expect(toolKey(e), s.id).toBe(value);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
       else if (by === "picker") {
         // Pipette (sélecteur ouvert) : « I » sans modificateur, lue par e.key ; aucun autre reconnaisseur ne la prend.
@@ -136,3 +138,19 @@ describe("OG12 : raccourcis des lignes", () => {
     expect(ariaShortcut("linked-node", false)).toBeNull();
   });
 });
+
+describe("lettres des outils", () => {
+  it("chaque lettre d'outil figure dans SHORTCUTS avec son nom ARIA", () => {
+    for (const [id, key] of [["tool-select", "V"], ["tool-rect", "R"], ["tool-diamond", "D"], ["tool-ellipse", "O"], ["tool-arrow", "A"], ["tool-line", "L"], ["tool-pen", "P"], ["tool-text", "T"], ["tool-eraser", "E"], ["tool-hand", "H"]] as const) {
+      expect(shortcutText(id, false)).toBe(key);
+      expect(ariaShortcut(id, false)).toBe(key);
+    }
+    expect(shortcutText("tool-rect-num", false)).toBe("2");
+    expect(ariaShortcut("tool-eraser-num", false)).toBe("0");
+  });
+  it("les touches de la table sont uniques parmi les touches seules", () => {
+    const single = SHORTCUTS.filter((x) => x.group === "Outils" && x.id.startsWith("tool-")).map((x) => x.keys);
+    expect(new Set(single).size).toBe(single.length);
+  });
+});
+

@@ -1,6 +1,6 @@
 /**
  * Cible du pot (C6a, U28, DA3) : de l'élément le plus haut sous le point (`hitTest` tel quel, 6 px écran, D3) à la
- * commande ; null = aucune étape. Forme : bord (`edgeHit` du cœur, D5, DA2) → contour, sinon intérieur ; ligne, flèche,
+ * commande ; null = aucune étape. Forme (ligne fermée comprise, C4a) : bord (`edgeHit` du cœur, D5, DA2) → contour, sinon intérieur ; ligne, flèche,
  * trait : contour ; texte : mot sous le pointeur (UAX 29), sinon texte entier (D6, D7) ; tableau : mot de la cellule
  * par `SetTableCell` (D8), sinon remplissage de la cellule (D9) ; image : zone de pixels sous le point (C6b, B19 ; action `ImageFill`, écrite plus tard par la file du pot de
  * l'application) ; élément inconnu : fond de la page (D1, D10) ; rien : zone fermée (C8, `Fill zone`, décidée par le cœur, sinon le fond) ; `fill` : recoloré, ou supprimé par « Aucune » (Q14). Un point de la bande de tolérance hors de la boîte d'un texte ou d'un tableau y est ramené (D7, PC10). Le pot
@@ -9,7 +9,7 @@
 import type { Command, CoreDocument, TableElement, TextElement } from "../core/api";
 import { sourcePixelAt } from "../core/image-params";
 import { formatSpans } from "../core/rich-text";
-import { applyMatrix, invertMatrix, isSegment } from "../core/shapes";
+import { applyMatrix, invertMatrix, isClosedShape, isSegment } from "../core/shapes";
 import { cellAt, cellContent, cellInnerBox, cellLook, cellTextFrame, shownSpans } from "./table-geom";
 import { layoutRich, offsetAt, richBoxHeight, wordAt, type Measure } from "./text-layout";
 
@@ -92,7 +92,9 @@ export function fillCommand(doc: FillDoc, page: string, x: number, y: number, zo
   const edge = (): Command | null => (color === null ? null : { type: "Fill", page, target: { kind: "edge", id: el.id }, color });
   if (el.kind === "stroke") return edge();
   if (el.kind === "shape") {
-    if (isSegment(el.shape.shape) || doc.edgeHit(el.id, x, y, tol)) return edge();
+    // C4a : remplissable comme `ShapeFields::fillable` du cœur (ligne fermée comprise) ; ligne ouverte, flèche : contour.
+    const fillable = !isSegment(el.shape.shape) || isClosedShape(el.shape);
+    if (!fillable || doc.edgeHit(el.id, x, y, tol)) return edge();
     return { type: "Fill", page, target: { kind: "inside", id: el.id }, color };
   }
   if (el.kind === "text") return textCommand(el, x, y, color, measure);

@@ -1103,6 +1103,23 @@ describe("outil Tableau — TB2 en-tête et D35", () => {
     expect(s.runs.length).toBe(n);
     expect(s.notices).toEqual(["Retirez d'abord les objets de la case."]);
   });
+  it("C3 : saisie dans l'en-tête : rowHeight mesuré en gras (la ligne 0 grandit, le peintre pose le gras)", () => {
+    // 10 par caractère, 14 en gras : « aaaaaaaaa bbbbbbbbb » tient sur une ligne (190 <= 224), pas en gras (266 > 224).
+    const bm: Measure = (s, _size, face) => s.length * (face?.bold === true ? 14 : 10);
+    const text = "aaaaaaaaa bbbbbbbbb";
+    const s = setup(bm);
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    s.tool.act("header-toggle");
+    s.click(220, 232);
+    s.type(text);
+    s.tool.requestCommit();
+    const bold: TextSpan[] = [{ text, attrs: { bold: true } }];
+    const want = cellHeight(bold, 36, 240, bm);
+    expect(want).toBeGreaterThan(cellHeight(plainSpans(text), 36, 240, bm));
+    expect(s.last()).toMatchObject({ type: "SetTableCell", content: text, rowHeight: want, spans: [{ text, attrs: {} }] });
+    expect(s.table(id).rows[0]?.height).toBe(want);
+  });
   it("TB2 : header-toggle écrit header vrai puis faux, une étape chacun ; cellState.header suit", () => {
     const s = setup();
     const id = s.create(100, 200, 2, 2);

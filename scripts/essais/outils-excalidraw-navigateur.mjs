@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Essai OG12 (personnalisation-2-outils, lot 1) au navigateur : cadrage § 6, S1 à S4 et S6 (S5 est la CLI, cli-essai.mjs), au
+// Essai OG12 (personnalisation-2-outils, lots 1 et 2a) au navigateur : cadrage § 6, S1 à S4 et S6 (S5 est la CLI, cli-essai.mjs), puis S7 à S9
+// du lot 2a (losange, points d'une forme ; plan LOT2 § Scénarios du lot 2a ; la part CLI de S9 est dans cli-essai.mjs), au
 // doigt d'abord (événements du protocole, pointerType « touch »), puis à la souris et au clavier (S4). L'état du document
 // est lu dans le fichier enregistré (Ctrl+S) par `roomboard state` ; les attributs de `#stage` (data-bind, data-line-edit,
 // data-line-points, data-selection) donnent l'état vivant. Chromium de Playwright, --disable-lcd-text, --force-color-profile=srgb.
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent. Joué par scripts/verifier.sh --e2e (sans --captures).
-// Usage : node scripts/essais/outils-excalidraw-navigateur.mjs [--only s1|s2|s3|s4|s6|cibles|nettete] [--captures] [--dist <dossier> --nom avant]
+// Usage : node scripts/essais/outils-excalidraw-navigateur.mjs [--only s1|s2|s3|s4|s6|s7|s8|s9|cibles|nettete|cibles2a] [--captures] [--dist <dossier> --nom avant]
 //   --captures : docs/design/captures/personnalisation-2-outils/<nom>-*.png à 2x (« apres » : cinq vues ; « avant » : flèche et panneau).
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -456,6 +457,305 @@ async function s6(browser, base, tmp) {
   await ctx.close();
 }
 
+// ------------------------------------------------------------------------------------------------------- lot 2a (S7 à S9)
+
+const D = [800, 250, 920, 350]; // losange de 120 × 100 px, à la place de B
+const diamonds = (els) => els.filter((e) => e.shape?.shape === "diamond");
+const closedLines = (els) => lines(els).filter((e) => e.shape.polygon === true);
+/** Sommets d'une ligne : départ, points intérieurs, arrivée. */
+const vertices = (e) => 2 + (e.shape.points?.length ?? 0) / 2;
+const sel = async (page) => attr(page, "data-selection");
+/** Outil Losange par la touche D : il n'est pas dans la barre du profil par défaut (OG19 : la barre reste sur la rangée du
+ *  haut à 1280 px) ; l'éditeur de profil l'y ajoute, l'essai n'en a pas besoin. */
+async function diamondTool(page) {
+  await page.waitForTimeout(600);
+  await page.keyboard.press("d");
+  await waitAttr(page, "data-tool", "diamond");
+}
+/** Pose un losange au doigt de la boîte `[x0, y0, x1, y1]`, l'outil pris par la touche D. */
+async function diamond(page, cdp, [x0, y0, x1, y1]) {
+  await diamondTool(page);
+  await touchDrag(page, cdp, [x0, y0], [x1, y1]);
+}
+/** Page neuve avec le rectangle A et le losange D posés au doigt. */
+async function poseAD(browser, base, tmp, name, opts = {}) {
+  const h = await newPage(browser, base, opts);
+  await rect(h.page, h.cdp, A);
+  await diamond(h.page, h.cdp, D);
+  const s = await saved(h.page, tmp, `${name}.roomboard`);
+  check(rects(s.elements).length === 1 && diamonds(s.elements).length === 1, `${name} : un rectangle et un losange posés au doigt`);
+  return { ...h, a: rects(s.elements)[0].id, d: diamonds(s.elements)[0].id };
+}
+
+/** S7 : le losange au doigt, accroché par la flèche. */
+async function s7(browser, base, tmp) {
+  const { ctx, page, cdp, errors, a, d } = await poseAD(browser, base, tmp, "s7-avant");
+  let s = await saved(page, tmp, "s7-pose.roomboard");
+  lire("S7.diamond", diamonds(s.elements).length);
+  check(diamonds(s.elements).length === 1, "S7 : Losange pris par la touche D, glissé au doigt : un losange (shape « diamond »)");
+  // Coin de la boîte, hors du losange : rien n'est sélectionné.
+  await tool(page, "select");
+  await tapStage(page, D[0] + 6, D[1] + 6);
+  lire("S7.corner", (await sel(page)) === "1" ? "selected" : "none");
+  check((await sel(page)) !== "1", "S7 : toucher dans un coin de la boîte, hors du losange : rien n'est sélectionné");
+  await tapStage(page, 860, 300);
+  await waitAttr(page, "data-selection", "1");
+  check(true, "S7 : toucher au centre du losange : sélectionné");
+  // Flèche de A vers le losange : accrochée, pointe à l'écart.
+  await tool(page, "arrow");
+  await touchDrag(page, cdp, [A[2], 300], [D[0] + 8, 300]);
+  s = await saved(page, tmp, "s7-lie.roomboard");
+  const f = arrows(s.elements)[0];
+  const dm = diamonds(s.elements)[0];
+  lire("S7.end", f?.shape.end?.id);
+  check(f !== undefined && f.shape.end?.id === d && f.shape.start?.id === a, "S7 : flèche glissée de A vers le losange : début lié à A, fin liée au losange");
+  const [, p1] = ends(f);
+  const gap = dm.transform[4] - p1[0];
+  lire("S7.gap", gap.toFixed(0));
+  check(near(gap, 7, 0.8), `S7 : la pointe est à 5 + épaisseur / 2 du contour (${gap.toFixed(2)})`);
+  // Glisser le losange de 150 px : la fin suit ; annuler : une étape.
+  await tool(page, "select");
+  const avant = key(s.elements);
+  await touchDrag(page, cdp, [860, 300], [860, 450]);
+  s = await saved(page, tmp, "s7-suit.roomboard");
+  const f2 = arrows(s.elements)[0];
+  check(Math.abs((diamonds(s.elements)[0].transform[5] - dm.transform[5]) * (120 / dm.shape.w) - 150) < 3, "S7 : losange glissé de 150 px");
+  check(key([f2]) !== key([f]) && f2.shape.end?.id === d, "S7 : la fin de la flèche suit le losange");
+  await undo(page);
+  s = await saved(page, tmp, "s7-annule.roomboard");
+  check(key(s.elements) === avant, "S7 : Ctrl+Z, une seule étape : le losange et la flèche reviennent");
+  // Second doigt tardif pendant le tracé : w = h.
+  await diamondTool(page);
+  await touchDragWithLateFinger(page, cdp, [450, 500], [590, 580], [700, 700]);
+  s = await saved(page, tmp, "s7-carre.roomboard");
+  const sq = diamonds(s.elements).find((e) => e.id !== d);
+  lire("S7.square", sq === undefined ? "absent" : `${sq.shape.w.toFixed(0)}x${sq.shape.h.toFixed(0)}`);
+  check(sq !== undefined && near(Math.abs(sq.shape.w), Math.abs(sq.shape.h), 1), "S7 : second doigt tardif pendant le tracé d'un losange : w = h");
+  check(errors.length === 0, "S7 : aucune erreur dans la page");
+  await ctx.close();
+}
+
+/** S8 : « Modifier les points » d'une forme, au doigt. */
+async function s8(browser, base, tmp) {
+  const { ctx, page, cdp, errors } = await newPage(browser, base).then(async (h) => {
+    await tool(h.page, "rect");
+    await press(h.page, "doigt", `${OPT} [data-option="background"] [data-option-value]:not([data-option-value="transparent"])`);
+    await touchDrag(h.page, h.cdp, [A[0], A[1]], [A[2], A[3]]);
+    await tool(h.page, "ellipse");
+    await touchDrag(h.page, h.cdp, [B[0], B[1]], [B[2], B[3]]);
+    return h;
+  });
+  let s = await saved(page, tmp, "s8-avant.roomboard");
+  const r0 = rects(s.elements)[0];
+  const avant = key(s.elements);
+  await tool(page, "select");
+  await tapStage(page, A[0] + 60, 300);
+  await waitAttr(page, "data-selection", "1");
+  await page.waitForTimeout(600);
+  // C4b : le double toucher sur une forme ne convertit plus (réservé au texte, lot 2b) ; le bouton du panneau convertit.
+  await doubleTouch(page, cdp, [A[0] + 60, 300]);
+  await page.waitForTimeout(400);
+  check((await attr(page, "data-line-edit")) === "" && closedLines((await saved(page, tmp, "s8-double.roomboard")).elements).length === 0, "S8 : double toucher sur un rectangle : aucune conversion");
+  await press(page, "doigt", `${OPT} [data-section="points"] [data-option-value="line-edit"]`);
+  await waitNonEmpty(page, "data-line-edit");
+  s = await saved(page, tmp, "s8-ligne.roomboard");
+  const l = closedLines(s.elements)[0];
+  lire("S8.polygon", l?.shape.polygon === true ? 1 : 0);
+  lire("S8.vertices", l ? vertices(l) : 0);
+  check(l !== undefined && l.id === r0.id && l.shape.shape === "line", "S8 : bouton « Modifier les points » sur un rectangle : même id, shape « line », polygon true");
+  check(r0.shape.fill !== null, `S8 : le rectangle de départ est rempli (${JSON.stringify(r0.shape.fill)})`);
+  check(vertices(l) === 4 && JSON.stringify(l.shape.fill) === JSON.stringify(r0.shape.fill), `S8 : 4 sommets, fond gardé (${JSON.stringify(l.shape.fill)})`);
+  await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
+  await frames(page);
+  const pts = polyline(l);
+  const sc = 120 / Math.abs(r0.shape.w);
+  const o = [A[0] - r0.transform[4] * sc, A[1] - r0.transform[5] * sc];
+  const st = ([x, y]) => [x * sc + o[0], y * sc + o[1]];
+  // Un coin tiré de 60 px (le dernier sommet), puis le milieu du segment de fermeture (dernier → premier).
+  const coin = st(pts[2]);
+  await touchDrag(page, cdp, coin, [coin[0] + 60, coin[1] + 60]);
+  await page.waitForTimeout(600);
+  const fermeture = [(st(pts[3])[0] + st(pts[0])[0]) / 2, (st(pts[3])[1] + st(pts[0])[1]) / 2];
+  await touchDrag(page, cdp, fermeture, [fermeture[0] + 50, fermeture[1]]);
+  s = await saved(page, tmp, "s8-points.roomboard");
+  const l2 = closedLines(s.elements)[0];
+  lire("S8.after", l2 ? vertices(l2) : 0);
+  check(l2 !== undefined && vertices(l2) === 5, "S8 : un coin tiré de 60 px, puis le milieu du segment de fermeture : 5 sommets");
+  for (let i = 0; i < 3; i++) await undo(page);
+  s = await saved(page, tmp, "s8-annule.roomboard");
+  const back = rects(s.elements)[0];
+  lire("S8.undo", back?.shape.shape);
+  check(key(s.elements) === avant && back?.id === r0.id, "S8 : annuler trois fois : le rectangle d'origine");
+  // Ellipse : bouton « Modifier les points » du panneau.
+  await page.keyboard.press("Escape");
+  await frames(page);
+  await tool(page, "select");
+  await tapStage(page, B[0] + 60, 300);
+  await waitAttr(page, "data-selection", "1");
+  await press(page, "doigt", `${OPT} [data-section="points"] [data-option-value="line-edit"]`);
+  await waitNonEmpty(page, "data-line-edit");
+  s = await saved(page, tmp, "s8-ellipse.roomboard");
+  const e = closedLines(s.elements)[0];
+  lire("S8.ellipse", e ? vertices(e) : 0);
+  check(e !== undefined && vertices(e) === 16, "S8 : ellipse, bouton « Modifier les points » du panneau : 16 sommets");
+  check(errors.length === 0, "S8 : aucune erreur dans la page");
+  await ctx.close();
+}
+
+/** S9 : souris, clavier ; objet relié sur losange. */
+async function s9(browser, base, tmp) {
+  {
+    const { ctx, page, errors } = await newPage(browser, base).then(async (h) => {
+      await diamond(h.page, h.cdp, D);
+      return h;
+    });
+    await tool(page, "select");
+    await mouseClick(page, [860, 300]);
+    await waitAttr(page, "data-selection", "1");
+    await page.keyboard.press("Control+Enter");
+    await waitNonEmpty(page, "data-line-edit");
+    let s = await saved(page, tmp, "s9-ferme.roomboard");
+    check(closedLines(s.elements).length === 1 && vertices(closedLines(s.elements)[0]) === 4, "S9 : losange sélectionné à la souris, Ctrl+Entrée : ligne fermée à 4 sommets");
+    await mouseClick(page, [860, 250]);
+    await page.keyboard.press("Delete");
+    await frames(page);
+    s = await saved(page, tmp, "s9-trois.roomboard");
+    lire("S9.after", vertices(closedLines(s.elements)[0]));
+    check(vertices(closedLines(s.elements)[0]) === 3, "S9 : clic sur un sommet, Suppr : 3 sommets");
+    await mouseClick(page, [920, 300]);
+    await page.keyboard.press("Delete");
+    await frames(page);
+    s = await saved(page, tmp, "s9-refuse.roomboard");
+    lire("S9.refuse", vertices(closedLines(s.elements)[0]));
+    check(vertices(closedLines(s.elements)[0]) === 3, "S9 : un second Suppr sur 3 sommets ne retire rien");
+    await page.keyboard.press("Escape");
+    await frames(page);
+    check((await attr(page, "data-line-edit")) === "", "S9 : Échap sort de « Modifier les points »");
+    check(errors.length === 0, "S9 : aucune erreur dans la page (souris, clavier)");
+    await ctx.close();
+  }
+  {
+    const { ctx, page, errors } = await newPage(browser, base).then(async (h) => {
+      await diamond(h.page, h.cdp, A);
+      return h;
+    });
+    await tool(page, "select");
+    await mouseClick(page, [510, 300]);
+    await waitAttr(page, "data-selection", "1");
+    await page.keyboard.press("Alt+Shift+ArrowRight");
+    await page.waitForTimeout(500);
+    const s = await saved(page, tmp, "s9-relie.roomboard");
+    const kinds = diamonds(s.elements).length;
+    const f = arrows(s.elements)[0];
+    lire("S9.linked", kinds === 2 ? "diamond" : `${kinds} losange(s)`);
+    check(s.elements.length === 3 && kinds === 2 && f?.shape.end !== undefined, "S9 : Alt+Maj+→ sur un losange : objet relié (losange copié) et sa flèche");
+    check(errors.length === 0, "S9 : aucune erreur dans la page (objet relié)");
+    await ctx.close();
+  }
+}
+
+/** Le Losange n'est pas dans la barre du profil par défaut (OG19) : « + Ajouter » de l'éditeur de profil l'y met, comme
+ *  l'utilisateur (geste de design-l3-navigateur.mjs, S4). */
+async function addDiamondToBar(page) {
+  await page.click(item("profiles"));
+  await page.waitForSelector("[data-profiles]");
+  await page.click('[data-profile-cmd="edit"]');
+  await page.waitForSelector("[data-profile-editor]");
+  await page.click('[data-edit-bar="outils"] button[data-edit="add"]');
+  await page.click('[data-add-choice="tool:diamond"]');
+  await page.click('button[data-edit="save"]');
+  await page.waitForSelector("[data-profile-editor]", { state: "detached" });
+  await page.waitForSelector(`[data-toolbar="outils"] ${item("diamond")}`);
+  if (await page.isVisible("[data-profiles]")) await page.click(item("profiles")); // le panneau des profils couvre la scène
+  await page.waitForSelector("[data-profiles]", { state: "detached" });
+}
+
+/** Cibles de 44 px et netteté § 10 (2x) de l'icône Losange (ajoutée à la barre) et du bouton « Modifier les points ». */
+async function cibles2a(browser, base, tmp) {
+  const { ctx, page, cdp, errors } = await poseAD(browser, base, tmp, "cibles2a", { scale: 2 });
+  const POINTS = `${OPT} [data-option-value="line-edit"]`;
+  const mesures = [];
+  const fr = [];
+  /** Cible (≥ 44 px) puis netteté de l'icône d'un bouton ; `first` : rangé en tête, l'ordre des relevés reste Losange d'abord. */
+  const measure = async (nom, fnom, sel, first) => {
+    const bb = await page.locator(sel).first().boundingBox();
+    if (bb === null) throw new Echec(`cible ${nom} : introuvable (${sel})`);
+    check(bb.width >= 43.5 && bb.height >= 43.5, `cible ${nom} : ${Math.round(bb.width)} × ${Math.round(bb.height)} px (≥ 44)`);
+    await page.locator(sel).first().scrollIntoViewIfNeeded();
+    await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
+    await frames(page);
+    const box = await page.locator(`${sel} svg.rb-icon`).first().boundingBox();
+    const px = await pixelsOf(page, box);
+    const { ink } = await colorsOf(page, sel);
+    const f = fringes(px, [px.data[0], px.data[1], px.data[2]], rgbOf(ink));
+    console.log(`netteté — ${fnom} : frange ${f}`);
+    mesures[first ? "unshift" : "push"](`${nom} ${Math.round(bb.width)}x${Math.round(bb.height)}`);
+    fr[first ? "unshift" : "push"](`${fnom} ${f}`);
+  };
+  // « Modifier les points » d'abord, sur la forme touchée ; puis le Losange, ajouté à la barre, qui la refait descendre
+  // d'une rangée à 1280 px (OG19) : plus aucun toucher sur la scène après lui.
+  await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
+  await tool(page, "select");
+  await tapStage(page, 860, 300);
+  await waitAttr(page, "data-selection", "1");
+  await measure("Modifier les points", "edit-points-forme", POINTS, false);
+  await addDiamondToBar(page);
+  await measure("Losange", "diamond", item("diamond"), true);
+  lire("cibles2a", mesures.join(" ; "));
+  check(fr.every((m) => m.endsWith(" 0")), `netteté § 10 : 0 frange colorée (${fr.join(" ; ")})`);
+  void cdp;
+  check(errors.length === 0, "cibles2a : aucune erreur dans la page");
+  await ctx.close();
+}
+
+/** Captures du lot 2a, à 2x. */
+async function captures2a(browser, base, tmp) {
+  const MASK = { x: VIEWPORT.width - 10, y: VIEWPORT.height - 10 };
+  const loin = (page) => page.mouse.move(MASK.x, MASK.y);
+  {
+    const { ctx, page, cdp } = await poseAD(browser, base, tmp, "cap-losange", { scale: 2 });
+    await tool(page, "select");
+    await tapStage(page, 860, 300);
+    await waitAttr(page, "data-selection", "1");
+    await loin(page);
+    await shoot(page, "apres-losange", { x: 0, y: 0, width: 1060, height: 520 });
+    // Flèche liée, pointe à l'écart du contour.
+    await tool(page, "arrow");
+    await touchDrag(page, cdp, [A[2], 300], [D[0] + 8, 300]);
+    await tool(page, "select");
+    await tapStage(page, 685, 300);
+    await loin(page);
+    await shoot(page, "apres-losange-lie", VUE);
+    await ctx.close();
+  }
+  {
+    const h = await newPage(browser, base, { scale: 2 });
+    await rect(h.page, h.cdp, A);
+    await tool(h.page, "select");
+    await tapStage(h.page, A[0] + 60, 300);
+    await waitAttr(h.page, "data-selection", "1");
+    await h.page.waitForTimeout(600);
+    await press(h.page, "doigt", `${OPT} [data-section="points"] [data-option-value="line-edit"]`);
+    await waitNonEmpty(h.page, "data-line-edit");
+    await loin(h.page);
+    await shoot(h.page, "apres-forme-points", { x: 0, y: 0, width: 1060, height: 520 });
+    await h.ctx.close();
+  }
+  {
+    const h = await newPage(browser, base, { scale: 2 });
+    await tool(h.page, "ellipse");
+    await touchDrag(h.page, h.cdp, [B[0], B[1]], [B[2], B[3]]);
+    await tool(h.page, "select");
+    await tapStage(h.page, B[0] + 60, 300);
+    await waitAttr(h.page, "data-selection", "1");
+    await press(h.page, "doigt", `${OPT} [data-section="points"] [data-option-value="line-edit"]`);
+    await waitNonEmpty(h.page, "data-line-edit");
+    await loin(h.page);
+    await shoot(h.page, "apres-forme-points-ellipse", { x: 0, y: 0, width: 1060, height: 520 });
+    await h.ctx.close();
+  }
+}
+
 // ------------------------------------------------------------------------------------------------ cibles et netteté
 
 /** Cibles de 44 × 44 px au moins pour les boutons neufs. */
@@ -684,6 +984,7 @@ async function main() {
     }
     if (wantCaptures) {
       const errs = await captures(browser, base, tmp, nom);
+      if (nom === "apres") await captures2a(browser, base, tmp);
       if (errs.length) console.log(`captures : erreurs de page : ${errs.join(" | ")}`);
       return 0;
     }
@@ -694,8 +995,12 @@ async function main() {
     if (on("s3")) await s3(browser, base, tmp);
     if (on("s4")) await s4(browser, base, tmp);
     if (on("s6")) await s6(browser, base, tmp);
+    if (on("s7")) await s7(browser, base, tmp);
+    if (on("s8")) await s8(browser, base, tmp);
+    if (on("s9")) await s9(browser, base, tmp);
     if (on("cibles")) await cibles(browser, base, tmp);
     if (on("nettete")) await nettete(browser, base, tmp);
+    if (on("cibles2a")) await cibles2a(browser, base, tmp);
     console.log(`${LABEL} : OK`);
     return 0;
   } catch (e) {

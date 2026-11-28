@@ -437,6 +437,11 @@ avec `--captures` dans `docs/design/captures/personnalisation-3-tableau/`), sino
   ligne hors de la page, prise quand même (DS8).
 - HS6 (niveau 2) Le panneau s'ouvre avec l'outil Tableau dès qu'une case est active ; il peut recouvrir la colonne 0 d'un
   tableau posé à gauche (même recouvrement que pour le stylo, déjà signalé).
+- HS9 (niveau 2, **hypothèse acceptée**) Le texte de la saisie d'une case d'en-tête s'affiche sans gras (affichage de la
+  saisie seulement ; le dessin final est en gras) : la saisie garde les segments enregistrés. La hauteur de ligne écrite à
+  la validation, elle, est mesurée en gras (`headerSpans`). Même cause non corrigée : `header-toggle` n'agrandit pas la
+  ligne 0 quand le gras demande plus de hauteur ; il faudrait une seule commande (`SetTableOptions` portant des
+  hauteurs de lignes : contrat Rust, wasm et fake-core), sinon deux étapes d'annulation ; reporté.
 
 ### Carte d'impact (suite)
 
