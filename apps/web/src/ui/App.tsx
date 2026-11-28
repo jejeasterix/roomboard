@@ -683,25 +683,17 @@ export function App(props: AppProps): JSX.Element {
             hidden={() => panel() !== null}
             openLink={(url) => props.shell.openLink?.(url)}
             openImage={openImage}
+            media={() => <Show when={selectedMedia()}>{(m) => <MediaBar media={m().media} controls={mediaControls} />}</Show>}
+            model3d={() => (
+              <Show when={selectedModel3d()}>
+                {(m) => <Model3dBar name={ws.active().board.doc.asset(m().model3d.asset)?.name ?? "Objet 3D"} controls={model3dControls} />}
+              </Show>
+            )}
           />
         )}
         onTopFree={setPopTop}
       />
       <Toasts />
-      <Show when={selectedMedia()}>
-        {(m) => (
-          <div class="rb-popover rb-media-bar">
-            <MediaBar media={m().media} controls={mediaControls} />
-          </div>
-        )}
-      </Show>
-      <Show when={selectedModel3d()}>
-        {(m) => (
-          <div class="rb-popover rb-media-bar">
-            <Model3dBar name={ws.active().board.doc.asset(m().model3d.asset)?.name ?? "Objet 3D"} controls={model3dControls} />
-          </div>
-        )}
-      </Show>
       <Show when={panel() === "settings"}>
         <div class="rb-popover">
           <SettingsPanel

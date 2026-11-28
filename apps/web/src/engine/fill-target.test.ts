@@ -86,6 +86,18 @@ describe("cible du pot (C6a)", () => {
     expect(s.at(200, 700)).toEqual({ type: "Fill", page: s.page, target: { kind: "edge", id: s.stroke }, color: RED });
   });
 
+  it("ligne fermée (rectangle converti) : centre → intérieur rempli, près du tracé → contour (C4a, n° 34)", () => {
+    const s = setup();
+    s.doc.apply({ type: "ShapeToPolygon", id: s.rect });
+    const inside = s.at(200, 150);
+    // Prédicat « remplissable » (`!isSegment || polygon`) : une ligne fermée se remplit comme une forme, jamais son trait.
+    expect(inside).toEqual({ type: "Fill", page: s.page, target: { kind: "inside", id: s.rect }, color: RED });
+    expect(s.doc.edgeHit(s.rect, 103, 150, 6)).toBe(true);
+    expect(s.doc.edgeHit(s.rect, 200, 150, 6)).toBe(false);
+    expect(s.at(103, 150)).toEqual({ type: "Fill", page: s.page, target: { kind: "edge", id: s.rect }, color: RED });
+    expect(() => s.doc.apply(inside as Command)).not.toThrow();
+  });
+
   it("« Aucune » sur un trait : aucune commande (D11)", () => {
     expect(setup().at(200, 700, null)).toBeNull();
   });

@@ -48,6 +48,8 @@ const OG12_ICONS = ["arrow-type-sharp", "arrow-type-round", "arrow-type-elbow", 
 const OPTION_ICONS = ["copy-plus", "link", "external-link", "trash-2", "sliders-horizontal", "chevron-left", "stroke-solid", "stroke-dashed", "stroke-dotted", "sloppiness-0", "sloppiness-1", "sloppiness-2", "corner-sharp", "corner-round",
   "chevron-up", "chevron-down", "align-left", "align-center", "align-right", "fill-solid", "fill-hachure", "fill-cross", "head-none", "head-arrow", "head-triangle", "head-triangle-outline", "palette", "width-thin", "width-medium", "width-thick",
   "pressure-constant", "pressure-variable", "align-start-vertical", "align-center-vertical", "align-end-vertical", "align-start-horizontal", "align-center-horizontal", "align-end-horizontal", "align-horizontal-space-around", "align-vertical-space-around", "flip-horizontal", "flip-vertical", "rotate-ccw-square", "rotate-cw-square", "pipette", "crop"];
+/** OG34 : panneau de retouche d'image, sections Média et Objet 3D (Lucide, noms identiques). */
+const OG34_ICONS = ["play", "pause", "repeat", "volume-2", "arrow-right-to-line", "arrow-left-to-line", "move-horizontal", "rotate-3d", "scan", "sun", "contrast", "rotate-ccw"];
 const DIALOG_ICONS = ["search", "image-plus", "layout-template"];
 const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
 /** personnalisation-1a (T6, GC4) : icônes Lucide du lot 1, recopiées telles quelles (trait 2 d'origine, rendu à 1,5 par la feuille de style). */
@@ -81,10 +83,14 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     expect(TOOL_ICONS.eraser).toBe("eraser");
     expect(NOTICE).not.toContain("`eraser-part`");
   });
-  it("ICONS : 130 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes)", () => {
-    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS]);
+  it("ICONS : 143 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes)", () => {
+    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS, ...OG34_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(130);
+    expect(Object.keys(ICONS)).toHaveLength(143);
+  });
+  it("losange : tracé Lucide diamond, trait fin sur la grille 24", () => {
+    expect(ICONS["diamond"]).toBeDefined();
+    expect(TOOL_ICONS["diamond" as keyof typeof TOOL_ICONS]).toBe("diamond");
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -104,11 +110,11 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
   it("calage : viewBox -0.25 -0.25 24 24", () => {
     expect(ICON_VIEWBOX).toBe("-0.25 -0.25 24 24");
   });
-  it("chaque outil et chaque action connus ont une icône de la table (11 + 42)", () => {
+  it("chaque outil et chaque action connus ont une icône de la table (12 + 42)", () => {
     expect(Object.keys(TOOL_ICONS).sort()).toEqual(Object.keys(TOOL_TABLE).sort());
     expect(Object.keys(ACTION_ICONS).sort()).toEqual(Object.keys(ACTION_TABLE).sort());
     for (const name of [...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS)]) expect(Object.hasOwn(ICONS, name), name).toBe(true);
-    expect(Object.keys(TOOL_ICONS)).toHaveLength(11);
+    expect(Object.keys(TOOL_ICONS)).toHaveLength(12);
     expect(Object.keys(ACTION_ICONS)).toHaveLength(42);
   });
   it("balises admises, attributs en chaînes non vides", () => {

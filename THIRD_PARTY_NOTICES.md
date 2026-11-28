@@ -342,7 +342,7 @@ Texte : MIT, identique à celui de roughjs ci-dessus, titulaire « Excalidraw »
 ## Icônes Lucide (ISC), OG12
 
 Tracés repris de Lucide (https://github.com/lucide-icons/lucide), recopiés dans `apps/web/src/ui/icons.ts` : `spline`
-(« Modifier les points », icône `edit-points`) et `circle-minus` (« Retirer le point », icône `point-remove`). Licence ISC,
+(« Modifier les points », icône `edit-points`) et `circle-minus` (« Retirer le point », icône `point-remove`) ; lot 2a : `diamond` (outil « Losange », icône `diamond`). Licence ISC,
 texte identique à celui de la section Lucide ci-dessus.
 
 ## Crate `roomboard-formats` (C12, PDF vectoriel par krilla)
@@ -643,6 +643,9 @@ recopiés dans `apps/web/src/ui/icons.ts`.
 - Panneau d'options lot 2 (OG11), lus au même commit, noms Lucide : `chevron-up`, `chevron-down` (Avancer, Reculer ; Premier plan et Arrière-plan
   reprennent `bring-to-front` et `send-to-back` d'OG4), `align-left`, `align-center`, `align-right`. Dessinées pour RoomBoard (grille de 24, trait 1,5) :
   `fill-solid`, `fill-hachure`, `fill-cross`, `head-none`, `head-arrow`, `head-triangle`, `head-triangle-outline`.
+- Panneau de retouche d'image, sections Média et Objet 3D (OG34), lus au même commit par `gh api`, recopiés tels quels,
+  noms RoomBoard identiques aux noms Lucide : `play`, `pause`, `repeat`, `volume-2`, `arrow-right-to-line`,
+  `arrow-left-to-line`, `move-horizontal`, `rotate-3d`, `scan`, `sun`, `contrast`, `rotate-ccw`.
 
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :

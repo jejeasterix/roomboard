@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARRANGE_HOWS } from "../../core/arrange";
-import { appShortcut, arrangeKey, cellKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, type KeyLike } from "./keys";
+import { appShortcut, arrangeKey, cellKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -404,5 +404,24 @@ describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointe
       expect(tableKey(e), `${e.code}`).toBeNull();
       expect(cellKey(e), `${e.code}`).toBeNull();
     }
+  });
+});
+
+describe("lettres des outils", () => {
+  it("toolKey : lettres et chiffres d'Excalidraw libres", () => {
+    const m: Record<string, string> = { v: "select", r: "rect", d: "diamond", o: "ellipse", a: "arrow", l: "line", p: "pen", t: "text", e: "eraser", h: "hand", "1": "select", "2": "rect", "3": "diamond", "4": "ellipse", "5": "arrow", "6": "line", "7": "pen", "8": "text", "0": "eraser" };
+    for (const [key, tool] of Object.entries(m)) expect(toolKey(k(key))).toBe(tool);
+    expect(toolKey(k("R"))).toBe("rect");
+  });
+  it("toolKey : S et G restent aux sélecteurs de couleur ; rien avec modificateur, IME ou champ", () => {
+    expect(toolKey(k("s"))).toBeNull();
+    expect(toolKey(k("g"))).toBeNull();
+    expect(toolKey(k("9"))).toBeNull();
+    expect(toolKey(k("r", { ctrlKey: true }))).toBeNull();
+    expect(toolKey(k("r", { metaKey: true }))).toBeNull();
+    expect(toolKey(k("r", { altKey: true }))).toBeNull();
+    expect(toolKey(k("r", { shiftKey: true }))).toBeNull();
+    expect(toolKey(k("r", { isComposing: true }))).toBeNull();
+    expect(toolKey(k("r", { target: { tagName: "INPUT", type: "text" } }))).toBeNull();
   });
 });

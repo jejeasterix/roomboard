@@ -150,3 +150,34 @@ export function IconButton(props: IconButtonProps): JSX.Element {
     </>
   );
 }
+
+/** OG34 : bouton large à icône et libellé visible (`textContent` = le libellé), aux classes du panneau d'options :
+ *  `rb-opt-wide` (action), `rb-opt-toggle` (bascule, `pressed`), `rb-opt-primary` (action principale). */
+export function LabelButton(props: {
+  readonly icon: string;
+  readonly label: string;
+  readonly look?: "wide" | "toggle" | "primary";
+  readonly pressed?: boolean;
+  readonly disabled?: boolean;
+  /** Raccourci, au format `aria-keyshortcuts` ; une lettre seule est aussi montrée en gris au bout du bouton
+   *  (`data-keys`, posé par la feuille de style : hors du `textContent`). */
+  readonly keys?: string;
+  readonly attrs?: Readonly<Record<string, string>>;
+  readonly onPress: () => void;
+}): JSX.Element {
+  return (
+    <button
+      {...(props.attrs ?? {})}
+      type="button"
+      class={`rb-opt-${props.look ?? "wide"}`}
+      aria-pressed={props.pressed ?? undefined}
+      aria-keyshortcuts={props.keys}
+      data-keys={props.keys?.length === 1 ? props.keys : undefined}
+      disabled={props.disabled === true}
+      onClick={() => props.onPress()}
+    >
+      <Icon name={props.icon} />
+      <span class="rb-opt-wide-label">{props.label}</span>
+    </button>
+  );
+}

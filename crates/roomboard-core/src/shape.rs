@@ -6,6 +6,7 @@
 pub enum ShapeKind {
     Rect,
     Ellipse,
+    Diamond,
     Line,
     Arrow,
 }
@@ -15,6 +16,7 @@ impl ShapeKind {
         Some(match s {
             "rect" => ShapeKind::Rect,
             "ellipse" => ShapeKind::Ellipse,
+            "diamond" => ShapeKind::Diamond,
             "line" => ShapeKind::Line,
             "arrow" => ShapeKind::Arrow,
             _ => return None,
@@ -25,6 +27,7 @@ impl ShapeKind {
         match self {
             ShapeKind::Rect => "rect",
             ShapeKind::Ellipse => "ellipse",
+            ShapeKind::Diamond => "diamond",
             ShapeKind::Line => "line",
             ShapeKind::Arrow => "arrow",
         }
@@ -75,8 +78,17 @@ fn ellipse_points(cx: f64, cy: f64, rx: f64, ry: f64, dir: f64) -> Vec<f64> {
         .collect()
 }
 
+/// Sommets du losange (haut, droite, bas, gauche), décalés de `off` le long de la normale (`off` > 0 : dehors) ;
+/// décalage d'un sommet = off × hypot(w, h) / côté opposé (droites parallèles à `off` des arêtes).
+fn diamond_points(w: f64, h: f64, off: f64) -> Vec<f64> {
+    let l = w.hypot(h);
+    let (ox, oy) = (off * l / h, off * l / w);
+    vec![w / 2.0, -oy, w + ox, h / 2.0, w / 2.0, h + oy, -ox, h / 2.0]
+}
+
 /// Géométrie locale d'une forme (OG12) : `path` = points intérieurs à plat (ligne, flèche), `curve` = courbe de
-/// Catmull-Rom (`roundness: "round"` hors coudée). `plain` : forme du socle.
+/// Catmull-Rom (`roundness: "round"` hors coudée), `closed` = ligne fermée (lot 2a, n° 34 : fermeture implicite du
+/// dernier sommet vers le départ). `plain` : forme du socle.
 #[derive(Debug, Clone, Copy)]
 pub struct ShapeGeom<'a> {
     pub kind: ShapeKind,
@@ -84,6 +96,7 @@ pub struct ShapeGeom<'a> {
     pub h: f64,
     pub path: &'a [f64],
     pub curve: bool,
+    pub closed: bool,
 }
 
 impl ShapeGeom<'static> {
@@ -94,6 +107,7 @@ impl ShapeGeom<'static> {
             h,
             path: &[],
             curve: false,
+            closed: false,
         }
     }
 }
@@ -103,6 +117,10 @@ impl ShapeGeom<'static> {
 /// (constat 4 de T60) : pied de chaque aile sur le bord du fût, puis son extrémité.
 pub fn shape_polygon(s: &ShapeGeom<'_>, width: f32) -> Vec<f32> {
     let (kind, w, h) = (s.kind, s.w, s.h);
+    if kind.is_segment() && s.closed {
+        let pts = crate::linear::flatten(&crate::linear::path_of(w, h, s.path), false);
+        return closed_polygon(&pts, width);
+    }
     if kind.is_segment() {
         let pts = crate::linear::flatten(&crate::linear::path_of(w, h, s.path), s.curve);
         if pts.len() > 2 {
@@ -126,6 +144,17 @@ pub fn shape_polygon(s: &ShapeGeom<'_>, width: f32) -> Vec<f32> {
             let (cx, cy, rx, ry) = (w / 2.0, h / 2.0, w / 2.0 + half, h / 2.0 + half);
             ellipse_points(cx, cy, rx, ry, 1.0)
         }
+        ShapeKind::Diamond if w < 1e-9 || h < 1e-9 => vec![
+            -half,
+            -half,
+            w + half,
+            -half,
+            w + half,
+            h + half,
+            -half,
+            h + half,
+        ],
+        ShapeKind::Diamond => diamond_points(w, h, half),
         ShapeKind::Line | ShapeKind::Arrow => {
             let len = w.hypot(h);
             let (ux, uy) = if len > 1e-9 {
@@ -175,6 +204,56 @@ pub fn shape_polygon(s: &ShapeGeom<'_>, width: f32) -> Vec<f32> {
         }
     };
     pts.iter().map(|v| *v as f32).collect()
+}
+
+/// Ligne fermée (OG12, n° 34) : sommets dédoublonnés, fermeture implicite ; chaque sommet poussé de la demi-épaisseur
+/// le long de la bissectrice extérieure (onglet borné à 4 demi-épaisseurs, comme `band_polygon`). Moins de 3 sommets :
+/// la polyligne épaissie.
+fn closed_polygon(raw: &[(f64, f64)], width: f32) -> Vec<f32> {
+    let half = (f64::from(width) / 2.0).max(1.0);
+    let mut pts: Vec<(f64, f64)> = Vec::with_capacity(raw.len());
+    for p in raw {
+        if pts
+            .last()
+            .is_none_or(|q| (q.0 - p.0).hypot(q.1 - p.1) > 1e-9)
+        {
+            pts.push(*p);
+        }
+    }
+    if pts.len() > 1 {
+        let (a, b) = (pts[0], pts[pts.len() - 1]);
+        if (a.0 - b.0).hypot(a.1 - b.1) <= 1e-9 {
+            pts.pop();
+        }
+    }
+    if pts.len() < 3 {
+        return band_polygon(raw, width, false);
+    }
+    let n = pts.len();
+    let area: f64 = (0..n)
+        .map(|i| {
+            let (a, b) = (pts[i], pts[(i + 1) % n]);
+            a.0 * b.1 - b.0 * a.1
+        })
+        .sum();
+    let sgn = if area >= 0.0 { 1.0 } else { -1.0 };
+    let normal = |a: (f64, f64), b: (f64, f64)| {
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let l = dx.hypot(dy);
+        (sgn * dy / l, -sgn * dx / l)
+    };
+    let mut out = Vec::with_capacity(2 * n);
+    for i in 0..n {
+        let (p, prev, next) = (pts[i], pts[(i + n - 1) % n], pts[(i + 1) % n]);
+        let (na, nb) = (normal(prev, p), normal(p, next));
+        let (mx, my) = (na.0 + nb.0, na.1 + nb.1);
+        let ml = mx.hypot(my);
+        let (mx, my) = if ml < 1e-9 { na } else { (mx / ml, my / ml) };
+        let cos = (mx * na.0 + my * na.1).max(0.25);
+        out.push((p.0 + mx * half / cos) as f32);
+        out.push((p.1 + my * half / cos) as f32);
+    }
+    out
 }
 
 /// Polyligne épaissie (OG12) : côté gauche à l'aller, côté droit au retour, onglets bornés à 4 demi-épaisseurs, bouts
@@ -292,6 +371,15 @@ pub fn shape_ring(kind: ShapeKind, w: f64, h: f64, width: f32) -> Option<(Vec<f3
         return Some((outer, Vec::new()));
     }
     let inner: Vec<f64> = match kind {
+        ShapeKind::Diamond => {
+            let l = w.hypot(h);
+            if 2.0 * half * l / w >= h || 2.0 * half * l / h >= w {
+                return Some((outer, Vec::new()));
+            }
+            // Sommets 0, 3, 2, 1 : sens inverse de l'extérieur.
+            let p = diamond_points(w, h, -half);
+            vec![p[0], p[1], p[6], p[7], p[4], p[5], p[2], p[3]]
+        }
         ShapeKind::Rect => vec![
             half,
             half,
@@ -484,6 +572,7 @@ mod tests {
                 h: 0.0,
                 path: &[],
                 curve: true,
+                closed: false,
             },
             4.0,
         );
@@ -501,6 +590,7 @@ mod tests {
                 h: 0.0,
                 path: &inner,
                 curve: false,
+                closed: false,
             },
             4.0,
         );
@@ -516,6 +606,7 @@ mod tests {
                 h: 0.0,
                 path: &inner,
                 curve: true,
+                closed: false,
             },
             4.0,
         );

@@ -18,6 +18,7 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "hand": [["path", { d: "M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" }], ["path", { d: "M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" }], ["path", { d: "M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" }], ["path", { d: "M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" }]],
   "select": [["path", { d: "M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" }]],
   "rect": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }]],
+  "diamond": [["path", { d: "M2.7 10.3a2.41 2.41 0 0 0 0 3.41l7.59 7.59a2.41 2.41 0 0 0 3.41 0l7.59-7.59a2.41 2.41 0 0 0 0-3.41l-7.59-7.59a2.41 2.41 0 0 0-3.41 0Z" }]],
   "ellipse": [["circle", { cx: "12", cy: "12", r: "10" }]],
   "line": [["path", { d: "M5 19 19 5" }]],
   "arrow": [["path", { d: "M7 7h10v10" }], ["path", { d: "M7 17 17 7" }]],
@@ -183,6 +184,20 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "edit-points": [["circle", { cx: "19", cy: "5", r: "2" }], ["circle", { cx: "5", cy: "19", r: "2" }], ["path", { d: "M5 17A12 12 0 0 1 17 5" }]],
   "point-remove": [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M8 12h8" }]],
   "arrow-binding": [["path", { d: "M3 12h9" }], ["rect", { x: "14", y: "6", width: "7", height: "12", rx: "1" }], ["circle", { cx: "12.5", cy: "12", r: "1.5" }]],
+  // OG34 : panneau de retouche d'image, sections Média et Objet 3D. Lucide @7981a0798a, ISC, lus par `gh api`, recopiés
+  // tels quels, noms RoomBoard identiques aux noms Lucide.
+  "play": [["path", { d: "M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" }]],
+  "pause": [["rect", { x: "14", y: "3", width: "5", height: "18", rx: "1" }], ["rect", { x: "5", y: "3", width: "5", height: "18", rx: "1" }]],
+  "repeat": [["path", { d: "m17 2 4 4-4 4" }], ["path", { d: "M3 11v-1a4 4 0 0 1 4-4h14" }], ["path", { d: "m7 22-4-4 4-4" }], ["path", { d: "M21 13v1a4 4 0 0 1-4 4H3" }]],
+  "volume-2": [["path", { d: "M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" }], ["path", { d: "M16 9a5 5 0 0 1 0 6" }], ["path", { d: "M19.364 18.364a9 9 0 0 0 0-12.728" }]],
+  "arrow-right-to-line": [["path", { d: "M17 12H3" }], ["path", { d: "m11 18 6-6-6-6" }], ["path", { d: "M21 5v14" }]],
+  "arrow-left-to-line": [["path", { d: "M3 19V5" }], ["path", { d: "m13 6-6 6 6 6" }], ["path", { d: "M7 12h14" }]],
+  "move-horizontal": [["path", { d: "m18 8 4 4-4 4" }], ["path", { d: "M2 12h20" }], ["path", { d: "m6 8-4 4 4 4" }]],
+  "rotate-3d": [["path", { d: "m15.194 13.707 3.814 1.86-1.86 3.814" }], ["path", { d: "M16.47214 7.52786 A 5 10 0 1 0 13 21.79796" }], ["path", { d: "M21.79796 11 A 10 5 0 1 0 19 15.57071" }]],
+  "scan": [["path", { d: "M3 7V5a2 2 0 0 1 2-2h2" }], ["path", { d: "M17 3h2a2 2 0 0 1 2 2v2" }], ["path", { d: "M21 17v2a2 2 0 0 1-2 2h-2" }], ["path", { d: "M7 21H5a2 2 0 0 1-2-2v-2" }]],
+  "sun": [["circle", { cx: "12", cy: "12", r: "4" }], ["path", { d: "M12 2v2" }], ["path", { d: "M12 20v2" }], ["path", { d: "m4.93 4.93 1.41 1.41" }], ["path", { d: "m17.66 17.66 1.41 1.41" }], ["path", { d: "M2 12h2" }], ["path", { d: "M20 12h2" }], ["path", { d: "m6.34 17.66-1.41 1.41" }], ["path", { d: "m19.07 4.93-1.41 1.41" }]],
+  "contrast": [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M12 18a6 6 0 0 0 0-12v12z" }]],
+  "rotate-ccw": [["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" }], ["path", { d: "M3 3v5h5" }]],
 });
 
 /** Outil → icône (§ 2 bis). */
@@ -192,6 +207,7 @@ export const TOOL_ICONS: Readonly<Record<ToolId, string>> = Object.freeze({
   hand: "hand",
   select: "select",
   rect: "rect",
+  diamond: "diamond",
   ellipse: "ellipse",
   line: "line",
   arrow: "arrow",

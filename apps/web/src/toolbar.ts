@@ -103,6 +103,7 @@ export const TOOL_TABLE: Readonly<Record<ToolId, ToolEntry>> = Object.freeze({
   hand: { label: "Main", choice: "hand" },
   select: { label: "Sélection", choice: "select" },
   rect: { label: "Rectangle", choice: "rect" },
+  diamond: { label: "Losange", choice: "diamond" },
   ellipse: { label: "Ellipse", choice: "ellipse" },
   line: { label: "Ligne", choice: "line" },
   arrow: { label: "Flèche", choice: "arrow" },

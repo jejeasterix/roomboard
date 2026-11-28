@@ -182,7 +182,7 @@ describe("profil de barre (T83, usage § 8)", () => {
   });
 
   it("tables : chaque outil du moteur a son entrée ; actions de l'ancienne barre présentes", () => {
-    expect(Object.keys(TOOL_TABLE).sort()).toEqual(["arrow", "ellipse", "eraser", "fill", "hand", "line", "pen", "rect", "select", "table", "text"]);
+    expect(Object.keys(TOOL_TABLE).sort()).toEqual(["arrow", "diamond", "ellipse", "eraser", "fill", "hand", "line", "pen", "rect", "select", "table", "text"]);
     for (const a of ["undo", "redo", "page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "fit-page", "file-new", "file-open", "file-save", "file-save-as", "settings", "profiles", "grid"]) {
       expect(ACTION_TABLE[a], a).toBeDefined();
     }
@@ -669,5 +669,11 @@ describe("OG41 : action retirée eraser-mode (D12, U13, S4)", () => {
   it("une action vraiment inconnue reste signalée", () => {
     const json = JSON.parse(OLD_45484DB.split('"action": "eraser-mode"').join('"action": "inconnue-og41"'));
     expect(ok(json).warnings).toContain("action inconnue masquée : inconnue-og41");
+  });
+});
+
+describe("OG12 lot 2a : losange", () => {
+  it("losange : entrée de la barre et icône", () => {
+    expect(TOOL_TABLE.diamond).toEqual({ label: "Losange", choice: "diamond" });
   });
 });

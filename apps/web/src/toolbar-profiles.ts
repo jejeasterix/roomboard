@@ -141,7 +141,9 @@ const presets = () => ({
 });
 
 /** Barres du profil par défaut : une seule source pour `defaut` et `annotation` (P9) ; design-l2 (L2-2) : toutes les
- *  barres du tableau en îlots, la barre d'annotation reste une bande (L4-1, dernière de `toolbars`). */
+ *  barres du tableau en îlots, la barre d'annotation reste une bande (L4-1, dernière de `toolbars`). OG12 lot 2a (L4) : le
+ *  Losange n'est pas dans la barre d'outils, qui sinon quitte la rangée du haut à 1280 px (OG19) ; D, 3 et l'éditeur de
+ *  profil le donnent. */
 const defaultToolbars = () => [
   {
     id: "outils",

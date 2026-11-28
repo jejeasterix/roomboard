@@ -1,12 +1,10 @@
 # État — personnalisation-2-outils
 
-Statut : en cours
+Statut : arrêté (borne de temps du tour) — lot 1 fusionné (PR #71) ; lot 2a prêt sur sa branche, PR #76 en brouillon, non fusionné
 Gabarit : lots (lot 1 : 12 tâches ; lot 2 : 10 tâches, hors du temps)
 Objectif : Chaque outil commun avec Excalidraw (sélection, main, formes, flèche, ligne, crayon, texte, image, gomme) se comporte comme dans Excalidraw, au doigt d'abord puis au clavier, avec des connecteurs liés aux objets façon carte mentale et une fiche de vérification par outil.
-Avancement : 0/2 lots clos
-Étage : 4 (lot 1) — depuis 2026-11-27 22:20
-Lot : 1 « flèche et ligne » — 12/12 tâches terminées + correctifs C1, C2, C3 — depuis 2026-11-27 19:58
-Tâche : fusion du lot 1 (PR #71) ; lot 2a en exécution sur feat/personnalisation-2-outils-lot2 — depuis 2026-11-27 22:20
+Avancement : 1/3 lots clos (lot 1) ; lot 2a vérifié puis intégré à origin/main e2ac4680, à revérifier ; lot 2b non commencé
+Étage : 4 — depuis 2026-11-27 23:05
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2-outils   Branche : feat/personnalisation-2-outils   Base : origin/main @ cddbde49
 Branche principale locale au lancement : 59b75db0
@@ -48,6 +46,33 @@ Double relecture (d00d35c6) : 0 bloquant ; 3 major corrigés (C1, C2) ; minors c
 Point de retour origin/main f6f3f43f · double relecture faite, 0 bloquant ouvert · aucune tâche bloquée · verifier.sh --e2e OK sur f8028fc0 (cargo 1597, web 4470, cli 284 ; réf. 1523/4218/284) · aucun test retiré ni sauté · scénarios S1-S6 réussis (outils-excalidraw : OK, CLI : OK) · CLI vérifiée (cli-essai.mjs) · pas de CI GitHub (profil) · PR #71.
 Écart de chaîne : plan du lot 2a non relu avant exécution (temps) ; la double relecture de fin de lot 2a en tient lieu.
 
+## Lot 2a (plan docs/plans/personnalisation-2-outils-LOT2-PLAN.md, branche feat/personnalisation-2-outils-lot2)
+| id | état | commit vert |
+|---|---|---|
+| L1 cœur losange, ligne fermée, ShapeToPolygon | terminée | 4562c6f7 |
+| L2 contrat TS, faux cœur, CLI | terminée | 0fc64280 |
+| L3 rendu et export | terminée | 63856772 |
+| L4 outil Losange, entrée des formes | terminée | df5b349e |
+| L5 éditeur et panneau des lignes fermées | terminée | 2dde42d9 |
+| L6a pont Wasm, contrat, CLI | terminée | caddd430 |
+| L6b essai navigateur S7-S9, fiche, captures | terminée | 89379fa3 |
+| L7 aperçu fermé | terminée | 219e0e8a |
+| L8 flèches du clavier, lettres des outils | terminée | 120828c4 |
+| C4a pot dans une ligne fermée, avis d'export, simplifications cœur | terminée | 2ade6b52 |
+| C4b conversion par bouton et Ctrl+Entrée seulement, annulation par lots, aperçu, simplifications | terminée | 517ba3b6 |
+Rejeux : V1 formes 9 fleches 27 web 4485 ; V2 web 4506 ; L6a+L7 web 4515 contrat 516 CLI OK ; L6b+L8 web 4525 ; C4 web 4534, fmt ok.
+Double relecture (9d8ac349) : 0 bloquant ; 5 major corrigés (C4a, C4b) ; décision : double toucher sur une forme ne convertit pas (réservé au texte dans une forme, lot 2b).
+
+Lot 2a : correctif barre (losange hors de la barre par défaut, 078bdcf0, f97bbae0) et essai (6347b69d, d4bd6591). verifier.sh --e2e OK sur d4bd6591 : cargo 1618, web 4535, cli 284, Wasm 1 523 873 o, formats 2 794 527 o.
+
+## Prochaine tâche exacte
+1. Dans un worktree de `feat/personnalisation-2-outils-lot2` (tête e635bbe5 = d4bd6591 vérifié + fusion d'origin/main e2ac4680, OG23 et OG26) : `git fetch` ; si main a bougé, fusionner origin/main ; puis `scripts/verifier.sh --e2e` (verifier.sh OK sur d4bd6591 avant la fusion ; après la fusion, seules la suite web 4803/4803, formes, fleches, tsc et fmt ont tourné).
+2. Corriger l'écart né de la fusion : le pas aux flèches d'OG23 (`nudgeKey`) déplace aussi pendant « Modifier les points » (le lot 2a l'excluait) ; test puis exclusion.
+3. OK → PR #76 `gh pr ready`, fusion locale `git merge --no-ff` dans un worktree détaché d'origin/main, `git push origin HEAD:main`, sans --force.
+
+## Lot 2b
+Écrire `docs/plans/personnalisation-2-outils-LOT2B-PLAN.md` depuis la section « Lot 2b (hors de ce plan) » du plan du lot 2a : losange dans la barre par défaut (menu « formes »), rotation, texte dans une forme (double toucher), îlot Modificateurs, Alt-glisser, segments fixes des coudées, étiquettes sur flèche, navigation Alt+flèche, pointes losange et cardinalité, lettres dans les infobulles, message BAD_FILL.
+
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · verifier.sh --e2e OK · scénarios réussis · PR fusionnée par merge --no-ff local et poussée
 
@@ -61,6 +86,8 @@ toutes les tâches terminées · double relecture sans bloquant · verifier.sh -
 ouvertes : — · passées : — (mode autonome, Jérôme injoignable pendant le tour)
 
 ## Pièges trouvés
+- `constats.cjs ajouter` a remplacé la ligne d'un autre chantier qui visait le même fichier (fake-core.ts) au lieu d'ajouter : relire le diff de docs/architecture-constats.md après chaque ajout (outillage, hors dépôt).
+- verifier.sh --e2e du lot 2a (9e047bc9) : C8 pot zones S6 « data-zone-ms inchangé (31.0) » ; rejoué seul : OK (médiane 30 ms). Deux mesures identiques par hasard ; verifier.sh rejoué entier.
 - Rejeu V1 (67d2acb7) : fleches 7/7 dont old_file_keeps_bytes ; default_line_writes_no_new_keys ok ; tsc ok ; web 4244/4245, rouge attendu contrat D38 l. 3943 (roundness ligne applicable), corrigé par T5+T10. Wasm principal 1 466 515 o.
 - main locale a bougé pendant le tour (59b75db0 → fbcc4a17) : autre ouvrier, sans effet sur la branche.
 - T2 avait signé ses commits « Sonnet 5.5 » : trailer réécrit en Opus 5.5 avant fusion (branche locale).

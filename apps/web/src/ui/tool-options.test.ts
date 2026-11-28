@@ -125,6 +125,21 @@ describe("tool-options lot 2 (T15)", () => {
   });
 });
 
+describe("tool-options : losange et ligne fermée (OG12 lot 2a)", () => {
+  const sh = (shape: string, extra: object = {}): ElementView =>
+    ({ id: "x", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000", width: 4 }, shape: { shape, w: 10, h: 10, fill: "#fff", ...extra } }) as unknown as ElementView;
+  it("losange et ligne fermée : options de forme, sans Angles ni pointes", () => {
+    expect(sectionsFor("select", [sh("diamond")], false)).not.toContain("roundness");
+    expect(sectionsFor("diamond" as never, [], false)).not.toContain("roundness");
+    expect(sectionsFor("select", [sh("line", { polygon: true })], false)).toEqual(
+      ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity", "layers", "transform", "actions"]);
+    expect(sectionsFor("select", [sh("line")], false)).toContain("roundness");
+  });
+  it("showsPanel : l'outil losange montre le panneau", () => {
+    expect(showsPanel("diamond" as never, 0, false)).toBe(true);
+  });
+});
+
 describe("tool-options OG23 (T2) : accordéon, pression, disposition", () => {
   const stroke = { id: "s", kind: "stroke" } as unknown as ElementView;
   it("sectionOpen : défauts puis état gardé", () => {
@@ -133,7 +148,7 @@ describe("tool-options OG23 (T2) : accordéon, pression, disposition", () => {
     expect(sectionOpen("strokeStyle", { strokeStyle: true })).toBe(true);
     expect(sectionOpen("background", { background: false })).toBe(false);
     expect(sectionOpen("strokeStyle", { strokeStyle: "oui" } as never)).toBe(false);
-    expect([...OPEN_BY_DEFAULT].sort()).toEqual(["background", "image", "strokeColor", "strokeWidth"]);
+    expect([...OPEN_BY_DEFAULT].sort()).toEqual(["background", "image", "media", "model3d", "strokeColor", "strokeWidth"]);
   });
   it("pressure : stylo et trait seulement", () => {
     expect(sectionsFor("pen", [], false)).toEqual(["strokeColor", "strokeWidth", "pressure", "opacity"]);
@@ -166,5 +181,24 @@ describe("tool-options : Glisser une copie pour tout objet (OG23, T18)", () => {
     // Zone du pot (`fill`) : le cœur n'y écrit jamais `dragCopy` (style.rs `writes_for`) : la bascule ne la compte pas.
     expect(admitsDragCopy({ id: "z", kind: "fill" } as unknown as ElementView)).toBe(false);
     expect(admitsDragCopy({ id: "a", kind: "unknown" } as unknown as ElementView)).toBe(false);
+  });
+});
+
+describe("tool-options OG34 : sections Média et Objet 3D", () => {
+  const media = { id: "m", kind: "media", transform: [1, 0, 0, 1, 0, 0], media: {} } as unknown as ElementView;
+  const model = { id: "o", kind: "model3d", transform: [1, 0, 0, 1, 0, 0], model3d: {} } as unknown as ElementView;
+  it("média seul : section Média en tête, ouverte par défaut", () => {
+    expect(sectionsFor("select", [media], false)).toEqual(["media", "layers", "transform", "actions"]);
+    expect(sectionOpen("media", {})).toBe(true);
+  });
+  it("objet 3D seul : section Objet 3D en tête, ouverte par défaut", () => {
+    expect(sectionsFor("select", [model], false)).toEqual(["model3d", "layers", "transform", "actions"]);
+    expect(sectionOpen("model3d", {})).toBe(true);
+  });
+  it("deux médias, ou un média et un objet 3D : ni Média ni Objet 3D", () => {
+    expect(sectionsFor("select", [media, { ...media, id: "n" } as ElementView], false)).not.toContain("media");
+    const both = sectionsFor("select", [media, model], false);
+    expect(both).not.toContain("media");
+    expect(both).not.toContain("model3d");
   });
 });

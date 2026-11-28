@@ -234,3 +234,65 @@ describe("panneau de retouche : pipette du mode point touché (OG23, T18)", () =
     expect(edit.commit).toHaveBeenLastCalledWith({ transparent: { color: "#000000", tolerance: 10, soft: 0, contiguous: true } });
   });
 });
+
+describe("panneau de retouche (OG34) : design des îlots", () => {
+  const icon = (el: Element | null): string | null => el?.querySelector("svg[data-icon]")?.getAttribute("data-icon") ?? null;
+  it("îlot à en-tête : titre et Fermer (icône close) ; plus de classe rb-editor", () => {
+    const { q } = setup();
+    const root = q("#image-retouche");
+    expect(root.classList.contains("rb-imgedit")).toBe(true);
+    expect(root.classList.contains("rb-editor")).toBe(false);
+    expect(q(".rb-imgedit-head h2").textContent).toBe("Retouche de l'image");
+    expect(icon(q('[data-image-action="close"]'))).toBe("close");
+  });
+  it("géométrie : cinq boutons à icône Lucide, libellé lisible par les lecteurs d'écran", () => {
+    const { q } = setup();
+    const ids = ["crop", "flip-h", "flip-v", "turn-left", "turn-right"];
+    expect(ids.map((id) => icon(q(`[data-image-action="${id}"]`)))).toEqual(["crop", "flip-horizontal", "flip-vertical", "rotate-ccw-square", "rotate-cw-square"]);
+    expect(ids.map((id) => q(`[data-image-action="${id}"]`).getAttribute("aria-label"))).toEqual(["Rogner", "Retourner horizontalement", "Retourner verticalement", "Tourner à gauche", "Tourner à droite"]);
+  });
+  it("rognage : Valider le rognage (check) et Annuler (close), libellés visibles", () => {
+    const { q, act, setTick } = setup();
+    act("crop");
+    setTick(1);
+    expect([icon(q('[data-image-action="crop-apply"]')), q('[data-image-action="crop-apply"]').textContent]).toEqual(["check", "Valider le rognage"]);
+    expect([icon(q('[data-image-action="crop-cancel"]')), q('[data-image-action="crop-cancel"]').textContent]).toEqual(["close", "Annuler"]);
+  });
+  it("curseurs : icône, libellé et valeur lue ; la valeur suit le brouillon", () => {
+    const { q, input } = setup({ asset: A, w: 200, h: 150, brightness: 20 });
+    const row = (k: string) => q(`[data-image-input="${k}"]`).closest(".rb-imgedit-range")!;
+    expect(icon(row("brightness"))).toBe("sun");
+    expect(icon(row("contrast"))).toBe("contrast");
+    expect(row("brightness").querySelector("output")!.textContent).toBe("20");
+    input("brightness", "-35");
+    expect(row("brightness").querySelector("output")!.textContent).toBe("-35");
+    expect(row("tolerance").querySelector("output")!.textContent).toBe("10");
+  });
+  it("pipette : bouton large à icône pipette ; pastille en damier sans couleur", () => {
+    const { q } = setup();
+    expect([icon(q('[data-image-action="pick"]')), q('[data-image-action="pick"]').textContent]).toEqual(["pipette", "Pipette"]);
+    expect(q("[data-image-color]").hasAttribute("data-empty")).toBe(true);
+  });
+  it("pied : Valider (check), Annuler les réglages (undo), Rétablir l'original (rotate-ccw)", () => {
+    const { q } = setup();
+    expect(["apply", "cancel", "restore"].map((id) => icon(q(`[data-image-action="${id}"]`)))).toEqual(["check", "undo", "rotate-ccw"]);
+  });
+  it("raccourcis : I arme la pipette, Ctrl+Entrée valide ; en rognage Ctrl+Entrée valide le rognage", async () => {
+    const { q, edit, setTick } = setup();
+    const root = q("#image-retouche");
+    fireEvent.keyDown(root, { key: "i" });
+    expect(edit.pickPoint).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    fireEvent.keyDown(root, { key: "Enter", ctrlKey: true });
+    expect(edit.commit).toHaveBeenCalledTimes(1);
+    fireEvent.click(q('[data-image-action="crop"]'));
+    setTick(1);
+    fireEvent.keyDown(root, { key: "Enter", ctrlKey: true });
+    expect(edit.finishCrop).toHaveBeenCalledWith(true);
+  });
+  it("raccourcis : une lettre tapée dans la liste Départ n'arme rien", () => {
+    const { q, edit } = setup();
+    fireEvent.keyDown(q('[data-image-input="mode"]'), { key: "i" });
+    expect(edit.pickPoint).not.toHaveBeenCalled();
+  });
+});
