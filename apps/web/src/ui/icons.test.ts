@@ -45,7 +45,7 @@ const ISLAND_ICONS: Readonly<Record<string, string>> = { menu: "menu", collapse:
 /** OG11 (T10) : panneau d'options, Lucide (copy-plus, link (T18), trash-2, sliders-horizontal, chevron-*) et icônes dessinées. */
 /** OG12 (T3) : types de flèche, pointes neuves, « Modifier les points », liaison. */
 const OG12_ICONS = ["arrow-type-sharp", "arrow-type-round", "arrow-type-elbow", "head-bar", "head-circle", "head-circle-outline", "edit-points", "point-remove", "arrow-binding"];
-const TABLE_SUITE_ICONS = ["move-horizontal", "ban"];
+const TABLE_SUITE_ICONS = ["move-horizontal", "ban", "arrow-down-a-z", "arrow-down-z-a"];
 const OPTION_ICONS = ["copy-plus", "link", "external-link", "trash-2", "sliders-horizontal", "chevron-left", "stroke-solid", "stroke-dashed", "stroke-dotted", "sloppiness-0", "sloppiness-1", "sloppiness-2", "corner-sharp", "corner-round",
   "chevron-up", "chevron-down", "align-left", "align-center", "align-right", "fill-solid", "fill-hachure", "fill-cross", "head-none", "head-arrow", "head-triangle", "head-triangle-outline", "palette", "width-thin", "width-medium", "width-thick",
   "pressure-constant", "pressure-variable", "align-start-vertical", "align-center-vertical", "align-end-vertical", "align-start-horizontal", "align-center-horizontal", "align-end-horizontal", "align-horizontal-space-around", "align-vertical-space-around", "flip-horizontal", "flip-vertical", "rotate-ccw-square", "rotate-cw-square", "pipette", "crop"];
@@ -76,15 +76,20 @@ const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", too
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 133 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes)", () => {
+  it("ICONS : 135 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes)", () => {
     const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS, ...TABLE_SUITE_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(133);
+    expect(Object.keys(ICONS)).toHaveLength(135);
   });
   it("DS10 : move-horizontal et ban recopiées de Lucide (7981a0798a), nommées dans la notice", () => {
     expect(ICONS["move-horizontal"]).toEqual([["path", { d: "m18 8 4 4-4 4" }], ["path", { d: "M2 12h20" }], ["path", { d: "m6 8-4 4 4 4" }]]);
     expect(ICONS["ban"]).toEqual([["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M4.929 4.929 19.07 19.071" }]]);
     for (const n of ["move-horizontal", "ban"]) expect(NOTICE).toContain(`\`${n}\``);
+  });
+  it("DS9 : arrow-down-a-z et arrow-down-z-a recopiées de Lucide (7981a0798a), nommées dans la notice", () => {
+    expect(ICONS["arrow-down-a-z"]).toEqual([["path", { d: "m3 16 4 4 4-4" }], ["path", { d: "M7 20V4" }], ["path", { d: "M20 8h-5" }], ["path", { d: "M15 10V6.5a2.5 2.5 0 0 1 5 0V10" }], ["path", { d: "M15 14h5l-5 6h5" }]]);
+    expect(ICONS["arrow-down-z-a"]).toEqual([["path", { d: "m3 16 4 4 4-4" }], ["path", { d: "M7 4v16" }], ["path", { d: "M15 4h5l-5 6h5" }], ["path", { d: "M15 20v-3.5a2.5 2.5 0 0 1 5 0V20" }], ["path", { d: "M20 18h-5" }]]);
+    for (const n of ["arrow-down-a-z", "arrow-down-z-a"]) expect(NOTICE).toContain(`\`${n}\``);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));

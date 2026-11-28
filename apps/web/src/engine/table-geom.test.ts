@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { sortedRows, destOf, keepsMerges, movedOrder, anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, cellTextFrame, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -330,5 +330,30 @@ describe("movedOrder, keepsMerges (D18, DS8)", () => {
     };
     expect(keepsMerges(t, "row", ["c", "a", "b"])).toBe(true);
     expect(keepsMerges(t, "row", ["a", "c", "b"])).toBe(false);
+  });
+});
+
+describe("sortedRows (D20, DS9)", () => {
+  const col = (texts: readonly string[], header = false, merges: TableData["merges"] = []): TableData => ({
+    color: "#000", size: 36, merges, ...(header ? { header: true } : {}),
+    cols: [{ id: "a", width: 100 }, { id: "b", width: 100 }],
+    rows: texts.map((_, i) => ({ id: `r${i}`, height: 64 })),
+    cells: texts.flatMap((text, i) => (text === "" ? [] : [{ row: `r${i}`, col: "a", text, fill: null, shade: null, spans: [{ text, attrs: {} }] }])),
+  });
+  it("sortedRows : nombres en ordre numérique fr, en-tête gardé en tête", () => {
+    expect(sortedRows(col(["Nombre", "10", "9", "100"], true), 0, "asc")).toEqual(["r0", "r2", "r1", "r3"]);
+    expect(sortedRows(col(["Nombre", "10", "9", "100"], true), 0, "desc")).toEqual(["r0", "r3", "r1", "r2"]);
+  });
+  it("sortedRows : vides en dernier dans les deux sens ; casse et accents ignorés, stable", () => {
+    expect(sortedRows(col(["b", "", "A", "a"]), 0, "asc")).toEqual(["r2", "r3", "r0", "r1"]);
+    expect(sortedRows(col(["b", "", "A", "a"]), 0, "desc")).toEqual(["r0", "r2", "r3", "r1"]);
+  });
+  it("sortedRows : zone sur deux lignes : refus (null)", () => {
+    expect(sortedRows(col(["x", "y", "z"], false, [{ row: "r0", col: "b", rows: 2, cols: 1 }]), 0, "asc")).toBeNull();
+  });
+  it("sortedRows : zone d'une seule ligne : admise ; une case couverte prend le texte de l'ancre", () => {
+    const t = col(["z", "y"], false, [{ row: "r0", col: "a", rows: 1, cols: 2 }]);
+    expect(sortedRows(t, 0, "asc")).toEqual(["r1", "r0"]);
+    expect(sortedRows(t, 1, "asc")).toEqual(["r0", "r1"]);
   });
 });

@@ -231,6 +231,9 @@ describe("tableKey (H12)", () => {
   it("tableKey : Alt+flèches seules ; avec Ctrl, Maj, Cmd, sans Alt, en saisie ou en composition : null", () => {
     const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
     expect(tableKey(a("a", { code: "KeyA" }))).toBe("fit-content");
+    expect(tableKey(a("t", { code: "KeyT" }))).toBe("sort-asc");
+    expect(tableKey(a("T", { code: "KeyT", shiftKey: true }))).toBe("sort-desc");
+    expect(tableKey(a("t", { code: "KeyT", ctrlKey: true }))).toBeNull();
     expect(tableKey(a("ArrowRight"))).toBe("col-wider");
     expect(tableKey(a("ArrowLeft"))).toBe("col-narrower");
     expect(tableKey(a("ArrowDown"))).toBe("row-taller");
@@ -397,6 +400,8 @@ describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointe
     k("C", { code: "KeyC", altKey: true, shiftKey: true }),
     k("M", { code: "KeyM", altKey: true, shiftKey: true }),
     k("b", { code: "KeyB", altKey: true }),
+    k("t", { code: "KeyT", altKey: true }),
+    k("T", { code: "KeyT", altKey: true, shiftKey: true }),
     k("B", { code: "KeyB", altKey: true, shiftKey: true }),
     ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, ctrlKey: true, shiftKey: true })),
   ];

@@ -53,6 +53,12 @@ describe("TableOptions (DS10)", () => {
     fireEvent.click(container.querySelector('[data-table-option="fit-content"]')!);
     expect(host.act.mock.calls.map((c) => c[0])).toEqual(["fit-toggle", "fit-content"]);
   });
+  it("DS10 : Lignes : Trier croissant et décroissant (act sort-asc, sort-desc)", () => {
+    const { container, host } = mount("tableRows", cell());
+    fireEvent.click(container.querySelector('[data-table-option="sort-asc"]')!);
+    fireEvent.click(container.querySelector('[data-table-option="sort-desc"]')!);
+    expect(host.act.mock.calls.map((c) => c[0])).toEqual(["sort-asc", "sort-desc"]);
+  });
   it("DS10 : Lignes : En-tête est un interrupteur (aria-checked) qui bascule", () => {
     const { container, host } = mount("tableRows", cell({ header: true }));
     const b = container.querySelector('[data-table-option="header"]')!;
