@@ -49,17 +49,26 @@ export function flattenPath(pts: readonly Pt[], curve: boolean): Pt[] {
   return out;
 }
 
-export interface LineGeom { readonly inner: readonly number[]; readonly curve: boolean }
-/** Chemin d'une forme lue (miroir de `read_shape`) : courbe = `roundness: "round"` sur ligne ou flèche non coudée. */
+/** `closed` (OG12 lot 2a) : ligne fermée, fermeture implicite ; absent = ouverte. */
+export interface LineGeom { readonly inner: readonly number[]; readonly curve: boolean; readonly closed?: boolean }
+/** Chemin d'une forme lue (miroir de `read_shape`) : courbe = `roundness: "round"` sur ligne ou flèche non coudée et non
+ *  fermée ; fermée = `polygon: true` sur une ligne. */
 export function lineGeomOf(s: ShapeData, look?: Look): LineGeom {
   const seg = isSegment(s.shape);
   const elbow = s.shape === "arrow" && elbowedOf(look);
-  return { inner: seg ? (s.points ?? []) : [], curve: seg && !elbow && roundnessOf(look) === "round" };
+  const closed = isClosedShape(s);
+  return { inner: seg ? (s.points ?? []) : [], curve: seg && !elbow && !closed && roundnessOf(look) === "round", ...(closed ? { closed } : {}) };
 }
 
-export const SHAPE_KINDS: readonly ShapeKind[] = ["rect", "ellipse", "line", "arrow"];
+export const SHAPE_KINDS: readonly ShapeKind[] = ["rect", "ellipse", "diamond", "line", "arrow"];
 export const isShapeKind = (s: string): s is ShapeKind => (SHAPE_KINDS as readonly string[]).includes(s);
 export const isSegment = (k: ShapeKind): boolean => k === "line" || k === "arrow";
+/** OG12 lot 2a : ligne fermée (`polygon: true` sur une ligne). */
+export const isClosedShape = (v: ShapeData): boolean => v.shape === "line" && v.polygon === true;
+/** OG12 lot 2a : formes à boîte (rectangle, ellipse, losange), convertibles en ligne fermée par `ShapeToPolygon`. */
+export const isBoxShape = (k: ShapeKind): boolean => k === "rect" || k === "ellipse" || k === "diamond";
+/** OG12 lot 2a : formes à fond : rectangle, ellipse, losange et ligne fermée. */
+export const isFillable = (s: ShapeData): boolean => isBoxShape(s.shape) || isClosedShape(s);
 export const IDENTITY_MATRIX: Matrix = [1, 0, 0, 1, 0, 0];
 export const translateMatrix = (dx: number, dy: number): Matrix => [1, 0, 0, 1, dx, dy];
 export const isIdentity = (m: Matrix): boolean =>
@@ -97,12 +106,14 @@ export function arrowWings(w: number, h: number, width: number): [number, number
  * pointe (constat 4 de T60) : pied de chaque aile sur le bord du fût, puis son extrémité.
  */
 export function shapePolygon(kind: ShapeKind, w: number, h: number, width: number, line?: LineGeom): number[] {
+  if (isSegment(kind) && line?.closed === true) return closedPolygon(flattenPath(linePath(w, h, line.inner), false), width);
   if (isSegment(kind) && line !== undefined) {
     const pts = flattenPath(linePath(w, h, line.inner), line.curve);
     if (pts.length > 2) return bandPolygon(pts, width, kind === "arrow");
   }
   const half = Math.max(width / 2, 1);
-  if (kind === "rect") return [-half, -half, w + half, -half, w + half, h + half, -half, h + half];
+  if (kind === "rect" || (kind === "diamond" && (w < 1e-9 || h < 1e-9))) return [-half, -half, w + half, -half, w + half, h + half, -half, h + half];
+  if (kind === "diamond") return diamondPoints(w, h, half);
   if (kind === "ellipse") {
     // Départ à l'angle π, n multiple de 4 : les quatre extrêmes sont des sommets, les bornes restent exactes.
     const cx = w / 2;
@@ -137,6 +148,56 @@ export function shapePolygon(kind: ShapeKind, w: number, h: number, width: numbe
 }
 
 export const boxPolygon = (w: number, h: number): number[] => [0, 0, w, 0, w, h, 0, h];
+
+/** Sommets du losange (haut, droite, bas, gauche), décalés de `off` le long de la normale (`off` > 0 : dehors) ; décalage
+ *  d'un sommet = off × hypot(w, h) / côté opposé : `diamond_points` du cœur. */
+function diamondPoints(w: number, h: number, off: number): number[] {
+  const l = Math.hypot(w, h);
+  const ox = (off * l) / h;
+  const oy = (off * l) / w;
+  return [w / 2, -oy, w + ox, h / 2, w / 2, h + oy, -ox, h / 2];
+}
+
+/** Ligne fermée (OG12, n° 34), `closed_polygon` du cœur : sommets dédoublonnés, fermeture implicite (un départ répété à
+ *  la fin est retiré, jamais ajouté) ; chaque sommet poussé de la demi-épaisseur le long de la bissectrice extérieure
+ *  (onglet borné à 4 demi-épaisseurs, comme `bandPolygon`). Moins de 3 sommets : la polyligne épaissie. */
+function closedPolygon(raw: readonly Pt[], width: number): number[] {
+  const half = Math.max(width / 2, 1);
+  const pts: Pt[] = [];
+  for (const p of raw) {
+    const q = pts[pts.length - 1];
+    if (q === undefined || Math.hypot(q[0] - p[0], q[1] - p[1]) > 1e-9) pts.push(p);
+  }
+  if (pts.length > 1 && Math.hypot(pts[0]![0] - pts[pts.length - 1]![0], pts[0]![1] - pts[pts.length - 1]![1]) <= 1e-9) pts.pop();
+  if (pts.length < 3) return bandPolygon(raw, width, false);
+  const n = pts.length;
+  let area = 0;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i]!;
+    const b = pts[(i + 1) % n]!;
+    area += a[0] * b[1] - b[0] * a[1];
+  }
+  const sgn = area >= 0 ? 1 : -1;
+  const normal = (a: Pt, b: Pt): [number, number] => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const l = Math.hypot(dx, dy);
+    return [(sgn * dy) / l, (-sgn * dx) / l];
+  };
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const p = pts[i]!;
+    const na = normal(pts[(i + n - 1) % n]!, p);
+    const nb = normal(p, pts[(i + 1) % n]!);
+    let mx = na[0] + nb[0];
+    let my = na[1] + nb[1];
+    const ml = Math.hypot(mx, my);
+    [mx, my] = ml < 1e-9 ? na : [mx / ml, my / ml];
+    const cos = Math.max(mx * na[0] + my * na[1], 0.25);
+    out.push(p[0] + (mx * half) / cos, p[1] + (my * half) / cos);
+  }
+  return out;
+}
 
 export function applyMatrix(m: Matrix, x: number, y: number): [number, number] {
   return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
@@ -233,11 +294,19 @@ function bandPolygon(raw: readonly Pt[], width: number, arrow: boolean): number[
 }
 export const bandPolygonForTest = bandPolygon;
 
-export interface BindBox { readonly id: string; readonly m: Matrix; readonly w: number; readonly h: number; readonly ellipse: boolean; readonly gap: number }
+/** Contour d'accroche (OG12 lot 2a) : `Outline` du cœur. */
+export type Outline = "box" | "ellipse" | "diamond";
+export interface BindBox { readonly id: string; readonly m: Matrix; readonly w: number; readonly h: number; readonly outline: Outline; readonly gap: number }
 export const bindGap = (width: number): number => BASE_BINDING_GAP + width / 2;
 export function onOutline(b: BindBox, qx: number, qy: number): boolean {
   const IN = 0.5;
-  if (b.ellipse) {
+  if (b.outline === "diamond") {
+    const cx = b.w / 2 - IN;
+    const cy = b.h / 2 - IN;
+    if (cx <= 0 || cy <= 0) return true;
+    return Math.abs(qx - b.w / 2) / cx + Math.abs(qy - b.h / 2) / cy >= 1;
+  }
+  if (b.outline === "ellipse") {
     const rx = b.w / 2 - IN;
     const ry = b.h / 2 - IN;
     if (rx <= 0 || ry <= 0) return true;
@@ -253,7 +322,11 @@ export function anchorPoint(b: BindBox, fx: number, fy: number): [number, number
   const dx = qx - cx;
   const dy = qy - cy;
   if (!onOutline(b, qx, qy) || Math.hypot(dx, dy) < 1e-9) return applyMatrix(b.m, qx, qy);
-  const s = b.ellipse ? 1 / Math.sqrt((dx / cx) ** 2 + (dy / cy) ** 2) : 1 / Math.max(Math.abs(dx) / cx, Math.abs(dy) / cy);
+  const s = b.outline === "ellipse"
+    ? 1 / Math.sqrt((dx / cx) ** 2 + (dy / cy) ** 2)
+    : b.outline === "diamond"
+      ? 1 / (Math.abs(dx) / cx + Math.abs(dy) / cy)
+      : 1 / Math.max(Math.abs(dx) / cx, Math.abs(dy) / cy);
   const edge = applyMatrix(b.m, cx + s * dx, cy + s * dy);
   const center = applyMatrix(b.m, cx, cy);
   const ux = edge[0] - center[0];

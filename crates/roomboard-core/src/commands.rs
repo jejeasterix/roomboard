@@ -328,6 +328,11 @@ pub enum Command {
         id: String,
         dir: crate::linear::LinkDir,
     },
+    /// OG12 lot 2a (n° 34, H5) : rectangle, losange ou ellipse convertis en place en ligne fermée, une étape ;
+    /// `BadShape` sinon (ligne, flèche, boîte nulle).
+    ShapeToPolygon {
+        id: String,
+    },
     /// Média (C14, M5) : élément, métadonnée du média (avec `linked` s'il est lié) et du poster ; une transaction, une
     /// étape.
     AddMedia {
@@ -539,11 +544,18 @@ pub(crate) struct ShapeFields {
     /// Flèche coudée (`elbowed: true`, flèche seule).
     #[allow(dead_code)] // lu par T4 (route coudée)
     pub elbowed: bool,
+    /// OG12 lot 2a (n° 34) : ligne fermée (`polygon: true`, ligne seule) ; fermeture implicite vers le départ.
+    pub polygon: bool,
     pub start: Option<BindInput>,
     pub end: Option<BindInput>,
 }
 
 impl ShapeFields {
+    /// C4a : intérieur remplissable (pot, murs de zone) : toute forme sauf un segment, et la ligne fermée (n° 34).
+    pub fn fillable(&self) -> bool {
+        !self.kind.is_segment() || self.polygon
+    }
+
     pub fn geom(&self) -> ShapeGeom<'_> {
         ShapeGeom {
             kind: self.kind,
@@ -551,6 +563,7 @@ impl ShapeFields {
             h: self.h,
             path: &self.points,
             curve: self.curve,
+            closed: self.polygon,
         }
     }
 }
@@ -567,6 +580,8 @@ pub(crate) fn read_shape<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<ShapeFields>
         Look::default()
     };
     let elbowed = kind == ShapeKind::Arrow && look.elbowed == Some(true);
+    // U3 : seul `true` ferme la ligne ; toute autre valeur se lit ouverte et reste telle quelle.
+    let polygon = kind == ShapeKind::Line && crate::element::read_polygon(txn, e);
     Some(ShapeFields {
         kind,
         w: out_f64(e.get(txn, "w"))?,
@@ -578,8 +593,9 @@ pub(crate) fn read_shape<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<ShapeFields>
         } else {
             Vec::new()
         },
-        curve: seg && !elbowed && look.roundness.as_deref() == Some("round"),
+        curve: seg && !elbowed && !polygon && look.roundness.as_deref() == Some("round"),
         elbowed,
+        polygon,
         start: if seg {
             linear::read_binding(txn, e, linear::End::Start)
         } else {
@@ -812,7 +828,7 @@ struct Cut {
 /// Les chaînes données, triées et sans doublon.
 fn sorted_unique(items: impl Iterator<Item = String>) -> Vec<String> {
     let mut v: Vec<String> = items.collect();
-    v.sort();
+    crate::order::sort_stable_by(&mut v, String::cmp);
     v.dedup();
     v
 }
@@ -839,10 +855,12 @@ impl Document {
         txn: &T,
         ids: &[String],
     ) -> Vec<(String, FoundElement)> {
-        let unique: BTreeSet<&String> = ids.iter().collect();
-        unique
+        sorted_unique(ids.iter().cloned())
             .into_iter()
-            .filter_map(|id| Some((id.clone(), self.find_element(txn, id)?)))
+            .filter_map(|id| {
+                let found = self.find_element(txn, &id)?;
+                Some((id, found))
+            })
             .collect()
     }
 
@@ -903,6 +921,7 @@ impl Document {
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
             Command::Arrange { ids, how } => self.cmd_arrange(&ids, how),
             Command::AddLinked { id, dir } => self.cmd_add_linked(&id, dir),
+            Command::ShapeToPolygon { id } => self.cmd_shape_to_polygon(&id),
             Command::SetText {
                 page,
                 id,
@@ -1314,6 +1333,15 @@ impl Document {
                 .ok_or(CommandError::BadShape)?;
             let t = out_transform(found.element.get(&txn, "transform"))
                 .ok_or(CommandError::BadShape)?;
+            // Lot 2a (n° 34) : une ligne fermée n'a ni liaison ni moins de trois sommets.
+            if s.polygon {
+                if start.is_some() || end.is_some() {
+                    return Err(CommandError::BadShape);
+                }
+                if n < 3 {
+                    return Err(CommandError::BadPoints);
+                }
+            }
             let a = start
                 .map(|b| self.checked_binding(&txn, &found.page_id, b))
                 .transpose()?;
@@ -1360,6 +1388,61 @@ impl Document {
         if plan.is_empty() {
             return Ok(self.unchanged());
         }
+        {
+            let mut txn = self.transact_local();
+            for (k, v) in plan {
+                crate::fill::set_or_remove(&e, &mut txn, k, v);
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: vec![id.to_string()],
+            ..Default::default()
+        }))
+    }
+
+    /// `ShapeToPolygon` (n° 34) : sommets locaux de la forme, mis en monde par sa transform, écrits par `line_writes`
+    /// (départ = translation, dernier = (w, h), fermeture implicite, DA-1) ; `shape` = "line", `polygon` = true,
+    /// `roundness` retiré ; fond, couleurs, trait gardés. Une transaction.
+    fn cmd_shape_to_polygon(&mut self, id: &str) -> Result<Change, CommandError> {
+        let (e, page, plan) = {
+            let txn = self.read();
+            let found = self
+                .find_element(&txn, id)
+                .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
+            let s = read_shape(&txn, &found.element).ok_or(CommandError::BadShape)?;
+            let t = out_transform(found.element.get(&txn, "transform"))
+                .ok_or(CommandError::BadShape)?;
+            let (w, h) = (s.w, s.h);
+            if !(finite_positive(w) && finite_positive(h)) {
+                return Err(CommandError::BadShape);
+            }
+            let local: Vec<(f64, f64)> = match s.kind {
+                ShapeKind::Rect => vec![(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)],
+                ShapeKind::Diamond => {
+                    vec![(w / 2.0, 0.0), (w, h / 2.0), (w / 2.0, h), (0.0, h / 2.0)]
+                }
+                // 16 sommets, départ en haut, sens horaire à l'écran (comme le losange).
+                ShapeKind::Ellipse => (0..16)
+                    .map(|k| {
+                        let a = -std::f64::consts::FRAC_PI_2
+                            + std::f64::consts::TAU * f64::from(k) / 16.0;
+                        (w / 2.0 + w / 2.0 * a.cos(), h / 2.0 + h / 2.0 * a.sin())
+                    })
+                    .collect(),
+                ShapeKind::Line | ShapeKind::Arrow => return Err(CommandError::BadShape),
+            };
+            let world: Vec<(f64, f64)> = local
+                .iter()
+                .map(|p| apply_transform(&t, p.0, p.1))
+                .collect();
+            let mut plan = linear::line_writes(&t, &world, None, None)?;
+            plan.push(("shape", Some(In::Any(Any::from("line")))));
+            plan.push(("polygon", Some(In::Any(Any::Bool(true)))));
+            // H5 : `roundness` retiré comme `cmd_set_style` pour un neutre, dans la même transaction.
+            plan.push(("roundness", None));
+            (found.element, found.page_id, plan)
+        };
         {
             let mut txn = self.transact_local();
             for (k, v) in plan {
@@ -1420,7 +1503,7 @@ impl Document {
         // Ids triés des cibles élargies (sans objet lié : ceux de `find_unique`, déjà triés, G9), puis les lignes suivies
         // (OG12) qui n'y sont pas encore.
         let mut ids: Vec<String> = targets.into_iter().map(|t| t.3).collect();
-        ids.sort();
+        crate::order::sort_stable_by(&mut ids, String::cmp);
         for f in followed {
             if !ids.contains(&f) {
                 ids.push(f);
@@ -1824,7 +1907,7 @@ impl Document {
             if found.iter().any(|(_, f)| f.page_id != page) {
                 return Err(CommandError::MixedPages);
             }
-            found.sort_by_key(|(_, f)| f.index);
+            crate::order::sort_stable_by(&mut found, |(_, a), (_, b)| a.index.cmp(&b.index));
             let n = found.len() as u32;
             if to.checked_add(n).is_none_or(|end| end > arr.len(&txn)) {
                 return Err(CommandError::BadIndex);
@@ -2008,7 +2091,7 @@ impl Document {
     }
 
     fn cmd_group(&mut self, ids: &[String]) -> Result<Change, CommandError> {
-        let unique: BTreeSet<&String> = ids.iter().collect();
+        let unique = sorted_unique(ids.iter().cloned());
         let mut targets = self.group_targets(ids);
         if targets.len() != unique.len() {
             return Err(CommandError::BadGroup);
@@ -2019,16 +2102,17 @@ impl Document {
         if targets.iter().any(|t| t.page != page) {
             return Err(CommandError::BadGroup);
         }
-        let outers: BTreeSet<String> = targets
-            .iter()
-            .map(|t| t.path.first().unwrap_or(&t.id).clone())
-            .collect();
+        let outers = crate::order::string_set(
+            targets
+                .iter()
+                .map(|t| t.path.first().unwrap_or(&t.id).clone()),
+        );
         if outers.len() < 2 {
             return Err(CommandError::BadGroup);
         }
         // Un groupe touché en partie est étendu à tous ses membres (même groupe extérieur, même page).
         // Un seul passage sur la page (pas un `find_element` par id).
-        let known: BTreeSet<String> = targets.iter().map(|t| t.id.clone()).collect();
+        let known = crate::order::string_set(targets.iter().map(|t| t.id.clone()));
         {
             let txn = self.read();
             if let Some(els) = self.page_elements(&txn, &page) {
@@ -2052,7 +2136,7 @@ impl Document {
                 }
             }
         }
-        targets.sort_by(|a, b| a.id.cmp(&b.id));
+        crate::order::sort_stable_by(&mut targets, |a, b| a.id.cmp(&b.id));
         let gid = yrs::uuid_v4().to_string();
         {
             let mut txn = self.transact_local();
@@ -2115,7 +2199,7 @@ impl Document {
             return Ok(self.unchanged());
         }
         // Indices décroissants tous tableaux confondus : dans un même tableau, le plus grand part d'abord.
-        targets.sort_by_key(|t| std::cmp::Reverse(t.index));
+        crate::order::sort_stable_by(&mut targets, |a, b| b.index.cmp(&a.index));
         {
             let mut txn = self.transact_local();
             for t in &targets {
@@ -3228,6 +3312,7 @@ pub(crate) mod tests {
                 h: 150.0,
                 fill: None,
                 points: None,
+                polygon: None,
                 start: None,
                 end: None,
             })
@@ -3360,6 +3445,7 @@ pub(crate) mod tests {
                 h: -150.0,
                 fill: Some("#ff0000".into()),
                 points: None,
+                polygon: None,
                 start: None,
                 end: None,
             })

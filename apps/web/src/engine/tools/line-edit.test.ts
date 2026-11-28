@@ -10,7 +10,7 @@ const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX:
 const BIND = { id: "T", fx: 0.5, fy: 0.5 };
 const HIT = { id: "T", fixed: [0.5, 0.5] as const, anchors: [[0, 0], [1, 1], [2, 2], [3, 3]] as const };
 
-function setup(opts: { zoom?: number; touch?: boolean; inner?: number[]; start?: typeof BIND | null } = {}) {
+function setup(opts: { zoom?: number; touch?: boolean; inner?: number[]; start?: typeof BIND | null; closed?: [number, number][] } = {}) {
   const zoom = opts.zoom ?? 1;
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
@@ -20,6 +20,11 @@ function setup(opts: { zoom?: number; touch?: boolean; inner?: number[]; start?:
   const view = (): ShapeElement | null => {
     const v = real(id) as ShapeElement | null;
     if (!v || v.kind !== "shape") return v;
+    if (opts.closed) {
+      const c = opts.closed;
+      const last = c[c.length - 1]!;
+      return { ...v, shape: { ...v.shape, w: last[0], h: last[1], points: c.slice(1, -1).flat(), polygon: true, fill: "#ff0000" } } as ShapeElement;
+    }
     return { ...v, shape: { ...v.shape, points: opts.inner ?? [], start: opts.start ?? undefined } } as ShapeElement;
   };
   vi.spyOn(doc, "element").mockImplementation((i: string) => (i === id ? view() : real(i)));
@@ -159,5 +164,54 @@ describe("Modifier les points : liaisons (OG12 C2)", () => {
     a.editor.close(1, "end");
     expect(runs0(a).start).toEqual(BIND);
     expect(runs0(a).end).toBeNull();
+  });
+});
+
+describe("Modifier les points : ligne fermée (OG12 lot 2a)", () => {
+  const SQ: [number, number][] = [[0, 0], [100, 0], [100, 50], [0, 50]];
+  it("segment de fermeture : tirer son milieu ajoute un sommet à la fin, une SetLinePoints sans liaison", () => {
+    const { editor, runs, id } = setup({ closed: SQ, touch: true });
+    editor.begin(1, [at(0, 25)]);
+    editor.extend(1, [at(-40, 25)], []);
+    editor.close(1, "end");
+    expect(runs).toEqual([{ type: "SetLinePoints", id, points: [0, 0, 100, 0, 100, 50, 0, 50, -40, 25], start: null, end: null }]);
+  });
+  it("aperçu d'une ligne fermée : polygon gardé", () => {
+    const { editor } = setup({ closed: SQ });
+    editor.begin(1, [at(100, 50)]);
+    editor.extend(1, [at(150, 50)], []);
+    expect(editor.live().overlay?.shapes[0]?.polygon).toBe(true);
+    const o = setup({ inner: [100, 0] });
+    o.editor.begin(1, [at(100, 0)]);
+    o.editor.extend(1, [at(100, 40)], []);
+    expect(o.editor.live().overlay?.shapes[0]?.polygon).toBeUndefined();
+  });
+  it("aperçu d'une ligne fermée : le fond est gardé (C4b)", () => {
+    const { editor } = setup({ closed: SQ });
+    editor.begin(1, [at(100, 50)]);
+    editor.extend(1, [at(150, 50)], []);
+    expect(editor.live().overlay?.shapes[0]?.fill).toBe("#ff0000");
+  });
+  it("un sommet tiré près d'un objet ne se lie pas", () => {
+    const a = setup({ closed: SQ });
+    vi.spyOn(a.doc, "bindTarget").mockReturnValue(HIT as never);
+    a.editor.begin(1, [at(100, 50)]);
+    a.editor.extend(1, [at(150, 50)], []);
+    a.editor.close(1, "end");
+    expect(a.runs[0]).toMatchObject({ type: "SetLinePoints", start: null, end: null });
+  });
+  it("trois points au moins : Suppr sur une ligne fermée à 3 sommets ne retire rien", () => {
+    const { editor, runs } = setup({ closed: [[0, 0], [100, 0], [50, 50]] });
+    editor.begin(1, [at(100, 0)]);
+    editor.close(1, "end");
+    expect(editor.removeSelected()).toBe(false);
+    expect(runs).toEqual([]);
+  });
+  it("une ligne fermée à 4 sommets perd un sommet", () => {
+    const { editor, runs, id } = setup({ closed: SQ });
+    editor.begin(1, [at(100, 0)]);
+    editor.close(1, "end");
+    expect(editor.removeSelected()).toBe(true);
+    expect(runs).toEqual([{ type: "SetLinePoints", id, points: [0, 0, 100, 50, 0, 50], start: null, end: null }]);
   });
 });

@@ -242,3 +242,16 @@ export function nudgeKey(e: KeyLike): { dx: number; dy: number } | null {
   if (e.key === "ArrowDown") return { dx: 0, dy: s };
   return null;
 }
+
+export type ToolKeyChoice = "select" | "rect" | "diamond" | "ellipse" | "arrow" | "line" | "pen" | "text" | "eraser" | "hand";
+/** Lot 2a (n° 35) : lettres et chiffres d'outil d'Excalidraw (Tools.tsx, MIT) non déjà pris : S et G (sélecteurs de
+ *  couleur) restent à OptionsPanel. Touche seule : ni Ctrl, Cmd, Alt ni Maj ; hors IME et hors champ. */
+export const TOOL_KEYS: Readonly<Record<string, ToolKeyChoice>> = {
+  v: "select", r: "rect", d: "diamond", o: "ellipse", a: "arrow", l: "line", p: "pen", t: "text", e: "eraser", h: "hand",
+  "1": "select", "2": "rect", "3": "diamond", "4": "ellipse", "5": "arrow", "6": "line", "7": "pen", "8": "text", "0": "eraser",
+};
+export function toolKey(e: KeyLike): ToolKeyChoice | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || inEditable(e.target)) return null;
+  const k = e.key.toLowerCase();
+  return Object.hasOwn(TOOL_KEYS, k) ? TOOL_KEYS[k]! : null;
+}

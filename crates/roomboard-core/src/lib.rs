@@ -16,6 +16,7 @@ pub mod ink;
 pub mod linear;
 pub mod media;
 pub mod model3d;
+pub(crate) mod order;
 pub mod page_look;
 pub mod query;
 pub mod rich_text;

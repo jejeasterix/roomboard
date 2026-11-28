@@ -113,6 +113,22 @@ describe("outil Formes (D13, D38)", () => {
     expect(runs[0]).toMatchObject({ x1: 100, y1: 100 });
   });
 
+  it("losange : glisser écrit AddShape diamond, fond du style courant ; boîte aplatie refusée", () => {
+    const { ctx, runs } = setup();
+    const tool = createShapeTool(ctx, "diamond", () => PEN);
+    tool.begin(1, [at(0, 0)]);
+    tool.extend(1, [at(100, 40)], []);
+    tool.close(1, "end");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ type: "AddShape", shape: "diamond", x0: 0, y0: 0, x1: 100, y1: 40 });
+    const flat = setup();
+    const t2 = createShapeTool(flat.ctx, "diamond", () => PEN);
+    t2.begin(1, [at(0, 0)]);
+    t2.extend(1, [at(100, 0)], []);
+    t2.close(1, "end");
+    expect(flat.runs).toEqual([]);
+  });
+
   it("zoom 2 : coins en coordonnées monde, seuil en px écran", () => {
     const { ctx, runs } = setup(2);
     const tool = createShapeTool(ctx, "arrow", () => PEN);

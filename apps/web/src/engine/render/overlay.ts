@@ -21,6 +21,8 @@ export interface ShapePreview {
   readonly seed?: number;
   /** OG12 : points intérieurs en monde (absent : segment du socle). */
   readonly points?: readonly number[];
+  /** OG12 lot 2a : ligne fermée (fermeture implicite), tracée fermée pendant le glisser. */
+  readonly polygon?: true;
 }
 
 /** personnalisation-3 (D13, D18) : poignée de l'outil Tableau, point monde ; 44 px de cible, disque de 16 px dessiné. */

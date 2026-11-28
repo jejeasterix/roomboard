@@ -222,6 +222,10 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
     for (let y = 40; y < box.height - 40 && !found; y += 40) {
       for (let x = 40; x < box.width - 40 && !found; x += 40) {
         if (!free(x, y)) continue;
+        // OG34 : le panneau d'options apparaît à la première sélection (sections Objet 3D, Disposition…) ; un clic dessus
+        // (« Replier les options ») cacherait les commandes 3D. Sa boîte est relue à chaque point.
+        const o = await page.$eval("[data-options]", (e) => e.getBoundingClientRect().toJSON()).catch(() => null);
+        if (o !== null && bs.x + x >= o.x && bs.x + x <= o.x + o.width && bs.y + y >= o.y && bs.y + y <= o.y + o.height) continue;
         await mouse.click(x, y);
         await fr();
         found = (await tag()).startsWith("glb;");

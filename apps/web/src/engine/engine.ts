@@ -13,10 +13,10 @@ import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import type { ArrangeHow } from "../core/arrange";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { arrangeKey, cellKey, nudgeKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
+import { arrangeKey, cellKey, nudgeKey, toolKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, tableKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
-import { isSegment } from "../core/shapes";
+import { isBoxShape, isSegment } from "../core/shapes";
 import { createLineEditor, type LineEditor } from "./tools/line-edit";
 import { linkedCopy } from "./tools/line-points";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -673,9 +673,13 @@ export function createEngine(deps: EngineDeps): Engine {
 
   /** OG12 (n° 21) : entre dans « Modifier les points » pour `id` (ligne ou flèche non coudée), sélection = `id`. */
   function enterLineEdit(id: string): boolean {
-    const v = doc.element(id);
-    if (v?.kind !== "shape" || !isSegment(v.shape.shape) || elbowedOf(v.look)) return false;
+    let v = doc.element(id);
     if (!doc.elementIds(pageId).includes(id)) return false;
+    if (v?.kind === "shape" && isBoxShape(v.shape.shape)) {
+      if (run({ type: "ShapeToPolygon", id }) === null) return false;
+      v = doc.element(id);
+    }
+    if (v?.kind !== "shape" || !isSegment(v.shape.shape) || elbowedOf(v.look)) return false;
     if (tool !== "select") engine.setTool("select");
     lineEditor?.leave?.("tool");
     lineEditor = createLineEditor(ctx, id, exitLineEdit);
@@ -920,6 +924,8 @@ export function createEngine(deps: EngineDeps): Engine {
     select: selectTool,
     rect: shapeTool("rect"),
     ellipse: shapeTool("ellipse"),
+    // OG12 lot 2a : outil Losange, branché par L4.
+    diamond: shapeTool("diamond"),
     line: shapeTool("line"),
     arrow: shapeTool("arrow"),
     table: tableTool,
@@ -1366,7 +1372,8 @@ export function createEngine(deps: EngineDeps): Engine {
           arrange(how);
           return true;
         }
-        const step = nudgeKey(e);
+        // Lot 2a (L8) : pendant « Modifier les points », les flèches ne déplacent pas la sélection entière.
+        const step = lineEditor === null ? nudgeKey(e) : null;
         if (step !== null) {
           nudge(step.dx, step.dy);
           return true;
@@ -1426,6 +1433,11 @@ export function createEngine(deps: EngineDeps): Engine {
         selectTool.setSelection([]);
         requestScene();
         emit();
+        return true;
+      }
+      const picked = lineEditor === null ? toolKey(e) : null;
+      if (picked !== null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        engine.setTool(picked);
         return true;
       }
       if (action === null) return false;
@@ -1669,7 +1681,7 @@ export function createEngine(deps: EngineDeps): Engine {
       const sel = selectTool.selection();
       const id = sel.length === 1 ? sel[0]! : null;
       const v = id === null ? null : doc.element(id);
-      if (id === null || v?.kind !== "shape" || (v.shape.shape !== "rect" && v.shape.shape !== "ellipse")) return false;
+      if (id === null || v?.kind !== "shape" || !isBoxShape(v.shape.shape)) return false;
       const change = run({ type: "AddLinked", id, dir });
       if (change === null) return false;
       const copy = linkedCopy(doc, change.ids, id);
