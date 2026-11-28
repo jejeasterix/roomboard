@@ -41,9 +41,9 @@ describe("lecture d'une opération (D6)", () => {
     expect(codeOf(() => parseOp({ type: "CommitStroke", page: "p", points: [1, "a"], style }, ctx()))).toBe("usage");
     expect(codeOf(() => parseOp({ type: "Erase", page: "p", path: "0,0", radius: 4, mode: "object" }, ctx()))).toBe("usage");
   });
-  it("COMMAND_TYPES couvre les 43 commandes de Command, sans doublon (Arrange d'OG23 et les quatre du Tableau d'OG26 comprises)", () => {
+  it("COMMAND_TYPES couvre les 44 commandes de Command, sans doublon (Arrange d'OG23 et les quatre du Tableau d'OG26 comprises)", () => {
     expect(ALL_COMMANDS).toBe(true);
-    expect(new Set(COMMAND_TYPES).size).toBe(43);
+    expect(new Set(COMMAND_TYPES).size).toBe(44);
   });
   it("COMMAND_TYPES : chaque type une seule fois, la Restack d'OG4 comprise", () => {
     expect(COMMAND_TYPES).toHaveLength(new Set(COMMAND_TYPES).size);

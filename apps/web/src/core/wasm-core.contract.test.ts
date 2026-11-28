@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, LineBinding, CellIds, CellLink, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import type { AssetRef, LineBinding, CellIds, CellLink, CellLook, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableBorder, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage } from "./api";
 import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
@@ -2038,6 +2038,12 @@ const p3Place11 = (d: CoreDocument, s: P3Cells): Change => {
     sizes: [[s.t, "col", v.cols[1]?.id ?? "", 416], [s.t, "row", v.rows[1]?.id ?? "", 316]],
   });
 };
+// personnalisation-3 suite (T3, DS1) : une clé de `SetTableLook` sur la plage `a`-`b` (indices de ligne et de colonne).
+const p3Look = (d: CoreDocument, s: P3Cells, a: readonly [number, number], b: readonly [number, number], look: CellLook): Change => {
+  const v = tableOf(d, s.t);
+  const at = (p: readonly [number, number]) => ({ row: v.rows[p[0]]?.id ?? "", col: v.cols[p[1]]?.id ?? "" });
+  return d.apply({ type: "SetTableLook", id: s.t, from: at(a), to: at(b), look });
+};
 
 describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
   it("PlaceInCell (S1) : colonne 416, ligne 316, lien posé, une étape ; annuler ramène tout", () => {
@@ -2330,6 +2336,77 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     d.apply({ type: "PlaceInCell", ids: [s.o], matrix: I, cell: s.link(0, 0), sizes: [] });
     unchanged(d, () => expect(messageOf(() => d.apply({ type: "PlaceInCell", ids: [s.o], matrix: I, cell: partiel, sizes: [] }))).toBe(TABLE_MESSAGE));
     expect(d.element(s.o)?.cell).toEqual(s.link(0, 0));
+    d.free();
+  });
+
+  // suite OG32 (T3) : le faux cœur suit `differs` et `check` du cœur (`table_look.rs`), pas `setOnTargets` : le défaut
+  // s'écrit « absent », une bordure se compare par valeurs, `open` vise une case ombrée, `accept` les colonnes.
+  it("SetTableLook ha, va (DS1, S8) : plage, une étape ; défaut retire ; inchangé : aucune étape ; annuler", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    unchanged(d, () => p3Look(d, s, [2, 2], [2, 2], { key: "ha", value: "left" }));
+    expect(p3Look(d, s, [0, 0], [0, 1], { key: "ha", value: "center" }).ids).toEqual([s.t]);
+    p3Look(d, s, [0, 0], [0, 1], { key: "va", value: "middle" });
+    expect(tableOf(d, s.t).cells.map((c) => [c.ha, c.va])).toEqual([["center", "middle"], ["center", "middle"]]);
+    unchanged(d, () => p3Look(d, s, [0, 0], [0, 1], { key: "ha", value: "center" }));
+    p3Look(d, s, [0, 0], [0, 1], { key: "ha", value: "left" });
+    expect(tableOf(d, s.t).cells.map((c) => c.ha)).toEqual([undefined, undefined]);
+    d.undo();
+    expect(tableOf(d, s.t).cells.map((c) => c.ha)).toEqual(["center", "center"]);
+    d.free();
+  });
+
+  it("SetTableLook border (DS4, S9) : 2 × 2, relu ; valeur refusée sans écriture ; null retire", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Look(d, s, [0, 0], [1, 1], { key: "border", value: ["#dc2626", 8, "dashed"] });
+    expect(tableOf(d, s.t).cells.map((c) => c.border)).toEqual(Array(4).fill(["#dc2626", 8, "dashed"]));
+    unchanged(d, () => p3Look(d, s, [0, 0], [1, 1], { key: "border", value: ["#dc2626", 8, "dashed"] }));
+    for (const bad of [["#dc2626", 0, "dashed"], ["#dc2626", 33, "dashed"], ["#dc2626", 2, "wavy"], ["#zzzzzz", 2, "solid"]]) {
+      unchanged(d, () => expect(() => p3Look(d, s, [0, 0], [0, 0], { key: "border", value: bad as unknown as TableBorder })).toThrow(TABLE_MESSAGE));
+    }
+    p3Look(d, s, [0, 0], [1, 1], { key: "border", value: null });
+    expect(tableOf(d, s.t).cells).toEqual([]);
+    d.free();
+  });
+
+  it("SetTableLook open (DS3, S12) : case ombrée seulement ; Ombrer referme ; Désombrer retire tout", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const v = tableOf(d, s.t);
+    const c00 = { row: v.rows[0]?.id ?? "", col: v.cols[0]?.id ?? "" };
+    unchanged(d, () => p3Look(d, s, [0, 0], [0, 0], { key: "open", value: true }));
+    d.apply({ type: "SetTableShade", id: s.t, from: c00, to: c00, shade: "#94a3b8" });
+    p3Look(d, s, [0, 0], [0, 0], { key: "open", value: true });
+    expect(tableOf(d, s.t).cells[0]).toMatchObject({ shade: "#94a3b8", open: true });
+    d.apply({ type: "SetTableShade", id: s.t, from: c00, to: c00, shade: "#94a3b8" });
+    expect(tableOf(d, s.t).cells[0]?.open).toBeUndefined();
+    p3Look(d, s, [0, 0], [0, 0], { key: "open", value: true });
+    d.apply({ type: "SetTableShade", id: s.t, from: c00, to: c00, shade: null });
+    expect(tableOf(d, s.t).cells).toEqual([]);
+    d.free();
+  });
+
+  it("SetTableLook accept (DS5, S14) : colonnes de la plage ; inchangé : aucune étape ; refus ; [] retire", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    p3Look(d, s, [0, 1], [2, 2], { key: "accept", value: ["chat", "chien"] });
+    expect(tableOf(d, s.t).cols.map((c) => c.accept)).toEqual([undefined, ["chat", "chien"], ["chat", "chien"]]);
+    unchanged(d, () => p3Look(d, s, [0, 1], [0, 2], { key: "accept", value: ["chat", "chien"] }));
+    unchanged(d, () => expect(() => p3Look(d, s, [0, 0], [0, 0], { key: "accept", value: ["  "] })).toThrow(TABLE_MESSAGE));
+    unchanged(d, () => expect(() => p3Look(d, s, [0, 0], [0, 0], { key: "accept", value: Array.from({ length: 65 }, (_, i) => `e${i}`) })).toThrow(TABLE_MESSAGE));
+    p3Look(d, s, [0, 1], [0, 2], { key: "accept", value: [] });
+    expect(tableOf(d, s.t).cols.every((c) => c.accept === undefined)).toBe(true);
+    d.free();
+  });
+
+  it("SetTableLook refus : clé inconnue (message tableau, aucune étape) ; tableau inconnu", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    unchanged(d, () => expect(() => p3Look(d, s, [0, 0], [0, 0], { key: "zz", value: 1 } as unknown as CellLook)).toThrow(TABLE_MESSAGE));
+    expect(() => d.apply({ type: "SetTableLook", id: "inconnu", from: { row: "a", col: "b" }, to: { row: "a", col: "b" }, look: { key: "ha", value: "center" } })).toThrow(/inconnu/);
+    // Ordre du cœur (`check` puis `table_of`) : une valeur refusée l'est avant la recherche du tableau.
+    expect(() => d.apply({ type: "SetTableLook", id: "inconnu", from: { row: "a", col: "b" }, to: { row: "a", col: "b" }, look: { key: "ha", value: "zz" } as unknown as CellLook })).toThrow(TABLE_MESSAGE);
     d.free();
   });
 });
