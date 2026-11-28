@@ -23,5 +23,6 @@ pub mod shape;
 pub mod style;
 pub mod table;
 pub mod table_links;
+pub mod table_look;
 #[cfg(feature = "zone")]
 pub mod zone;
