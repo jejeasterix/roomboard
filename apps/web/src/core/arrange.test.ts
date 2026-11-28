@@ -2,7 +2,7 @@
 // `crates/roomboard-core/tests/arrange.rs`, joués sur des unités nues.
 import { describe, expect, it } from "vitest";
 import type { Bounds } from "./api";
-import { ARRANGE_HOWS, arrangeUnknown, isArrangeHow, planArrange, type ArrangeUnit, type Reach } from "./arrange";
+import { ARRANGE_HOWS, arrangeUnknown, isArrangeHow, planArrange, planRotate, reachOfKind, rotationMatrix, type ArrangeUnit, type Reach } from "./arrange";
 
 const box = (x0: number, y0: number, x1: number, y1: number): Bounds => ({ x0, y0, x1, y1 });
 const one = (id: string, b: Bounds, reach: Reach = "matrix"): ArrangeUnit => ({ members: [{ id, reach, bounds: b }] });
@@ -57,5 +57,25 @@ describe("planArrange (OG23)", () => {
     expect(ARRANGE_HOWS.every(isArrangeHow)).toBe(true);
     expect(isArrangeHow("spin")).toBe(false);
     expect(arrangeUnknown("spin")).toBe("disposition inconnue : spin");
+  });
+});
+
+// OG33 (lot 2b) : `rotation` et `plan_rotate` du cœur, portés ligne à ligne.
+describe("OG33 rotation", () => {
+  it("rotationMatrix(cx, cy, 90) égale la matrice rotate-cw de planArrange, à l'exact", () => {
+    const u = [one("a", box(0, 0, 200, 50))];
+    const cw = planArrange(u, "rotate-cw")[0]?.[1];
+    expect(rotationMatrix(100, 25, 90)).toEqual(cw);
+    expect(planRotate(u, 90)).toEqual(planArrange(u, "rotate-cw"));
+  });
+  it("planRotate d'un texte seul : translation nulle omise ; angle nul modulo 360 : rien", () => {
+    expect(planRotate([one("t", box(0, 0, 100, 30), "place")], 45)).toEqual([]);
+    expect(planRotate([one("a", box(0, 0, 10, 10))], 360)).toEqual([]);
+    expect(planRotate([one("a", box(0, 0, 10, 10))], -720)).toEqual([]);
+  });
+  it("reachOfKind : portée du cœur, fill jamais bougé", () => {
+    expect(reachOfKind("shape")).toBe("matrix");
+    expect(reachOfKind("text")).toBe("place");
+    expect(reachOfKind("fill")).toBeNull();
   });
 });

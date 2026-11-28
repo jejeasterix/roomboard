@@ -4973,6 +4973,83 @@ describe.each(factories)("contrat Arrange : $name", ({ f }) => {
   });
 });
 
+// OG33 (lot 2b, choix 3) : `Rotate` sur les deux cœurs ; portée d'`Arrange` (texte : place seule). Discrimine le patron
+// écarté (`Arrange` sans suivi) : la flèche liée suit dans la même étape, citée par la `Change`.
+describe.each(factories)("contrat OG33 Rotate : $name", ({ f }) => {
+  const rect = (d: CoreDocument, p: string, x: number, y = 100): string => {
+    const id = d.apply({ type: "AddShape", page: p, shape: "rect", x0: x, y0: y, x1: x + 50, y1: y + 50, style, fill: null }).ids[0];
+    if (id === undefined) throw new Error("aucun id");
+    return id;
+  };
+  const worldOf = (d: CoreDocument, id: string): [number, number][] => {
+    const v = d.element(id);
+    if (v?.kind !== "shape") throw new Error("forme attendue");
+    return linePath(v.shape.w, v.shape.h, v.shape.points ?? []).map(([x, y]) => applyMatrix(v.transform, x, y));
+  };
+  it("Rotate 30° : rotation autour du centre, une étape, undo", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p, 100);
+    d.apply({ type: "Rotate", ids: [r], angle: 30 });
+    const t = viewOf(d, r).transform!;
+    expect(t[0]).toBeCloseTo(Math.cos(Math.PI / 6), 9);
+    expect(t[1]).toBeCloseTo(Math.sin(Math.PI / 6), 9);
+    expect(t[0] * 25 + t[2] * 25 + t[4]).toBeCloseTo(125, 6);
+    expect(t[1] * 25 + t[3] * 25 + t[5]).toBeCloseTo(125, 6);
+    d.undo();
+    expect(viewOf(d, r).transform).toEqual([1, 0, 0, 1, 100, 100]);
+    d.free();
+  });
+  it("Rotate 90 = Arrange rotate-cw, à l'exact", () => {
+    const [a, b] = [f.blank(), f.blank()];
+    const [ra, rb] = [rect(a, first(a), 0), rect(b, first(b), 0)];
+    a.apply({ type: "Rotate", ids: [ra], angle: 90 });
+    b.apply({ type: "Arrange", ids: [rb], how: "rotate-cw" });
+    expect(viewOf(a, ra).transform).toEqual(viewOf(b, rb).transform);
+    a.free();
+    b.free();
+  });
+  it("Rotate texte + rectangle : le texte reste droit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p, 0, 0);
+    const t = d.apply({ type: "SetText", page: p, id: null, x: 200, y: 0, content: "abc", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 }).ids[0]!;
+    d.apply({ type: "Rotate", ids: [t, r], angle: 45 });
+    expect(viewOf(d, t).transform?.slice(0, 4)).toEqual([1, 0, 0, 1]);
+    d.free();
+  });
+  it("Rotate 0 : aucune étape ; id inconnu : élément inconnu, rien d'écrit", () => {
+    const d = f.blank();
+    const r = rect(d, first(d), 0);
+    const v = d.version();
+    d.apply({ type: "Rotate", ids: [r], angle: 0 });
+    expect(() => d.apply({ type: "Rotate", ids: [r, "nope"], angle: 15 })).toThrow("élément inconnu : nope");
+    expect(() => d.apply({ type: "Rotate", ids: [r], angle: Number.NaN })).toThrow();
+    expect(d.version()).toBe(v);
+    d.free();
+  });
+  it("Rotate : la flèche liée suit, une étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 0, y0: 0, x1: 100, y1: 50, style, fill: null }).ids[0]!;
+    const b = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 400, y0: 0, x1: 500, y1: 50, style, fill: null }).ids[0]!;
+    const arrow = d.apply({ type: "AddShape", page: p, shape: "arrow", x0: 100, y0: 25, x1: 400, y1: 25, style, fill: null, start: { id: a, fx: 1, fy: 0.5 }, end: { id: b, fx: 0, fy: 0.5 } }).ids[0]!;
+    const [fBefore, bBefore] = [d.element(arrow), d.element(b)];
+    const ch = d.apply({ type: "Rotate", ids: [b], angle: 90 });
+    expect(ch.ids).toContain(arrow);
+    const end = worldOf(d, arrow).at(-1)!;
+    const rb = boxOf(d, b); // 425..475 × −25..75
+    expect(end[0]).toBeGreaterThan(rb.x0 - 10);
+    expect(end[0]).toBeLessThan(rb.x1 + 10);
+    expect(end[1]).toBeGreaterThan(rb.y0 - 10);
+    expect(end[1]).toBeLessThan(rb.y1 + 10);
+    d.undo();
+    expect(d.element(arrow)).toEqual(fBefore);
+    expect(d.element(b)).toEqual(bBefore);
+    d.free();
+  });
+});
+
 // OG23 (T10) : « Glisser une copie » (`dragCopy`) et départ de la baguette (`transparent.x`, `y`), joués sur les deux cœurs.
 describe.each(factories)("contrat OG23 lot B : $name", ({ f }) => {
   const lookOf = (d: CoreDocument, id: string): unknown => (d.element(id) as { look?: unknown } | null)?.look;

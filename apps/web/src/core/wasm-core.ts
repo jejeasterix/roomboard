@@ -599,6 +599,7 @@ class WasmCoreDocument implements CoreDocument {
         return toChange(this.d.restack([...cmd.ids], checkedRank(cmd.to)));
       // OG23 : `how` inconnu refusé par le pont (« disposition inconnue : <how> »), avant la commande.
       case "Arrange": return toChange(this.d.arrange([...cmd.ids], cmd.how));
+      case "Rotate": return toChange(this.d.rotate([...cmd.ids], cmd.angle));
       case "CommitStroke": {
         const l = cmd.look;
         return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, ...lookArgs(l), cmd.cell?.[0], cmd.cell?.[1], cmd.cell?.[2]));
