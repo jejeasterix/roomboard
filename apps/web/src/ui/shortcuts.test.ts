@@ -133,7 +133,7 @@ describe("OG12 : raccourcis des lignes", () => {
 });
 
 describe("OG41 : barre de l'objet", () => {
-  it("OG41 (D24) : Maj+F10 : « Barre de l'objet », groupe Édition", () => {
-    expect(SHORTCUTS.find((x) => x.id === "object-bar")).toEqual({ id: "object-bar", group: "Édition", label: "Barre de l'objet", keys: "Maj+F10" });
+  it("OG41 (D24) : Maj+F10 ou Menu : « Barre de l'objet », groupe Édition", () => {
+    expect(SHORTCUTS.find((x) => x.id === "object-bar")).toEqual({ id: "object-bar", group: "Édition", label: "Barre de l'objet", keys: "Maj+F10, Menu" });
   });
 });
