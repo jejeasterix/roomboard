@@ -39,6 +39,8 @@ grep -q "scripts/essais/fonds-navigateur.mjs" scripts/verifier.sh || ko "fonds-n
 grep -q "scripts/essais/restes-personnalisation-1-navigateur.mjs" scripts/verifier.sh || ko "restes-personnalisation-1-navigateur absent de verifier.sh"
 # OG20 gomme sur trait épais : ligne à part, comme personnalisation 1b.
 grep -q "scripts/essais/gomme-trait-epais-navigateur.mjs" scripts/verifier.sh || ko "gomme-trait-epais-navigateur absent de verifier.sh"
+# OG39 panneau Réglages au design des îlots : ligne à part, comme OG20.
+grep -q "scripts/essais/reglages-design-navigateur.mjs" scripts/verifier.sh || ko "reglages-design-navigateur absent de verifier.sh"
 # OG23 personnalisation-2-retours : ligne à part, comme OG20.
 grep -q "scripts/essais/personnalisation-2-retours-navigateur.mjs" scripts/verifier.sh || ko "personnalisation-2-retours-navigateur absent de verifier.sh"
 # OG25 gomme automatique à la paume : ligne à part, comme OG20.
