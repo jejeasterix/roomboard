@@ -93,6 +93,12 @@ export function objectKey(e: KeyLike): ObjectKey | null {
   return null;
 }
 
+/** OG41 (D24) : Maj+F10 ou la touche Menu, hors saisie, sans Ctrl, Méta ni Alt : focus sur la barre de l'objet. */
+export function objectMenuKey(e: KeyLike): boolean {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing || inEditable(e.target)) return false;
+  return e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey);
+}
+
 export type CellKey = "place" | "unplace" | "fit" | "cell-image";
 /** personnalisation-3 (H12) : Alt+Entrée loger, Alt+Maj+Entrée sortir, Alt+F agrandir / rétrécir, Alt+I fond de case ;
  *  par `code` (Alt change `key` sous macOS) ; hors champ, hors IME, sans Ctrl ni Cmd (Alt Gr = Ctrl+Alt refusé). */

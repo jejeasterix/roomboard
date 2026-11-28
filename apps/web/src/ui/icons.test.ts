@@ -49,6 +49,8 @@ const OPTION_ICONS = ["copy-plus", "link", "external-link", "trash-2", "sliders-
   "chevron-up", "chevron-down", "align-left", "align-center", "align-right", "fill-solid", "fill-hachure", "fill-cross", "head-none", "head-arrow", "head-triangle", "head-triangle-outline", "palette", "width-thin", "width-medium", "width-thick",
   "pressure-constant", "pressure-variable", "align-start-vertical", "align-center-vertical", "align-end-vertical", "align-start-horizontal", "align-center-horizontal", "align-end-horizontal", "align-horizontal-space-around", "align-vertical-space-around", "flip-horizontal", "flip-vertical", "rotate-ccw-square", "rotate-cw-square", "pipette", "crop"];
 const DIALOG_ICONS = ["search", "image-plus", "layout-template"];
+/** OG41 (D18) : barre d'objet, Lucide au commit 7981a0798a (les autres icônes de la barre existaient déjà). */
+const OBJECT_BAR_ICONS = ["group", "ungroup", "clipboard-paste", "ellipsis", "image"];
 const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
 /** personnalisation-1a (T6, GC4) : icônes Lucide du lot 1, recopiées telles quelles (trait 2 d'origine, rendu à 1,5 par la feuille de style). */
 const LOT1: Readonly<Record<string, IconNode>> = {
@@ -81,10 +83,10 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     expect(TOOL_ICONS.eraser).toBe("eraser");
     expect(NOTICE).not.toContain("`eraser-part`");
   });
-  it("ICONS : 130 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes)", () => {
-    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS]);
+  it("ICONS : 135 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes), OG41 (5 icônes de la barre d'objet)", () => {
+    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS, ...OBJECT_BAR_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(130);
+    expect(Object.keys(ICONS)).toHaveLength(135);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -197,5 +199,14 @@ describe("OG12 : icônes des lignes", () => {
         }
       }
     }
+  });
+});
+
+describe("OG41 : icônes de la barre d'objet", () => {
+  it("OG41 (D18) : icônes de la barre d'objet, Lucide 7981a0798a, notice à jour", () => {
+    for (const n of ["group", "ungroup", "clipboard-paste", "ellipsis", "image", "copy", "copy-plus", "trash-2", "bring-to-front", "send-to-back", "export"]) {
+      expect(ICONS[n]?.length ?? 0, n).toBeGreaterThan(0);
+    }
+    for (const n of ["group", "ungroup", "clipboard-paste", "ellipsis", "image"]) expect(NOTICE, n).toContain(`\`${n}\``);
   });
 });

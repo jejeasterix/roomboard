@@ -26,6 +26,8 @@ const DISABLED: Readonly<Record<SelectionAction, (v: ToolbarView) => boolean>> =
   copy: (v) => (v.selection?.length ?? 0) === 0,
   export: (v) => (v.selection?.length ?? 0) === 0,
   paste: (v) => v.canPaste !== true,
+  duplicate: (v) => (v.selection?.length ?? 0) === 0,
+  delete: (v) => (v.selection?.length ?? 0) === 0,
 };
 
 export function selectionDisabled(a: SelectionAction, v: ToolbarView): boolean {

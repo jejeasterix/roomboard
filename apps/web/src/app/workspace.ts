@@ -853,6 +853,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         copy: () => void ws.copySelection(false),
         paste: () => void ws.pasteInternal(),
         export: () => void ws.exportSelection(),
+        duplicate: () => void engine.duplicateSelection(),
+        delete: () => void engine.deleteSelection(),
       };
       actions[a]();
     },

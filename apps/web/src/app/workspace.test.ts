@@ -121,6 +121,8 @@ function fakeSession(doc: CoreDocument): FakeBoard {
       }),
       group: vi.fn(() => true),
       ungroup: vi.fn(() => true),
+      duplicateSelection: vi.fn(() => true),
+      deleteSelection: vi.fn(() => true),
       camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
       run: (cmd: Command) => {
         const c = doc.apply(cmd);
@@ -1057,6 +1059,13 @@ describe("espace de travail — C3", () => {
     ws.selection("ungroup");
     const e = ws.active().board.engine as unknown as { group: ReturnType<typeof vi.fn>; ungroup: ReturnType<typeof vi.fn> };
     expect([e.group.mock.calls.length, e.ungroup.mock.calls.length]).toEqual([1, 1]);
+  });
+  it("OG41 selection(a) : dupliquer et supprimer relayés au moteur (D33)", async () => {
+    const ws = await setupWorkspace();
+    ws.selection("duplicate");
+    ws.selection("delete");
+    const e = ws.active().board.engine as unknown as { duplicateSelection: ReturnType<typeof vi.fn>; deleteSelection: ReturnType<typeof vi.fn> };
+    expect([e.duplicateSelection.mock.calls.length, e.deleteSelection.mock.calls.length]).toEqual([1, 1]);
   });
 });
 

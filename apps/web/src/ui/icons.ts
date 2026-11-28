@@ -118,6 +118,12 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   // OG11 (panneau d'options) : Lucide @7981a0798a, ISC (copy-plus, trash-2, sliders-horizontal, chevron-left).
   // OG23 (T13) : Lucide @7981a0798a, ISC (crop).
   "crop": [["path", { d: "M6 2v14a2 2 0 0 0 2 2h14" }], ["path", { d: "M18 22V8a2 2 0 0 0-2-2H2" }]],
+  // OG41 (barre d'objet) : Lucide @7981a0798a, ISC (group, ungroup, clipboard-paste, ellipsis, image).
+  "group": [["path", { d: "M3 7V5c0-1.1.9-2 2-2h2" }], ["path", { d: "M17 3h2c1.1 0 2 .9 2 2v2" }], ["path", { d: "M21 17v2c0 1.1-.9 2-2 2h-2" }], ["path", { d: "M7 21H5c-1.1 0-2-.9-2-2v-2" }], ["rect", { width: "7", height: "5", x: "7", y: "7", rx: "1" }], ["rect", { width: "7", height: "5", x: "10", y: "12", rx: "1" }]],
+  "ungroup": [["rect", { x: "11", y: "14", width: "10", height: "7", rx: "2" }], ["rect", { x: "3", y: "3", width: "10", height: "7", rx: "2" }]],
+  "clipboard-paste": [["path", { d: "M11 14h10" }], ["path", { d: "M16 4h2a2 2 0 0 1 2 2v1.344" }], ["path", { d: "m17 18 4-4-4-4" }], ["path", { d: "M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113" }], ["rect", { x: "8", y: "2", width: "8", height: "4", rx: "1" }]],
+  "ellipsis": [["circle", { cx: "12", cy: "12", r: "1" }], ["circle", { cx: "19", cy: "12", r: "1" }], ["circle", { cx: "5", cy: "12", r: "1" }]],
+  "image": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2", ry: "2" }], ["circle", { cx: "9", cy: "9", r: "2" }], ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" }]],
   "copy-plus": [["path", { d: "M15 12v6" }], ["path", { d: "M12 15h6" }], ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" }], ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" }]],
   "trash-2": [["path", { d: "M10 11v6" }], ["path", { d: "M14 11v6" }], ["path", { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" }], ["path", { d: "M3 6h18" }], ["path", { d: "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }]],
   "sliders-horizontal": [["path", { d: "M10 5H3" }], ["path", { d: "M12 19H3" }], ["path", { d: "M14 3v4" }], ["path", { d: "M16 17v4" }], ["path", { d: "M21 12h-9" }], ["path", { d: "M21 19h-5" }], ["path", { d: "M21 5h-7" }], ["path", { d: "M8 10v4" }], ["path", { d: "M8 12H3" }]],

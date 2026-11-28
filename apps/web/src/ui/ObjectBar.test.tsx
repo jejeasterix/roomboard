@@ -106,7 +106,8 @@ describe("ObjectBar (OG41, D18-D27)", () => {
       const dup = t.bar().querySelector<HTMLButtonElement>('[data-selection-action="duplicate"]')!;
       fireEvent.pointerDown(dup, { pointerType: "touch" });
       vi.advanceTimersByTime(600);
-      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("Dupliquer");
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Dupliquer");
+      expect(document.querySelector('[role="tooltip"]')?.getAttribute("data-keys")).toBe("Ctrl+D");
       fireEvent.pointerUp(dup, { pointerType: "touch" });
       fireEvent.click(dup);
       expect(t.host.selection).not.toHaveBeenCalled();

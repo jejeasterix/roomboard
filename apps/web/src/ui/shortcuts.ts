@@ -20,6 +20,7 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("escape", "Édition", "Désélectionner", "Échap"),
   s("link", "Édition", "Lien", "Ctrl+K"),
   s("line-edit", "Édition", "Modifier les points", "Ctrl+Entrée"),
+  s("object-bar", "Édition", "Barre de l'objet", "Maj+F10"),
   // Fusion OG12 × OG23 : Alt+Maj+flèche sert aussi « Aligner » (align-*, plus bas). Le geste contextuel prime dans son
   // contexte (engine.ts, `key`) : un rectangle ou une ellipse seul, ou une séance « Modifier les points », va à OG12 ;
   // hors de ces contextes (au moins deux unités), Aligner.
