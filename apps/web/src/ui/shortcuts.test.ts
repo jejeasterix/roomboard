@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, arrangeKey, cellKey, rotateKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, arrangeKey, cellKey, rotateKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, navKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText, toolShortcut } from "./shortcuts";
 
@@ -17,7 +17,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   "align-center": ["arrange", "align-center"], "align-middle": ["arrange", "align-middle"], "distribute-h": ["arrange", "distribute-h"], "distribute-v": ["arrange", "distribute-v"],
   nudge: ["nudge", "-1,0"], pipette: ["picker", "i"],
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
-  "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
+  "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "flow-nav": ["nav", "right"], "no-binding": ["ctrlHeld", "Control"],
   "palm-eraser": ["app", "palm-eraser"],
   ...Object.fromEntries(["select", "rect", "diamond", "ellipse", "arrow", "line", "pen", "text", "eraser", "hand"].flatMap((t) => [[`tool-${t}`, ["tool", t]], ...(t === "hand" ? [] : [[`tool-${t}-num`, ["tool", t]]])])),
   "cell-place": ["cell", "place"], "cell-unplace": ["cell", "unplace"], "table-fit": ["cell", "fit"], "cell-image": ["cell", "cell-image"],
@@ -64,6 +64,7 @@ describe("shortcuts", () => {
       else if (by === "table") expect(tableKey(pressTable(s.keys)), s.id).toBe(value);
       else if (by === "lineEdit") expect(lineEditKey(e), s.id).toBe(true);
       else if (by === "linked") expect(linkedKey({ ...press("→"), key: "ArrowRight", altKey: true, shiftKey: true }), s.id).toBe(value);
+      else if (by === "nav") expect(navKey({ ...press("→"), key: "ArrowRight", altKey: true }), s.id).toBe(value);
       else if (by === "ctrlHeld") expect(isCtrlKey({ key: "Control" }), s.id).toBe(true);
       else if (by === "tool") expect(toolKey(e), s.id).toBe(value);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ARRANGE_HOWS } from "../../core/arrange";
-import { appShortcut, arrangeKey, cellKey, enterAction, rotateKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
+import { appShortcut, arrangeKey, cellKey, enterAction, rotateKey, editAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, navKey, nudgeKey, objectKey, orderKey, pageKey, tableKey, toolKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -272,6 +272,20 @@ describe("OG12 : lineEditKey, linkedKey, isCtrlKey", () => {
     expect(linkedKey(k("ArrowRight", { altKey: true, shiftKey: true, ctrlKey: true }))).toBeNull();
     expect(linkedKey(k("a", { altKey: true, shiftKey: true }))).toBeNull();
     expect(linkedKey(k("ArrowRight", { altKey: true, shiftKey: true, target: { tagName: "INPUT" } as unknown as KeyLike["target"] }))).toBeNull();
+  });
+  it("navKey : Alt+flèche seule ; ni Maj, ni Ctrl, ni Cmd, ni champ, ni IME", () => {
+    expect(navKey(k("ArrowRight", { altKey: true }))).toBe("right");
+    expect(navKey(k("ArrowUp", { altKey: true }))).toBe("up");
+    expect(navKey(k("ArrowDown", { altKey: true }))).toBe("down");
+    expect(navKey(k("ArrowLeft", { altKey: true }))).toBe("left");
+    expect(navKey(k("ArrowRight"))).toBeNull();
+    expect(navKey(k("ArrowRight", { altKey: true, shiftKey: true }))).toBeNull();
+    expect(navKey(k("ArrowRight", { altKey: true, ctrlKey: true }))).toBeNull();
+    expect(navKey(k("ArrowRight", { altKey: true, metaKey: true }))).toBeNull();
+    expect(navKey(k("ArrowRight", { altKey: true, isComposing: true }))).toBeNull();
+    expect(navKey(k("a", { altKey: true }))).toBeNull();
+    expect(navKey(k("ArrowRight", { altKey: true, target: { tagName: "INPUT" } as unknown as KeyLike["target"] }))).toBeNull();
+    expect(navKey(k("ArrowRight", { altKey: true, target: { tagName: "BUTTON" } as unknown as KeyLike["target"] }))).toBeNull();
   });
   it("orderKey inchangé pour Ctrl+↑", () => {
     expect(orderKey(k("ArrowUp", { ctrlKey: true }))).not.toBeNull();

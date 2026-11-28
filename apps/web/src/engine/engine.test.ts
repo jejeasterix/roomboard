@@ -1902,6 +1902,22 @@ describe("moteur — C5 (retouche d'image)", () => {
     expect(renderer.imagePreviews.at(-1)).toBeNull();
   });
 
+  it("Alt+→ pendant le rognage d'une image : la sélection ne change pas (OG33 lot 2b)", () => {
+    const { engine, doc, page, id, rect } = c5();
+    const b = rect();
+    const arrow = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 0, y0: 0, x1: 10, y1: 0, style: PEN, fill: null }).ids[0] ?? "";
+    const a = doc.apply({ type: "AddShape", page, shape: "rect", x0: 100, y0: 400, x1: 200, y1: 450, style: PEN, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "SetLinePoints", id: arrow, points: [0, 0, 10, 0], start: { id: a, fx: 0.5, fy: 0.5 }, end: { id: b, fx: 0.5, fy: 0.5 } });
+    engine.select([a]);
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    expect(edit.mode()).toBe("crop");
+    const before = engine.state().selection;
+    expect(engine.key(key("ArrowRight", { altKey: true }))).not.toBe(true);
+    expect(engine.state().selection).toEqual(before);
+    expect(edit.mode()).toBe("crop");
+  });
+
   it("C5 selectionImage : l'image sélectionnée seule ; null à deux objets", () => {
     const { engine, id, drag, rect } = c5();
     expect(engine.state().selectionImage).toBe(id);
@@ -3386,6 +3402,25 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(engine.key(key("ArrowRight", { altKey: true, shiftKey: true }))).toBe(true);
     expect(engine.addLinked("down")).toBe(false);
     expect(doc.elementIds(page)).toHaveLength(4);
+  });
+
+  it("Alt+→ choisit l'objet relié ; sans objet relié, la touche passe ; Alt+Maj+→ reste à l'objet relié créé", () => {
+    const { engine, doc, page, rect } = og12();
+    const a = rect(100, 100, 200, 200);
+    const b = rect(400, 100, 500, 200);
+    const arrow = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 0, y0: 0, x1: 10, y1: 0, style: PEN, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "SetLinePoints", id: arrow, points: [0, 0, 10, 0], start: { id: a, fx: 0.5, fy: 0.5 }, end: { id: b, fx: 0.5, fy: 0.5 } });
+    engine.select([a]);
+    expect(engine.key(key("ArrowRight", { altKey: true }))).toBe(true);
+    expect(engine.state().selection).toEqual([b]);
+    expect(engine.key(key("ArrowRight", { altKey: true }))).toBe(false);
+    expect(engine.state().selection).toEqual([b]);
+    expect(engine.key(key("ArrowLeft", { altKey: true }))).toBe(true);
+    expect(engine.state().selection).toEqual([a]);
+    // Deux objets choisis, ou aucun : la touche passe.
+    engine.select([a, b]);
+    expect(engine.key(key("ArrowRight", { altKey: true }))).toBe(false);
+    expect(engine.state().selection).toEqual([a, b]);
   });
 
   it("Alt+Maj+flèche (fusion OG12 × OG23) : séance « Modifier les points » et rectangle seul à OG12, sinon Aligner", () => {
