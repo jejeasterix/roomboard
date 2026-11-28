@@ -1,6 +1,6 @@
 # État — personnalisation-2-outils
 
-Statut : arrêté (borne de temps d'OG33) — lot 1 (PR #71) et lot 2a (PR #76) fusionnés ; lot 2b M1-M3 fusionné par sa PR ; M4 (B9, B10) non lancé
+Statut : arrêté (borne de temps d'OG33, 12:42) — lot 1 (PR #71) et lot 2a (PR #76) fusionnés ; lot 2b M1-M3 prêt, PR #85 non fusionnée ; M4 (B9, B10) non lancé
 Gabarit : lots (lot 1 : 12 tâches ; lot 2 : 10 tâches, hors du temps)
 Objectif : Chaque outil commun avec Excalidraw (sélection, main, formes, flèche, ligne, crayon, texte, image, gomme) se comporte comme dans Excalidraw, au doigt d'abord puis au clavier, avec des connecteurs liés aux objets façon carte mentale et une fiche de vérification par outil.
 Avancement : 2/3 lots clos (lot 1, lot 2a) ; lot 2b : 10/12 tâches (M1-M3 + C5, C6), M4 restant
@@ -65,7 +65,12 @@ Double relecture (9d8ac349) : 0 bloquant ; 5 major corrigés (C4a, C4b) ; décis
 
 Lot 2a : correctif barre (losange hors de la barre par défaut, 078bdcf0, f97bbae0) et essai (6347b69d, d4bd6591). verifier.sh --e2e OK sur d4bd6591 : cargo 1618, web 4535, cli 284, Wasm 1 523 873 o, formats 2 794 527 o.
 
-## Prochaine tâche exacte (lot 2a : faite par OG33, PR #76 fusionnée, main 0e683c75 ; écart nudgeKey corrigé 22367cb8)
+## Prochaine tâche exacte
+1. Worktree de `feat/personnalisation-2-outils-lot2b` (tête a8bb1f2b = 5a423a5f + origin/main dcc93ce1, refactor OG35 PR 81 sans conflit) : `git fetch` ; si main a bougé, l'intégrer ; `scripts/verifier.sh --e2e` (vert attendu : 5a423a5f a passé CLI 294, web 5 010, cargo 1 829, Wasm 1 447 887 o) ; tests CLI PDF/3D sous charge : un délai se rejoue une fois.
+2. OK → PR #85 `gh pr ready`, mettre à jour sa ligne « Après fusion… » dans `## Preuve`, fusion locale `git merge --no-ff` dans un worktree détaché d'origin/main, `git push origin HEAD:main`.
+3. Puis M4 : B9, B10 du plan LOT2B.
+
+### Lot 2a (fait : faite par OG33, PR #76 fusionnée, main 0e683c75 ; écart nudgeKey corrigé 22367cb8)
 Suite : M4 du lot 2b, tâches B9 puis B10 du plan LOT2B (depuis origin/main).
 
 ### Ancienne consigne (lot 2a)
