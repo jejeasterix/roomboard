@@ -1237,19 +1237,15 @@ impl Document {
         width: f64,
         labels: Vec<String>,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .set_table_look_inner(
-                    id,
-                    [from_row, from_col],
-                    [to_row, to_col],
-                    key,
-                    text,
-                    width,
-                    labels,
-                )
-                .map_err(cmd_err)?,
-        )
+        change_js(self.set_table_look_inner(
+            id,
+            [from_row, from_col],
+            [to_row, to_col],
+            key,
+            text,
+            width,
+            labels,
+        ))
     }
 
     /// personnalisation-3 (D18) : `row` vrai = lignes, faux = colonnes ; `order` = tous les ids de l'axe.
@@ -1259,11 +1255,7 @@ impl Document {
         row: bool,
         order: Vec<String>,
     ) -> Result<JsValue, JsError> {
-        to_js(
-            &self
-                .reorder_table_lines_inner(id, row, &order)
-                .map_err(cmd_err)?,
-        )
+        change_js(self.reorder_table_lines_inner(id, row, &order))
     }
 
     /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
