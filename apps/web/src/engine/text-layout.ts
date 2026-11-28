@@ -263,11 +263,26 @@ export function layoutRich(spans: readonly TextSpan[], base: { readonly size: nu
   return lines;
 }
 
+/** Bout de la ligne (fin de son dernier segment, 0 si vide), sans décalage d'alignement. */
+export function lineEnd(line: RichLine): number {
+  const last = line.segments[line.segments.length - 1];
+  return last === undefined ? 0 : last.x + last.width;
+}
+
+/** OG79 : largeur de boîte d'un texte logé : sa ligne mise en lignes la plus longue (sans décalage d'alignement), plus un
+ *  huitième de sa taille (une police mesurée un peu plus large ailleurs ne la replie pas), arrondie au-dessus ; les
+ *  coupures restent celles de `boxWidth` (chaque ligne y tient). `null` si la boîte n'est pas plus large. */
+export function fittedTextWidth(t: { readonly spans: readonly TextSpan[]; readonly size: number; readonly boxWidth: number }, measure: Measure): number | null {
+  let w = 0;
+  for (const line of layoutRich(t.spans, { size: t.size }, t.boxWidth, measure)) w = Math.max(w, lineEnd(line));
+  const fit = Math.ceil(w + t.size / 8);
+  return fit < t.boxWidth ? fit : null;
+}
+
 /** Décalage horizontal d'une ligne dans sa boîte (OG11 ; D15, DS6) : seul calcul de l'alignement, lu par le dessin
  *  (`paintText`) et par la collision du texte (`offsetAt`). Droite : `boxWidth - largeur` ; centre : la moitié. */
 export function lineShift(line: RichLine, boxWidth: number, align: TextAlign): number {
-  const last = line.segments[line.segments.length - 1];
-  const rest = align === "left" || last === undefined ? 0 : boxWidth - (last.x + last.width);
+  const rest = align === "left" || line.segments.length === 0 ? 0 : boxWidth - lineEnd(line);
   return align === "right" ? rest : align === "center" ? rest / 2 : 0;
 }
 

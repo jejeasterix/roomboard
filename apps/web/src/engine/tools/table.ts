@@ -58,7 +58,6 @@ import {
   tableEdgeAt,
   TABLE_COL_WIDTH,
   TABLE_ROW_HEIGHT,
-  rowHeightsFor,
   TABLE_SHADE_COLOR,
   type Cell,
   type CellRef,
@@ -795,10 +794,10 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           // OG79 (HS9) : l'en-tête posé fait grandir la ligne 0 si son texte en gras le demande, dans la même étape ; le
           // retirer ne réduit rien (une hauteur ne baisse jamais toute seule, D11).
           const on = t.header !== true;
-          const row0 = t.rows[0];
-          const need = on && row0 !== undefined ? (rowHeightsFor({ ...t, header: true }, t.cols.map((c) => c.width), measure)[0] ?? 0) : 0;
-          const grow = row0 !== undefined && need > row0.height ? { rows: [[row0.id, need] as const] } : {};
-          ctx.run({ type: "SetTableOptions", id: ref.id, header: on, ...grow });
+          const el = ctx.doc.element(ref.id);
+          const linked = el?.kind === "table" ? linkedBoxes(ctx.doc, ctx.page(), { id: ref.id, transform: el.transform }, measure) : [];
+          const grow = on ? rowsNeeding({ ...t, header: true }, linked, t.cols.map((c) => c.width)).filter(([id]) => id === t.rows[0]?.id) : [];
+          ctx.run({ type: "SetTableOptions", id: ref.id, header: on, ...(grow.length > 0 ? { rows: grow } : {}) });
           break;
         }
         case "fit-toggle":

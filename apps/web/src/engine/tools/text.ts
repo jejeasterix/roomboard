@@ -9,8 +9,7 @@ import { lookFrom, type Look, type TextAlign } from "../../core/look";
 import { plainSpans, sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
 import { screenToWorld, type Camera } from "../camera";
-import { DEFAULT_TEXT_BOX_WIDTH, layoutRich, richBoxHeight, type Measure } from "../text-layout";
-import { fittedTextWidth } from "../table-geom";
+import { DEFAULT_TEXT_BOX_WIDTH, fittedTextWidth, layoutRich, richBoxHeight, type Measure } from "../text-layout";
 import { createCommitGate } from "./commit-gate";
 import { NO_LIVE, type GestureTool, type LivePart, type ToolContext } from "./tool";
 
@@ -108,7 +107,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     // R6 : texte et segments inchangés : aucune commande ; mise en forme seule (S6) : la commande part.
     if (s.id !== null && content === s.initial && sameSpans(spans, s.spans)) return;
     const look = s.id === null ? currentLook() : undefined;
-    const boxWidth = s.lodged === true ? (fittedTextWidth({ spans, size: s.size, boxWidth: s.boxWidth }, measure) ?? s.boxWidth) : s.boxWidth;
+    const boxWidth = s.lodged ? (fittedTextWidth({ spans, size: s.size, boxWidth: s.boxWidth }, measure) ?? s.boxWidth) : s.boxWidth;
     const boxHeight = richBoxHeight(layoutRich(spans, { size: s.size }, boxWidth, measure));
     ctx.run({ type: "SetText", page: s.page, id: s.id, x: s.matrix[4], y: s.matrix[5], content, color: s.color, size: s.size, boxWidth, boxHeight, spans, ...(s.id === null && look ? { look } : {}) });
   };
@@ -125,7 +124,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
         matrix: el.transform,
         // OG79 : la boîte d'un texte logé a été réduite à sa ligne ; l'édition reprend la largeur d'un clic.
         boxWidth: el.cell === undefined ? el.text.boxWidth : Math.max(el.text.boxWidth, DEFAULT_TEXT_BOX_WIDTH),
-        ...(el.cell === undefined ? {} : { lodged: true }),
+        lodged: el.cell !== undefined,
         color: el.style.color,
         size: el.text.size,
         initial: el.text.content,

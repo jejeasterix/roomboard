@@ -1897,8 +1897,7 @@ class FakeDocument implements CoreDocument {
         // tailles, 7 matrice composée, 8 rien ne change (aucune étape).
         if (!validMatrix(cmd.matrix)) throw new Error(MESSAGES.badMatrix);
         // OG79 : largeur de boîte des textes contrôlée avec la matrice, avant toute lecture.
-        const fitWidth = cmd.boxWidth;
-        if (fitWidth !== undefined && !positive(fitWidth)) throw new Error(MESSAGES.badText);
+        if (cmd.boxWidth !== undefined && !positive(cmd.boxWidth)) throw new Error(MESSAGES.badText);
         const all = [...new Set(cmd.ids)]
           .map((id) => this.find(id))
           .filter((x): x is Found => x !== undefined && x.element.malformed === undefined);
@@ -1939,7 +1938,7 @@ class FakeDocument implements CoreDocument {
           const n = next.get(x.id);
           return n !== undefined && sameLines(x.t, n);
         });
-        const resized = new Set(hits.filter((x) => fitWidth !== undefined && x.element.text !== undefined && x.element.text.boxWidth !== fitWidth).map((x) => x.element.id));
+        const resized = new Map(hits.flatMap((x) => (x.element.text !== undefined && cmd.boxWidth !== undefined && x.element.text.boxWidth !== cmd.boxWidth ? [[x.element.id, { ...x.element.text, boxWidth: cmd.boxWidth }] as const] : [])));
         if (isIdentity(cmd.matrix) && sameSizes && resized.size === 0 && hits.every((x) => sameLink(x.element.cell))) return this.unchanged();
         const skip = new Set(hits.map((x) => x.element.id));
         return this.step((s) => {
@@ -1958,8 +1957,8 @@ class FakeDocument implements CoreDocument {
             p.elements.forEach((e, i) => {
               if (!skip.has(e.id)) return;
               const transform = isIdentity(cmd.matrix) ? e.transform : (composed.get(e.id) ?? e.transform);
-              const free0 = withoutCell(e);
-              const free = resized.has(e.id) && free0.text !== undefined && fitWidth !== undefined ? { ...free0, text: { ...free0.text, boxWidth: fitWidth } } : free0;
+              const text = resized.get(e.id);
+              const free = text === undefined ? withoutCell(e) : { ...withoutCell(e), text };
               p.elements[i] = target === null ? { ...free, transform } : { ...free, transform, cell: target };
             });
             // T5, comme `lift_above` du cœur : les placés situés sous le tableau visé montent juste au-dessus, ordre gardé.
@@ -1976,7 +1975,7 @@ class FakeDocument implements CoreDocument {
             // OG12 (n° 7, 8), comme `cmd_place_in_cell` : placés déplacés par `m`, leurs lignes liées suivent après eux.
             if (!isIdentity(cmd.matrix)) for (const id of this.follow(s, skip, cmd.matrix)) touched.add(id);
             // OG79, comme `SetText` : sans déplacement, une boîte réduite recale ses extrémités liées.
-            else if (resized.size > 0) for (const id of this.follow(s, resized, null)) touched.add(id);
+            else if (resized.size > 0) for (const id of this.follow(s, new Set(resized.keys()), null)) touched.add(id);
           }
           return { pages: [pageId], ids: [...touched].sort(), removed: [] };
         });

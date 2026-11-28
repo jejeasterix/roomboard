@@ -2,7 +2,7 @@
 //! page calcule tailles et matrice, le cœur les écrit (`PlaceInCell`, `SetTableLineSizes`) et fait suivre les objets
 //! liés quand une ligne ou une colonne bouge (`follow_in`), dans la transaction de la commande : une étape. Le lien vise
 //! des ids de ligne et de colonne, jamais des rangs : une ligne insérée avant ne change pas la case.
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use yrs::types::AsPrelim;
 use yrs::{Any, Array, In, Map, MapPrelim, MapRef, Out, ReadTxn, TransactionMut};
@@ -626,8 +626,8 @@ impl Document {
             (found, same)
         };
         // OG79 : textes dont la boîte prend `box_width` (les autres objets n'en ont pas).
-        let resized: HashSet<String> = match box_width {
-            None => HashSet::new(),
+        let resized: BTreeSet<String> = match box_width {
+            None => BTreeSet::new(),
             Some(w) => {
                 let txn = self.read();
                 found
@@ -708,7 +708,7 @@ impl Document {
                 if *m != IDENTITY {
                     f.element.insert(&mut txn, "transform", transform_to_any(c));
                 }
-                if let (Some(w), true) = (box_width, resized.contains(id)) {
+                if let Some(w) = box_width.filter(|_| resized.contains(id)) {
                     f.element
                         .insert(&mut txn, "boxWidth", In::Any(Any::from(w)));
                 }
@@ -733,8 +733,7 @@ impl Document {
                 touched.extend(crate::linear::follow(self, &mut txn, &placed, Some(m)));
             } else if !resized.is_empty() {
                 // OG79, comme `cmd_set_text` : sans déplacement, une boîte réduite recale ses extrémités liées.
-                let mut boxed: Vec<String> = resized.iter().cloned().collect();
-                boxed.sort();
+                let boxed: Vec<String> = resized.iter().cloned().collect();
                 touched.extend(crate::linear::follow(self, &mut txn, &boxed, None));
             }
         }

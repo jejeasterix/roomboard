@@ -765,8 +765,10 @@ class WasmCoreDocument implements CoreDocument {
             new Float64Array(cmd.rows.map((r) => r[1])),
           ),
         );
-      case "SetTableOptions":
-        return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header, (cmd.rows ?? []).map(([l]) => l), new Float64Array((cmd.rows ?? []).map(([, h]) => h))));
+      case "SetTableOptions": {
+        const rows = cmd.rows ?? [];
+        return toChange(this.d.set_table_options(cmd.id, cmd.fit, cmd.header, rows.map(([l]) => l), new Float64Array(rows.map(([, h]) => h))));
+      }
       case "SetCellImage":
         return toChange(this.d.set_cell_image(cmd.id, cmd.row, cmd.col, cmd.from ?? undefined));
       case "SetTableLook": {
