@@ -382,7 +382,9 @@ avec `--captures` dans `docs/design/captures/personnalisation-3-tableau/`), sino
 - **S7 (7)** Tableau 3 × 3 (720 × 192), « Photosynthèse » en (0, 0). Double appui à la souris sur la poignée droite de la
   case : le tableau fait 720 − 240 + (largeur du mot + 16), entre 496 et 720 ; Ctrl+Z : 720 en une étape ; Alt+A : même
   largeur qu'au double appui. Deux appuis à 400 ms, ou à 20 px : rien (test `table.test.ts` « S7 »). Captures
-  `ajuste-avant.png`, `ajuste-apres.png`.
+  `ajuste-avant.png`, `ajuste-apres.png`. Écart de l'essai (C1) : `personnalisation-3-suite-navigateur.mjs` écrit « Eau »
+  au lieu de « Photosynthèse » : à la taille 36 du tableau, « Photosynthèse » + 16 dépasse 240, le tableau passerait
+  au-delà de 720 et sortirait de la plage 496-720 ; l'essai compare à 720 − 240 + (largeur du mot mesurée + 16), à 1 px.
 - **S8 (8)** Plage (0, 0)-(0, 1) (« Lundi », « Mardi ») : panneau « Centré » puis « Au milieu » : `data-table-align` =
   `center,middle`, deux étapes ; Ctrl+Z deux fois : `left,top` ; Alt+Maj+C puis Alt+Maj+M : `center,middle`. Le pot sur
   le mot centré colore ce mot (`fill-target.test.ts` « D15 ») ; le PDF prend le même peintre (`paintCellTexts`).
