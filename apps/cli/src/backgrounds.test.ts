@@ -9,7 +9,7 @@ import { MAX_PIXELS, TOO_MANY_PIXELS } from "../../web/src/platform/image-import
 import { diskPackFiles, listBackgrounds, packDir } from "./backgrounds";
 import { main } from "./main";
 import { nodeSession } from "./session";
-import { describeWasm, memoryIO, pngBytes, warmModules, WEB_SRC, type Json } from "./testing";
+import { describeWasm, memoryIO, pngBytes, pngHead, warmModules, WEB_SRC, type Json } from "./testing";
 
 // Chemin commun (Q32) : la CLI doit appeler `resolvePack` et `backgroundCommand` du web ; espions sur les originaux.
 vi.mock("../../web/src/app/backgrounds-apply", async (importOriginal) => {
@@ -145,7 +145,7 @@ describeWasm("personnalisation-1b : CLI des fonds (Q32, S4)", () => {
     expect(st.state.assets.filter((a: Json) => a.mime === "image/png")).toHaveLength(1);
     const side = Math.ceil(Math.sqrt(MAX_PIXELS)) + 1;
     const big = join(dir, "immense.png");
-    writeFileSync(big, pngBytes(side, side));
+    writeFileSync(big, pngHead(side, side));
     await expect(s.exec(JSON.stringify({ op: "background", file: big }))).rejects.toMatchObject({ code: "command", message: TOO_MANY_PIXELS });
   });
   it("commande brute ApplyBackground acceptée par run (COMMAND_TYPES, T1)", async () => {

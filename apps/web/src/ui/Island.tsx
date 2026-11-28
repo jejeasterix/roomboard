@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type Accessor, type JSX } from "solid-js";
+import { ISLANDS_RESIZED } from "../app/island-watch";
 import { NO_ISLAND, type DeviceSettings } from "../device-settings";
 import type { ButtonSize, Toolbar as Bar } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
@@ -130,6 +131,8 @@ export interface IslandProps {
   /** Change quand le contenu de l'îlot peut changer de largeur (pages, outil) : remesure. */
   readonly watch?: Accessor<unknown>;
   onPlaced?(p: Placed | null): void;
+  /** OG30 : confie l'îlot à l'observateur de taille du calque (`IslandLayer`) ; rend l'arrêt. */
+  track?(el: Element): () => void;
   readonly children: (collapsed: Accessor<boolean>, expand: () => void) => JSX.Element;
 }
 
@@ -236,6 +239,7 @@ export function Island(props: IslandProps): JSX.Element {
 
   onMount(() => {
     measure();
+    if (el !== undefined && props.track !== undefined) onCleanup(props.track(el));
     let frame = 0;
     const later = (): void => {
       cancelAnimationFrame(frame);
@@ -406,6 +410,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   let menu: HTMLDivElement | undefined;
   let topEnd: HTMLDivElement | undefined;
   let bottomStart: HTMLDivElement | undefined;
+  let head: HTMLDivElement | undefined;
   const [area, setArea] = createSignal<Box>(ZERO, { equals: sameBox });
   const [startBox, setStartBox] = createSignal<Box>(ZERO, { equals: sameBox });
   const [menuBox, setMenuBox] = createSignal<Box>(ZERO, { equals: sameBox });
@@ -469,8 +474,30 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     const t = tools();
     return tabsWidth(area(), startX(), endBox().w, t === null || t.moved ? null : { x: t.x, y: t.y }, statusW());
   });
+  /** OG30 : un seul observateur de taille pour les îlots qui réservent le haut de la page (`fitTop`) : îlots de barre hors
+   *  voie latérale, et îlot des onglets. Une hauteur changée sans attribut prévient la session montrée (`ISLANDS_RESIZED`,
+   *  `watchIslands`) ; une largeur seule ne réveille rien (`fitTop` ne lit que les hauteurs). */
+  const heights = new WeakMap<Element, number>();
+  const sizes =
+    typeof ResizeObserver === "function"
+      ? new ResizeObserver((entries) => {
+          let changed = false;
+          for (const e of entries) {
+            if (heights.get(e.target) === e.contentRect.height) continue;
+            heights.set(e.target, e.contentRect.height);
+            changed = true;
+          }
+          if (changed) layer?.dispatchEvent(new Event(ISLANDS_RESIZED, { bubbles: true }));
+        })
+      : null;
+  onCleanup(() => sizes?.disconnect());
+  const track = (el: Element): (() => void) => {
+    sizes?.observe(el);
+    return () => sizes?.unobserve(el);
+  };
   onMount(() => {
     const offs = [
+      track(head!),
       observeBox(layer!, setArea, Math.floor),
       observeBox(topStart!, setStartBox),
       observeBox(menu!, setMenuBox),
@@ -504,6 +531,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         area={area}
         corners={isSide(anchor) ? sideCornersOf(bar.role) : anchor.startsWith("top") ? topCorners : bottomCorners}
         sheet={sheet}
+        {...(isSide(anchor) ? {} : { track })}
         {...(props.watch !== undefined ? { watch: props.watch } : {})}
         {...(bar.role === "tools" || anchor === "side-start"
           ? {
@@ -525,7 +553,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         <div ref={menu} class="rb-corner-menu">
           {islands(starts)}
         </div>
-        <div class="rb-island rb-head" data-island="onglets" style={{ "max-inline-size": `${tabsMax()}px` }}>
+        <div ref={head} class="rb-island rb-head" data-island="onglets" style={{ "max-inline-size": `${tabsMax()}px` }}>
           {props.head}
         </div>
         {props.status}
