@@ -63,10 +63,11 @@ function RowText(props: { text: string; hideValue?: boolean; reload?: boolean })
   const hidden = (): "true" | undefined => (props.hideValue === true ? "true" : undefined);
   return (
     <>
-      <span class="rb-set-name">{parts()[0]}</span>
+      {/* Icône en tête de rangée : bord gauche entier, jamais après un texte de largeur fractionnaire (netteté § 10). */}
       <Show when={props.reload}>
         <Icon name="reset" />
       </Show>
+      <span class="rb-set-name">{parts()[0]}</span>
       <span class="rb-sr" aria-hidden={hidden()}> : </span>
       <span class="rb-set-val" classList={{ "rb-sr": props.hideValue === true }} aria-hidden={hidden()}>{parts()[1]}</span>
     </>
