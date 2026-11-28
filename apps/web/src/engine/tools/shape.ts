@@ -64,13 +64,11 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
   const linear = kind === "line" || kind === "arrow";
   const binding = (): boolean => bindingOn(ctx);
   let hovered: EndBind | null = null;
-  /** Point aimanté de la page (C9, G8) ; brut si Alt est tenue ou si rien n'accroche. */
-  const snap = (page: string, x: number, y: number): readonly [number, number] => magnetPoint(ctx, page, x, y);
   /** Départ aimanté du geste : un seul `snapPoint` tant qu'Alt ne change pas. */
   const start = (d: Draft): readonly [number, number] => {
     const alt = ctx.alt?.() === true;
     if (alt !== d.startAlt) {
-      d.start = snap(d.page, d.x0, d.y0);
+      d.start = magnetPoint(ctx, d.page, d.x0, d.y0);
       d.startAlt = alt;
     }
     return d.start;
@@ -78,7 +76,7 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
   /** Coins écrits : départ et bout aimantés, puis Maj appliquée au bout aimanté (CL4-12, G8). */
   const corners = (d: Draft): [number, number, number, number] => {
     const [x0, y0] = start(d);
-    const [bx, by] = snap(d.page, d.x1, d.y1);
+    const [bx, by] = magnetPoint(ctx, d.page, d.x1, d.y1);
     const [x1, y1] = ctx.shift?.() === true ? constrainEnd(kind, x0, y0, bx, by) : [bx, by];
     return [x0, y0, x1, y1];
   };
@@ -126,7 +124,7 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
         },
         seed,
       );
-      drafts.set(pointerId, { page, style: { color: st.color, width: st.width }, fill, look, seed, x0: x, y0: y, x1: x, y1: y, zoom: cam.zoom, start: snap(page, x, y), startAlt,
+      drafts.set(pointerId, { page, style: { color: st.color, width: st.width }, fill, look, seed, x0: x, y0: y, x1: x, y1: y, zoom: cam.zoom, start: magnetPoint(ctx, page, x, y), startAlt,
         touch,
         startBind: linear ? bindEnd(ctx.doc, page, x, y, cam.zoom, touch, binding()) : null,
         end: null,

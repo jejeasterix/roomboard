@@ -11,7 +11,7 @@ const level = (kind: string, s: number, over: Partial<GridLevel> = {}): GridLeve
 });
 const grid = (levels: GridLevel[], over: Partial<GridView> = {}): GridView => ({ visible: true, snap: true, above: false, levels, ...over });
 
-function setup(initial: GridView | null = null, more: { tooFine?: (g: GridView | null) => boolean; onView?: (cb: () => void) => () => void } = {}) {
+function setup(initial: GridView | null = null, more: { tooFine?: (g: GridView | null) => boolean; onView?: (cb: (zoom: number) => void) => () => void } = {}) {
   const preview = vi.fn<(g: GridView | null) => void>();
   const endPreview = vi.fn<() => void>();
   const apply = vi.fn<(g: GridView | null) => string | null>(() => null);
@@ -210,7 +210,7 @@ describe("GridPanel (C9 éditeur, E9)", () => {
 
   it("OG69 (G3) : pas saisi au-delà de 400 ramené dès la saisie ; niveau trop fin au zoom : message lu par role=status, relu au changement de vue", () => {
     let fine = false;
-    let viewChanged: () => void = () => {};
+    let viewChanged: (zoom: number) => void = () => {};
     const tooFine = vi.fn((g: GridView | null) => fine && g !== null);
     const { q } = setup(grid([level("squares", 40)]), { tooFine, onView: (cb) => ((viewChanged = cb), () => {}) });
     const status = q("too-fine");
@@ -219,7 +219,7 @@ describe("GridPanel (C9 éditeur, E9)", () => {
     typeIn(spacing, "900");
     expect(spacing.value).toBe("400");
     fine = true;
-    viewChanged();
+    viewChanged(0.5);
     expect(status.textContent).toBe("Trop fin à ce zoom : agrandissez la page ou le pas");
     fine = false;
     typeIn(spacing, "80");

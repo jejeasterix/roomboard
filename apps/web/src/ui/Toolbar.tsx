@@ -194,12 +194,19 @@ function GridToggle(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
           e.preventDefault();
           openCreator();
         }}
-        onClick={() => {
-          if (held) {
-            held = false;
-            return;
-          }
+        onClick={(e) => {
+          // Le relâcher d'un appui long est ignoré ; une activation au clavier (detail 0) bascule toujours.
+          const skip = held && e.detail !== 0;
+          held = false;
+          if (skip) return;
           props.ctx.host.runAction(props.item.action ?? "");
+        }}
+        onFocus={(e) => {
+          try {
+            if (e.currentTarget.matches(":focus-visible")) tip.focus();
+          } catch {
+            tip.focus();
+          }
         }}
         onBlur={() => tip.blur(document.hasFocus())}
       >

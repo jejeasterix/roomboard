@@ -203,6 +203,9 @@ export function App(props: AppProps): JSX.Element {
   // OG69 (G1) : même règle pour le panneau de la grille (bouton Grille, ☰, ou la scène après Ctrl+Maj+').
   const RETURNS_FOCUS: ReadonlySet<Panel> = new Set<Panel>(["help", "grid"]);
   let helpOpener: HTMLElement | null = null;
+  /** OG69 (relecture) : panneau fermé par un changement d'onglet, de page ou de version (E8) : le focus reste où il est
+   *  (sur la scène qui vient d'écrire), il ne saute pas au bouton ouvreur. */
+  let closedBySession = false;
   createComputed(
     on(
       panel,
@@ -220,6 +223,11 @@ export function App(props: AppProps): JSX.Element {
       panel,
       (p, prev) => {
         if (prev === null || prev === undefined || !RETURNS_FOCUS.has(prev) || p !== null) return;
+        if (closedBySession) {
+          closedBySession = false;
+          helpOpener = null;
+          return;
+        }
         const back = helpOpener !== null && helpOpener.isConnected ? helpOpener : props.stages;
         helpOpener = null;
         if (!back.hasAttribute("tabindex") && back === props.stages) back.tabIndex = -1;
@@ -352,7 +360,7 @@ export function App(props: AppProps): JSX.Element {
         return null;
       }}
       tooFine={(g) => b.engine.gridTooFine(g)}
-      onView={(cb) => b.engine.onCamera(() => cb())}
+      onView={(cb) => b.engine.onCamera((c) => cb(c.zoom))}
       cancel={() => setPanel(null)}
       saveAsBackground={props.backgrounds === undefined ? undefined : (grid) => void saveGridAsBackground(b, grid)}
     />
@@ -363,7 +371,9 @@ export function App(props: AppProps): JSX.Element {
     on(
       sessionKey,
       () => {
-        if (panel() === "grid") setPanel(null);
+        if (panel() !== "grid") return;
+        closedBySession = true;
+        setPanel(null);
       },
       { defer: true },
     ),
@@ -507,12 +517,11 @@ export function App(props: AppProps): JSX.Element {
       const key = { key: e.key, code: e.code, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: e.isComposing, target: e.target instanceof HTMLElement ? e.target : null };
       // OG69 (G4, G5 ; HE5 levée) : Ctrl+' bascule la grille, Ctrl+Maj+' ouvre le Créateur, Alt+G bascule l'aimant.
       const grid = annotating() ? null : gridKey(key);
+      // Créateur ouvert : la grille du document ne change pas sous le brouillon (Ctrl+', Alt+G sans effet ; Ctrl+Maj+' le ferme).
       if (grid !== null) {
         e.preventDefault();
-        if (e.repeat) return;
-        if (grid === "grid-toggle") toggleGrid();
-        else if (grid === "magnet") ws.active().board.engine.toggleMagnet();
-        else leaveEditor(() => setPanel((cur) => (cur === "grid" ? null : "grid")));
+        // Les actions de la barre (`ACTIONS`) ; Créateur ouvert, seul Ctrl+Maj+' agit (il le ferme).
+        if (!e.repeat && (panel() !== "grid" || grid === "grid")) host.runAction(grid);
         return;
       }
       const action = annotating() ? null : appShortcut(key);

@@ -9,7 +9,7 @@
  * (`RadioChoices`, flèches dans le groupe), Magnétisme en interrupteur (`role="switch"`, Espace, libellé compris dans la
  * cible). Clavier : focus sur Type à l'ouverture, Échap = Fermer sans appliquer, Entrée hors d'un champ de saisie ou d'un
  * bouton d'action = Appliquer. Un niveau trop dense au zoom courant est dit sous les réglages (`role="status"`).
- * Les choix de Type viennent de `kindOptions` : la galerie G6 n'aura qu'à changer leur aspect.
+ * Les choix de Type viennent de `KIND_OPTIONS` : la galerie G6 n'aura qu'à changer leur aspect.
  */
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import type { GridView } from "../core/api";
@@ -41,7 +41,7 @@ export const GRID_OFF_HINT = "Choisissez un type pour régler le pas, la couleur
 
 type KindChoice = (typeof GRID_CHOICES)[number];
 /** Choix du Type, dans l'ordre de `GRID_CHOICES` (préparation de la galerie G6). */
-export const kindOptions = (): readonly RadioOption<KindChoice>[] => GRID_CHOICES.map((k) => ({ value: k, label: GRID_KIND_LABELS[k] }));
+export const KIND_OPTIONS: readonly RadioOption<KindChoice>[] = Object.freeze(GRID_CHOICES.map((k) => ({ value: k, label: GRID_KIND_LABELS[k] })));
 
 export interface GridPanelProps {
   /** Grille du document à l'ouverture ; le brouillon en est une copie. */
@@ -56,8 +56,8 @@ export interface GridPanelProps {
   saveAsBackground?(grid: GridView): void;
   /** OG69 (G3) : vrai si le cœur saute un niveau de `grid`, trop dense au zoom courant ; absent : jamais. */
   tooFine?(grid: GridView | null): boolean;
-  /** OG69 (G3) : appelle `cb` à chaque changement de vue (zoom) ; rend le désabonnement. Absent : vue fixe. */
-  onView?(cb: () => void): () => void;
+  /** OG69 (G3) : appelle `cb` avec le zoom à chaque changement de vue ; rend le désabonnement. Absent : vue fixe. */
+  onView?(cb: (zoom: number) => void): () => void;
 }
 
 /** Entrée sur une cible de saisie ou un bouton d'action garde son rôle natif ; ailleurs (pastille, interrupteur, fond du
@@ -88,12 +88,8 @@ export function GridPanel(props: GridPanelProps): JSX.Element {
   const apply = (): void => {
     setError(props.apply(toGrid(draft())));
   };
-  /** G3 : relu à chaque brouillon et à chaque changement de vue. */
-  const [view, setView] = createSignal(0);
-  onMount(() => {
-    const stop = props.onView?.(() => setView((n) => n + 1));
-    if (stop !== undefined) onCleanup(stop);
-  });
+  /** G3 : relu à chaque brouillon et à chaque changement de zoom (un panoramique, même zoom, ne relance rien). */
+  const [view, setView] = createSignal<number | null>(null);
   const tooFine = createMemo(() => {
     view();
     return props.tooFine?.(toGrid(draft())) === true;
@@ -123,6 +119,8 @@ export function GridPanel(props: GridPanelProps): JSX.Element {
     root?.querySelector<HTMLElement>('[data-grille="kind"] [role="radio"][tabindex="0"]')?.focus();
     root?.addEventListener("keydown", onKey);
     onCleanup(() => root?.removeEventListener("keydown", onKey));
+    const stop = props.onView?.(setView);
+    if (stop !== undefined) onCleanup(stop);
   });
   const widths = createMemo(() => lineWidthOptions(docWidth).map((w) => ({ value: String(w), label: `${w} px` })));
   return (
@@ -133,7 +131,7 @@ export function GridPanel(props: GridPanelProps): JSX.Element {
           name="grid-kind"
           label="Type"
           look="chips"
-          options={kindOptions()}
+          options={KIND_OPTIONS}
           value={draft().kind === "other" ? null : (draft().kind as KindChoice)}
           choose={(k) => edit(withKind(draft(), k))}
         />

@@ -23,10 +23,11 @@ export function magnetPoint(ctx: MagnetCtx, page: string, x: number, y: number):
 /**
  * Redimensionnement aimanté (G5) : la poignée `h` de la boîte d'accroche `box` (sans le trait, comme à la création et au
  * déplacement) suit le pointeur décalé de (dx, dy), posée sur le nœud le plus proche ; l'échelle se fait autour de la
- * poignée opposée de cette même boîte. Null si l'aimant est coupé ou si rien n'accroche : l'appelant garde son calcul brut.
+ * poignée opposée de cette même boîte. L'appelant lit `magnetOn` et `box` au départ du geste (aucune lecture de page par
+ * image) ; ici, seule Alt est relue. Null si Alt est tenue ou si rien n'accroche : l'appelant garde son calcul brut.
  */
 export function magnetResize(ctx: MagnetCtx, box: Bounds, h: HandleId, dx: number, dy: number, keepRatio: boolean): Matrix | null {
-  if (!magnetOn(ctx)) return null;
+  if (ctx.alt?.() === true) return null;
   const [gx, gy] = handlePoint(box, h);
   const q = ctx.doc.snapPoint(ctx.page(), gx + dx, gy + dy);
   return q === null ? null : resizeMatrix(box, h, q[0], q[1], keepRatio);

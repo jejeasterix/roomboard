@@ -3266,16 +3266,18 @@ function squaresLines(g: GridView, clip: PageRect | null, r: Bounds, minStep: nu
   if (finite && c.x0 <= c.x1 && c.y0 <= c.y1) {
     for (const [i, l] of g.levels.entries()) {
       if (!l.visible || l.kind !== "squares") continue;
-      if (l.spacingX < minStep * l.lineWidth || l.spacingY < minStep * l.lineWidth) skipped.push(i); // G3 (OG69)
+      const okX = l.spacingX >= minStep * l.lineWidth;
+      const okY = l.spacingY >= minStep * l.lineWidth;
+      if (!okX || !okY) skipped.push(i); // G3 (OG69)
       const segments: number[] = [];
-      const ix = l.spacingX >= minStep * l.lineWidth ? gridIndices(l.originX, l.spacingX, c.x0, c.x1) : null;
+      const ix = okX ? gridIndices(l.originX, l.spacingX, c.x0, c.x1) : null;
       if (ix) {
         for (let k = ix[0]; k <= ix[1]; k++) {
           const x = l.originX + k * l.spacingX;
           segments.push(x, c.y0, x, c.y1);
         }
       }
-      const iy = l.spacingY >= minStep * l.lineWidth ? gridIndices(l.originY, l.spacingY, c.y0, c.y1) : null;
+      const iy = okY ? gridIndices(l.originY, l.spacingY, c.y0, c.y1) : null;
       if (iy) {
         for (let k = iy[0]; k <= iy[1]; k++) {
           const y = l.originY + k * l.spacingY;

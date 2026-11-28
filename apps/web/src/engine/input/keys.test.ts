@@ -434,6 +434,10 @@ describe("gridKey (OG69, G4 et G5 ; HE5 levée)", () => {
     expect(gridKey(k("4", { ctrlKey: true, shiftKey: true, code: "Digit4" }))).toBe("grid");
     expect(gridKey(k("4", { ctrlKey: true, code: "Digit4" }))).toBeNull();
     expect(gridKey(k("'", {}))).toBeNull();
+    // QWERTZ : l'apostrophe est Maj+# : elle bascule ; Ctrl+ù (AZERTY, code Quote) ne fait rien.
+    expect(gridKey(k("'", { ctrlKey: true, shiftKey: true, code: "Backslash" }))).toBe("grid-toggle");
+    expect(gridKey(k("ù", { ctrlKey: true, code: "Quote" }))).toBeNull();
+    expect(gridKey(k("Dead", { ctrlKey: true, code: "Quote" }))).toBe("grid-toggle");
   });
   it("Alt+G bascule l'aimant (lu par code : Option+G donne « © ») ; jamais avec Ctrl ou Maj, ni dans un champ", () => {
     expect(gridKey(k("g", { altKey: true, code: "KeyG" }))).toBe("magnet");

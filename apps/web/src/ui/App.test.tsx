@@ -1539,7 +1539,7 @@ describe("App — grille à un geste et aimant (OG69, G1, G4, G5)", () => {
       button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", button: 0 }));
       vi.advanceTimersByTime(600);
       button.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch" }));
-      button.click();
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
       expect(container.querySelector("#grille")).not.toBeNull();
       expect(setGrids(tab)).toEqual([]);
       press({ key: '"', code: "Quote", ctrlKey: true, shiftKey: true });
@@ -1563,6 +1563,18 @@ describe("App — grille à un geste et aimant (OG69, G1, G4, G5)", () => {
     expect(tab.engine.run).not.toHaveBeenCalled();
     const back = document.activeElement;
     expect(back === opener || back?.closest('[data-toolbar="menu"]') !== null).toBe(true);
+  });
+
+  it("G1 (relecture) : panneau fermé par un changement de version : le focus ne saute pas au bouton ouvreur", () => {
+    const { container, tab } = renderApp();
+    const opener = container.querySelector<HTMLButtonElement>('button[data-item="grid"]')!;
+    opener.focus();
+    click(opener);
+    expect(container.querySelector("#grille")).not.toBeNull();
+    tab.emit({ version: 7 });
+    expect(container.querySelector("#grille")).toBeNull();
+    expect(document.activeElement).not.toBe(opener);
+    expect(document.activeElement?.closest('[data-toolbar="menu"]') ?? null).toBeNull();
   });
 
   it("G5 : Alt+G bascule l'aimant ; bouton Aimant seulement pour un outil de forme sur une page avec grille", () => {

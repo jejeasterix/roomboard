@@ -57,7 +57,8 @@ describe("shortcuts", () => {
       else if (by === "nudge") { const n = nudgeKey(e); expect(`${n?.dx},${n?.dy}`, s.id).toBe(value); }
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
-      else if (by === "grid") expect(gridKey(e), s.id).toBe(value);
+      // Ctrl+Maj+' : la touche donne « " » en QWERTY (lue par `key`).
+      else if (by === "grid") expect(gridKey(s.id === "grid" ? { ...e, key: '"' } : e), s.id).toBe(value);
       else if (by === "cell") expect(cellKey({ ...press("Enter"), code: s.keys.endsWith("Entrée") ? "Enter" : `Key${s.keys.slice(-1)}`, altKey: true, shiftKey: s.keys.includes("Maj") }), s.id).toBe(value);
       else if (by === "table") expect(tableKey(pressTable(s.keys)), s.id).toBe(value);
       else if (by === "lineEdit") expect(lineEditKey(e), s.id).toBe(true);
