@@ -3404,7 +3404,7 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(doc.elementIds(page)).toHaveLength(4);
   });
 
-  it("Alt+→ choisit l'objet relié ; sans objet relié, la touche passe ; Alt+Maj+→ reste à l'objet relié créé", () => {
+  it("Alt+→ choisit l'objet relié ; sans objet relié, la touche passe", () => {
     const { engine, doc, page, rect } = og12();
     const a = rect(100, 100, 200, 200);
     const b = rect(400, 100, 500, 200);
@@ -3423,6 +3423,34 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(engine.state().selection).toEqual([a, b]);
   });
 
+  it("Alt+→ vers un nœud groupé choisit le groupe entier ; depuis un groupe, elle suit le lien de l'un de ses membres (C3)", () => {
+    const { engine, doc, page, rect } = og12();
+    const link = (from: string, to: string): void => {
+      const arrow = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 0, y0: 0, x1: 10, y1: 0, style: PEN, fill: null }).ids[0] ?? "";
+      doc.apply({ type: "SetLinePoints", id: arrow, points: [0, 0, 10, 0], start: { id: from, fx: 0.5, fy: 0.5 }, end: { id: to, fx: 0.5, fy: 0.5 } });
+    };
+    const a = rect(100, 100, 200, 200);
+    const b = rect(400, 100, 500, 200);
+    const c = rect(400, 300, 500, 400);
+    const d = rect(700, 100, 800, 200);
+    engine.select([b, c]);
+    expect(engine.group()).toBe(true);
+    link(a, b);
+    link(b, d);
+    engine.select([a]);
+    expect(engine.key(key("ArrowRight", { altKey: true }))).toBe(true);
+    expect([...engine.state().selection].sort()).toEqual([b, c].sort());
+    expect(engine.key(key("ArrowRight", { altKey: true }))).toBe(true);
+    expect(engine.state().selection).toEqual([d]);
+  });
+  it("Alt+Maj+→ : la touche reste à l'objet relié (l'assertion de la sélection suit le test précédent)", () => {
+    const { engine, doc, page, rect } = og12();
+    const a = rect(100, 100, 200, 200);
+    engine.select([a]);
+    expect(engine.key(key("ArrowRight", { altKey: true, shiftKey: true }))).toBe(true);
+    expect(doc.elementIds(page)).toHaveLength(3);
+    expect(engine.state().selection).not.toContain(a);
+  });
   it("Alt+Maj+flèche (fusion OG12 × OG23) : séance « Modifier les points » et rectangle seul à OG12, sinon Aligner", () => {
     const { engine, doc, page, rect, line } = og12();
     const sent: Command[] = [];

@@ -387,6 +387,9 @@ describe("arrangeKey (OG23, déc. 24)", () => {
       expect(nudgeKey(k("ArrowLeft", { target }))).toBeNull();
     }
   });
+  it("navKey : une touche déjà traitée (defaultPrevented) ne navigue pas", () => {
+    expect(navKey(k("ArrowRight", { altKey: true, defaultPrevented: true }))).toBeNull();
+  });
   it("nudgeKey : une flèche déjà traitée (defaultPrevented) ne déplace rien", () => {
     expect(nudgeKey(k("ArrowLeft", { defaultPrevented: true }))).toBeNull();
   });
