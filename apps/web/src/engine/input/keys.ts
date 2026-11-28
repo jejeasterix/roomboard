@@ -106,12 +106,18 @@ export function cellKey(e: KeyLike): CellKey | null {
   return null;
 }
 
-export type TableKey = "header-toggle" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content";
+export type TableKey = "header-toggle" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content" | "ha-next" | "va-next";
 /** personnalisation-3 (H12) : touches de l'outil Tableau : Alt+→ ← largeur ± 8, Alt+↓ ↑ hauteur ± 8 (Ctrl+Alt+flèche est pris par le système : bureau, rotation d'écran ; Ctrl+flèche = ordre, Alt+Maj+flèche = objet relié, OG12) ; hors champ,
- *  hors IME, sans Ctrl, Cmd ni Maj. Le moteur la prend avec l'outil Tableau et une case active, et la page appelle preventDefault (Alt+← = page précédente). */
+ *  hors IME, sans Ctrl, Cmd ni Maj (sauf Alt+Maj+C, Alt+Maj+M : alignements, D15). Le moteur la prend avec l'outil Tableau et une case active, et la page appelle preventDefault (Alt+← = page précédente). */
 export function tableKey(e: KeyLike): TableKey | null {
   if (e.isComposing || e.metaKey || inEditable(e.target)) return null;
-  if (!e.altKey || e.ctrlKey || e.shiftKey) return null;
+  if (!e.altKey || e.ctrlKey) return null;
+  // D15 : Alt+Maj+C / Alt+Maj+M font tourner l'alignement horizontal / vertical (lus par `code` : Alt+Maj change `key`).
+  if (e.shiftKey) {
+    if (e.code === "KeyC") return "ha-next";
+    if (e.code === "KeyM") return "va-next";
+    return null;
+  }
   if (e.code === "KeyE") return "header-toggle";
   if (e.code === "KeyA") return "fit-content";
   if (e.key === "ArrowRight") return "col-wider";

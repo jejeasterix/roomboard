@@ -774,6 +774,7 @@ async function buildBoardSession(
     stage.dataset["table"] = tags.table;
     stage.dataset["tableLinked"] = tags.tableLinked;
     stage.dataset["tableHeader"] = tags.tableHeader;
+    stage.dataset["tableAlign"] = tags.tableAlign;
     stage.dataset["tableMerges"] = tags.tableMerges;
     stage.dataset["tableShades"] = tags.tableShades;
     stage.dataset["units"] = tags.units;

@@ -9,7 +9,7 @@
  * insertions et suppressions agissent sur la plage, sinon sur la zone de la cellule active. Cellule active et plage
  * tenues par ids, retirées par `prune` quand elles disparaissent (I1).
  */
-import type { CellIds, Command, Matrix, TableAxis, TableData, TextSpan } from "../../core/api";
+import type { CellIds, CellLook, Command, Matrix, TableAxis, TableData, TextSpan } from "../../core/api";
 import { TABLE_MAX_LINES } from "../../core/api";
 import { sameSpans } from "../../core/rich-text";
 import type { FormatAction, FormatState } from "../rich-edit";
@@ -23,8 +23,10 @@ import {
   cellGrips,
   cellHeight,
   cellInnerBox,
+  cellLook,
   cellOf,
   cellRect,
+  cellTextFrame,
   EDGE_SLOP_PX,
   DOUBLE_TAP_MS,
   DOUBLE_TAP_PX,
@@ -53,7 +55,7 @@ import {
   type Grip,
   type Range,
 } from "../table-geom";
-import type { Measure } from "../text-layout";
+import { layoutRich, richBoxHeight, type Measure } from "../text-layout";
 import type { CellDrop } from "./cell-drop";
 import { createCommitGate } from "./commit-gate";
 import { transformBounds } from "./handles";
@@ -317,7 +319,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     ctx.stateChanged?.();
   }
 
-  /** Ouvre la saisie sur la cellule active : coin intérieur de la zone, largeur de la zone moins les marges, fond. */
+  /** Ouvre la saisie sur la cellule active : cadre aligné de la zone (`cellTextFrame`, D15 ; HB3 : fixé à l'ouverture),
+   *  largeur de la zone moins les marges, fond. */
   const openActive = (): void => {
     const at = locate(active);
     if (at === null) {
@@ -329,14 +332,16 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     const colWidth = r.x1 - r.x0;
     const inner = cellInnerBox(at.table, at.cell);
     const { text, spans, fill } = cellContent(at.table, at.ref.row, at.ref.col);
+    const frame = cellTextFrame(at.table, at.cell, richBoxHeight(layoutRich(spans, { size: at.table.size }, inner.w, measure)));
     opened = { ref: at.ref, initial: text, initialSpans: spans, colWidth, size: at.table.size };
     gate.reset();
     editor.open(
       {
         page: ctx.page(),
         id: at.ref.id,
-        matrix: composeMatrix(at.transform, translateMatrix(inner.x, inner.y)),
-        boxWidth: inner.w,
+        matrix: composeMatrix(at.transform, translateMatrix(frame.x, frame.y)),
+        boxWidth: frame.w,
+        align: frame.ha,
         color: at.table.color,
         size: at.table.size,
         initial: text,
@@ -646,7 +651,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const zone = mergeAt(t, at.cell);
       // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
       const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true };
+      const look = cellLook(t, at.ref.row, at.ref.col);
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ha: look.ha, va: look.va };
     },
     act(a) {
       if (!settle()) return;
@@ -704,6 +710,17 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         case "fit-content":
           fitContent(ref.id, span.c1, span.r1);
           break;
+        case "ha-next": {
+          // D15 : la case active donne la valeur de départ ; gauche → centre → droite → gauche, une SetTableLook.
+          const now = cellLook(t, ref.row, ref.col).ha;
+          api.look({ key: "ha", value: now === "left" ? "center" : now === "center" ? "right" : "left" });
+          return;
+        }
+        case "va-next": {
+          const now = cellLook(t, ref.row, ref.col).va;
+          api.look({ key: "va", value: now === "top" ? "middle" : now === "middle" ? "bottom" : "top" });
+          return;
+        }
         case "cell-image": {
           const image = topImage(ref);
           if (image !== null) ctx.run({ type: "SetCellImage", id: ref.id, row: ref.row, col: ref.col, from: image });
@@ -713,6 +730,16 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           // Contrôle d'exhaustivité : une action ajoutée à `TableAction` sans cas ici ne compile pas.
           return a satisfies never;
       }
+      refresh();
+      ctx.stateChanged?.();
+    },
+    look(l: CellLook) {
+      if (!settle()) return;
+      const at = locate(active);
+      if (at === null) return;
+      const corners = cornersOf(at.table, rangeOf(at) ?? zoneOf(at));
+      if (corners === null) return;
+      ctx.run({ type: "SetTableLook", id: at.ref.id, ...corners, look: l });
       refresh();
       ctx.stateChanged?.();
     },
