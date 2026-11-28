@@ -6,13 +6,13 @@
  */
 import { For, type Accessor, type JSX } from "solid-js";
 import type { BorderStyle, CellLook, HAlign, TableBorder, VAlign } from "../core/api";
-import { TABLE_LINE_WIDTH, type TableAction, type TableCellState } from "../engine/table-geom";
+import { parseLabels, TABLE_LINE_WIDTH, type TableAction, type TableCellState } from "../engine/table-geom";
 import { Icon, IconButton } from "./IconButton";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import { buttonShortcut } from "./shortcuts";
 import { STROKES, WIDTH_OPTIONS, type Pick } from "./tool-options";
 
-export type TableSectionKey = "tableObjects" | "tableAlign" | "tableBorder" | "tableRows";
+export type TableSectionKey = "tableObjects" | "tableAlign" | "tableBorder" | "tableRows" | "tableAccept";
 export interface TableOptionsHost {
   act(a: TableAction): void;
   look(l: CellLook): void;
@@ -107,6 +107,28 @@ export function TableSection(props: {
           attrs={{ "data-table-option": "sort-desc", class: "rb-opt-btn" }} onPress={() => props.host.act("sort-desc")} />
       </div>
     ),
+    // DS5 : libellés admis par les colonnes de la plage ; écrit au changement (Entrée ou perte du focus), une commande.
+    tableAccept: () => {
+      const write = (v: string): void => {
+        const next = parseLabels(v);
+        const now = props.cell()?.accept ?? [];
+        if (next.length !== now.length || next.some((x, i) => x !== now[i])) props.host.look({ key: "accept", value: next });
+      };
+      return (
+        <label class="rb-opt-stack">
+          <span>Accepte (séparés par des virgules)</span>
+          <input
+            type="text"
+            data-table-option="accept"
+            value={(props.cell()?.accept ?? []).join(", ")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") write(e.currentTarget.value);
+            }}
+            onChange={(e) => write(e.currentTarget.value)}
+          />
+        </label>
+      );
+    },
   };
   return bodies[props.section]();
 }

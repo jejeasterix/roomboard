@@ -64,6 +64,7 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   tableAlign: "Alignement",
   tableBorder: "Bordures",
   tableRows: "Lignes",
+  tableAccept: "Tableau de tri",
   strokeStyle: "Style du trait",
   roughness: "Style de tracé",
   roundness: "Angles",
@@ -473,7 +474,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const tableCell = (): TableCellState | null => props.state().tableCell ?? null;
   const tableBody = (k: TableSectionKey) => () => <TableSection section={k} cell={tableCell} host={tableHost} picks={strokeChoices} />;
   const bodies: Readonly<Record<OptionKey, () => JSX.Element>> = {
-    tableObjects: tableBody("tableObjects"), tableAlign: tableBody("tableAlign"), tableBorder: tableBody("tableBorder"), tableRows: tableBody("tableRows"),
+    tableObjects: tableBody("tableObjects"), tableAlign: tableBody("tableAlign"), tableBorder: tableBody("tableBorder"), tableRows: tableBody("tableRows"), tableAccept: tableBody("tableAccept"),
     strokeColor: () => colors("strokeColor", strokeChoices, (c) => ({ color: c ?? "#000000" })),
     background: () => colors("background", backgroundPicks, (c) => ({ background: c })),
     fillStyle: () => (

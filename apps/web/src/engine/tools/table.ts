@@ -738,7 +738,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       // personnalisation-3 : objets logés dans ce tableau (cellule active seulement ; lu au changement d'état, jamais par image).
       const linked = linkedIn(ctx.doc, ctx.page(), at.ref.id).length;
       const look = cellLook(t, at.ref.row, at.ref.col);
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ...(t.fit === "shrink" ? { fit: "shrink" as const } : {}), column: t.rows.map((r) => cellContent(t, r.id, t.cols[at.cell.col]?.id ?? "").text), ha: look.ha, va: look.va, border: look.border, open: look.open };
+      const accept = t.cols[at.cell.col]?.accept;
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded, linked, header: t.header === true, ...(t.fit === "shrink" ? { fit: "shrink" as const } : {}), column: t.rows.map((r) => cellContent(t, r.id, t.cols[at.cell.col]?.id ?? "").text), ha: look.ha, va: look.va, border: look.border, open: look.open, ...(accept === undefined ? {} : { accept }) };
     },
     act(a) {
       if (!settle()) return;

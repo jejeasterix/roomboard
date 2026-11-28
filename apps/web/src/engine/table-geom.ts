@@ -62,6 +62,8 @@ export interface TableCellState {
   readonly linked?: number;
   /** D18 : textes de la colonne active, de haut en bas, `#stage[data-table-column]`. */
   readonly column?: readonly string[];
+  /** personnalisation-3 (DS5) : étiquettes admises par la colonne active (tableau de tri), lu par le champ « Accepte ». */
+  readonly accept?: readonly string[];
 }
 export interface TableHit { readonly id: string; readonly transform: Matrix; readonly table: TableData; readonly cell: Cell }
 
@@ -542,4 +544,25 @@ export function sortedRows(t: TableData, col: number, dir: "asc" | "desc"): stri
     return c !== 0 ? (dir === "asc" ? c : -c) : x.i - y.i;
   });
   return [...head.map((r) => r.id), ...body.map((b) => b.id)];
+}
+
+const label = (s: string): string => s.trim().toLocaleLowerCase("fr");
+
+/** D21, DS5 : la case `cell` accepte-t-elle l'étiquette `text` (null : pas un seul texte) ? Colonne sans liste : tout ;
+ *  case d'en-tête d'une colonne à liste : rien ; sinon le libellé, sans casse ni blancs de bord, doit être dans la liste. */
+export function acceptsDrop(t: TableData, cell: Cell, text: string | null): boolean {
+  const list = t.cols[cell.col]?.accept;
+  if (list === undefined || list.length === 0) return true;
+  if (t.header === true && cell.row === 0) return false;
+  return text !== null && list.some((x) => label(x) === label(text));
+}
+
+/** Champ « Accepte » (DS5) : libellés séparés par virgule, point-virgule ou retour ; nettoyés, sans doublon, 64 au plus. */
+export function parseLabels(s: string): string[] {
+  const out: string[] = [];
+  for (const raw of s.split(/[,;\n]/)) {
+    const x = raw.trim();
+    if (x !== "" && !out.some((o) => label(o) === label(x)) && out.length < 64) out.push(x);
+  }
+  return out;
 }

@@ -4,20 +4,24 @@
  * sans tableau, Alt relâchée, case non ombrée et hors zone fusionnée : `PlaceInCell` (mode agrandir : la colonne et la
  * ligne prennent la taille exigée par l'objet, l'objet est posé au coin de la boîte intérieure). Objet lié lâché hors de
  * tout tableau (centre hors de sa case ou zone ; dedans, il garde son lien) : `PlaceInCell` sans case, à la place du relâché. Sinon `null` : la Sélection écrit sa `Transform`.
+ * Colonne à liste `accept` (DS5) : seule une étiquette admise y loge ; sinon `"refused"`, et la Sélection n'écrit rien.
  * Tableaux lus une fois par version du document (D28), jamais par image.
  */
 import type { Bounds, CellLink, Command, ElementView, LineSize, Matrix, TableElement } from "../../core/api";
 import { applyMatrix, invertMatrix } from "../../core/shapes";
 import type { GroupedView } from "../groups";
-import { cellContent, cellInnerBox, cellRect, linkedBoxes, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
+import { acceptsDrop, cellContent, cellInnerBox, cellRect, linkedBoxes, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { transformBounds, translateMatrix } from "./handles";
 import type { ToolContext } from "./tool";
 
+/** DS5 : relâché refusé par la règle d'étiquettes ; la Sélection n'écrit rien. */
+export const REFUSED = "refused";
+
 export interface CellDrop {
   expand(ids: readonly string[], views: readonly GroupedView[]): string[];
   target(selection: readonly string[], x: number, y: number): Bounds | null;
-  drop(selection: readonly string[], matrix: Matrix, x: number, y: number, alt: boolean): Command | null;
+  drop(selection: readonly string[], matrix: Matrix, x: number, y: number, alt: boolean): Command | null | typeof REFUSED;
   place(selection: readonly string[], out: boolean): Command | null;
 }
 
@@ -72,6 +76,13 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     if (cellContent(hit.table, r.id, k.id).shade !== null) return null;
     return hit;
   };
+
+  /** Étiquette de la sélection : le contenu d'un seul texte, sinon null (DS5, H11). */
+  const labelOf = (selection: readonly string[]): string | null => {
+    const v = views(selection);
+    return v.length === 1 && v[0]?.kind === "text" ? v[0].text.content : null;
+  };
+  const admits = (selection: readonly string[], hit: TableHit): boolean => acceptsDrop(hit.table, hit.cell, labelOf(selection));
 
   /** D11 : tailles de la case quittée par `selection` (lien commun) qui reviennent à la taille exigée sans elle, si
    *  elles valent celle que la sélection imposait (± 0,5) ; une taille réglée à la main n'est jamais réduite. */
@@ -179,11 +190,14 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
     },
     target(selection, x, y) {
       const hit = aimed(selection, x, y);
-      return hit === null ? null : transformBounds(hit.transform, cellRect(hit.table, hit.cell));
+      return hit === null || !admits(selection, hit) ? null : transformBounds(hit.transform, cellRect(hit.table, hit.cell));
     },
     drop(selection, matrix, x, y, alt) {
-      if (alt || selection.length === 0) return null;
+      if (selection.length === 0) return null;
       const hit = aimed(selection, x, y);
+      // DS5 : la règle d'étiquettes ne se contourne pas par Alt ; une étiquette admise avec Alt se déplace librement.
+      if (hit !== null && !admits(selection, hit)) return REFUSED;
+      if (alt) return null;
       if (hit !== null) return placeInto(selection, hit);
       const sel = views(selection);
       if (sel.some((v) => v.kind === "table")) return null;
@@ -199,7 +213,7 @@ export function createCellDrop(ctx: ToolContext, measure: Measure): CellDrop {
       if (out) return sel.some((v) => v.cell !== undefined) ? { type: "PlaceInCell", ids: [...selection], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: shrinkLeft(selection) } : null;
       const box = ctx.doc.bounds(selection);
       const hit = box === null ? null : aimed(selection, (box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2);
-      return hit === null ? null : placeInto(selection, hit);
+      return hit === null || !admits(selection, hit) ? null : placeInto(selection, hit);
     },
   };
 }

@@ -31,7 +31,7 @@ import {
   translateMatrix,
   type HandleId,
 } from "./handles";
-import type { CellDrop } from "./cell-drop";
+import { REFUSED, type CellDrop } from "./cell-drop";
 import { expandToGroups, keepWholeGroups, viewsOf, type GroupedView } from "../groups";
 import { cellContent, cellLook, tableAt } from "../table-geom";
 import type { LivePart, SelectionTool, ToolContext } from "./tool";
@@ -343,6 +343,8 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
       }
       // Fusion OG23 × OG26 : seul le déplacement loge dans une case ; la copie `dragCopy` (OG23) duplique sans lien.
       const placed = d.mode === "move" ? (cellDrop?.drop(selection, m, d.x, d.y, ctx.alt?.() === true) ?? null) : null;
+      // DS5 : étiquette refusée : aucune commande, l'objet reste à sa place (aperçu annulé), aucune étape.
+      if (placed === REFUSED) return;
       ctx.run(placed ?? { type: "Transform", ids: [...selection], matrix: m });
     },
     live(): LivePart {
