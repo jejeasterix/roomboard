@@ -26,11 +26,15 @@ import {
   cellOf,
   cellRect,
   EDGE_SLOP_PX,
+  DOUBLE_TAP_MS,
+  DOUBLE_TAP_PX,
   expandRange,
+  FIT_MAX_WIDTH,
   GRIP_PX,
   linkedBoxes,
   linkedIn,
   mergeAt,
+  naturalWidth,
   rangeCells,
   rangeRect,
   rangeSize,
@@ -133,6 +137,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   let swallowed: number | null = null;
   let opened: Opened | null = null;
   let resize: Resize | null = null;
+  /** Dernier appui sur une bordure ou une poignée (D14) : le suivant, proche dans le temps et l'espace, ajuste. */
+  let lastTap: { readonly id: string; readonly axis: "col" | "row"; readonly index: number; readonly t: number; readonly sx: number; readonly sy: number } | null = null;
   const stopHold = (p: Press | null): void => {
     if (p?.hold != null) clearTimeout(p.hold);
     if (p !== null) p.hold = null;
@@ -455,10 +461,50 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     menu.open(p.sx, p.sy, items);
   };
 
+  /** Ajuster au contenu (D14, DS7) : colonne = max(largeur naturelle, objets) bornée, lignes qui exigent plus
+   *  regrandies ; ligne = hauteur exigée. Une SetTableLineSizes ; rien ne change : aucune. */
+  const fitContent = (id: string, col: number | null, row: number | null): void => {
+    const el = ctx.doc.element(id);
+    if (el?.kind !== "table") return;
+    const t = el.table;
+    const linked = linkedBoxes(ctx.doc, ctx.page(), { id, transform: el.transform });
+    const widths = t.cols.map((c) => c.width);
+    const cols: (readonly [string, number])[] = [];
+    if (col !== null) {
+      const k = t.cols[col];
+      const objs = requiredSizes(t, linked, widths, measure).cols[col] ?? 0;
+      const w = Math.min(FIT_MAX_WIDTH, Math.max(naturalWidth(t, col, measure), objs));
+      if (k !== undefined && k.width !== w) {
+        cols.push([k.id, w]);
+        widths[col] = w;
+      }
+    }
+    const need = requiredSizes(t, linked, widths, measure).rows;
+    const rows = t.rows.flatMap((r, i): (readonly [string, number])[] => {
+      const h = need[i] ?? r.height;
+      if (i === row) return h !== r.height ? [[r.id, h]] : [];
+      return h > r.height ? [[r.id, h]] : [];
+    });
+    if (cols.length > 0 || rows.length > 0) ctx.run({ type: "SetTableLineSizes", id, cols, rows });
+  };
+
   const api: TableTool = {
     begin(pointerId, samples) {
       const s = samples[0];
       if (!s) return;
+      const tap = lastTap;
+      lastTap = null;
+      if (tap !== null && s.t - tap.t <= DOUBLE_TAP_MS && Math.hypot(s.x - tap.sx, s.y - tap.sy) <= DOUBLE_TAP_PX && !gate.composing()) {
+        // D14 : second appui ; la saisie ouverte par le premier (bordure intérieure, F14) est validée sans écrire.
+        if (opened !== null) commit();
+        swallowed = pointerId;
+        press = null;
+        resize = null;
+        fitContent(tap.id, tap.axis === "col" ? tap.index : null, tap.axis === "row" ? tap.index : null);
+        refresh();
+        ctx.stateChanged?.();
+        return;
+      }
       press = null;
       // Appui pendant la saisie : valide seulement (T7 de C10a, F14), même s'il glisse ; grille ouverte : la ferme.
       if (opened !== null) {
@@ -475,6 +521,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
       const grab = grabAt(s.x, s.y, x, y);
       if (grab !== null) {
+        lastTap = { id: grab.id, axis: grab.edge.axis, index: grab.edge.index, t: s.t, sx: s.x, sy: s.y };
         const start = localAlong(grab.transform, grab.edge.axis, s.x, s.y);
         const line = grab.edge.axis === "col" ? grab.table.cols[grab.edge.index]?.width : grab.table.rows[grab.edge.index]?.height;
         if (start !== null && line !== undefined) {
@@ -540,6 +587,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const same = hit.cell.row === p.start.row && hit.cell.col === p.start.col;
       if (same && !p.moved) return;
       p.moved = true;
+      lastTap = null;
       const ref = same ? null : refAt(hit.id, hit.table, hit.cell.row, hit.cell.col);
       if (ref?.row !== corner?.row || ref?.col !== corner?.col) setCorner(ref);
     },
@@ -555,6 +603,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       if (rz !== null && rz.pointerId === pointerId && !rz.armed) resize = null;
       else if (rz !== null && rz.pointerId === pointerId) {
         resize = null;
+        if (rz.size !== rz.size0) lastTap = null;
         const el = ctx.doc.element(rz.id);
         if (how === "end" && rz.size !== rz.size0 && el?.kind === "table") resizeTo(rz.id, el.transform, el.table, rz.edge, rz.size);
         refresh();
@@ -652,6 +701,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
           if (now !== undefined) resizeTo(ref.id, at.transform, t, { axis, index }, now + sign * SIZE_STEP);
           break;
         }
+        case "fit-content":
+          fitContent(ref.id, span.c1, span.r1);
+          break;
         case "cell-image": {
           const image = topImage(ref);
           if (image !== null) ctx.run({ type: "SetCellImage", id: ref.id, row: ref.row, col: ref.col, from: image });

@@ -230,6 +230,7 @@ describe("cellKey (H12)", () => {
 describe("tableKey (H12)", () => {
   it("tableKey : Alt+flèches seules ; avec Ctrl, Maj, Cmd, sans Alt, en saisie ou en composition : null", () => {
     const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+    expect(tableKey(a("a", { code: "KeyA" }))).toBe("fit-content");
     expect(tableKey(a("ArrowRight"))).toBe("col-wider");
     expect(tableKey(a("ArrowLeft"))).toBe("col-narrower");
     expect(tableKey(a("ArrowDown"))).toBe("row-taller");
@@ -380,6 +381,7 @@ describe("fusion OG23 × OG26 : touches de l'outil Tableau et Disposer disjointe
   const table: KeyLike[] = [
     ...["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].map((a) => k(a, { code: a, altKey: true })),
     k("e", { code: "KeyE", altKey: true }),
+    k("a", { code: "KeyA", altKey: true }),
     k("f", { code: "KeyF", altKey: true }),
     k("i", { code: "KeyI", altKey: true }),
     k("Enter", { code: "Enter", altKey: true }),

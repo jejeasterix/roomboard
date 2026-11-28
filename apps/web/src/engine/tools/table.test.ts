@@ -13,6 +13,7 @@ import type { TextEditorHost, TextEditSession } from "./text";
 import type { TableTool, ToolContext } from "./tool";
 
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
+const atT = (x: number, y: number, t: number): InputSample => ({ ...at(x, y), t });
 /** 10 unités par caractère à toute taille. */
 const narrow: Measure = (s) => s.length * 10;
 type AddTable = Extract<Command, { type: "AddTable" }>;
@@ -1146,5 +1147,59 @@ describe("outil Tableau — TB2 en-tête et D35", () => {
     s.tool.requestCommit();
     s.tool.act("shade");
     expect(s.last()?.type).toBe("SetTableShade");
+  });
+});
+
+describe("outil Tableau — S7 ajuster au contenu (D14, DS7)", () => {
+  /** 3 × 3 en (100, 200), « Photosynthèse » en (0, 0), case (0, 0) active, saisie fermée. */
+  const ready = () => {
+    const s = setup();
+    const id = s.create(100, 200, 3, 3);
+    s.type("Photosynthèse");
+    s.tool.requestCommit();
+    s.click(100 + 120, 200 + 32);
+    s.tool.requestCommit();
+    return { s, id };
+  };
+  it("S7 : double appui sur la poignée droite : colonne 0 = 13 × 10 + 16, une commande", () => {
+    const { s, id } = ready();
+    const n = s.runs.length;
+    s.tool.begin(3, [atT(340, 232, 1000)]);
+    s.tool.close(3, "end");
+    s.tool.begin(4, [atT(342, 232, 1200)]);
+    s.tool.close(4, "end");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.last()?.type).toBe("SetTableLineSizes");
+    expect(s.table(id).cols.map((c) => c.width)).toEqual([146, 240, 240]);
+  });
+  it("S7 : deux appuis à 400 ms, puis à 20 px : aucun ajustement", () => {
+    const { s, id } = ready();
+    s.tool.begin(3, [atT(340, 232, 1000)]);
+    s.tool.close(3, "end");
+    s.tool.begin(4, [atT(340, 232, 1400)]);
+    s.tool.close(4, "end");
+    s.tool.begin(5, [atT(340, 252, 1500)]);
+    s.tool.close(5, "end");
+    expect(s.table(id).cols.map((c) => c.width)).toEqual([240, 240, 240]);
+  });
+  it("S7 : double appui sur la bordure intérieure de la ligne 0 (saisie ouverte au premier) : validée sans écrire, ligne ajustée", () => {
+    const { s, id } = ready();
+    s.doc.apply({ type: "SetTableLineSizes", id, cols: [], rows: [[s.table(id).rows[0]?.id ?? "", 150]] });
+    const n = s.runs.length;
+    s.tool.begin(3, [atT(450, 350, 1000)]);
+    s.tool.close(3, "end");
+    s.tool.begin(4, [atT(451, 350, 1150)]);
+    s.tool.close(4, "end");
+    expect(s.runs.slice(n).map((c) => c.type)).toEqual(["SetTableLineSizes"]);
+    expect(s.table(id).rows[0]?.height).toBe(64);
+  });
+  it("S7 : Alt+A (fit-content) : colonne et ligne de la case active en une SetTableLineSizes", () => {
+    const { s, id } = ready();
+    const n = s.runs.length;
+    s.tool.act("fit-content");
+    expect(s.runs.length).toBe(n + 1);
+    expect(s.last()?.type).toBe("SetTableLineSizes");
+    expect(s.table(id).cols[0]?.width).toBe(146);
+    expect(s.table(id).rows[0]?.height).toBe(64);
   });
 });

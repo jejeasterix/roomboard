@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeCore } from "../core/fake-core";
 import type { CoreDocument, ElementView, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
-import { anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, step, tableAt, TABLE_PADDING } from "./table-geom";
+import { anchorOf, cellAt, cellContaining, cellContent, cellGrips, cellHeight, cellInnerBox, cellOf, cellRect, edgeAt, expandRange, linkedBoxes, isCovered, mergeAt, mergeRanges, rangeCells, rangeRect, requiredSizes, rowHeightsFor, naturalWidth, step, tableAt, TABLE_PADDING } from "./table-geom";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
 
 /** 10 unités par caractère à toute taille. */
@@ -276,5 +276,24 @@ describe("TB1 bordures", () => {
     };
     expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] })).toEqual([{ row: "r1", col: "b", w: 100, h: 50 }]);
     expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] }, ["o"])).toEqual([]);
+  });
+});
+
+describe("naturalWidth (D14, DS7)", () => {
+  const m = (s: string) => s.length * 10;
+  const t = (texts: Record<string, string>, merges: TableData["merges"] = []): TableData => ({
+    color: "#000", size: 36, merges,
+    cols: [{ id: "a", width: 100 }, { id: "b", width: 100 }],
+    rows: [{ id: "r0", height: 64 }, { id: "r1", height: 64 }],
+    cells: Object.entries(texts).map(([k, text]) => {
+      const [row, col] = k.split(":");
+      return { row: row ?? "", col: col ?? "", text, fill: null, shade: null, spans: [{ text, attrs: {} }] };
+    }),
+  });
+  it("naturalWidth : ligne la plus longue sans retour + 2 × marge ; paragraphes séparés", () => {
+    expect(naturalWidth(t({ "r0:a": "Photosynthèse", "r1:a": "ab\nabcdef" }), 0, m)).toBe(130 + 16);
+  });
+  it("naturalWidth : zone de deux colonnes ignorée ; colonne vide : 2 × marge", () => {
+    expect(naturalWidth(t({ "r0:a": "abcdefghij" }, [{ row: "r0", col: "a", rows: 1, cols: 2 }]), 0, m)).toBe(16);
   });
 });

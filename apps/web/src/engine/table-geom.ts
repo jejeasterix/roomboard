@@ -26,7 +26,7 @@ export const TABLE_SHADE_HATCH_STEP = 16;
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
 /** Fond de l'en-tête (D17) : `--rf-gray-300`, choix 5 du plan du lot B (gray-50 se confond avec le blanc au vidéoprojecteur). */
 export const TABLE_HEADER_FILL = "#E0E0E8";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade" | "fit-toggle" | "header-toggle" | "cell-image" | "col-wider" | "col-narrower" | "row-taller" | "row-shorter" | "fit-content";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
@@ -408,4 +408,29 @@ export function linkedBoxes(
     const ys = pts.map((p) => p[1]);
     return [{ row: cell[1], col: cell[2], w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }];
   });
+}
+
+/** Double appui (D14, H15) : 300 ms entre deux appuis, 8 px écran ; largeur ajustée bornée (H16). */
+export const DOUBLE_TAP_MS = 300;
+export const DOUBLE_TAP_PX = 8;
+export const FIT_MAX_WIDTH = 4 * TABLE_COL_WIDTH;
+/** Largeur « sans retour » pour la largeur naturelle. */
+const NO_WRAP = 1e9;
+
+/** Largeur naturelle d'une colonne (D14) : ligne de texte la plus longue sans retour automatique, sur les ancres d'une
+ *  seule colonne (une zone de plusieurs colonnes et une cellule couverte sont ignorées), plus deux marges. */
+export function naturalWidth(t: TableData, col: number, measure: Measure): number {
+  const k = t.cols[col];
+  if (k === undefined) return 2 * TABLE_PADDING;
+  const zones = mergeRanges(t);
+  let w = 0;
+  t.rows.forEach((r, i) => {
+    const z = zones.find((x) => inRange(x, { row: i, col }));
+    if (z !== undefined && (z.c0 !== z.c1 || z.r0 !== i)) return;
+    for (const line of layoutRich(cellContent(t, r.id, k.id).spans, { size: t.size }, NO_WRAP, measure)) {
+      const last = line.segments[line.segments.length - 1];
+      if (last !== undefined) w = Math.max(w, last.x + last.width);
+    }
+  });
+  return w + 2 * TABLE_PADDING;
 }
