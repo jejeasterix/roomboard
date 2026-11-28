@@ -86,7 +86,7 @@ export function createProfileStore(kv: KeyValue | null, builtins: readonly Profi
     if (arr !== undefined && !Array.isArray(arr)) warnings.push("profils stockés illisibles : tableau attendu");
     else if (Array.isArray(arr)) {
       for (const entry of arr) {
-        const r = valueTooDeep(entry) ? { errors: [`plus de ${MAX_JSON_DEPTH} niveaux d'imbrication`] } : parseProfile(entry);
+        const r = parseProfile(entry);
         if ("errors" in r) {
           warnings.push(`profil stocké écarté : ${r.errors.join(" ; ")}`);
         } else if (saved.some((u) => u.id === r.profile.id)) {

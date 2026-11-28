@@ -265,7 +265,7 @@ describe("magasin : écriture refusée (T11)", () => {
     const s = createProfileStore(kv, BUILTIN_PROFILES);
     expect(s.get("profond")).toBeNull();
     expect(s.get("ok")).not.toBeNull();
-    expect(s.warnings()).toContain(`profil stocké écarté : plus de ${MAX_JSON_DEPTH} niveaux d'imbrication`);
+    expect(s.warnings()).toContain(`profil stocké écarté : profil : plus de ${MAX_JSON_DEPTH} niveaux d'imbrication`);
   });
 
   it("save : imbrication au-delà de MAX_JSON_DEPTH (OG45) : lève avant JSON.stringify, magasin utilisable ensuite", () => {

@@ -90,22 +90,12 @@ export function parsePs(out: string): Array<{ pid: number; cmd: string }> {
   });
 }
 
-/** Processus vivants (D79, OG45) : `procDir` (`/proc`, Linux) ; illisible (macOS) : `ps`, chemin absolu (pas de `PATH`),
- *  en locale UTF-8 (sinon `ps` écrit `é` en `M-CM-)` et une racine accentuée n'est plus trouvée) ; `ps` en échec : aucun. */
-export function processCommands(procDir = "/proc"): Array<{ pid: number; cmd: string }> {
+const fromProc = (procDir: string): Array<{ pid: number; cmd: string }> | null => {
   let names: string[];
   try {
     names = readdirSync(procDir).filter((n) => /^\d+$/.test(n));
   } catch {
-    try {
-      return parsePs(execFileSync("/bin/ps", ["-axww", "-o", "pid=,command="], {
-        encoding: "utf8",
-        env: { ...process.env, LC_ALL: "en_US.UTF-8" },
-        maxBuffer: 64 * 1024 * 1024,
-      }));
-    } catch {
-      return [];
-    }
+    return null;
   }
   return names.flatMap((n) => {
     try {
@@ -114,7 +104,21 @@ export function processCommands(procDir = "/proc"): Array<{ pid: number; cmd: st
       return [];
     }
   });
-}
+};
+
+/** `ps` par son chemin absolu (pas de `PATH`), en locale UTF-8 : sinon `ps` écrit `é` en `M-CM-)` et une racine
+ *  accentuée n'est plus trouvée. En échec : aucun processus. */
+const fromPs = (): Array<{ pid: number; cmd: string }> => {
+  try {
+    const env = { ...process.env, LC_ALL: "en_US.UTF-8" };
+    return parsePs(execFileSync("/bin/ps", ["-axww", "-o", "pid=,command="], { encoding: "utf8", env, maxBuffer: 64 * 1024 * 1024 }));
+  } catch {
+    return [];
+  }
+};
+
+/** Processus vivants (D79, OG45) : `procDir` (`/proc`, Linux), sinon (macOS) `ps`. */
+export const processCommands = (procDir = "/proc"): Array<{ pid: number; cmd: string }> => fromProc(procDir) ?? fromPs();
 
 /** D79 : processus dont la ligne de commande cite `<racine>/conversions/<pid>-` : tués (groupe, sinon processus) ;
  *  rend leurs pids. */
