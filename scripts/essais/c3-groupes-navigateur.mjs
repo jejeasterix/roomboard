@@ -115,6 +115,9 @@ async function scenario(page, url, { captures, tmp }) {
   check((await attr("data-grouped")) === "1", "S1 : Annuler rend le groupe : un clic reprend les trois objets");
 
   // S2 : Ctrl+C réel, enveloppe relue dans le presse-papiers système.
+  // Un second clic au même endroit, objet déjà choisi, serait un double-clic (texte, OG33) : on vide d'abord la sélection.
+  await page.keyboard.press("Escape");
+  await waitAttr("data-selection", "0");
   await mouse.click(170, 280);
   await waitAttr("data-selection", "3");
   await page.keyboard.press("Control+c");
