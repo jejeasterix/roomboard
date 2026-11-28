@@ -115,10 +115,17 @@ fn label_one_step_undo() {
         assert_eq!(ch.ids, vec![id.clone()], "{kind:?}");
         assert_eq!(label(&d, &id).as_deref(), Some("Bonjour"), "{kind:?}");
         assert_eq!(d.version(), v0 + 1, "{kind:?} : une étape");
-        assert_eq!(raw_keys(&d, &id).1, count, "{kind:?} : aucun élément texte lié");
+        assert_eq!(
+            raw_keys(&d, &id).1,
+            count,
+            "{kind:?} : aucun élément texte lié"
+        );
         assert!(d.undo());
         assert_eq!(label(&d, &id), None, "{kind:?}");
-        assert!(!has_raw_label(&d, &id), "{kind:?} : l'annulation retire la clé");
+        assert!(
+            !has_raw_label(&d, &id),
+            "{kind:?} : l'annulation retire la clé"
+        );
     }
 }
 
