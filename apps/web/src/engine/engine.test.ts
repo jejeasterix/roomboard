@@ -1392,6 +1392,10 @@ function fakeTextTool(ctx: ToolContext, log: string[]) {
     },
     formatState: () => fmt,
     formatChanged: () => ctx.stateChanged?.(),
+    openLabel: (id) => {
+      log.push(`text.openLabel ${id}`);
+      return true;
+    },
   };
   return {
     tool,
@@ -3049,6 +3053,7 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     const renderer = new FakeRenderer();
     let select: ReturnType<typeof createSelectTool> | null = null;
     let seen: ToolContext | null = null;
+    const textLog: string[] = [];
     const tools: ToolFactories = {
       pen: (ctx) => {
         seen = ctx;
@@ -3060,6 +3065,7 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
         return select;
       },
       shape: (ctx, kind, style) => createShapeTool(ctx, kind, style),
+      text: (ctx) => fakeTextTool(ctx, textLog).tool,
     };
     const engine = createEngine({ doc, renderer, frames, tools });
     const page = engine.state().page;
@@ -3087,7 +3093,7 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
       engine.sink.begin(pointerId, "select", [{ ...sample, x, y, t }]);
       engine.sink.close(pointerId, "end");
     };
-    return { doc, frames, renderer, engine, page, rect, line, ctx, sel, pointsOf, tap };
+    return { doc, frames, renderer, engine, page, rect, line, ctx, sel, pointsOf, tap, textLog };
   }
 
   it("Ctrl+Entrée : Modifier les points sur la flèche seule sélectionnée ; l'outil reste Sélection, la sélection est gardée", () => {
@@ -3098,6 +3104,24 @@ describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt t
     expect(engine.state()).toMatchObject({ lineEditing: id, tool: "select", selection: [id], linePointsSelected: 0 });
     expect(engine.key(key("Escape"))).toBe(true);
     expect(engine.state()).toMatchObject({ lineEditing: null, tool: "select", selection: [id] });
+  });
+
+  it("Entrée sur une forme : son texte (OG33, choix 9)", () => {
+    const { engine, rect, textLog } = og12();
+    const id = rect(300, 300, 400, 350);
+    engine.select([id]);
+    expect(engine.key(key("Enter"))).toBe(true);
+    expect(textLog).toEqual([`text.openLabel ${id}`]);
+    expect(engine.state().tool).toBe("text");
+  });
+
+  it("Entrée sur une ligne : la touche passe ; Entrée sur un bouton qui a le focus : le bouton agit, le texte de la forme ne s'ouvre pas", () => {
+    const { engine, rect, line, textLog } = og12();
+    engine.select([line()]);
+    expect(engine.key(key("Enter"))).toBe(false);
+    engine.select([rect(300, 300, 400, 350)]);
+    expect(engine.key(key("Enter", { target: { tagName: "BUTTON" } }))).toBe(false);
+    expect(textLog).toEqual([]);
   });
 
   it("Ctrl+Entrée : flèche coudée, rien ; sans sélection unique, la touche passe", () => {

@@ -243,6 +243,9 @@ pub struct ShapeView {
     pub start: Option<BindingView>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end: Option<BindingView>,
+    /// OG33 (lot 2b, choix 8) : texte d'un rectangle, d'un losange ou d'une ellipse ; absent : aucun ; jamais vide.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// OG12 lot 2a (n° 34, U3) : clé `polygon` de premier niveau d'une ligne ; seul `true` la ferme, toute autre valeur se

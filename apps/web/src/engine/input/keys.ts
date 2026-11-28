@@ -133,7 +133,8 @@ export function editAction(e: KeyLike): EditAction | null {
 /** Entrée seule (validation d'un mode d'édition, C5) : hors champ, hors composition, et pas sur un bouton, dont elle est l'activation. */
 export function enterAction(e: KeyLike): boolean {
   if (e.key !== "Enter" || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || inEditable(e.target)) return false;
-  return e.target?.tagName?.toUpperCase() !== "BUTTON";
+  // OG33 : Entrée sur un contrôle (bouton, radio, case de grille) l'active ; elle n'ouvre rien (comme `nudgeKey`).
+  return !inControl(e.target);
 }
 
 export type OrderKey = "up" | "down" | "front" | "back";

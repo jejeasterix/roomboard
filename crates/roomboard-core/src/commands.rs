@@ -324,6 +324,12 @@ pub enum Command {
     ShapeToPolygon {
         id: String,
     },
+    /// OG33 (lot 2b, choix 8) : texte d'un rectangle, d'un losange ou d'une ellipse, en une étape ; vide : clé retirée ;
+    /// même texte : aucune étape ; plus de 10 000 caractères : `BadText` ; autre genre : `BadShape`.
+    SetShapeLabel {
+        id: String,
+        label: String,
+    },
     /// Média (C14, M5) : élément, métadonnée du média (avec `linked` s'il est lié) et du poster ; une transaction, une
     /// étape.
     AddMedia {
@@ -912,6 +918,7 @@ impl Document {
             Command::Rotate { ids, angle } => self.cmd_rotate(&ids, angle),
             Command::AddLinked { id, dir } => self.cmd_add_linked(&id, dir),
             Command::ShapeToPolygon { id } => self.cmd_shape_to_polygon(&id),
+            Command::SetShapeLabel { id, label } => self.cmd_set_shape_label(&id, &label),
             Command::SetText {
                 page,
                 id,
@@ -1422,6 +1429,8 @@ impl Document {
             plan.push(("polygon", Some(In::Any(Any::Bool(true)))));
             // H5 : `roundness` retiré comme `cmd_set_style` pour un neutre, dans la même transaction.
             plan.push(("roundness", None));
+            // H5 : le texte de la forme part avec elle, l'annulation le rend.
+            plan.push(("label", None));
             (found.element, found.page_id, plan)
         };
         {
@@ -3295,6 +3304,7 @@ pub(crate) mod tests {
                 polygon: None,
                 start: None,
                 end: None,
+                label: None,
             })
         );
         assert!(d.undo());
@@ -3428,6 +3438,7 @@ pub(crate) mod tests {
                 polygon: None,
                 start: None,
                 end: None,
+                label: None,
             })
         );
         let id = d

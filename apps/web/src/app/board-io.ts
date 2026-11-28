@@ -8,6 +8,9 @@
  */
 import { DEFAULT_BACKGROUND, PAGE_WIDTH, type AssetRef, type Change, type Command, type CoreDocument, type CoreFactory, type ElementView, type Matrix, type TextSpan } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
+import { plainSpans } from "../core/rich-text";
+import { LABEL_SIZE, labelBox, labelTop } from "../core/shape-label";
+import { layoutRich, measureOrFallback, richBoxHeight } from "../engine/text-layout";
 import { applyMatrix, composeMatrix, flattenPath, isSegment, lineGeomOf, linePath } from "../core/shapes";
 import { encodeBoardList, type BoardListData, type BoardListPage, type BoardObject } from "../platform/board-list";
 import { normalBoardPath, type BoardDialect, type BoardPart, type BoardReadOptions, type BoardSourceFormat } from "../platform/board-reader";
@@ -406,6 +409,16 @@ export async function boardListOf(doc: CoreDocument, assets: Pick<AssetStore, "g
         levels.push([]);
       }
       levels.at(-1)!.push(o);
+      // OG33 (choix 8) : le texte d'une forme s'écrit en boîte de texte posée par la matrice de la forme.
+      if (el.kind === "shape" && el.shape.label !== undefined) {
+        const box = labelBox(el.shape);
+        if (box !== null) {
+          // Même mise en page qu'à l'écran (`layoutRich` dans `box.w`) ; sans canevas, mesure de repli (0,6 × taille par caractère).
+          const spans = plainSpans(el.shape.label);
+          const boxHeight = richBoxHeight(layoutRich(spans, { size: LABEL_SIZE }, box.w, measureOrFallback(null)));
+          levels.at(-1)!.push({ kind: "text", m: composeMatrix(el.transform, [1, 0, 0, 1, box.x, labelTop(box, boxHeight)]), x: 0, y: 0, boxWidth: box.w, boxHeight, size: LABEL_SIZE, color: el.style.color, spans });
+        }
+      }
       if (outsideFrame(o)) add("outside");
     }
     while (open.length > 0) close();

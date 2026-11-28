@@ -5591,3 +5591,58 @@ describe.each(factories)("composition OG12 × personnalisation-3 : $name", ({ f:
     near(world(d, arrow).flat(), arrowBefore.flat());
   });
 });
+
+// OG33 (lot 2b, choix 8) : texte de forme, clé `label` de la forme même (jamais un élément `text` lié par `containerId`) ;
+// le vide retire la clé (jamais `""` ni `null`, GC8) ; même ordre de refus sur les deux cœurs.
+describe.each(factories)("contrat OG33 SetShapeLabel : $name", ({ f }) => {
+  const PEN = { color: "#000000", width: 4 };
+  const add = (d: CoreDocument, shape: ShapeKind): string =>
+    d.apply({ type: "AddShape", page: d.pageIds()[0]!, shape, x0: 0, y0: 0, x1: 100, y1: 60, style: PEN, fill: null }).ids[0]!;
+  const shapeOf = (d: CoreDocument, id: string): ShapeElement["shape"] => (d.element(id) as ShapeElement).shape;
+
+  it("SetShapeLabel : une étape sur la forme même, undo ; même texte : aucune étape", () => {
+    const d = f.blank();
+    for (const kind of ["rect", "diamond", "ellipse"] as const) {
+      const id = add(d, kind);
+      expect(Object.hasOwn(shapeOf(d, id), "label")).toBe(false);
+      const v = d.version();
+      const ch = d.apply({ type: "SetShapeLabel", id, label: "Bonjour" });
+      expect(ch.ids).toEqual([id]);
+      expect(shapeOf(d, id).label).toBe("Bonjour");
+      expect(d.version()).toBe(v + 1);
+      d.apply({ type: "SetShapeLabel", id, label: "Bonjour" });
+      expect(d.version()).toBe(v + 1);
+      d.undo();
+      expect(Object.hasOwn(shapeOf(d, id), "label")).toBe(false);
+    }
+    d.free();
+  });
+  it("SetShapeLabel vide : clé retirée ; ligne refusée, id inconnu, texte trop long", () => {
+    const d = f.blank();
+    const r = add(d, "rect");
+    d.apply({ type: "SetShapeLabel", id: r, label: "Bonjour" });
+    d.apply({ type: "SetShapeLabel", id: r, label: "" });
+    expect(Object.hasOwn(shapeOf(d, r), "label")).toBe(false);
+    const line = add(d, "line");
+    const v = d.version();
+    expect(() => d.apply({ type: "SetShapeLabel", id: line, label: "x" })).toThrow(/forme invalide/);
+    expect(() => d.apply({ type: "SetShapeLabel", id: "absent", label: "x" })).toThrow("élément inconnu : absent");
+    expect(() => d.apply({ type: "SetShapeLabel", id: r, label: "é".repeat(10_001) })).toThrow(/texte invalide/);
+    d.apply({ type: "SetShapeLabel", id: r, label: "é".repeat(10_000) });
+    expect(d.version()).toBe(v + 1);
+    d.free();
+  });
+  it("ShapeToPolygon retire le texte, undo le rend ; la copie d'AddLinked part sans texte", () => {
+    const d = f.blank();
+    const r = add(d, "rect");
+    d.apply({ type: "SetShapeLabel", id: r, label: "Bonjour" });
+    const copy = d.apply({ type: "AddLinked", id: r, dir: "right" }).ids[0]!;
+    expect(Object.hasOwn(shapeOf(d, copy), "label")).toBe(false);
+    expect(shapeOf(d, r).label).toBe("Bonjour");
+    d.apply({ type: "ShapeToPolygon", id: r });
+    expect(Object.hasOwn(shapeOf(d, r), "label")).toBe(false);
+    d.undo();
+    expect(shapeOf(d, r).label).toBe("Bonjour");
+    d.free();
+  });
+});

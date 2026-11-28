@@ -416,6 +416,7 @@ impl Document {
                         polygon: s.polygon.then_some(true),
                         start,
                         end,
+                        label: crate::label::read_label(&txn, e, s.kind),
                     }),
                     look: look_view(&txn, e),
                     ..ElementView::bare(id, "shape", transform)

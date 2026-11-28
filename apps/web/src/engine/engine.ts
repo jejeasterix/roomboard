@@ -414,6 +414,7 @@ function inertText(): TextTool {
     composing: () => false,
     compositionStart() {},
     compositionEnd() {},
+    openLabel: () => false,
     requestCommit() {},
     format() {},
     formatState: () => null,
@@ -914,6 +915,13 @@ export function createEngine(deps: EngineDeps): Engine {
     bindingEnabled: () => item.arrowBinding,
     pointerType: () => lastPointer,
     editPoints: (id) => void enterLineEdit(id),
+    editText: (id) => void editShapeText(id),
+    labelDone: (id) => {
+      engine.setTool("select");
+      selectTool.setSelection([id]);
+      requestScene();
+      emit();
+    },
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   /** Style de texte de l'outil Tableau et de l'import : couleur du stylo, taille par défaut ; l'outil Texte a `textToolStyle`. */
@@ -922,6 +930,13 @@ export function createEngine(deps: EngineDeps): Engine {
   const textToolStyle = (): TextStyle => ({ ...textStyle(), size: item.fontSize, ...(item.font !== "default" ? { font: item.font } : {}) });
   const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
   const textTool: TextTool = deps.tools.text?.(ctx, textToolStyle) ?? inertText();
+  /** OG33 (choix 9) : texte d'un rectangle, d'un losange ou d'une ellipse de la page montrée, par l'outil Texte. */
+  function editShapeText(id: string): boolean {
+    const v = doc.element(id);
+    if (v?.kind !== "shape" || !isBoxShape(v.shape.shape) || !doc.elementIds(pageId).includes(id)) return false;
+    if (tool !== "text") engine.setTool("text");
+    return textTool.openLabel(id);
+  }
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => item) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => item),
@@ -1424,6 +1439,11 @@ export function createEngine(deps: EngineDeps): Engine {
       if (lineEditor !== null && edit === "escape") {
         exitLineEdit();
         return true;
+      }
+      // OG33 (choix 9) : Entrée sur une forme seule choisie ouvre son texte.
+      if (enterAction(e) && lineEditor === null && tool === "select" && (imageEdit === null || imageEdit.mode() === "idle")) {
+        const sel = selectTool.selection();
+        if (sel.length === 1 && editShapeText(sel[0]!)) return true;
       }
       const dir = linkedKey(e);
       if (dir !== null) return engine.addLinked(dir);

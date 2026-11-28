@@ -553,6 +553,7 @@ function setupLines(pointer: "touch" | "mouse" = "touch") {
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
   const edits: string[] = [];
+  const texts: string[] = [];
   let copie = "";
   vi.spyOn(doc, "bindTarget").mockImplementation((_p, x) => (x < 150 ? HIT_A : x > 350 ? HIT_B : null));
   const ctx: ToolContext = {
@@ -577,11 +578,12 @@ function setupLines(pointer: "touch" | "mouse" = "touch") {
     bindingEnabled: () => true,
     pointerType: () => pointer,
     editPoints: (id) => { edits.push(id); },
+    editText: (id) => { texts.push(id); },
   };
   const tool = createSelectTool(ctx);
   const add = (shape: "line" | "arrow" | "rect" | "diamond" | "ellipse", x0: number, y0: number, x1: number, y1: number): string =>
     doc.apply({ type: "AddShape", page, shape, x0, y0, x1, y1, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
-  return { doc, tool, runs, edits, add, copie: () => copie };
+  return { doc, tool, runs, edits, texts, add, copie: () => copie };
 }
 
 describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () => {
@@ -693,6 +695,20 @@ describe("OG12 lot 2a : double toucher sur une forme", () => {
       tool.close(1, "end");
       tool.begin(2, [atT(105, 50, 200)]);
       tool.close(2, "end");
+      expect(edits, shape).toEqual([]);
+      expect(runs.some((r) => r.type === "ShapeToPolygon"), shape).toBe(false);
+    }
+  });
+  it("double toucher sur une forme : son texte (OG33, choix 9)", () => {
+    for (const shape of ["rect", "diamond", "ellipse"] as const) {
+      const { tool, texts, edits, runs, add } = setupLines();
+      const id = add(shape, 0, 0, 200, 100);
+      tool.setSelection([id]);
+      tool.begin(1, [atT(100, 50, 0)]);
+      tool.close(1, "end");
+      tool.begin(2, [atT(105, 50, 200)]);
+      tool.close(2, "end");
+      expect(texts, shape).toEqual([id]);
       expect(edits, shape).toEqual([]);
       expect(runs.some((r) => r.type === "ShapeToPolygon"), shape).toBe(false);
     }

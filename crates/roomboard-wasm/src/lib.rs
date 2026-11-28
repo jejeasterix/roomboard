@@ -1586,6 +1586,11 @@ impl Document {
         to_js(&self.shape_to_polygon_inner(id).map_err(cmd_err)?)
     }
 
+    /// OG33 (lot 2b, choix 8) : texte d'un rectangle, d'un losange ou d'une ellipse ; vide : retiré ; une étape.
+    pub fn set_shape_label(&mut self, id: &str, label: &str) -> Result<JsValue, JsError> {
+        to_js(&self.set_shape_label_inner(id, label).map_err(cmd_err)?)
+    }
+
     /// OG12 (n° 27) : copie et flèche coudée liée ; direction inconnue : `BadShape`.
     pub fn add_linked(&mut self, id: &str, dir: &str) -> Result<JsValue, JsError> {
         to_js(&self.add_linked_inner(id, dir).map_err(cmd_err)?)
@@ -2683,6 +2688,13 @@ impl Document {
 
     pub fn shape_to_polygon_inner(&mut self, id: &str) -> Result<Change, CommandError> {
         self.run(Command::ShapeToPolygon { id: id.to_string() })
+    }
+
+    pub fn set_shape_label_inner(&mut self, id: &str, label: &str) -> Result<Change, CommandError> {
+        self.run(Command::SetShapeLabel {
+            id: id.to_string(),
+            label: label.to_string(),
+        })
     }
 
     pub fn add_linked_inner(&mut self, id: &str, dir: &str) -> Result<Change, CommandError> {

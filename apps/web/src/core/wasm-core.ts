@@ -235,8 +235,10 @@ export function toElementView(v: unknown): ElementView | null {
       };
       const start = bindingOf(s["start"]);
       const end = bindingOf(s["end"]);
+      if (s["label"] !== undefined && typeof s["label"] !== "string") throw new Error(ELEMENT);
       return { ...base, kind, style, shape: { shape, w, h, fill: typeof fill === "string" ? fill : null,
-        ...(Array.isArray(points) && points.length > 0 ? { points: points as number[] } : {}), ...(s["polygon"] === true ? { polygon: true as const } : {}), ...(start ? { start } : {}), ...(end ? { end } : {}) } };
+        ...(Array.isArray(points) && points.length > 0 ? { points: points as number[] } : {}), ...(s["polygon"] === true ? { polygon: true as const } : {}), ...(start ? { start } : {}), ...(end ? { end } : {}),
+        ...(typeof s["label"] === "string" && s["label"] !== "" ? { label: s["label"] } : {}) } };
     }
     case "text": {
       const style = toStyle(v["style"]);
@@ -590,6 +592,7 @@ class WasmCoreDocument implements CoreDocument {
         return toChange(this.d.add_linked(cmd.id, cmd.dir));
       case "ShapeToPolygon":
         return toChange(this.d.shape_to_polygon(cmd.id));
+      case "SetShapeLabel": return toChange(this.d.set_shape_label(cmd.id, cmd.label));
       case "AddPage": return toChange(this.d.add_page_after(cmd.after, cmd.mode));
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));

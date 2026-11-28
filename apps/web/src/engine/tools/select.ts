@@ -365,6 +365,12 @@ export function createSelectTool(ctx: ToolContext, cellDrop?: CellDrop): Selecti
           ctx.editPoints?.(id);
           return;
         }
+        // OG33 (choix 9, décision du lot 2a) : double toucher ou double-clic sur une forme = son texte, jamais la conversion.
+        if (id !== null && lastTap?.id === id && isDoubleTap(lastTap, cur) && isNode(view)) {
+          lastTap = null;
+          ctx.editText?.(id);
+          return;
+        }
         lastTap = id === null ? null : { ...cur, id };
       }
       if (d.mode === "link") {

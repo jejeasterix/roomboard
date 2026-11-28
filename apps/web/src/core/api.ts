@@ -104,6 +104,9 @@ export type Command =
   /** OG12 lot 2a (n° 34, H5) : rectangle, losange ou ellipse convertis en place (même id) en ligne fermée, une étape ;
    *  `roundness` retiré ; refus `BadShape` (ligne, flèche, boîte nulle) ; change.ids = [id]. */
   | { readonly type: "ShapeToPolygon"; readonly id: string }
+  /** OG33 (lot 2b, choix 8) : texte d'un rectangle, d'un losange ou d'une ellipse, une étape ; vide : clé retirée ; même
+   *  texte : aucune étape ; refus, dans l'ordre : `BadText` (> 10 000 caractères), élément inconnu, `BadShape`. */
+  | { readonly type: "SetShapeLabel"; readonly id: string; readonly label: string }
   | {
       readonly type: "SetText";
       readonly page: string;
@@ -257,6 +260,8 @@ export interface ShapeData {
   /** OG12 lot 2a (n° 34) : ligne fermée, du dernier sommet vers le départ (jamais répété, DA-1) ; absent = ouverte,
    *  jamais écrit à false (GC8) ; lu sur `shape: "line"` seulement. */
   readonly polygon?: true;
+  /** OG33 : texte d'un rectangle, d'un losange ou d'une ellipse ; absent : aucun ; jamais vide. */
+  readonly label?: string;
 }
 export type LinkDir = "up" | "down" | "left" | "right";
 /** OG12 (n° 17) : cible d'accroche ; `anchors` = 4 ancres monde, ordre `ANCHOR_RATIOS`. */
