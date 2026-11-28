@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CoreDocument, Matrix, TextSpan } from "../core/api";
+import type { CoreDocument, GridView, Matrix, TextSpan } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import { applyMatrix } from "../core/shapes";
@@ -92,9 +92,51 @@ describe("board-io : flux BoardList (C13, D6)", () => {
   });
 
   it("C13 : flux invalides : « liste de tableau invalide : … » (mêmes cas que board.rs)", () => {
-    for (const ops of [[9], [3, 0], [1, 7], [1, 8], [1, 2, 256, 0, 0], [1, 6, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 9], [1, 4, 1, 0, 0, 1, 0, Number.NaN], [1, 3, 7]]) {
+    for (const ops of [[10], [3, 0], [1, 7], [1, 8], [1, 2, 256, 0, 0], [1, 6, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 9], [1, 4, 1, 0, 0, 1, 0, Number.NaN], [1, 3, 7]]) {
       expect(() => decodeBoardList(ops, W1_TEXTS), JSON.stringify(ops)).toThrow(/^liste de tableau invalide : /);
     }
+  });
+});
+
+/** Flux témoin G1 (OG70), recopié de `board.rs` (tests) : page à grille de deux niveaux, puis page nue. */
+const G1_OPS = [
+  1, 9, 1, 1, 0, 2,
+  0, 40, 40, 0, 0, 200, 200, 200, 0, 1, 1, 1,
+  2, 80, 60, 10, 20, 0, 0, 255, 2, 2, 0, 0,
+  1,
+];
+const G1_GRID: GridView = {
+  visible: true,
+  snap: true,
+  above: false,
+  levels: [
+    { kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#c8c8c8", line: "solid", lineWidth: 1, snap: true, visible: true },
+    { kind: "dots", spacingX: 80, spacingY: 60, originX: 10, originY: 20, color: "#0000ff", line: "dotted", lineWidth: 2, snap: false, visible: false },
+  ],
+};
+const G1_PAGES: BoardListPage[] = [{ background: null, grid: G1_GRID, objects: [] }, { background: null, objects: [] }];
+
+describe("board-io : grille de page (OG70, G11)", () => {
+  it("flux témoin G1 : decodeBoardList et encodeBoardList rendent la même grille (parité avec board.rs)", () => {
+    expect(decodeBoardList(G1_OPS, [])).toEqual(G1_PAGES);
+    expect(Array.from(encodeBoardList(G1_PAGES).ops)).toEqual(G1_OPS);
+  });
+
+  it("grilles invalides refusées (mêmes cas que board.rs)", () => {
+    const level = (kind: number, sx: number, line: number, width: number): number[] => [1, 9, 1, 1, 0, 1, kind, sx, 40, 0, 0, 0, 0, 0, line, width, 1, 1];
+    expect(() => decodeBoardList(level(0, 40, 0, 1), [])).not.toThrow();
+    for (const ops of [level(3, 40, 0, 1), level(0, 0, 0, 1), level(0, 40, 3, 1), level(0, 40, 0, 9), level(0, 40, 0, 0.5), [9, 0, 0, 0, 0], [1, 9, 0, 0, 0, 0, 9, 0, 0, 0, 0], [1, 9, 0, 0, 0, 17], [1, 9, 2, 0, 0, 0]]) {
+      expect(() => decodeBoardList(ops, []), JSON.stringify(ops)).toThrow(/^liste de tableau invalide : /);
+    }
+  });
+
+  it("la grille est posée sur sa page, sans étape d'annulation ; la page sans grille reste sans grille", async () => {
+    const r = await buildBoardDocument(fakeCore, G1_PAGES, new Map(), deps());
+    const [p1, p2] = r.doc.pageIds();
+    expect(r.doc.page(p1!)?.grid).toEqual(G1_GRID);
+    expect(r.doc.page(p2!)?.grid).toBeNull();
+    expect(r.doc.canUndo()).toBe(false);
+    expect(r.warnings).toEqual([]);
   });
 });
 

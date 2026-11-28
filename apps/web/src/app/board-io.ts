@@ -243,6 +243,8 @@ export async function buildBoardDocument(
       const notes: PageNotes = { skipped: 0, missing: 0 };
       const ctx: Ctx = { draft, page, media, assets, scratch, decode: deps.decode, notes };
       if (p.background !== null) run(ctx, { type: "Fill", page, target: { kind: "background" }, color: p.background });
+      // OG70 (G11) : grille d'un `.flipchart` ; refusée par le cœur : comptée comme objet illisible (D8b).
+      if (p.grid !== undefined) run(ctx, { type: "SetGrid", page, grid: p.grid });
       for (const o of p.objects) await place(ctx, o);
       if (notes.skipped > 0) warnings.push(skippedMessage(i + 1, notes.skipped));
       if (notes.missing > 0) warnings.push(missingImagesMessage(i + 1, notes.missing));

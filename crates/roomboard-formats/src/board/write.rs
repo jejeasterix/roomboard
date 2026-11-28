@@ -491,6 +491,7 @@ mod tests {
     fn one_page(items: Vec<Item>) -> BoardList {
         encode(&[Page {
             background: None,
+            grid: None,
             items,
         }])
     }
@@ -536,6 +537,7 @@ mod tests {
         };
         let page = Page {
             background: None,
+            grid: None,
             items: vec![shape(f32::INFINITY), shape(f32::NAN), shape(2999.5)],
         };
         assert_eq!(frame_height(&[page]), 3000.0);

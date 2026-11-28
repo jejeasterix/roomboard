@@ -11,6 +11,7 @@ fn w1_pages() -> Vec<Page> {
     vec![
         Page {
             background: Some(black),
+            grid: None,
             items: vec![
                 Item::Shape {
                     kind: ShapeKind::Rect,
@@ -180,6 +181,7 @@ fn canon_pages(pages: &[Page], ubz: bool) -> Vec<Page> {
         .iter()
         .map(|p| Page {
             background: p.background,
+            grid: p.grid.clone(),
             items: p.items.iter().map(|i| canon(i, ubz)).collect(),
         })
         .collect()
@@ -210,6 +212,7 @@ fn escaped_text_survives_both_formats() {
     let text = "a<b&c\"d'e\nf";
     let pages = vec![Page {
         background: None,
+        grid: None,
         items: vec![Item::Text {
             m: IDENTITY,
             x: 1.0,

@@ -7,6 +7,7 @@ import { zlibSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { makeFlipchart } from "../../../../scripts/essais/fabriques/flipchart.mjs";
 import { flipchartSources } from "../app/board-files";
+import { decodeBoardList } from "./board-list";
 import { bambooEntries } from "./zip-worker";
 
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -85,5 +86,43 @@ describe.skipIf(formats === null && env["ROOMBOARD_WASM_REQUIRED"] !== "1")("cha
     // DA4 : aucun octet d'image n'est parti vers le Rust.
     const imageBytes = split.structure.filter((e) => !/(^|\/)version$|\.(in|io|ir)$/i.test(e.path)).reduce((n, e) => n + e.blob.size, 0);
     expect(imageBytes).toBe(0);
+  });
+});
+
+describe.skipIf(formats === null && env["ROOMBOARD_WASM_REQUIRED"] !== "1")("chaîne .flipchart à grille (OG70, G11)", () => {
+  it("grille gardée : carreaux et points mis à 1 920 de large, aimant, au-dessus ; oblique avertie", async () => {
+    if (formats === null) throw new Error("module formats absent");
+    const data = makeFlipchart(
+      [
+        {
+          grid: {
+            shown: true,
+            snap: true,
+            above: true,
+            levels: [
+              { line: 3, step: [32, 64], start: [16, 0], color: 0x3366cc },
+              { line: 1, step: [64], snap: false },
+              { layout: 2 },
+            ],
+          },
+        },
+      ],
+      zlibSync,
+    ) as Uint8Array;
+    const entries = bambooEntries(data).map((e) => ({ path: e.path, blob: new Blob([new Uint8Array(e.bytes)]) }));
+    const r = await open(formats, flipchartSources(entries).structure);
+    expect(r.warnings()).toEqual(["page 1 : 1 niveau de grille oblique (45° ou angle libre) non lu"]);
+    const k = 1920 / 1024;
+    const [page] = decodeBoardList(r.ops(), r.texts());
+    const level = { originX: 0, originY: 0, color: "#000000", line: "solid", lineWidth: 1, snap: true, visible: true };
+    expect(page?.grid).toEqual({
+      visible: true,
+      snap: true,
+      above: true,
+      levels: [
+        { ...level, kind: "squares", spacingX: 32 * k, spacingY: 64 * k, originX: 16 * k, color: "#3366cc" },
+        { ...level, kind: "dots", spacingX: 64 * k, spacingY: 64 * k, snap: false },
+      ],
+    });
   });
 });

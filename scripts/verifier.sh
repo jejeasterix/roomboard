@@ -139,6 +139,7 @@ if [ "$E2E" = 1 ]; then
   echo "C4 bibliothèque : OK"
   node scripts/essais/c13-tableaux-navigateur.mjs
   echo "C13 tableaux : OK"
+  node scripts/essais/og70-flipchart-grille-navigateur.mjs
   node scripts/essais/c11a-annotation-navigateur.mjs
   echo "C11a annotation : OK"
   node scripts/essais/c11b-capture-navigateur.mjs

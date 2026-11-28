@@ -343,9 +343,36 @@ function buildPage(page, i, root) {
     );
   }
 
+  // OG70 : grille de page (genre 13) et ses niveaux (genre 14), nœuds base + 900 et suivants ; `shown` est une
+  // propriété de la page (17). Niveau : tracé (1 points … 6 gros points), disposition (1 normale, 2 à 45°, 3 angle).
+  const sheet = new Obj(2, node - 1).sizeF(6, 1024, 768);
+  if (page.grid !== undefined) {
+    const g = page.grid;
+    sheet.boolean(17, g.shown ?? true);
+    const levels = (g.levels ?? []).map((l, j) => {
+      const level = { id: base + 902 + 2 * j, type: 14, storage: base + 903 + 2 * j };
+      const o = new Obj(14, level.storage)
+        .integer(2, l.line ?? 3)
+        .integer(3, l.layout ?? 1)
+        .color(4, l.color ?? BLACK)
+        .boolean(5, l.shown ?? true)
+        .pointF(6, l.start?.[0] ?? 0, l.start?.[1] ?? 0)
+        .real(7, l.step?.[0] ?? 32)
+        .real(8, l.step?.[1] ?? l.step?.[0] ?? 32)
+        .boolean(11, l.alongX ?? true)
+        .boolean(12, l.alongY ?? true)
+        .boolean(13, l.snap ?? true);
+      streams.push({ name: `${level.storage}.io`, data: o.stream(), compressed: true });
+      return level;
+    });
+    const grid = { id: base + 900, type: 13, storage: base + 901, children: levels };
+    const o = new Obj(13, grid.storage).integer(8, 1).boolean(16, g.snap ?? true).boolean(17, g.above ?? false).real(14, g.scale ?? 1);
+    streams.push({ name: `${grid.storage}.io`, data: o.stream(), compressed: true });
+    children.push(grid);
+  }
   const inner = [
     { name: `${node}.in`, data: index({ id: node, type: 2, storage: node - 1, children }), compressed: true },
-    { name: `${node - 1}.io`, data: new Obj(2, node - 1).sizeF(6, 1024, 768).owner(node).stream(), compressed: true },
+    { name: `${node - 1}.io`, data: sheet.owner(node).stream(), compressed: true },
     ...streams,
   ];
   return { node, inner };

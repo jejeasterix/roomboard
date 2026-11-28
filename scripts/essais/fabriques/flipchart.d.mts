@@ -53,7 +53,34 @@ export interface FabImage {
   h: number;
 }
 
+/** OG70 : niveau de grille ActivInspire ; défauts d'ActCraft (plein, normal, noir, pas 32, deux familles, aimanté). */
+export interface FabGridLevel {
+  /** Tracé : 1 points, 2 croix, 3 plein, 4 pointillé, 5 tirets, 6 gros points. */
+  line?: number;
+  /** Disposition : 1 normale, 2 à 45°, 3 angle libre. */
+  layout?: number;
+  color?: FabColor;
+  shown?: boolean;
+  start?: FabPoint;
+  /** Pas X et Y, en pixels de page ; Y absent : celui de X. */
+  step?: [number, number?];
+  alongX?: boolean;
+  alongY?: boolean;
+  snap?: boolean;
+}
+
+/** OG70 : grille de page ; `shown` est la propriété « grille affichée » de la page. */
+export interface FabGrid {
+  shown?: boolean;
+  snap?: boolean;
+  above?: boolean;
+  /** Échelle par défaut (pas × échelle). */
+  scale?: number;
+  levels?: FabGridLevel[];
+}
+
 export interface FabPage {
+  grid?: FabGrid;
   strokes?: FabStroke[];
   lines?: FabLine[];
   rects?: FabRect[];

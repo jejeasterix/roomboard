@@ -16,8 +16,9 @@ use super::ids;
 use super::index::{parse_index, IndexNode};
 use super::stream::{parse_object_stream_with_stats, Stats, StreamObject, Value, MAX_NESTING};
 use crate::board::{
-    compose, encode, rect_of, BoardError, BoardList, Item, Mat, Page, Rgb, ShapeKind, Span,
-    IDENTITY, MAX_OBJECTS, MAX_PAGES, MAX_POINTS, MAX_SPANS, PAGE_WIDTH,
+    compose, encode, rect_of, BoardError, BoardList, Grid, GridKind, GridLevel, GridLine, Item,
+    Mat, Page, Rgb, ShapeKind, Span, IDENTITY, MAX_GRID_LEVELS, MAX_OBJECTS, MAX_PAGES, MAX_POINTS,
+    MAX_SPANS, PAGE_WIDTH,
 };
 
 /// Numéros de propriétés, recopiés à la main de `flipchartids.h` d'ActCraft, sous des noms à nous.
@@ -63,6 +64,23 @@ mod key {
     pub(super) const RUN_WEIGHT: u16 = 9;
     pub(super) const RUN_ITALIC: u16 = 10;
     pub(super) const RUN_UNDERLINE: u16 = 11;
+    /// Grille affichée (propriété de la page).
+    pub(super) const PAGE_SHOW_GRID: u16 = 17;
+    /// Grille (ActCraft `guideKeys`) : échelle par défaut, aimant permis, au-dessus des objets.
+    pub(super) const GRID_SCALE: u16 = 14;
+    pub(super) const GRID_SNAP: u16 = 16;
+    pub(super) const GRID_ABOVE: u16 = 17;
+    /// Niveau de grille (ActCraft `guideLevelKeys`).
+    pub(super) const LEVEL_LINE: u16 = 2;
+    pub(super) const LEVEL_LAYOUT: u16 = 3;
+    pub(super) const LEVEL_COLOR: u16 = 4;
+    pub(super) const LEVEL_SHOWN: u16 = 5;
+    pub(super) const LEVEL_START: u16 = 6;
+    pub(super) const LEVEL_STEP_X: u16 = 7;
+    pub(super) const LEVEL_STEP_Y: u16 = 8;
+    pub(super) const LEVEL_ALONG_X: u16 = 11;
+    pub(super) const LEVEL_ALONG_Y: u16 = 12;
+    pub(super) const LEVEL_SNAP: u16 = 13;
 }
 
 /// Côté de page au plus (ActCraft `kMaxPageSide`) et taille par défaut.
@@ -78,6 +96,10 @@ enum Sort {
     ImageFormat,
     Action,
     Grid,
+    GridOblique,
+    GridCross,
+    GridVertical,
+    GridTooMany,
     Tag,
     Connector,
     Media,
@@ -103,6 +125,22 @@ fn label(sort: Sort, n: u32) -> &'static str {
         ),
         Sort::Action => ("action non lue", "actions non lues"),
         Sort::Grid => ("grille non lue", "grilles non lues"),
+        Sort::GridOblique => (
+            "niveau de grille oblique (45° ou angle libre) non lu",
+            "niveaux de grille obliques (45° ou angle libre) non lus",
+        ),
+        Sort::GridCross => (
+            "niveau de grille en croix posé en points",
+            "niveaux de grille en croix posés en points",
+        ),
+        Sort::GridVertical => (
+            "niveau de grille à verticales seules posé en carreaux",
+            "niveaux de grille à verticales seules posés en carreaux",
+        ),
+        Sort::GridTooMany => (
+            "niveau de grille au-delà de 16 ignoré",
+            "niveaux de grille au-delà de 16 ignorés",
+        ),
         Sort::Tag => ("étiquette non lue", "étiquettes non lues"),
         Sort::Connector => ("connecteur non lu", "connecteurs non lus"),
         Sort::Media => ("son ou vidéo non lu", "sons ou vidéos non lus"),
@@ -314,6 +352,8 @@ enum What {
     Group(Vec<u32>),
     /// Fond de la page : couleur, image.
     Background(Option<Rgb>, Option<Item>),
+    /// Grille de la page (OG70, G11).
+    Grid(Grid),
     Nothing,
 }
 
@@ -323,6 +363,8 @@ struct Sheet<'t> {
     tree: &'t IndexNode,
     base: Mat,
     side: (f32, f32),
+    /// Propriété « grille affichée » de la page (OG70).
+    show_grid: bool,
     /// Numéro de nœud → stockage, construit une fois par page au premier fond (le premier nœud rencontré l'emporte).
     storages: OnceCell<HashMap<u32, u32>>,
 }
@@ -558,19 +600,22 @@ impl<'a> Reader<'a> {
             tree,
             base: [s, 0.0, 0.0, s, 0.0, 0.0],
             side: (w as f32, h as f32),
+            show_grid: flag(&object, key::PAGE_SHOW_GRID),
             storages: OnceCell::new(),
         };
         let mut page = Page::default();
         let mut backdrop = None;
         let mut list = self.children(&sheet, tree, &sheet.base, 1);
         for p in &mut list {
-            if matches!(p.what, What::Background(..)) {
-                if let What::Background(color, image) =
-                    std::mem::replace(&mut p.what, What::Nothing)
-                {
+            match std::mem::replace(&mut p.what, What::Nothing) {
+                What::Background(color, image) => {
                     page.background = color;
                     backdrop = image;
                 }
+                // Plusieurs grilles : la dernière l'emporte (ActCraft `applyGuides`, dans l'ordre de l'index ; ici après
+                // le tri stable par couche et profondeur, même ordre pour des grilles de mêmes couche et profondeur).
+                What::Grid(g) => page.grid = Some(g),
+                other => p.what = other,
             }
         }
         let mut flat = Vec::new();
@@ -615,9 +660,11 @@ impl<'a> Reader<'a> {
             return None;
         }
         let kind = n.kind;
+        // OG70 : la grille de la page est lue (`grid`) ; ailleurs, et un niveau seul, elle reste avertie.
+        let page_grid = kind == ids::GRID && nesting == 1;
         let warned = match kind {
             k if ids::is_action(k) => Some(Sort::Action),
-            k if ids::is_grid(k) => Some(Sort::Grid),
+            k if ids::is_grid(k) && !page_grid => Some(Sort::Grid),
             ids::TAG => Some(Sort::Tag),
             _ => None,
         };
@@ -649,6 +696,7 @@ impl<'a> Reader<'a> {
             ids::IMAGE => self.image(&o, m, &bounds),
             ids::TEXT => self.text(&o, m, &bounds),
             ids::GROUP => What::Group(n.refs.clone()),
+            ids::GRID => What::Grid(self.grid(sheet, n, &o, sheet.show_grid)),
             ids::BACKGROUND if nesting == 1 => self.background(sheet, &o),
             other => {
                 self.note(match other {
@@ -665,7 +713,8 @@ impl<'a> Reader<'a> {
             let k = leaves(item);
             self.charge(|r| &mut r.leaves, |l| l.objects, k);
         }
-        let children = if n.children.is_empty() {
+        // Les enfants d'une grille sont ses niveaux, lus par `grid`.
+        let children = if n.children.is_empty() || page_grid {
             Vec::new()
         } else if nesting >= MAX_NESTING {
             self.note_n(Sort::TooDeep, descendants(n));
@@ -680,6 +729,97 @@ impl<'a> Reader<'a> {
             depth: number(&o, key::DEPTH).unwrap_or(0.0),
             what,
             children,
+        })
+    }
+
+    /// Grille de page (ActCraft `applyGuides`) et ses niveaux, dans l'ordre de l'index ; pas et départ passent en
+    /// unités RoomBoard par l'échelle de la page ; `visible` : propriété « grille affichée » de la page.
+    fn grid(&mut self, sheet: &Sheet, n: &IndexNode, g: &StreamObject, visible: bool) -> Grid {
+        let scale = number(g, key::GRID_SCALE)
+            .filter(|v| *v > 0.0)
+            .unwrap_or(1.0);
+        let mut levels = Vec::new();
+        for c in n.children.iter().filter(|c| c.kind == ids::GRID_LEVEL) {
+            let Some(l) = self.io(&format!("{}{}", sheet.prefix, c.storage_name())) else {
+                self.note(Sort::Unreadable);
+                continue;
+            };
+            let Some(level) = self.grid_level(&l, scale, f64::from(sheet.base[0])) else {
+                continue;
+            };
+            if levels.len() == MAX_GRID_LEVELS {
+                self.note(Sort::GridTooMany);
+            } else {
+                levels.push(level);
+            }
+        }
+        Grid {
+            visible,
+            snap: flag(g, key::GRID_SNAP),
+            above: flag(g, key::GRID_ABOVE),
+            levels,
+        }
+    }
+
+    /// Niveau traduit un pour un ; oblique (disposition 2 ou 3) : `None`, averti ; disposition inconnue : normale,
+    /// comme ActCraft. Rien à dessiner chez ActCraft (aucune famille de lignes ; points, croix ou gros points sans les
+    /// deux familles, `gridPoints` de `pagepainter.cpp`) : `None`. Tracé ActivInspire (indice + 1) : points, croix,
+    /// plein, pointillé, tirets, gros points.
+    fn grid_level(&mut self, l: &StreamObject, scale: f64, page: f64) -> Option<GridLevel> {
+        if matches!(number(l, key::LEVEL_LAYOUT).map(|v| v as i64), Some(2 | 3)) {
+            self.note(Sort::GridOblique);
+            return None;
+        }
+        let along = (
+            flag_or(l, key::LEVEL_ALONG_X, true),
+            flag_or(l, key::LEVEL_ALONG_Y, true),
+        );
+        let mark = number(l, key::LEVEL_LINE).unwrap_or(3.0);
+        let (kind, line, line_width) = match mark as i64 {
+            1 | 2 | 6 if along != (true, true) => return None,
+            1 => (GridKind::Dots, GridLine::Solid, 1.0),
+            2 => {
+                self.note(Sort::GridCross);
+                (GridKind::Dots, GridLine::Solid, 1.0)
+            }
+            6 => (GridKind::Dots, GridLine::Solid, 2.0),
+            m => {
+                let kind = match along {
+                    (true, true) => GridKind::Squares,
+                    (false, true) => GridKind::Lines,
+                    (true, false) => {
+                        self.note(Sort::GridVertical);
+                        GridKind::Squares
+                    }
+                    _ => return None,
+                };
+                let line = match m {
+                    4 => GridLine::Dotted,
+                    5 => GridLine::Dashed,
+                    _ => GridLine::Solid,
+                };
+                (kind, line, 1.0)
+            }
+        };
+        // 0, absent ou négatif : 32, comme ActCraft ; pas effectif × échelle par défaut, de 1 au côté de page au plus,
+        // puis fini en `f32` (le flux refuse un pas nul).
+        let step = |k| {
+            let v = number(l, k).filter(|v| *v > 0.0).unwrap_or(32.0);
+            ((v * scale).clamp(1.0, MAX_PAGE_SIDE) * page).min(f64::from(f32::MAX)) as f32
+        };
+        let start = l
+            .find(key::LEVEL_START)
+            .and_then(Value::as_point)
+            .unwrap_or((0.0, 0.0));
+        Some(GridLevel {
+            kind,
+            spacing: [step(key::LEVEL_STEP_X), step(key::LEVEL_STEP_Y)],
+            origin: [fin(start.0 * page), fin(start.1 * page)],
+            color: rgb(Some(l), key::LEVEL_COLOR, BLACK),
+            line,
+            line_width,
+            snap: flag_or(l, key::LEVEL_SNAP, true),
+            visible: flag_or(l, key::LEVEL_SHOWN, true),
         })
     }
 
@@ -1042,7 +1182,7 @@ fn build(
             }
             (!items.is_empty()).then_some(Item::Group(items))
         }
-        What::Background(..) | What::Nothing => None,
+        What::Background(..) | What::Grid(_) | What::Nothing => None,
     }
 }
 
@@ -1160,7 +1300,11 @@ fn number(o: &StreamObject, k: u16) -> Option<f64> {
 }
 
 fn flag(o: &StreamObject, k: u16) -> bool {
-    o.find(k).and_then(Value::as_bool).unwrap_or(false)
+    flag_or(o, k, false)
+}
+
+fn flag_or(o: &StreamObject, k: u16, fallback: bool) -> bool {
+    o.find(k).and_then(Value::as_bool).unwrap_or(fallback)
 }
 
 fn rgb(o: Option<&StreamObject>, k: u16, fallback: Rgb) -> Rgb {
@@ -1212,7 +1356,9 @@ fn points_of(poly: &[[f32; 2]]) -> Vec<[f32; 3]> {
 mod tests {
     use super::super::ids;
     use super::super::writer::{index, Bytes, Node, Obj};
-    use crate::board::{self, BoardError, BoardList, Item, Page, ShapeKind};
+    use crate::board::{
+        self, BoardError, BoardList, GridKind, GridLevel, GridLine, Item, Page, ShapeKind,
+    };
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -2266,11 +2412,216 @@ mod tests {
             warnings,
             vec![
                 "page 1 : 1 connecteur non lu".to_string(),
-                "page 1 : 1 grille non lue".to_string(),
                 "page 1 : 2 étiquettes non lues".to_string(),
             ]
         );
         assert_eq!(colors(&pages[0].items), vec![[3, 3, 3]]);
+        // OG70 : la grille est lue (niveaux par défaut d'ActCraft : carreaux de 32, noirs, aimantés), cachée.
+        let grid = pages[0].grid.as_ref().expect("grille lue");
+        assert!(!grid.visible && !grid.snap && !grid.above);
+        assert_eq!(grid.levels.len(), 2);
+        assert_eq!(grid.levels[0], level(GridKind::Squares, 32.0, [0.0, 0.0]));
+    }
+
+    use super::key::{
+        GRID_ABOVE, GRID_SCALE, GRID_SNAP, LEVEL_ALONG_X, LEVEL_ALONG_Y, LEVEL_COLOR, LEVEL_LAYOUT,
+        LEVEL_LINE, LEVEL_SHOWN, LEVEL_SNAP, LEVEL_START, LEVEL_STEP_X, LEVEL_STEP_Y,
+        PAGE_SHOW_GRID,
+    };
+
+    /// Niveau attendu : pas carré, noir, plein, aimanté, visible.
+    fn level(kind: GridKind, step: f32, origin: [f32; 2]) -> GridLevel {
+        GridLevel {
+            kind,
+            spacing: [step, step],
+            origin,
+            color: [0, 0, 0],
+            line: GridLine::Solid,
+            line_width: 1.0,
+            snap: true,
+            visible: true,
+        }
+    }
+
+    /// Page `node` à une grille de niveaux `levels` (nœuds `node·100 + i`), objet de grille `grid`.
+    fn grid_sheet(sheet: Sheet, node: u32, grid: Obj, levels: Vec<Obj>) -> Sheet {
+        let kids: Vec<Node> = (0..levels.len() as u32)
+            .map(|i| leaf(node * 100 + i, ids::GRID_LEVEL, 60_000 + node * 100 + i))
+            .collect();
+        let mut streams = vec![(50_000 + node, grid.stream())];
+        streams.extend(
+            levels
+                .iter()
+                .enumerate()
+                .map(|(i, o)| (60_000 + node * 100 + i as u32, o.stream())),
+        );
+        sheet.put_node(
+            Node::new(node, ids::GRID, 50_000 + node, kids, Vec::new()),
+            streams,
+        )
+    }
+
+    fn grid_level_obj() -> Obj {
+        Obj::new(ids::GRID_LEVEL, 0)
+    }
+
+    /// OG70 (G11) : chaque niveau se traduit un pour un ; oblique, croix et verticales seules sont avertis.
+    #[test]
+    fn grid_levels_are_translated() {
+        let page = Obj::new(ids::PAGE, 11)
+            .size_f(PAGE_SIZE, 1024.0, 768.0)
+            .boolean(PAGE_SHOW_GRID, true);
+        let grid = Obj::new(ids::GRID, 0)
+            .boolean(GRID_SNAP, true)
+            .boolean(GRID_ABOVE, true)
+            .real(GRID_SCALE, 0.5);
+        let solid = grid_level_obj()
+            .integer(LEVEL_LINE, 3)
+            .integer(LEVEL_LAYOUT, 1)
+            .real(LEVEL_STEP_X, 40.0)
+            .real(LEVEL_STEP_Y, 80.0)
+            .point(LEVEL_START, 10.0, 20.0)
+            .color(LEVEL_COLOR, 200, 0, 0, 255)
+            .boolean(LEVEL_ALONG_X, true)
+            .boolean(LEVEL_ALONG_Y, true)
+            .boolean(LEVEL_SNAP, true)
+            .boolean(LEVEL_SHOWN, true);
+        let levels = vec![
+            solid,
+            grid_level_obj()
+                .integer(LEVEL_LINE, 5)
+                .boolean(LEVEL_ALONG_X, false),
+            grid_level_obj()
+                .integer(LEVEL_LINE, 4)
+                .boolean(LEVEL_ALONG_Y, false),
+            grid_level_obj()
+                .integer(LEVEL_LINE, 1)
+                .boolean(LEVEL_SNAP, false),
+            grid_level_obj()
+                .integer(LEVEL_LINE, 6)
+                .boolean(LEVEL_SHOWN, false),
+            grid_level_obj().integer(LEVEL_LINE, 2),
+            grid_level_obj().integer(LEVEL_LAYOUT, 2),
+            grid_level_obj().integer(LEVEL_LAYOUT, 3),
+            grid_level_obj()
+                .boolean(LEVEL_ALONG_X, false)
+                .boolean(LEVEL_ALONG_Y, false),
+            // Points sur une seule famille : rien chez ActCraft, rien ici.
+            grid_level_obj()
+                .integer(LEVEL_LINE, 1)
+                .boolean(LEVEL_ALONG_X, false),
+            // Disposition inconnue : normale.
+            grid_level_obj().integer(LEVEL_LAYOUT, 4),
+        ];
+        let sheet = grid_sheet(Sheet::new(10).page(page), 20, grid, levels);
+        let (pages, mut warnings) = pages_of(&flipchart(document(), &[], vec![sheet]));
+        warnings.sort();
+        assert_eq!(
+            warnings,
+            vec![
+                "page 1 : 1 niveau de grille en croix posé en points".to_string(),
+                "page 1 : 1 niveau de grille à verticales seules posé en carreaux".to_string(),
+                "page 1 : 2 niveaux de grille obliques (45° ou angle libre) non lus".to_string(),
+            ]
+        );
+        let g = pages[0].grid.as_ref().expect("grille lue");
+        assert!(g.visible && g.snap && g.above);
+        // Page de 1 024 : échelle 1 920 / 1 024 = 1,875 ; échelle par défaut 0,5.
+        let k = 1.875 * 0.5;
+        let def = level(GridKind::Squares, 32.0 * k, [0.0, 0.0]);
+        assert_eq!(
+            g.levels,
+            vec![
+                GridLevel {
+                    spacing: [40.0 * k, 80.0 * k],
+                    origin: [18.75, 37.5],
+                    color: [200, 0, 0],
+                    ..def.clone()
+                },
+                GridLevel {
+                    kind: GridKind::Lines,
+                    line: GridLine::Dashed,
+                    ..def.clone()
+                },
+                GridLevel {
+                    line: GridLine::Dotted,
+                    ..def.clone()
+                },
+                GridLevel {
+                    kind: GridKind::Dots,
+                    snap: false,
+                    ..def.clone()
+                },
+                GridLevel {
+                    kind: GridKind::Dots,
+                    line_width: 2.0,
+                    visible: false,
+                    ..def.clone()
+                },
+                GridLevel {
+                    kind: GridKind::Dots,
+                    ..def.clone()
+                },
+                def,
+            ]
+        );
+    }
+
+    /// OG70 : 16 niveaux au plus (borne du cœur), le reste averti ; pas démesuré borné, la dernière grille l'emporte,
+    /// une grille sous un objet reste avertie.
+    #[test]
+    fn grid_bounds() {
+        let first = grid_sheet(Sheet::new(10), 20, Obj::new(ids::GRID, 0), Vec::new());
+        let many = (0..18).map(|_| grid_level_obj()).collect();
+        let sheet = grid_sheet(
+            first,
+            21,
+            Obj::new(ids::GRID, 0).boolean(GRID_SNAP, true),
+            many,
+        );
+        let nested = Node::new(
+            15,
+            ids::STROKE,
+            50_015,
+            vec![leaf(16, ids::GRID, 50_016)],
+            Vec::new(),
+        );
+        let sheet = sheet.put_node(
+            nested,
+            vec![
+                (50_015, stroke(101, (3, 3, 3)).stream()),
+                (50_016, Obj::new(ids::GRID, 0).stream()),
+            ],
+        );
+        let entries = flipchart(
+            document(),
+            &[points(101, &[(1.0, 1.0), (2.0, 2.0)])],
+            vec![sheet],
+        );
+        let (pages, mut warnings) = pages_of(&entries);
+        warnings.sort();
+        assert_eq!(
+            warnings,
+            vec![
+                "page 1 : 1 grille non lue".to_string(),
+                "page 1 : 2 niveaux de grille au-delà de 16 ignorés".to_string(),
+            ]
+        );
+        let g = pages[0].grid.as_ref().expect("grille lue");
+        assert!(g.snap);
+        assert_eq!(g.levels.len(), 16);
+        // Un pas démesuré est borné au côté de page : le flux reste lisible.
+        let only = grid_sheet(
+            Sheet::new(10),
+            20,
+            Obj::new(ids::GRID, 0),
+            vec![grid_level_obj().real(LEVEL_STEP_X, 1e300)],
+        );
+        let (pages, _) = pages_of(&flipchart(document(), &[], vec![only]));
+        assert_eq!(
+            pages[0].grid.as_ref().unwrap().levels[0].spacing,
+            [100_000.0, 32.0]
+        );
     }
 
     /// N12 : rideau, projecteur et repère XY de la page sont avertis.

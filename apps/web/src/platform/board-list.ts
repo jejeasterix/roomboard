@@ -4,7 +4,7 @@
  * (`app/board-io.ts`, qui réexporte tout), le Worker ZIP (`zip-worker.ts`) et le lecteur `.olf` (`olf-read.ts`).
  * Table des codes : `docs/plans/usage-c13-lot1-svg-iwb-ubz-PLAN.md`, « Table des codes du flux BoardList ».
  */
-import type { Matrix, ShapeKind, TextSpan } from "../core/api";
+import type { GridKind, GridLevel, GridView, Matrix, ShapeKind, TextSpan } from "../core/api";
 
 /** `BoardError::TooBig` (`board.rs`). */
 export const BOARD_OBJECTS_MESSAGE = "fichier de tableau trop gros (plus de 100 000 objets)";
@@ -14,7 +14,12 @@ export const BOARD_MAX_OBJECTS = 100_000;
 export const SKIPPED_LABEL = ["objet illisible ignoré", "objets illisibles ignorés"] as const;
 /** Même borne que `MAX_GROUP_DEPTH` de `board::parse` (board.rs). */
 export const MAX_GROUP_DEPTH = 256;
-export const BOARD_OP = { page: 1, background: 2, shape: 3, stroke: 4, text: 5, image: 6, groupBegin: 7, groupEnd: 8 } as const;
+export const BOARD_OP = { page: 1, background: 2, shape: 3, stroke: 4, text: 5, image: 6, groupBegin: 7, groupEnd: 8, grid: 9 } as const;
+/** OG70 : types et traits de grille du flux, par code (`GridKind`, `GridLine` de board.rs) ; bornes de `SetGrid`
+ *  (`MAX_GRID_LEVELS`, épaisseur de 1 à 8 de `core/api`), recopiées : cette feuille n'importe que des types. */
+const GRID_FLOW_KINDS = ["squares", "lines", "dots"] as const satisfies readonly GridKind[];
+const GRID_FLOW_LINES = ["solid", "dashed", "dotted"] as const;
+const MAX_GRID_LEVELS = 16;
 export const BOARD_BAD_LIST_PREFIX = "liste de tableau invalide : ";
 /** Formes du flux : le losange (OG12 lot 2a) n'y entre pas, il s'exporte en polyligne fermée (`roomboard-formats` a son
  *  propre `ShapeKind`, board.rs). */
@@ -35,6 +40,8 @@ export type BoardObject =
 
 export interface BoardListPage {
   readonly background: string | null;
+  /** OG70 : grille de la page (`.flipchart`), posée par `SetGrid` ; absente des autres formats. */
+  readonly grid?: GridView;
   readonly objects: readonly BoardObject[];
 }
 export interface BoardListData {
@@ -165,6 +172,32 @@ class Cursor {
     }
     return { kind: "text", m, x, y, boxWidth, boxHeight, size, color, spans };
   }
+  bool(): boolean {
+    return this.int(1) === 1;
+  }
+  /** OG70 : `9, visible, snap, above, n`, puis par niveau `type, pas x, pas y, origine x, y, r, g, b, trait, épaisseur,
+   *  snap, visible` (règles de `board::grid`). */
+  grid(): GridView {
+    const visible = this.bool();
+    const snap = this.bool();
+    const above = this.bool();
+    const n = this.int(MAX_GRID_LEVELS);
+    const levels: GridLevel[] = [];
+    for (let k = 0; k < n; k++) {
+      const kind = GRID_FLOW_KINDS[this.int(2)]!;
+      const spacingX = this.num();
+      const spacingY = this.num();
+      if (spacingX <= 0 || spacingY <= 0) throw bad(`pas de grille nul ou négatif à ${this.i - 1}`);
+      const originX = this.num();
+      const originY = this.num();
+      const color = this.rgb();
+      const line = GRID_FLOW_LINES[this.int(2)]!;
+      const lineWidth = this.num();
+      if (lineWidth < 1 || lineWidth > 8) throw bad(`épaisseur de grille hors de 1 à 8 à ${this.i - 1}`);
+      levels.push({ kind, spacingX, spacingY, originX, originY, color, line, lineWidth, snap: this.bool(), visible: this.bool() });
+    }
+    return { visible, snap, above, levels };
+  }
   image(): BoardObject {
     const m = this.mat();
     const x = this.num();
@@ -181,7 +214,7 @@ class Cursor {
 export function decodeBoardList(ops: ArrayLike<number>, texts: readonly string[], budget: number = Number.POSITIVE_INFINITY): BoardListPage[] {
   let leaves = 0;
   const c = new Cursor(ops, texts);
-  const pages: Array<{ background: string | null; objects: BoardObject[] }> = [];
+  const pages: Array<{ background: string | null; grid?: GridView; objects: BoardObject[] }> = [];
   const stack: BoardObject[][] = [];
   const push = (o: BoardObject): void => {
     // D16 : feuilles seules ; contrôlé à chaque objet, avant que le flux entier ne devienne des objets.
@@ -197,7 +230,7 @@ export function decodeBoardList(ops: ArrayLike<number>, texts: readonly string[]
   };
   while (!c.done()) {
     const at = c.i;
-    const code = c.int(8);
+    const code = c.int(9);
     switch (code) {
       case BOARD_OP.page:
         if (stack.length > 0) throw bad(`groupe ouvert à la page suivante (${at})`);
@@ -208,6 +241,14 @@ export function decodeBoardList(ops: ArrayLike<number>, texts: readonly string[]
         const page = pages.at(-1);
         if (page === undefined) throw bad("fond avant la première page");
         page.background = bg;
+        break;
+      }
+      case BOARD_OP.grid: {
+        const grid = c.grid();
+        const page = pages.at(-1);
+        if (page === undefined) throw bad("grille avant la première page");
+        if (page.grid !== undefined) throw bad(`deuxième grille sur la page (${at})`);
+        page.grid = grid;
         break;
       }
       case BOARD_OP.shape:
@@ -319,6 +360,15 @@ export function encodeBoardList(pages: readonly BoardListPage[]): BoardListData 
     if (p.background !== null) {
       ops.push(BOARD_OP.background);
       rgb(p.background);
+    }
+    if (p.grid !== undefined) {
+      const g = p.grid;
+      ops.push(BOARD_OP.grid, +g.visible, +g.snap, +g.above, g.levels.length);
+      for (const l of g.levels) {
+        ops.push(Math.max(0, GRID_FLOW_KINDS.indexOf(l.kind as never)), l.spacingX, l.spacingY, l.originX, l.originY);
+        rgb(l.color);
+        ops.push(Math.max(0, GRID_FLOW_LINES.indexOf(l.line as never)), l.lineWidth, +l.snap, +l.visible);
+      }
     }
     for (const o of p.objects) obj(o);
   }

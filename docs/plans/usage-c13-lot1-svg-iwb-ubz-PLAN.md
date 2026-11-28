@@ -83,6 +83,7 @@ police).
 | 6 | image | m×6, x, y, largeur, hauteur, indiceChemin |
 | 7 | début de groupe | — |
 | 8 | fin de groupe | — |
+| 9 | grille de la page courante (OG70, G11 ; `.flipchart` seul, au plus une par page) | visible, snap, above (0/1), n (≤ 16), puis n niveaux : type (0 squares, 1 lines, 2 dots), pas x, pas y (> 0), origine x, y, r, g, b, trait (0 solid, 1 dashed, 2 dotted), épaisseur (1 à 8), snap, visible (0/1) |
 
 Flux témoin **W1** (identique dans `board.rs` et `board-io.test.ts`) :
 

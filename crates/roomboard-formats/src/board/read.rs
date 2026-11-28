@@ -1146,6 +1146,7 @@ impl State<'_> {
         }
         Ok(Page {
             background,
+            grid: None,
             items: out.into_iter().map(|(_, i)| i).collect(),
         })
     }

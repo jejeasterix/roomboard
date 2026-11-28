@@ -6,6 +6,9 @@
 use std::collections::HashMap;
 use std::fmt;
 
+pub use roomboard_core::grid::MAX_GRID_LEVELS;
+use roomboard_core::grid::{MAX_LINE_WIDTH, MIN_LINE_WIDTH};
+
 mod notebook;
 pub mod qt_html;
 mod read;
@@ -23,6 +26,8 @@ pub const OP_TEXT: f32 = 5.0;
 pub const OP_IMAGE: f32 = 6.0;
 pub const OP_GROUP_BEGIN: f32 = 7.0;
 pub const OP_GROUP_END: f32 = 8.0;
+/// Grille de la page (OG70, G11) : au plus une par page, après `OP_PAGE`.
+pub const OP_GRID: f32 = 9.0;
 /// Drapeaux d'un segment de texte.
 pub const FLAG_BOLD: u32 = 1;
 pub const FLAG_ITALIC: u32 = 2;
@@ -180,9 +185,48 @@ pub enum Item {
     Group(Vec<Item>),
 }
 
+/// Type d'un niveau de grille : code = rang dans `GRID_KINDS` du cœur (`squares`, `lines`, `dots`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GridKind {
+    Squares = 0,
+    Lines = 1,
+    Dots = 2,
+}
+
+/// Trait d'un niveau de grille : `solid`, `dashed`, `dotted` du cœur.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GridLine {
+    Solid = 0,
+    Dashed = 1,
+    Dotted = 2,
+}
+
+/// Niveau de grille, en unités de page RoomBoard ; épaisseur en pixels d'écran, de 1 à 8 (E1).
+#[derive(Debug, Clone, PartialEq)]
+pub struct GridLevel {
+    pub kind: GridKind,
+    pub spacing: [f32; 2],
+    pub origin: [f32; 2],
+    pub color: Rgb,
+    pub line: GridLine,
+    pub line_width: f32,
+    pub snap: bool,
+    pub visible: bool,
+}
+
+/// Grille de page (U31) : `SetGrid` côté page.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Grid {
+    pub visible: bool,
+    pub snap: bool,
+    pub above: bool,
+    pub levels: Vec<GridLevel>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Page {
     pub background: Option<Rgb>,
+    pub grid: Option<Grid>,
     pub items: Vec<Item>,
 }
 
@@ -267,6 +311,26 @@ impl Encoder {
     }
     fn rgb(&mut self, c: Rgb) {
         self.ops.extend(c.iter().map(|&v| f32::from(v)));
+    }
+    fn bool(&mut self, b: bool) {
+        self.ops.push(f32::from(u8::from(b)));
+    }
+    fn grid(&mut self, g: &Grid) {
+        self.ops.push(OP_GRID);
+        self.bool(g.visible);
+        self.bool(g.snap);
+        self.bool(g.above);
+        self.ops.push(g.levels.len() as f32);
+        for l in &g.levels {
+            self.ops.push(l.kind as u8 as f32);
+            self.ops.extend_from_slice(&l.spacing);
+            self.ops.extend_from_slice(&l.origin);
+            self.rgb(l.color);
+            self.ops.push(l.line as u8 as f32);
+            self.ops.push(l.line_width);
+            self.bool(l.snap);
+            self.bool(l.visible);
+        }
     }
     fn item(&mut self, it: &Item) {
         match it {
@@ -382,6 +446,9 @@ pub fn encode(pages: &[Page]) -> BoardList {
             e.ops.push(OP_BACKGROUND);
             e.rgb(bg);
         }
+        if let Some(g) = &p.grid {
+            e.grid(g);
+        }
         for it in &p.items {
             e.item(it);
         }
@@ -443,6 +510,9 @@ impl Cursor<'_> {
             self.int(255)? as u8,
             self.int(255)? as u8,
         ])
+    }
+    fn bool(&mut self) -> Result<bool, BoardError> {
+        Ok(self.int(1)? == 1)
     }
     /// Lit −1 exactement (marque d'absence).
     fn absent(&mut self) -> Result<(), BoardError> {
@@ -582,6 +652,46 @@ fn image(c: &mut Cursor<'_>) -> Result<Item, BoardError> {
     })
 }
 
+fn grid(c: &mut Cursor<'_>) -> Result<Grid, BoardError> {
+    let (visible, snap, above) = (c.bool()?, c.bool()?, c.bool()?);
+    let n = c.int(MAX_GRID_LEVELS as u32)?;
+    let mut levels = Vec::with_capacity(n as usize);
+    for _ in 0..n {
+        let kind = [GridKind::Squares, GridKind::Lines, GridKind::Dots][c.int(2)? as usize];
+        let spacing = [c.num()?, c.num()?];
+        if spacing.iter().any(|&v| v <= 0.0) {
+            return Err(bad(format!("pas de grille nul ou négatif à {}", c.i - 1)));
+        }
+        let origin = [c.num()?, c.num()?];
+        let color = c.rgb()?;
+        let line = [GridLine::Solid, GridLine::Dashed, GridLine::Dotted][c.int(2)? as usize];
+        let line_width = c.num()?;
+        if !(MIN_LINE_WIDTH as f32..=MAX_LINE_WIDTH as f32).contains(&line_width) {
+            return Err(bad(format!(
+                "épaisseur de grille hors de 1 à 8 à {}",
+                c.i - 1
+            )));
+        }
+        let (snap, visible) = (c.bool()?, c.bool()?);
+        levels.push(GridLevel {
+            kind,
+            spacing,
+            origin,
+            color,
+            line,
+            line_width,
+            snap,
+            visible,
+        });
+    }
+    Ok(Grid {
+        visible,
+        snap,
+        above,
+        levels,
+    })
+}
+
 fn push(pages: &mut [Page], stack: &mut [Vec<Item>], item: Item) -> Result<(), BoardError> {
     if let Some(top) = stack.last_mut() {
         top.push(item);
@@ -606,7 +716,7 @@ pub fn parse(list: &BoardList) -> Result<Vec<Page>, BoardError> {
     let mut stack: Vec<Vec<Item>> = Vec::new();
     while !c.done() {
         let at = c.i;
-        match c.int(8)? {
+        match c.int(9)? {
             1 => {
                 if !stack.is_empty() {
                     return Err(bad(format!("groupe ouvert à la page suivante ({at})")));
@@ -650,6 +760,15 @@ pub fn parse(list: &BoardList) -> Result<Vec<Page>, BoardError> {
                     .pop()
                     .ok_or_else(|| bad(format!("fin de groupe sans début ({at})")))?;
                 push(&mut pages, &mut stack, Item::Group(items))?;
+            }
+            9 => {
+                let g = grid(&mut c)?;
+                let page = pages
+                    .last_mut()
+                    .ok_or_else(|| bad("grille avant la première page".to_string()))?;
+                if page.grid.replace(g).is_some() {
+                    return Err(bad(format!("deuxième grille sur la page ({at})")));
+                }
             }
             code => return Err(bad(format!("code inconnu {code} à {at}"))),
         }
@@ -703,6 +822,7 @@ pub(crate) mod fixtures {
         vec![
             Page {
                 background: Some(black),
+                grid: None,
                 items: vec![
                     Item::Shape {
                         kind: ShapeKind::Rect,
@@ -814,7 +934,7 @@ mod tests {
         let mixed_color = [&text_head[..], &[-1.0, 5.0, 5.0, -1.0]].concat();
         let odd_font = [&text_head[..], &[-1.0, -1.0, -1.0, -0.5]].concat();
         for ops in [
-            &[9.0][..],
+            &[10.0][..],
             &[3.0, 0.0][..],
             &[1.0, 7.0][..],
             &[1.0, 8.0][..],
@@ -976,5 +1096,91 @@ mod tests {
             warnings: Vec::new(),
         };
         assert!(parse(&l).is_ok());
+    }
+
+    /// Flux témoin G1 (OG70), joué aussi par `board-io.test.ts` : une page à grille de deux niveaux, puis une page nue.
+    const G1_OPS: &[f32] = &[
+        1.0, 9.0, 1.0, 1.0, 0.0, 2.0, //
+        0.0, 40.0, 40.0, 0.0, 0.0, 200.0, 200.0, 200.0, 0.0, 1.0, 1.0, 1.0, //
+        2.0, 80.0, 60.0, 10.0, 20.0, 0.0, 0.0, 255.0, 2.0, 2.0, 0.0, 0.0, //
+        1.0,
+    ];
+
+    fn g1_pages() -> Vec<Page> {
+        let grid = Grid {
+            visible: true,
+            snap: true,
+            above: false,
+            levels: vec![
+                GridLevel {
+                    kind: GridKind::Squares,
+                    spacing: [40.0, 40.0],
+                    origin: [0.0, 0.0],
+                    color: [200, 200, 200],
+                    line: GridLine::Solid,
+                    line_width: 1.0,
+                    snap: true,
+                    visible: true,
+                },
+                GridLevel {
+                    kind: GridKind::Dots,
+                    spacing: [80.0, 60.0],
+                    origin: [10.0, 20.0],
+                    color: [0, 0, 255],
+                    line: GridLine::Dotted,
+                    line_width: 2.0,
+                    snap: false,
+                    visible: false,
+                },
+            ],
+        };
+        vec![
+            Page {
+                grid: Some(grid),
+                ..Page::default()
+            },
+            Page::default(),
+        ]
+    }
+
+    fn ops(v: &[f32]) -> BoardList {
+        BoardList {
+            ops: v.to_vec(),
+            texts: Vec::new(),
+            warnings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn golden_g1_grid_round_trips() {
+        assert_eq!(parse(&ops(G1_OPS)).expect("G1"), g1_pages());
+        assert_eq!(encode(&g1_pages()).ops, G1_OPS.to_vec());
+    }
+
+    #[test]
+    fn bad_grids_are_refused() {
+        let level = |kind: f32, sx: f32, line: f32, width: f32| {
+            vec![
+                1.0, 9.0, 1.0, 1.0, 0.0, 1.0, kind, sx, 40.0, 0.0, 0.0, 0.0, 0.0, 0.0, line, width,
+                1.0, 1.0,
+            ]
+        };
+        assert!(parse(&ops(&level(0.0, 40.0, 0.0, 1.0))).is_ok());
+        for bad_list in [
+            level(3.0, 40.0, 0.0, 1.0),
+            level(0.0, 0.0, 0.0, 1.0),
+            level(0.0, 40.0, 3.0, 1.0),
+            level(0.0, 40.0, 0.0, 9.0),
+            level(0.0, 40.0, 0.0, 0.5),
+            vec![9.0, 0.0, 0.0, 0.0, 0.0],
+            vec![1.0, 9.0, 0.0, 0.0, 0.0, 0.0, 9.0, 0.0, 0.0, 0.0, 0.0],
+            vec![1.0, 9.0, 0.0, 0.0, 0.0, 17.0],
+            vec![1.0, 9.0, 2.0, 0.0, 0.0, 0.0],
+        ] {
+            assert!(
+                matches!(parse(&ops(&bad_list)), Err(BoardError::BadList(_))),
+                "{bad_list:?}"
+            );
+        }
     }
 }
